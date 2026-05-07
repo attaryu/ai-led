@@ -44,8 +44,8 @@ _QUANT_PATTERNS = [
 
 # Composite detection — kriteria text contains sub-score aggregation formula
 _COMPOSITE_PATTERNS = [
-    re.compile(r"[Ss]kor\s*=\s*\(?\(?[Ii]"),              # "Skor = (I", "Skor = ((I"
-    re.compile(r"[Ss]kor\s*=\s*[\(\(]?\s*I\s*[x+\-/]"),   # "Skor = I x"
+    re.compile(r"[Ss]kor\s*=\s*[\(\s]*[IiVv]{1,4}\b"),    # "Skor = (I", "Skor = ((II" — requires word boundary
+    re.compile(r"[Ss]kor\s*=\s*\(?\s*I\s*[x+\-/]"),       # "Skor = I x"
 ]
 
 # Formula extraction from quantitative score texts
@@ -64,9 +64,9 @@ class IndicatorRubric:
     kriteria: str
     indikator: str
     score_type: str                       # "qualitative" | "quantitative" | "composite"
-    score_criteria: dict                  # {4: "...", 3: "...", 2: "...", 1: "...", 0: "..."}
+    score_criteria: dict[int, str]         # {4: "...", 3: "...", 2: "...", 1: "...", 0: "..."}
     formula: Optional[str]               # e.g. "BOP / 5000000"
-    lkps_table_ref: list                 # e.g. ["Tabel 2.b. LKPS"]
+    lkps_table_ref: list[str]            # e.g. ["Tabel 2.b. LKPS"]
     sub_score_formula: Optional[str]     # e.g. "((I x 2) + II) / 3"
 
 
@@ -274,6 +274,14 @@ def _process_table(
                 idx = col_map.get(key, -1)
                 text = _safe_get(row, idx)
                 current.append_score(score_val, text)
+
+            # Also pick up kriteria continuation (composite formulas may appear on row 2)
+            kriteria_idx = col_map.get("kriteria", -1)
+            krit_text = _safe_get(row, kriteria_idx)
+            if krit_text and not current.kriteria:
+                current.kriteria = krit_text
+            elif krit_text:
+                current.kriteria += " " + krit_text
 
             # Also pick up indikator continuation
             indikator_idx = col_map.get("indikator", -1)

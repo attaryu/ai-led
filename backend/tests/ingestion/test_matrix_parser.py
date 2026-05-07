@@ -27,6 +27,8 @@ MATRIX_PDF = (
 
 @pytest.fixture(scope="session")
 def rubrics() -> list[IndicatorRubric]:
+    if not Path(MATRIX_PDF).exists():
+        pytest.skip(f"PDF not available: {MATRIX_PDF}")
     return parse_matrix_pdf(MATRIX_PDF)
 
 
@@ -53,10 +55,10 @@ def test_indicator_numbers_are_unique(rubrics):
     assert len(nos) == len(set(nos)), "Duplicate indicator numbers found"
 
 
-def test_indicator_numbers_are_sequential(rubrics):
-    """Numbers should be in ascending order and mostly contiguous."""
-    nos = sorted(r.no for r in rubrics)
-    assert nos == sorted(nos)
+def test_indicator_numbers_are_unique_and_ascending(rubrics):
+    """Returned rubrics must be in ascending order with unique numbers."""
+    nos = [r.no for r in rubrics]  # original order from parse
+    assert nos == sorted(set(nos)), "Rubrics are not unique and ascending"
     assert nos[0] >= 1
 
 
