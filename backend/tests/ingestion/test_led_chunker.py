@@ -35,8 +35,10 @@ def test_chunks_have_valid_text(chunks):
 
 # ── 4 ──────────────────────────────────────────────────────────────────────────
 def test_chunks_not_too_long(chunks):
+    # Allow a small buffer for the sentence-boundary snap (up to 200 chars)
+    upper = CHUNK_MAX_CHARS + 200
     for c in chunks:
-        assert len(c.text) < 4000, f"Chunk {c.chunk_id} text too long: {len(c.text)}"
+        assert len(c.text) < upper, f"Chunk {c.chunk_id} text too long: {len(c.text)}"
 
 
 # ── 5 ──────────────────────────────────────────────────────────────────────────
@@ -72,7 +74,12 @@ def test_chunk_overlap_creates_adjacent_coverage(chunks):
 # ── 9 ─ ChromaDB integration ───────────────────────────────────────────────────
 def test_index_and_search_roundtrip(chunks, tmp_path):
     """Index chunks into ChromaDB and verify search returns correct structure."""
-    from vectorstore.chroma_store import index_led_chunks, search_led
+    from vectorstore.chroma_store import index_led_chunks, search_led, _get_ef
+
+    try:
+        _get_ef()  # smoke-test model load before committing to indexing
+    except Exception as exc:
+        pytest.skip(f"SentenceTransformer model unavailable: {exc}")
 
     persist_dir = str(tmp_path / "chroma_test")
     index_led_chunks(chunks, persist_dir)
@@ -81,4 +88,11 @@ def test_index_and_search_roundtrip(chunks, tmp_path):
     assert len(results) > 0, "Search returned no results"
     for r in results:
         assert "text" in r, f"Result missing 'text' key: {r.keys()}"
+        assert "chunk_id" in r, f"Result missing 'chunk_id' key: {r.keys()}"
         assert "distance" in r, f"Result missing 'distance' key: {r.keys()}"
+        assert "metadata" in r, f"Result missing 'metadata' key: {r.keys()}"
+        meta = r["metadata"]
+        assert "page_start" in meta, f"metadata missing 'page_start': {meta}"
+        assert "page_end" in meta, f"metadata missing 'page_end': {meta}"
+        assert "section_heading" in meta, f"metadata missing 'section_heading': {meta}"
+        assert "char_start" in meta, f"metadata missing 'char_start': {meta}"

@@ -20,6 +20,16 @@ _COLLECTION_NAME = "led_chunks"
 # Multilingual model that supports Bahasa Indonesia
 _EMBED_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 
+# Lazy singleton — loaded on first use, not at import time
+_ef: SentenceTransformerEmbeddingFunction | None = None
+
+
+def _get_ef() -> SentenceTransformerEmbeddingFunction:
+    global _ef
+    if _ef is None:
+        _ef = SentenceTransformerEmbeddingFunction(model_name=_EMBED_MODEL)
+    return _ef
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -37,7 +47,6 @@ def index_led_chunks(chunks: list[LEDChunk], persist_dir: str) -> None:
         page_start, page_end, section_heading (empty string when None), char_start
     """
     client = get_chroma_client(persist_dir)
-    ef = SentenceTransformerEmbeddingFunction(model_name=_EMBED_MODEL)
 
     # Delete existing collection so indexing is idempotent
     try:
@@ -47,7 +56,7 @@ def index_led_chunks(chunks: list[LEDChunk], persist_dir: str) -> None:
 
     collection = client.create_collection(
         name=_COLLECTION_NAME,
-        embedding_function=ef,
+        embedding_function=_get_ef(),
         metadata={"hnsw:space": "cosine"},
     )
 
@@ -84,16 +93,19 @@ def search_led(
         distance   – cosine distance (lower = more similar)
     """
     client = get_chroma_client(persist_dir)
-    ef = SentenceTransformerEmbeddingFunction(model_name=_EMBED_MODEL)
 
     collection = client.get_collection(
         name=_COLLECTION_NAME,
-        embedding_function=ef,
+        embedding_function=_get_ef(),
     )
+
+    count = collection.count()
+    if count == 0:
+        return []
 
     results = collection.query(
         query_texts=[query],
-        n_results=min(n_results, collection.count()),
+        n_results=min(n_results, count),
         include=["documents", "metadatas", "distances"],
     )
 

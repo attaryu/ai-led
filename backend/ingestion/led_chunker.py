@@ -108,15 +108,6 @@ def _extract_pages(pdf_path: str) -> tuple[str, dict[int, int]]:
     return "".join(parts), page_offsets
 
 
-def _page_at_offset(offset: int, page_offsets: dict[int, int]) -> int:
-    """Return the page number (0-based) that contains *offset* in combined_text."""
-    best = 0
-    for char_off, page_num in page_offsets.items():
-        if char_off <= offset:
-            best = page_num
-    return best
-
-
 def _sliding_window_chunks(
     text: str,
     page_offsets: dict[int, int],
@@ -139,8 +130,8 @@ def _sliding_window_chunks(
 
         raw_chunk = text[pos:end]
 
-        # Strip page-break markers from the chunk text
-        clean_text = raw_chunk.replace(_PAGE_BREAK.strip(), " ").strip()
+        # Strip page-break markers from the chunk text (use full marker to avoid orphan \n)
+        clean_text = raw_chunk.replace(_PAGE_BREAK, " ").strip()
         # Collapse repeated whitespace
         clean_text = re.sub(r"\n{3,}", "\n\n", clean_text)
 
