@@ -1,9 +1,13 @@
+import os
 import pytest
 from pathlib import Path
 import pandas as pd
 from ingestion.lkps_loader import LKPSRegistry, load_lkps
 
-LKPS_PATH = "/home/arielsulton/Documents/Stargazing Project/VScode Project/tugas_akhir/AMI/docs/reference/[Setelah AL] LKPS STr PJJ Teknik Telekomunikasi-passwd.xlsx"
+LKPS_PATH = os.environ.get(
+    "LKPS_TEST_FILE",
+    "/home/arielsulton/Documents/Stargazing Project/VScode Project/tugas_akhir/AMI/docs/reference/[Setelah AL] LKPS STr PJJ Teknik Telekomunikasi-passwd.xlsx",
+)
 
 
 @pytest.fixture(scope="session")
@@ -110,3 +114,19 @@ def test_get_by_ref_tabel_6e3(registry):
     assert len(result) == sub_rows, (
         f"6e3 concat rows {len(result)} should equal sub-sheet sum {sub_rows}"
     )
+
+
+# ── Unit tests that don't need the LKPS fixture ──────────────────────────────
+
+def test_get_sheet_as_text_unknown_sheet():
+    """get_sheet_as_text should return a 'tidak ditemukan' message for unknown sheets."""
+    reg = LKPSRegistry(sheets={"2a1": pd.DataFrame({"a": [1]})})
+    result = reg.get_sheet_as_text("nonexistent")
+    assert "tidak ditemukan" in result
+
+
+def test_get_sheet_as_text_empty_sheet():
+    """get_sheet_as_text should return a 'kosong' message for empty sheets."""
+    reg = LKPSRegistry(sheets={"empty": pd.DataFrame()})
+    result = reg.get_sheet_as_text("empty")
+    assert "kosong" in result

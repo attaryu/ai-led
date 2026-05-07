@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 import re
+import warnings
 import pandas as pd
 
 # Sheets that are navigation/index, not data
@@ -51,6 +52,17 @@ _REF_TO_SHEETS: dict[str, list[str]] = {
 }
 
 
+def _normalize_ref(text: str) -> str:
+    text = re.sub(r"\s*LKPS\s*$", "", text, flags=re.IGNORECASE)
+    return re.sub(r"[\s\.]+", " ", text).strip().lower()
+
+
+# Pre-normalized registry keys to avoid re-normalizing on every get_by_ref call
+_REF_TO_SHEETS_NORMALIZED: dict[str, list[str]] = {
+    _normalize_ref(k): v for k, v in _REF_TO_SHEETS.items()
+}
+
+
 @dataclass
 class LKPSRegistry:
     sheets: dict[str, pd.DataFrame] = field(default_factory=dict)
@@ -62,21 +74,20 @@ class LKPSRegistry:
         Returns concatenated DataFrame if multiple sheets map to the ref.
         Returns None if no match.
         """
-        normalized = re.sub(r"\s*LKPS\s*$", "", ref_text, flags=re.IGNORECASE)
-        normalized = re.sub(r"[\s\.]+", " ", normalized).strip().lower()
+        normalized = _normalize_ref(ref_text)
 
         best_key = None
-        for key in _REF_TO_SHEETS:
-            # Normalize the registry key the same way as the input
-            key_norm = re.sub(r"[\s\.]+", " ", key).strip().lower()
+        best_key_norm = None
+        for key_norm, sheets in _REF_TO_SHEETS_NORMALIZED.items():
             if key_norm in normalized:
-                if best_key is None or len(key_norm) > len(best_key):
-                    best_key = key
+                if best_key_norm is None or len(key_norm) > len(best_key_norm):
+                    best_key = key_norm
+                    best_key_norm = key_norm
 
         if best_key is None:
             return None
 
-        sheet_names = _REF_TO_SHEETS[best_key]
+        sheet_names = _REF_TO_SHEETS_NORMALIZED[best_key]
         frames = [
             self.sheets[s]
             for s in sheet_names
@@ -118,25 +129,23 @@ def _detect_header_row(df: pd.DataFrame) -> Optional[int]:
 def load_lkps(xlsx_path: str) -> LKPSRegistry:
     """Load all data sheets from LKPS xlsx into LKPSRegistry."""
     registry = LKPSRegistry()
-    xf = pd.ExcelFile(xlsx_path, engine="openpyxl")
-
-    for sheet_name in xf.sheet_names:
-        if sheet_name in _SKIP_SHEETS:
-            registry.sheets[sheet_name] = pd.DataFrame()
-            continue
-        try:
-            # Read without header first to detect header row
-            df_raw = pd.read_excel(xf, sheet_name=sheet_name, header=None)
-            header_row = _detect_header_row(df_raw)
-            if header_row is not None:
-                df = pd.read_excel(xf, sheet_name=sheet_name, header=header_row)
-            else:
-                df = df_raw
-            df = df.dropna(how="all").reset_index(drop=True)
-            registry.sheets[sheet_name] = df
-        except Exception as e:
-            import warnings
-            warnings.warn(f"Failed to load sheet '{sheet_name}': {e}")
-            registry.sheets[sheet_name] = pd.DataFrame()
+    with pd.ExcelFile(xlsx_path, engine="openpyxl") as xf:
+        for sheet_name in xf.sheet_names:
+            if sheet_name in _SKIP_SHEETS:
+                registry.sheets[sheet_name] = pd.DataFrame()
+                continue
+            try:
+                # Read without header first to detect header row
+                df_raw = pd.read_excel(xf, sheet_name=sheet_name, header=None)
+                header_row = _detect_header_row(df_raw)
+                if header_row is not None:
+                    df = pd.read_excel(xf, sheet_name=sheet_name, header=header_row)
+                else:
+                    df = df_raw
+                df = df.dropna(how="all").reset_index(drop=True)
+                registry.sheets[sheet_name] = df
+            except Exception as e:
+                warnings.warn(f"Failed to load sheet '{sheet_name}': {e}")
+                registry.sheets[sheet_name] = pd.DataFrame()
 
     return registry
