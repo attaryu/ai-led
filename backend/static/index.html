@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AMI Assessment — LAM Teknik</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f5f7fa;
+      color: #1a1a2e;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 0.25rem; }
+    .subtitle { color: #666; font-size: 0.9rem; margin-bottom: 2rem; }
+
+    .container { max-width: 860px; margin: 0 auto; }
+
+    /* ── Step cards ───────────────────────────────────────────────────────── */
+    .steps { display: flex; flex-direction: column; gap: 1.2rem; }
+
+    .card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 1.4rem 1.6rem;
+      position: relative;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .step-num {
+      background: #3b82f6;
+      color: #fff;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .card-title { font-size: 1rem; font-weight: 600; }
+    .card-desc { font-size: 0.82rem; color: #666; margin-top: 0.1rem; }
+
+    .card-status {
+      position: absolute;
+      top: 1.2rem;
+      right: 1.4rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 2px 10px;
+      border-radius: 99px;
+    }
+    .status-idle    { background: #f1f5f9; color: #64748b; }
+    .status-ok      { background: #dcfce7; color: #16a34a; }
+    .status-busy    { background: #fef9c3; color: #a16207; }
+    .status-err     { background: #fee2e2; color: #dc2626; }
+
+    /* ── File drop zone ───────────────────────────────────────────────────── */
+    .drop-zone {
+      border: 2px dashed #cbd5e1;
+      border-radius: 8px;
+      padding: 1.2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      font-size: 0.85rem;
+      color: #94a3b8;
+    }
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: #3b82f6;
+      background: #eff6ff;
+      color: #3b82f6;
+    }
+    .drop-zone input[type="file"] { display: none; }
+    .drop-zone .chosen { color: #1a1a2e; font-weight: 500; margin-top: 0.4rem; }
+
+    /* ── Upload button ────────────────────────────────────────────────────── */
+    .btn {
+      display: inline-block;
+      margin-top: 0.8rem;
+      padding: 0.5rem 1.2rem;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-primary  { background: #3b82f6; color: #fff; }
+    .btn-primary:hover:not(:disabled)  { background: #2563eb; }
+    .btn-success  { background: #16a34a; color: #fff; font-size: 1rem; width: 100%; padding: 0.75rem; }
+    .btn-success:hover:not(:disabled)  { background: #15803d; }
+
+    /* ── LED indexing bar ─────────────────────────────────────────────────── */
+    .progress-wrap { margin-top: 0.8rem; display: none; }
+    .progress-label { font-size: 0.8rem; color: #64748b; margin-bottom: 0.3rem; }
+    .progress-bar-track {
+      height: 6px;
+      background: #e2e8f0;
+      border-radius: 99px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: #3b82f6;
+      border-radius: 99px;
+      transition: width 0.4s;
+    }
+    .progress-msg { font-size: 0.78rem; margin-top: 0.3rem; color: #64748b; }
+
+    /* ── Assessment result panel ──────────────────────────────────────────── */
+    #result-panel {
+      display: none;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 1.4rem 1.6rem;
+      margin-top: 1.5rem;
+    }
+    #result-panel h2 { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; }
+
+    .stat-row { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .stat-box {
+      flex: 1;
+      min-width: 120px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 0.8rem 1rem;
+    }
+    .stat-value { font-size: 1.6rem; font-weight: 700; }
+    .stat-label { font-size: 0.75rem; color: #64748b; margin-top: 0.1rem; }
+
+    .assess-progress-track {
+      height: 10px;
+      background: #e2e8f0;
+      border-radius: 99px;
+      overflow: hidden;
+      margin-bottom: 0.5rem;
+    }
+    .assess-progress-fill {
+      height: 100%;
+      background: #16a34a;
+      border-radius: 99px;
+      transition: width 0.6s;
+    }
+    .assess-status-text { font-size: 0.82rem; color: #64748b; }
+
+    .badge-running   { color: #a16207; }
+    .badge-completed { color: #16a34a; }
+    .badge-failed    { color: #dc2626; }
+
+    .alert {
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      margin-top: 0.5rem;
+    }
+    .alert-err { background: #fee2e2; color: #991b1b; }
+    .alert-info { background: #dbeafe; color: #1e40af; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>AMI Assessment</h1>
+  <p class="subtitle">Penilaian Akreditasi Program Studi — LAM Teknik (Automated)</p>
+
+  <div class="steps">
+
+    <!-- Step 1: Upload LED PDF -->
+    <div class="card" id="card-led">
+      <div class="card-status status-idle" id="status-led">Belum diunggah</div>
+      <div class="card-header">
+        <div class="step-num">1</div>
+        <div>
+          <div class="card-title">Dokumen LED (PDF)</div>
+          <div class="card-desc">Laporan Evaluasi Diri — narasi kualitatif program studi</div>
+        </div>
+      </div>
+
+      <div class="drop-zone" id="drop-led" onclick="document.getElementById('file-led').click()">
+        <input type="file" id="file-led" accept=".pdf" />
+        <div>Klik atau seret file PDF ke sini</div>
+        <div class="chosen" id="chosen-led"></div>
+      </div>
+      <button class="btn btn-primary" id="btn-led" disabled onclick="uploadLed()">Unggah &amp; Indeks</button>
+
+      <div class="progress-wrap" id="led-progress">
+        <div class="progress-label">Mengindeks LED ke vector store…</div>
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="led-bar" style="width:0%"></div>
+        </div>
+        <div class="progress-msg" id="led-progress-msg"></div>
+      </div>
+    </div>
+
+    <!-- Step 2: Upload LKPS Excel -->
+    <div class="card" id="card-lkps">
+      <div class="card-status status-idle" id="status-lkps">Belum diunggah</div>
+      <div class="card-header">
+        <div class="step-num">2</div>
+        <div>
+          <div class="card-title">Data LKPS (Excel)</div>
+          <div class="card-desc">Laporan Kinerja Program Studi — 50 tabel kuantitatif</div>
+        </div>
+      </div>
+
+      <div class="drop-zone" id="drop-lkps" onclick="document.getElementById('file-lkps').click()">
+        <input type="file" id="file-lkps" accept=".xlsx,.xls" />
+        <div>Klik atau seret file Excel ke sini</div>
+        <div class="chosen" id="chosen-lkps"></div>
+      </div>
+      <button class="btn btn-primary" id="btn-lkps" disabled onclick="uploadLkps()">Unggah &amp; Muat</button>
+    </div>
+
+    <!-- Step 3: Upload Laporan AK -->
+    <div class="card" id="card-laporan">
+      <div class="card-status status-idle" id="status-laporan">Belum diunggah</div>
+      <div class="card-header">
+        <div class="step-num">3</div>
+        <div>
+          <div class="card-title">Laporan AK (Excel)</div>
+          <div class="card-desc">Template Laporan Akhir — hasil penilaian akan ditulis ke file ini</div>
+        </div>
+      </div>
+
+      <div class="drop-zone" id="drop-laporan" onclick="document.getElementById('file-laporan').click()">
+        <input type="file" id="file-laporan" accept=".xlsx,.xls" />
+        <div>Klik atau seret file Excel ke sini</div>
+        <div class="chosen" id="chosen-laporan"></div>
+      </div>
+      <button class="btn btn-primary" id="btn-laporan" disabled onclick="uploadLaporan()">Unggah</button>
+    </div>
+
+    <!-- Step 4: Start Assessment -->
+    <div class="card">
+      <div class="card-header">
+        <div class="step-num">4</div>
+        <div>
+          <div class="card-title">Mulai Penilaian</div>
+          <div class="card-desc">Jalankan agen AI untuk menilai 78 indikator secara paralel</div>
+        </div>
+      </div>
+      <button class="btn btn-success" id="btn-start" disabled onclick="startAssessment()">
+        Mulai Penilaian Otomatis
+      </button>
+    </div>
+
+  </div><!-- /steps -->
+
+  <!-- Result panel -->
+  <div id="result-panel">
+    <h2>Progres Penilaian</h2>
+    <div class="stat-row">
+      <div class="stat-box">
+        <div class="stat-value" id="stat-total">—</div>
+        <div class="stat-label">Total Indikator</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value" id="stat-done">0</div>
+        <div class="stat-label">Selesai Dinilai</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value" id="stat-status">—</div>
+        <div class="stat-label">Status</div>
+      </div>
+    </div>
+    <div class="assess-progress-track">
+      <div class="assess-progress-fill" id="assess-bar" style="width:0%"></div>
+    </div>
+    <div class="assess-status-text" id="assess-msg"></div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+/* ── State ─────────────────────────────────────────────────────────────────── */
+let laporanPath = null;
+let sessionId   = null;
+let pollTimer   = null;
+let ledIndexPollTimer = null;
+
+/* ── File input wiring ─────────────────────────────────────────────────────── */
+['led','lkps','laporan'].forEach(key => {
+  const input = document.getElementById(`file-${key}`);
+  const btn   = document.getElementById(`btn-${key}`);
+  const label = document.getElementById(`chosen-${key}`);
+  const drop  = document.getElementById(`drop-${key}`);
+
+  input.addEventListener('change', () => {
+    if (input.files[0]) {
+      label.textContent = input.files[0].name;
+      btn.disabled = false;
+    }
+  });
+
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('dragover'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.classList.remove('dragover');
+    const dt = e.dataTransfer;
+    if (dt.files[0]) {
+      // Validate extension
+      const name = dt.files[0].name.toLowerCase();
+      const ok = key === 'led' ? name.endsWith('.pdf') : (name.endsWith('.xlsx') || name.endsWith('.xls'));
+      if (!ok) { alert(`File harus berformat ${key === 'led' ? 'PDF' : 'Excel'}.`); return; }
+      // Transfer to file input
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(dt.files[0]);
+      input.files = dataTransfer.files;
+      label.textContent = dt.files[0].name;
+      btn.disabled = false;
+    }
+  });
+});
+
+/* ── Upload helpers ─────────────────────────────────────────────────────────── */
+function setCardStatus(key, cls, text) {
+  const el = document.getElementById(`status-${key}`);
+  el.className = `card-status ${cls}`;
+  el.textContent = text;
+}
+
+async function doUpload(endpoint, fileInputId, key) {
+  const input = document.getElementById(fileInputId);
+  if (!input.files[0]) return null;
+  const fd = new FormData();
+  fd.append('file', input.files[0]);
+  const resp = await fetch(endpoint, { method: 'POST', body: fd });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(err.detail || resp.statusText);
+  }
+  return resp.json();
+}
+
+/* ── LED upload + index polling ─────────────────────────────────────────────── */
+async function uploadLed() {
+  const btn = document.getElementById('btn-led');
+  btn.disabled = true;
+  setCardStatus('led', 'status-busy', 'Mengunggah…');
+  try {
+    await doUpload('/upload/led', 'file-led', 'led');
+    setCardStatus('led', 'status-busy', 'Mengindeks…');
+    document.getElementById('led-progress').style.display = 'block';
+    pollLedIndex();
+  } catch(e) {
+    setCardStatus('led', 'status-err', 'Error');
+    alert('Upload LED gagal: ' + e.message);
+    btn.disabled = false;
+  }
+}
+
+function pollLedIndex() {
+  clearInterval(ledIndexPollTimer);
+  ledIndexPollTimer = setInterval(async () => {
+    try {
+      const data = await fetch('/upload/status').then(r => r.json());
+      const state = data.led_index_state;
+      const bar = document.getElementById('led-bar');
+      const msg = document.getElementById('led-progress-msg');
+
+      if (state === 'indexing') {
+        bar.style.width = '60%';
+        msg.textContent = 'Proses indexing sedang berjalan…';
+      } else if (state === 'ready') {
+        bar.style.width = '100%';
+        msg.textContent = `${data.led_chunk_count} chunks berhasil diindeks.`;
+        clearInterval(ledIndexPollTimer);
+        setCardStatus('led', 'status-ok', `✓ ${data.led_chunk_count} chunks`);
+        checkAllReady();
+      } else if (state === 'error') {
+        clearInterval(ledIndexPollTimer);
+        setCardStatus('led', 'status-err', 'Indexing gagal');
+        msg.textContent = data.led_error || 'Unknown error';
+        document.getElementById('btn-led').disabled = false;
+      }
+    } catch(e) { /* network hiccup, retry next tick */ }
+  }, 3000);
+}
+
+/* ── LKPS upload ────────────────────────────────────────────────────────────── */
+async function uploadLkps() {
+  const btn = document.getElementById('btn-lkps');
+  btn.disabled = true;
+  setCardStatus('lkps', 'status-busy', 'Mengunggah…');
+  try {
+    const data = await doUpload('/upload/lkps', 'file-lkps', 'lkps');
+    setCardStatus('lkps', 'status-ok', `✓ ${data.non_empty_sheets} sheets`);
+    checkAllReady();
+  } catch(e) {
+    setCardStatus('lkps', 'status-err', 'Error');
+    alert('Upload LKPS gagal: ' + e.message);
+    btn.disabled = false;
+  }
+}
+
+/* ── Laporan upload ─────────────────────────────────────────────────────────── */
+async function uploadLaporan() {
+  const btn = document.getElementById('btn-laporan');
+  btn.disabled = true;
+  setCardStatus('laporan', 'status-busy', 'Mengunggah…');
+  try {
+    const data = await doUpload('/upload/laporan', 'file-laporan', 'laporan');
+    laporanPath = data.laporan_path;
+    setCardStatus('laporan', 'status-ok', `✓ ${(data.size_bytes / 1024).toFixed(0)} KB`);
+    checkAllReady();
+  } catch(e) {
+    setCardStatus('laporan', 'status-err', 'Error');
+    alert('Upload Laporan AK gagal: ' + e.message);
+    btn.disabled = false;
+  }
+}
+
+/* ── Enable start button when all three are ready ───────────────────────────── */
+function checkAllReady() {
+  const s1 = document.getElementById('status-led').className.includes('status-ok');
+  const s2 = document.getElementById('status-lkps').className.includes('status-ok');
+  const s3 = document.getElementById('status-laporan').className.includes('status-ok');
+  document.getElementById('btn-start').disabled = !(s1 && s2 && s3);
+}
+
+/* ── Assessment pipeline ────────────────────────────────────────────────────── */
+async function startAssessment() {
+  const btn = document.getElementById('btn-start');
+  btn.disabled = true;
+  btn.textContent = 'Memulai…';
+
+  try {
+    const resp = await fetch('/assessment/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ laporan_path: laporanPath }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      throw new Error(err.detail || resp.statusText);
+    }
+    const data = await resp.json();
+    sessionId = data.session_id;
+
+    document.getElementById('stat-total').textContent = data.total_indicators;
+    document.getElementById('result-panel').style.display = 'block';
+    btn.textContent = 'Penilaian Berjalan…';
+
+    pollAssessment();
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = 'Mulai Penilaian Otomatis';
+    alert('Gagal memulai penilaian: ' + e.message);
+  }
+}
+
+function pollAssessment() {
+  clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    try {
+      const data = await fetch(`/assessment/${sessionId}/status`).then(r => r.json());
+      const total = data.total_indicators || 1;
+      const done  = data.completed_indicators || 0;
+      const pct   = Math.round((done / total) * 100);
+
+      document.getElementById('stat-done').textContent = done;
+      document.getElementById('assess-bar').style.width = pct + '%';
+
+      const statusEl = document.getElementById('stat-status');
+      const msgEl    = document.getElementById('assess-msg');
+
+      if (data.status === 'running') {
+        statusEl.textContent = 'Berjalan';
+        statusEl.className   = 'stat-value badge-running';
+        msgEl.textContent    = `${done} dari ${total} indikator selesai (${pct}%)`;
+      } else if (data.status === 'completed') {
+        statusEl.textContent = 'Selesai ✓';
+        statusEl.className   = 'stat-value badge-completed';
+        msgEl.textContent    = `Semua ${total} indikator berhasil dinilai. Cek Laporan_AK.xlsx.`;
+        clearInterval(pollTimer);
+        document.getElementById('btn-start').textContent = 'Penilaian Selesai ✓';
+      } else if (data.status === 'failed') {
+        statusEl.textContent = 'Gagal';
+        statusEl.className   = 'stat-value badge-failed';
+        msgEl.textContent    = data.error || 'Pipeline gagal.';
+        clearInterval(pollTimer);
+        document.getElementById('btn-start').disabled = false;
+        document.getElementById('btn-start').textContent = 'Coba Lagi';
+      }
+    } catch(e) { /* retry next tick */ }
+  }, 4000);
+}
+</script>
+</body>
+</html>

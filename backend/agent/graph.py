@@ -11,11 +11,11 @@ parse_output extracts score, justification, and confidence.
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_ollama import ChatOllama
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
 
@@ -27,6 +27,37 @@ from agent.tools.rubric_tool import get_indicator_rubric
 from llm.ollama_client import OllamaClient
 
 TOOLS = [get_indicator_rubric, search_led_evidence, get_lkps_table, compute_formula_score]
+
+
+def _build_llm(ollama_client: OllamaClient):
+    """Return a tool-bound LangChain chat model.
+
+    Provider is selected by LLM_PROVIDER env var (default: ollama):
+
+        LLM_PROVIDER=ollama       — Ollama on Vast.ai (uses OllamaClient config)
+        LLM_PROVIDER=openrouter   — OpenRouter API (reads OPENROUTER_API_KEY,
+                                    OPENROUTER_MODEL)
+    """
+    provider = os.environ.get("LLM_PROVIDER", "ollama").lower()
+
+    if provider == "openrouter":
+        from langchain_openai import ChatOpenAI
+
+        return ChatOpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.environ["OPENROUTER_API_KEY"],
+            model=os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-r1"),
+            temperature=0.1,
+        ).bind_tools(TOOLS)
+
+    # Default: Ollama
+    from langchain_ollama import ChatOllama
+
+    return ChatOllama(
+        base_url=ollama_client.base_url,
+        model=ollama_client.model,
+        temperature=0.1,
+    ).bind_tools(TOOLS)
 
 _SYSTEM_PROMPT = """Anda adalah asisten penilaian akreditasi program studi (AMI) yang ahli.
 Tugas Anda: menentukan skor (0-4) untuk setiap indikator berdasarkan:
@@ -47,12 +78,12 @@ CONFIDENCE: <0.0-1.0>"""
 
 
 def build_graph(ollama_client: OllamaClient) -> StateGraph:
-    """Compile and return the assessment LangGraph."""
-    llm = ChatOllama(
-        base_url=ollama_client.base_url,
-        model=ollama_client.model,
-        temperature=0.1,
-    ).bind_tools(TOOLS)
+    """Compile and return the assessment LangGraph.
+
+    The LLM provider is chosen via LLM_PROVIDER env var — see _build_llm().
+    ollama_client is only used when LLM_PROVIDER=ollama (default).
+    """
+    llm = _build_llm(ollama_client)
 
     tool_node = ToolNode(TOOLS)
 
