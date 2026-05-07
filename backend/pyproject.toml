@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "ami-assessment"
@@ -12,6 +12,7 @@ dependencies = [
     "langgraph>=0.1",
     "langchain>=0.2",
     "langchain-community>=0.2",
+    "langchain-ollama>=0.1",
     "chromadb>=0.5",
     "openpyxl>=3.1",
     "pandas>=2.2",
@@ -23,6 +24,13 @@ dependencies = [
     "python-dotenv>=1.0",
     "sentence-transformers>=3.0",
     "tabulate>=0.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
 ]
 
 [tool.setuptools.packages.find]
