@@ -27,10 +27,23 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# Reasoning models emit <think>...</think> chain-of-thought blocks that must
+# be stripped before passing to RAGAS metric parsers (which expect clean JSON
+# or structured text).
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_think(text: str) -> str:
+    """Remove <think>...</think> blocks from a string."""
+    if not text:
+        return text
+    return _THINK_RE.sub("", text).strip()
 
 # ---------------------------------------------------------------------------
 # Metric constants
@@ -79,8 +92,68 @@ def get_active_llm_config() -> dict:
     return get_judge_llm_config()
 
 
+class _ThinkStrippingLLMWrapper:
+    """Wrapper that proxies a LangchainLLMWrapper and strips <think> blocks
+    from every generation so RAGAS metric parsers see clean text.
+
+    Why proxy and not subclass: RAGAS LangchainLLMWrapper's signature varies
+    across versions (0.4 vs 0.5+); proxying via __getattr__ keeps us
+    compatible regardless of internal API churn.
+    """
+
+    def __init__(self, inner):
+        self._inner = inner
+
+    def __getattr__(self, name):
+        # Forward unknown attributes (e.g. langchain_llm, run_config) to inner
+        return getattr(self._inner, name)
+
+    @staticmethod
+    def _scrub_llm_result(result):
+        """Mutate an LLMResult in place to strip <think> from every generation."""
+        for gen_list in getattr(result, "generations", []) or []:
+            for gen in gen_list:
+                if hasattr(gen, "text") and isinstance(gen.text, str):
+                    gen.text = _strip_think(gen.text)
+                msg = getattr(gen, "message", None)
+                if msg is not None and hasattr(msg, "content") and isinstance(msg.content, str):
+                    msg.content = _strip_think(msg.content)
+        return result
+
+    def generate_text(self, *args, **kwargs):
+        return self._scrub_llm_result(self._inner.generate_text(*args, **kwargs))
+
+    async def agenerate_text(self, *args, **kwargs):
+        return self._scrub_llm_result(await self._inner.agenerate_text(*args, **kwargs))
+
+    # RAGAS 0.4.x sometimes calls .generate(...) too — forward + scrub
+    def generate(self, *args, **kwargs):
+        result = self._inner.generate(*args, **kwargs)
+        return self._scrub_llm_result(result)
+
+    async def agenerate(self, *args, **kwargs):
+        result = await self._inner.agenerate(*args, **kwargs)
+        return self._scrub_llm_result(result)
+
+
+def _is_reasoning_model_name(model: str) -> bool:
+    """Reuse the agent-side detection so judge auto-stripping matches policy."""
+    try:
+        from agent.graph import is_reasoning_model
+        return is_reasoning_model(model)
+    except Exception:
+        # Fallback heuristic if agent module unavailable in some test contexts
+        m = (model or "").lower()
+        return any(p in m for p in ["deepseek-r1", "qwq", "o1-", "o1:", "thinking"])
+
+
 def _build_ragas_llm():
-    """Return a LangchainLLMWrapper compatible with legacy RAGAS metrics."""
+    """Return a LangchainLLMWrapper compatible with legacy RAGAS metrics.
+
+    If the judge model is a reasoning model (deepseek-r1, qwq, o1, ...), the
+    wrapper is further proxied to strip <think>...</think> blocks before RAGAS
+    metric parsers see them.
+    """
     from ragas.llms import LangchainLLMWrapper
 
     cfg = get_judge_llm_config()
@@ -113,7 +186,14 @@ def _build_ragas_llm():
             kwargs["client_kwargs"] = {"headers": {"Authorization": f"Bearer {api_key}"}}
         chat = ChatOllama(**kwargs)
 
-    return LangchainLLMWrapper(chat)
+    wrapper = LangchainLLMWrapper(chat)
+    if _is_reasoning_model_name(cfg["model"]):
+        logger.info(
+            "Judge model %s detected as reasoning model — wrapping with <think> stripper",
+            cfg["model"],
+        )
+        return _ThinkStrippingLLMWrapper(wrapper)
+    return wrapper
 
 
 def _build_ragas_embeddings():
@@ -168,6 +248,8 @@ def _generate_reference(question: str, contexts: list[str], llm) -> str:
         # LangchainLLMWrapper — use the underlying chat model directly
         response = llm.langchain_llm.invoke(prompt)
         content = response.content if hasattr(response, "content") else str(response)
+        # Strip <think> blocks if reasoning model leaked them through
+        content = _strip_think(content)
         return content.strip() or "Tidak dapat menghasilkan referensi."
     except Exception as exc:
         logger.warning("Reference generation failed: %s", exc)
@@ -187,6 +269,7 @@ def _generate_synthetic_response(question: str, contexts: list[str], llm) -> str
     try:
         response = llm.langchain_llm.invoke(prompt)
         content = response.content if hasattr(response, "content") else str(response)
+        content = _strip_think(content)
         return content.strip() or "Tidak dapat menghasilkan justifikasi."
     except Exception as exc:
         logger.warning("Synthetic response generation failed: %s", exc)

@@ -311,6 +311,57 @@ def test_run_evaluation_background_success():
     assert ev._eval_results[eval_id].get("finished_at")  # ISO timestamp set
 
 
+def test_strip_think_removes_block():
+    from eval.ragas_eval import _strip_think
+
+    content = "<think>Let me reason...\nstep by step\n</think>The answer is 42."
+    assert _strip_think(content) == "The answer is 42."
+
+
+def test_strip_think_preserves_content_without_think():
+    from eval.ragas_eval import _strip_think
+
+    assert _strip_think("Just a plain answer.") == "Just a plain answer."
+
+
+def test_is_reasoning_model_name():
+    from eval.ragas_eval import _is_reasoning_model_name
+
+    assert _is_reasoning_model_name("deepseek-r1:14b") is True
+    assert _is_reasoning_model_name("openai/o1-preview") is True
+    assert _is_reasoning_model_name("qwen2.5:14b") is False
+    assert _is_reasoning_model_name("anthropic/claude-haiku-4.5") is False
+
+
+def test_think_stripping_wrapper_scrubs_generations():
+    from unittest.mock import MagicMock
+    from eval.ragas_eval import _ThinkStrippingLLMWrapper
+
+    inner = MagicMock()
+    fake_gen = MagicMock()
+    fake_gen.text = "<think>cot</think>final answer"
+    fake_gen.message.content = "<think>cot</think>final answer"
+    inner.generate_text.return_value = MagicMock(generations=[[fake_gen]])
+
+    w = _ThinkStrippingLLMWrapper(inner)
+    result = w.generate_text("prompt")
+    assert result.generations[0][0].text == "final answer"
+    assert result.generations[0][0].message.content == "final answer"
+
+
+def test_generate_reference_strips_think_block():
+    from unittest.mock import MagicMock
+    from eval.ragas_eval import _generate_reference
+
+    fake_llm = MagicMock()
+    fake_llm.langchain_llm.invoke.return_value = MagicMock(
+        content="<think>let me think</think>Referensi bersih."
+    )
+    result = _generate_reference("q?", ["chunk"], fake_llm)
+    assert "<think>" not in result
+    assert "Referensi bersih." in result
+
+
 def test_eval_config_endpoint_falls_back_to_assessment(client):
     """When no RAGAS_* vars set, judge config falls back to assessment model."""
     import os
