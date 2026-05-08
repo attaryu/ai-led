@@ -918,7 +918,14 @@ async function loadHistory() {
       const idShort = s.session_id.slice(0, 8);
       return `
         <tr>
-          <td><code style="font-size:0.78rem;">${idShort}…</code></td>
+          <td>
+            <code style="font-size:0.78rem; cursor:pointer;"
+              title="Klik untuk salin full Session ID"
+              onclick="copySessionId('${s.session_id}', this)">${idShort}…</code>
+            <button class="btn-copy" title="Salin ke RAGAS Session ID"
+              onclick="copyToRagas('${s.session_id}')"
+              style="border:none; background:#eff6ff; color:#3b82f6; cursor:pointer; padding:1px 6px; border-radius:4px; font-size:0.7rem; margin-left:4px;">→ RAGAS</button>
+          </td>
           <td>${statusBadge}</td>
           <td style="text-align:center;">${progress}</td>
           <td class="metric-cell">${avg}</td>
@@ -947,6 +954,32 @@ async function loadHistory() {
   } catch (e) {
     wrap.innerHTML = `<div class="compare-empty" style="color:#dc2626;">Gagal load: ${e.message}</div>`;
   }
+}
+
+async function copySessionId(sid, el) {
+  try {
+    await navigator.clipboard.writeText(sid);
+    const original = el.textContent;
+    el.textContent = '✓ disalin';
+    el.style.color = '#16a34a';
+    setTimeout(() => {
+      el.textContent = original;
+      el.style.color = '';
+    }, 1200);
+  } catch (e) {
+    // Fallback: show prompt with full ID
+    prompt('Salin Session ID:', sid);
+  }
+}
+
+function copyToRagas(sid) {
+  const input = document.getElementById('eval-session');
+  input.value = sid;
+  input.style.background = '#dcfce7';
+  setTimeout(() => { input.style.background = ''; }, 800);
+  // Scroll to RAGAS panel so the user sees it filled
+  document.getElementById('ragas-panel').scrollIntoView({behavior:'smooth', block:'start'});
+  input.focus();
 }
 
 async function loadSessionResults(sid) {
