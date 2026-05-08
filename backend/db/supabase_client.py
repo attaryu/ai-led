@@ -22,16 +22,20 @@ _client = None
 def get_supabase():
     """Return the shared Supabase client, creating it on first call.
 
-    Reads SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY from env.
+    Reads SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_KEY) from env.
     Raises RuntimeError if either var is missing.
     """
     global _client
     if _client is None:
         url = os.environ.get("SUPABASE_URL", "")
-        key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+        key = (
+            os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+            or os.environ.get("SUPABASE_SERVICE_KEY", "")
+        )
         if not url or not key:
             raise RuntimeError(
-                "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in environment."
+                "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_KEY) "
+                "must be set in environment."
             )
         _client = create_client(url, key)
     return _client
