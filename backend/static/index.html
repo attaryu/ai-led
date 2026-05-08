@@ -249,6 +249,122 @@
       .container > .steps, #result-panel, .btn-pdf { display: none !important; }
       #results-panel { border: none; padding: 0; margin: 0; }
     }
+
+    /* ── RAGAS evaluation panel ───────────────────────────────────────────── */
+    #ragas-panel {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 1.4rem 1.6rem;
+      margin-top: 2rem;
+    }
+    #ragas-panel h2 { font-size: 1rem; font-weight: 600; margin-bottom: 0.3rem; }
+    .ragas-subtitle { font-size: 0.82rem; color: #64748b; margin-bottom: 1rem; }
+    .ragas-config {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 0.6rem 0.9rem;
+      font-size: 0.82rem;
+      margin-bottom: 1rem;
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .ragas-config strong { color: #1a1a2e; }
+    .ragas-form { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-bottom: 1rem; }
+    .ragas-form label { font-size: 0.78rem; color: #475569; display: block; margin-bottom: 0.25rem; font-weight: 500; }
+    .ragas-form input, .ragas-form select {
+      width: 100%;
+      padding: 0.45rem 0.6rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 5px;
+      font-size: 0.85rem;
+      font-family: inherit;
+    }
+    .metrics-row { display: flex; gap: 0.7rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .metric-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.78rem;
+      padding: 0.3rem 0.7rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 99px;
+      cursor: pointer;
+      background: #fff;
+      transition: all 0.15s;
+      user-select: none;
+    }
+    .metric-chip input { accent-color: #3b82f6; cursor: pointer; }
+    .metric-chip:has(input:checked) { background: #eff6ff; border-color: #3b82f6; color: #1d4ed8; }
+
+    .btn-eval {
+      background: #8b5cf6; color: #fff;
+      padding: 0.55rem 1.2rem; font-size: 0.88rem;
+      border: none; border-radius: 6px; cursor: pointer; font-weight: 600;
+    }
+    .btn-eval:hover:not(:disabled) { background: #7c3aed; }
+    .btn-eval:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .ragas-progress {
+      font-size: 0.82rem; color: #64748b;
+      margin-top: 0.6rem;
+      display: none;
+    }
+    .ragas-progress.active { display: block; }
+
+    /* ── RAGAS comparison table ───────────────────────────────────────────── */
+    .compare-wrap {
+      margin-top: 1.5rem;
+      overflow-x: auto;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+    }
+    table.compare {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+    table.compare thead th {
+      background: #f8fafc;
+      padding: 0.55rem 0.7rem;
+      text-align: left;
+      font-weight: 600;
+      color: #334155;
+      border-bottom: 1px solid #e2e8f0;
+      white-space: nowrap;
+    }
+    table.compare tbody td {
+      padding: 0.5rem 0.7rem;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    table.compare tbody tr:last-child td { border-bottom: none; }
+    table.compare .metric-cell { text-align: center; font-weight: 600; }
+    .score-bar {
+      display: inline-block;
+      height: 6px;
+      background: #3b82f6;
+      border-radius: 99px;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    .compare-empty {
+      padding: 2rem;
+      text-align: center;
+      color: #94a3b8;
+      font-size: 0.85rem;
+    }
+    .clear-history {
+      background: none;
+      border: none;
+      color: #dc2626;
+      font-size: 0.78rem;
+      cursor: pointer;
+      padding: 0;
+      text-decoration: underline;
+    }
+    .clear-history:hover { color: #991b1b; }
   </style>
 </head>
 <body>
@@ -389,6 +505,52 @@
     </div>
     <div id="results-content">
       <!-- Table is rendered here by renderResults() -->
+    </div>
+  </div>
+
+  <!-- RAGAS evaluation panel (always visible, for comparing models) -->
+  <div id="ragas-panel">
+    <h2>Evaluasi RAGAS — Bandingkan Model</h2>
+    <div class="ragas-subtitle">
+      Ukur kualitas RAG (faithfulness, answer relevancy, context precision/recall).
+      Hasil setiap run disimpan lokal untuk komparasi antar model — ganti
+      <code>LLM_PROVIDER</code> / <code>OPENROUTER_MODEL</code> di <code>.env</code>,
+      restart backend, lalu jalankan eval lagi.
+    </div>
+
+    <div class="ragas-config">
+      <span>Model aktif: <strong id="eval-model">memuat…</strong></span>
+      <span>Provider: <strong id="eval-provider">—</strong></span>
+    </div>
+
+    <div class="ragas-form">
+      <div>
+        <label for="eval-n">Jumlah indikator (1–78)</label>
+        <input type="number" id="eval-n" min="1" max="78" value="5" />
+      </div>
+      <div>
+        <label for="eval-session">Session ID (opsional)</label>
+        <input type="text" id="eval-session" placeholder="Pakai justifikasi dari session ini" />
+      </div>
+    </div>
+
+    <div class="metrics-row" id="metrics-row">
+      <label class="metric-chip"><input type="checkbox" value="faithfulness" checked /> faithfulness</label>
+      <label class="metric-chip"><input type="checkbox" value="answer_relevancy" checked /> answer_relevancy</label>
+      <label class="metric-chip"><input type="checkbox" value="context_precision" checked /> context_precision</label>
+      <label class="metric-chip"><input type="checkbox" value="context_recall" checked /> context_recall</label>
+    </div>
+
+    <button class="btn-eval" id="btn-eval" onclick="startEval()">Jalankan RAGAS</button>
+    <div class="ragas-progress" id="eval-progress"></div>
+
+    <!-- Comparison table -->
+    <div style="display:flex; justify-content: space-between; align-items: center; margin-top: 1.5rem; margin-bottom: 0.4rem;">
+      <strong style="font-size: 0.88rem;">Riwayat Run</strong>
+      <button class="clear-history" onclick="clearEvalHistory()">Hapus semua</button>
+    </div>
+    <div class="compare-wrap" id="compare-wrap">
+      <div class="compare-empty">Belum ada riwayat. Jalankan RAGAS untuk mulai membandingkan.</div>
     </div>
   </div>
 
@@ -716,7 +878,173 @@ function renderResults(data) {
       checkAllReady();
     }
   } catch (e) { /* server might be cold-starting */ }
+
+  // RAGAS panel: load active model + comparison history
+  try {
+    const cfg = await fetch('/eval/config').then(r => r.json());
+    document.getElementById('eval-model').textContent = cfg.model || '—';
+    document.getElementById('eval-provider').textContent = cfg.provider || '—';
+  } catch(e) {
+    document.getElementById('eval-model').textContent = 'unavailable';
+  }
+  renderCompareTable();
 })();
+
+/* ── RAGAS evaluation ──────────────────────────────────────────────────────── */
+const EVAL_HISTORY_KEY = 'ami_ragas_history_v1';
+let evalPollTimer = null;
+
+function loadEvalHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(EVAL_HISTORY_KEY)) || [];
+  } catch { return []; }
+}
+
+function saveEvalHistory(items) {
+  localStorage.setItem(EVAL_HISTORY_KEY, JSON.stringify(items));
+}
+
+function clearEvalHistory() {
+  if (!confirm('Hapus seluruh riwayat eval?')) return;
+  localStorage.removeItem(EVAL_HISTORY_KEY);
+  renderCompareTable();
+}
+
+function getSelectedMetrics() {
+  return Array.from(document.querySelectorAll('#metrics-row input:checked')).map(el => el.value);
+}
+
+async function startEval() {
+  const btn = document.getElementById('btn-eval');
+  const prog = document.getElementById('eval-progress');
+  const nInd = parseInt(document.getElementById('eval-n').value, 10) || 5;
+  const sess = document.getElementById('eval-session').value.trim();
+  const metrics = getSelectedMetrics();
+
+  if (metrics.length === 0) {
+    alert('Pilih minimal satu metrik.');
+    return;
+  }
+
+  btn.disabled = true;
+  prog.classList.add('active');
+  prog.textContent = 'Memulai…';
+
+  try {
+    const body = { n_indicators: nInd, metrics };
+    if (sess) body.session_id = sess;
+    const resp = await fetch('/eval/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      throw new Error(err.detail || resp.statusText);
+    }
+    const data = await resp.json();
+    pollEval(data.eval_id, btn, prog);
+  } catch(e) {
+    btn.disabled = false;
+    prog.textContent = 'Gagal: ' + e.message;
+  }
+}
+
+function pollEval(evalId, btn, prog) {
+  clearInterval(evalPollTimer);
+  let elapsed = 0;
+  evalPollTimer = setInterval(async () => {
+    elapsed += 5;
+    try {
+      const data = await fetch(`/eval/${evalId}/results`).then(r => r.json());
+      if (data.status === 'pending' || data.status === 'running') {
+        prog.textContent = `Status: ${data.status} (${elapsed}s elapsed)…`;
+      } else if (data.status === 'completed') {
+        clearInterval(evalPollTimer);
+        prog.textContent = `Selesai dalam ${elapsed}s.`;
+        btn.disabled = false;
+
+        const history = loadEvalHistory();
+        history.push({
+          eval_id: data.eval_id,
+          provider: data.provider,
+          model: data.model,
+          n_samples: data.n_samples,
+          scores: data.scores || {},
+          finished_at: data.finished_at || new Date().toISOString(),
+        });
+        saveEvalHistory(history);
+        renderCompareTable();
+      } else if (data.status === 'failed') {
+        clearInterval(evalPollTimer);
+        prog.textContent = 'Gagal: ' + (data.error || 'Unknown error');
+        btn.disabled = false;
+      }
+    } catch(e) { /* retry */ }
+  }, 5000);
+}
+
+function renderCompareTable() {
+  const wrap = document.getElementById('compare-wrap');
+  const history = loadEvalHistory();
+
+  if (history.length === 0) {
+    wrap.innerHTML = '<div class="compare-empty">Belum ada riwayat. Jalankan RAGAS untuk mulai membandingkan.</div>';
+    return;
+  }
+
+  // Collect all metrics that appear in history
+  const allMetrics = new Set();
+  history.forEach(h => Object.keys(h.scores || {}).forEach(m => allMetrics.add(m)));
+  const metrics = Array.from(allMetrics).sort();
+
+  // Sort history: most recent first
+  const sorted = [...history].sort((a,b) => (b.finished_at || '').localeCompare(a.finished_at || ''));
+
+  const headerCells = ['Model', 'Provider', 'N', ...metrics, 'Selesai', ''].map(h => `<th>${escapeHtml(h)}</th>`).join('');
+
+  // Find best (max) per metric for highlighting
+  const bestPerMetric = {};
+  metrics.forEach(m => {
+    const vals = history.map(h => h.scores?.[m]).filter(v => typeof v === 'number');
+    if (vals.length) bestPerMetric[m] = Math.max(...vals);
+  });
+
+  const rowsHtml = sorted.map((h, i) => {
+    const metricCells = metrics.map(m => {
+      const v = h.scores?.[m];
+      if (typeof v !== 'number') return '<td class="metric-cell">—</td>';
+      const isBest = bestPerMetric[m] === v;
+      const barWidth = Math.max(2, Math.round(v * 60));
+      return `<td class="metric-cell">
+        <span class="score-bar" style="width:${barWidth}px; ${isBest ? 'background:#16a34a;' : ''}"></span>
+        <span style="${isBest ? 'color:#16a34a;' : ''}">${v.toFixed(3)}</span>
+      </td>`;
+    }).join('');
+    const ts = h.finished_at ? new Date(h.finished_at).toLocaleString('id-ID') : '—';
+    const removeBtn = `<button class="clear-history" onclick="removeEvalRun('${escapeHtml(h.eval_id)}')">×</button>`;
+    return `<tr>
+      <td><code style="font-size:0.78rem;">${escapeHtml(h.model || '?')}</code></td>
+      <td>${escapeHtml(h.provider || '?')}</td>
+      <td>${h.n_samples ?? '—'}</td>
+      ${metricCells}
+      <td style="font-size:0.76rem; color:#64748b;">${ts}</td>
+      <td>${removeBtn}</td>
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <table class="compare">
+      <thead><tr>${headerCells}</tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>`;
+}
+
+function removeEvalRun(evalId) {
+  const history = loadEvalHistory().filter(h => h.eval_id !== evalId);
+  saveEvalHistory(history);
+  renderCompareTable();
+}
 
 function downloadPdf() {
   const el = document.getElementById('results-panel');

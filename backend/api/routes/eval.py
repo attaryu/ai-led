@@ -14,9 +14,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
-from eval.ragas_eval import ALL_METRICS, run_ragas_evaluation
+from eval.ragas_eval import ALL_METRICS, get_active_llm_config, run_ragas_evaluation
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
@@ -70,7 +71,27 @@ class EvalResultResponse(BaseModel):
     session_id: Optional[str] = None
     scores: Optional[dict] = None
     per_indicator: Optional[list] = None
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
     error: Optional[str] = None
+
+
+class EvalConfigResponse(BaseModel):
+    provider: str
+    model: str
+
+
+class EvalListItem(BaseModel):
+    eval_id: str
+    status: str
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    n_samples: Optional[int] = None
+    scores: Optional[dict] = None
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -86,6 +107,7 @@ def _run_evaluation_background(
     reference_path: Optional[str] = None,
 ) -> None:
     _eval_results[eval_id]["status"] = "running"
+    _eval_results[eval_id]["started_at"] = datetime.now(timezone.utc).isoformat()
     try:
         result = run_ragas_evaluation(
             n_indicators=n_indicators,
@@ -100,13 +122,25 @@ def _run_evaluation_background(
                 "session_id": result.get("session_id"),
                 "scores": result.get("scores"),
                 "per_indicator": result.get("per_indicator"),
+                "provider": result.get("provider"),
+                "model": result.get("model"),
+                "finished_at": datetime.now(timezone.utc).isoformat(),
                 "error": result.get("error"),
             }
         )
-        logger.info("RAGAS eval %s completed — scores: %s", eval_id, result.get("scores"))
+        logger.info(
+            "RAGAS eval %s completed — model=%s scores=%s",
+            eval_id, result.get("model"), result.get("scores"),
+        )
     except Exception as exc:
         logger.exception("RAGAS eval %s failed", eval_id)
-        _eval_results[eval_id].update({"status": "failed", "error": str(exc)})
+        _eval_results[eval_id].update(
+            {
+                "status": "failed",
+                "error": str(exc),
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +162,12 @@ async def run_evaluation(
         )
 
     eval_id = str(uuid.uuid4())
-    _eval_results[eval_id] = {"status": "pending"}
+    cfg = get_active_llm_config()
+    _eval_results[eval_id] = {
+        "status": "pending",
+        "provider": cfg["provider"],
+        "model": cfg["model"],
+    }
 
     background_tasks.add_task(
         _run_evaluation_background,
@@ -149,6 +188,34 @@ async def run_evaluation(
     )
 
 
+@router.get("/config", response_model=EvalConfigResponse)
+def get_eval_config() -> EvalConfigResponse:
+    """Return the LLM that RAGAS will use (so the UI can label runs)."""
+    cfg = get_active_llm_config()
+    return EvalConfigResponse(provider=cfg["provider"], model=cfg["model"])
+
+
+@router.get("/list", response_model=list[EvalListItem])
+def list_eval_runs() -> list[EvalListItem]:
+    """Return all eval runs in this process (most recent first)."""
+    items = [
+        EvalListItem(
+            eval_id=eid,
+            status=state.get("status", "unknown"),
+            provider=state.get("provider"),
+            model=state.get("model"),
+            n_samples=state.get("n_samples"),
+            scores=state.get("scores"),
+            started_at=state.get("started_at"),
+            finished_at=state.get("finished_at"),
+        )
+        for eid, state in _eval_results.items()
+    ]
+    # Most recent first (started_at descending; pending runs at the bottom)
+    items.sort(key=lambda x: x.started_at or "", reverse=True)
+    return items
+
+
 @router.get("/{eval_id}/results", response_model=EvalResultResponse)
 def get_eval_results(eval_id: str) -> EvalResultResponse:
     """Return evaluation results for a given eval_id."""
@@ -163,5 +230,9 @@ def get_eval_results(eval_id: str) -> EvalResultResponse:
         session_id=state.get("session_id"),
         scores=state.get("scores"),
         per_indicator=state.get("per_indicator"),
+        provider=state.get("provider"),
+        model=state.get("model"),
+        started_at=state.get("started_at"),
+        finished_at=state.get("finished_at"),
         error=state.get("error"),
     )

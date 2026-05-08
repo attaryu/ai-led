@@ -292,6 +292,8 @@ def test_run_evaluation_background_success():
         "session_id": None,
         "scores": {"faithfulness": 0.9},
         "per_indicator": [],
+        "provider": "ollama",
+        "model": "deepseek-r1:7b",
     }
 
     with patch("api.routes.eval.run_ragas_evaluation", return_value=fake_result):
@@ -304,6 +306,39 @@ def test_run_evaluation_background_success():
 
     assert ev._eval_results[eval_id]["status"] == "completed"
     assert ev._eval_results[eval_id]["scores"]["faithfulness"] == 0.9
+    assert ev._eval_results[eval_id]["model"] == "deepseek-r1:7b"
+    assert ev._eval_results[eval_id]["provider"] == "ollama"
+    assert ev._eval_results[eval_id].get("finished_at")  # ISO timestamp set
+
+
+def test_eval_config_endpoint(client):
+    import os
+    with patch.dict(os.environ, {"LLM_PROVIDER": "openrouter", "OPENROUTER_MODEL": "test/model"}):
+        resp = client.get("/eval/config")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["provider"] == "openrouter"
+    assert data["model"] == "test/model"
+
+
+def test_eval_list_endpoint(client):
+    import api.routes.eval as ev
+
+    # Inject a fake completed run
+    ev._eval_results["list-test"] = {
+        "status": "completed",
+        "provider": "ollama",
+        "model": "llama3:8b",
+        "n_samples": 5,
+        "scores": {"faithfulness": 0.85},
+        "started_at": "2025-01-01T00:00:00+00:00",
+        "finished_at": "2025-01-01T00:01:00+00:00",
+    }
+
+    resp = client.get("/eval/list")
+    assert resp.status_code == 200
+    items = resp.json()
+    assert any(item["eval_id"] == "list-test" and item["model"] == "llama3:8b" for item in items)
 
 
 def test_run_evaluation_background_failure():

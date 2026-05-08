@@ -46,19 +46,33 @@ ALL_METRICS = RETRIEVAL_METRICS + GENERATION_METRICS
 # ---------------------------------------------------------------------------
 
 
+def get_active_llm_config() -> dict:
+    """Return the active provider/model identifiers without instantiating the LLM."""
+    provider = os.environ.get("LLM_PROVIDER", "ollama").lower()
+    if provider == "openrouter":
+        return {
+            "provider": "openrouter",
+            "model": os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-r1"),
+        }
+    return {
+        "provider": "ollama",
+        "model": os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b"),
+    }
+
+
 def _build_ragas_llm():
     """Return a LangchainLLMWrapper compatible with legacy RAGAS metrics."""
     from ragas.llms import LangchainLLMWrapper
 
-    provider = os.environ.get("LLM_PROVIDER", "ollama").lower()
+    cfg = get_active_llm_config()
 
-    if provider == "openrouter":
+    if cfg["provider"] == "openrouter":
         from langchain_openai import ChatOpenAI
 
         chat = ChatOpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=os.environ["OPENROUTER_API_KEY"],
-            model=os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-r1"),
+            model=cfg["model"],
             temperature=0.1,
         )
     else:
@@ -66,7 +80,7 @@ def _build_ragas_llm():
 
         chat = ChatOllama(
             base_url=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
-            model=os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b"),
+            model=cfg["model"],
             temperature=0.1,
         )
 
@@ -359,4 +373,5 @@ def run_ragas_evaluation(
         "session_id": session_id,
         "scores": scores,
         "per_indicator": per_indicator,
+        **get_active_llm_config(),
     }
