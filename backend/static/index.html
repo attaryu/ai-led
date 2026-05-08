@@ -530,8 +530,19 @@
     </div>
 
     <div class="ragas-config">
-      <span>Model aktif: <strong id="eval-model">memuat…</strong></span>
-      <span>Provider: <strong id="eval-provider">—</strong></span>
+      <div style="flex:1; min-width:240px;">
+        <div style="font-size:0.72rem; color:#94a3b8; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:2px;">Yang dinilai (Assessment)</div>
+        <div>Model: <strong id="assess-model">memuat…</strong></div>
+        <div>Provider: <strong id="assess-provider">—</strong></div>
+      </div>
+      <div style="flex:1; min-width:240px; border-left:2px solid #e2e8f0; padding-left:1.2rem;">
+        <div style="font-size:0.72rem; color:#94a3b8; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:2px;">Judge RAGAS</div>
+        <div>Model: <strong id="eval-model">memuat…</strong></div>
+        <div>Provider: <strong id="eval-provider">—</strong></div>
+      </div>
+    </div>
+    <div style="font-size:0.78rem; color:#64748b; margin-bottom:1rem;">
+      💡 Set <code>RAGAS_PROVIDER</code>, <code>RAGAS_OLLAMA_MODEL</code>, atau <code>RAGAS_OPENROUTER_MODEL</code> di <code>.env</code> agar judge berbeda dari assessment model (untuk benchmarking yang fair).
     </div>
 
     <div class="ragas-form">
@@ -553,7 +564,17 @@
     </div>
 
     <button class="btn-eval" id="btn-eval" onclick="startEval()">Jalankan RAGAS</button>
-    <div class="ragas-progress" id="eval-progress"></div>
+
+    <div id="eval-progress-wrap" style="display:none; margin-top:0.9rem;">
+      <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:#64748b; margin-bottom:0.3rem;">
+        <span id="eval-stage-label">Memulai…</span>
+        <span id="eval-progress-pct">0%</span>
+      </div>
+      <div class="assess-progress-track" style="height:8px;">
+        <div class="assess-progress-fill" id="eval-bar" style="width:0%; background:#8b5cf6;"></div>
+      </div>
+      <div class="ragas-progress active" id="eval-progress"></div>
+    </div>
 
     <!-- Comparison table -->
     <div style="display:flex; justify-content: space-between; align-items: center; margin-top: 1.5rem; margin-bottom: 0.4rem;">
@@ -961,13 +982,22 @@ async function loadSessionResults(sid) {
     }
   } catch (e) { /* server might be cold-starting */ }
 
-  // RAGAS panel: load active model + comparison history
+  // RAGAS panel: load both judge + assessment model labels
   try {
     const cfg = await fetch('/eval/config').then(r => r.json());
-    document.getElementById('eval-model').textContent = cfg.model || '—';
-    document.getElementById('eval-provider').textContent = cfg.provider || '—';
+    document.getElementById('eval-model').textContent = cfg.judge_model || '—';
+    document.getElementById('eval-provider').textContent = cfg.judge_provider || '—';
+    document.getElementById('assess-model').textContent = cfg.assessment_model || '—';
+    document.getElementById('assess-provider').textContent = cfg.assessment_provider || '—';
+
+    // Visual hint when judge == assessment (no fair comparison)
+    if (cfg.judge_model === cfg.assessment_model && cfg.judge_provider === cfg.assessment_provider) {
+      document.getElementById('eval-model').style.color = '#dc2626';
+      document.getElementById('eval-model').title = 'Judge = Assessment model. Set RAGAS_* env vars untuk benchmark yang fair.';
+    }
   } catch(e) {
     document.getElementById('eval-model').textContent = 'unavailable';
+    document.getElementById('assess-model').textContent = 'unavailable';
   }
   renderCompareTable();
 
@@ -999,9 +1029,52 @@ function getSelectedMetrics() {
   return Array.from(document.querySelectorAll('#metrics-row input:checked')).map(el => el.value);
 }
 
+const STAGE_LABELS = {
+  starting:          'Mempersiapkan…',
+  building_samples:  'Mengumpulkan bukti & ground truth',
+  evaluating:        'Menjalankan metrik RAGAS',
+  completed:         'Selesai',
+};
+
+function setEvalProgress(stage, current, total, elapsed) {
+  const wrap = document.getElementById('eval-progress-wrap');
+  const bar = document.getElementById('eval-bar');
+  const stageLabel = document.getElementById('eval-stage-label');
+  const pctEl = document.getElementById('eval-progress-pct');
+  const detail = document.getElementById('eval-progress');
+
+  wrap.style.display = 'block';
+
+  let pct;
+  if (stage === 'building_samples' && total > 0) {
+    // First 70% of bar represents sample building
+    pct = Math.round((current / total) * 70);
+  } else if (stage === 'evaluating') {
+    // Indeterminate-ish: 75% on entry, animate up to 95% over time
+    pct = Math.min(95, 75 + Math.floor(elapsed / 8));
+  } else if (stage === 'completed') {
+    pct = 100;
+  } else {
+    pct = 5;
+  }
+
+  bar.style.width = pct + '%';
+  pctEl.textContent = pct + '%';
+  stageLabel.textContent = STAGE_LABELS[stage] || stage;
+
+  if (stage === 'building_samples') {
+    detail.textContent = `Sampel ${current} / ${total} • ${elapsed}s`;
+  } else if (stage === 'evaluating') {
+    detail.textContent = `Memberi skor ${total} sampel dengan judge model • ${elapsed}s`;
+  } else if (stage === 'completed') {
+    detail.textContent = `Selesai dalam ${elapsed}s`;
+  } else {
+    detail.textContent = `${elapsed}s`;
+  }
+}
+
 async function startEval() {
   const btn = document.getElementById('btn-eval');
-  const prog = document.getElementById('eval-progress');
   const nInd = parseInt(document.getElementById('eval-n').value, 10) || 5;
   const sess = document.getElementById('eval-session').value.trim();
   const metrics = getSelectedMetrics();
@@ -1012,8 +1085,7 @@ async function startEval() {
   }
 
   btn.disabled = true;
-  prog.classList.add('active');
-  prog.textContent = 'Memulai…';
+  setEvalProgress('starting', 0, nInd, 0);
 
   try {
     const body = { n_indicators: nInd, metrics };
@@ -1028,25 +1100,29 @@ async function startEval() {
       throw new Error(err.detail || resp.statusText);
     }
     const data = await resp.json();
-    pollEval(data.eval_id, btn, prog);
+    pollEval(data.eval_id, btn);
   } catch(e) {
     btn.disabled = false;
-    prog.textContent = 'Gagal: ' + e.message;
+    document.getElementById('eval-progress').textContent = 'Gagal: ' + e.message;
   }
 }
 
-function pollEval(evalId, btn, prog) {
+function pollEval(evalId, btn) {
   clearInterval(evalPollTimer);
   let elapsed = 0;
   evalPollTimer = setInterval(async () => {
-    elapsed += 5;
+    elapsed += 3;
     try {
       const data = await fetch(`/eval/${evalId}/results`).then(r => r.json());
+      const stage = data.progress_stage || data.status;
+      const current = data.progress_current || 0;
+      const total = data.progress_total || 1;
+
       if (data.status === 'pending' || data.status === 'running') {
-        prog.textContent = `Status: ${data.status} (${elapsed}s elapsed)…`;
+        setEvalProgress(stage, current, total, elapsed);
       } else if (data.status === 'completed') {
         clearInterval(evalPollTimer);
-        prog.textContent = `Selesai dalam ${elapsed}s.`;
+        setEvalProgress('completed', total, total, elapsed);
         btn.disabled = false;
 
         const history = loadEvalHistory();
@@ -1062,11 +1138,12 @@ function pollEval(evalId, btn, prog) {
         renderCompareTable();
       } else if (data.status === 'failed') {
         clearInterval(evalPollTimer);
-        prog.textContent = 'Gagal: ' + (data.error || 'Unknown error');
+        document.getElementById('eval-progress').textContent = 'Gagal: ' + (data.error || 'Unknown error');
+        document.getElementById('eval-bar').style.background = '#dc2626';
         btn.disabled = false;
       }
     } catch(e) { /* retry */ }
-  }, 5000);
+  }, 3000);
 }
 
 function renderCompareTable() {

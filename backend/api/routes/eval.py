@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from eval.ragas_eval import ALL_METRICS, get_active_llm_config, run_ragas_evaluation
+from eval.ragas_eval import ALL_METRICS, get_judge_llm_config, run_ragas_evaluation
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
@@ -75,12 +75,17 @@ class EvalResultResponse(BaseModel):
     model: Optional[str] = None
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
+    progress_stage: Optional[str] = None
+    progress_current: Optional[int] = None
+    progress_total: Optional[int] = None
     error: Optional[str] = None
 
 
 class EvalConfigResponse(BaseModel):
-    provider: str
-    model: str
+    judge_provider: str
+    judge_model: str
+    assessment_provider: str
+    assessment_model: str
 
 
 class EvalListItem(BaseModel):
@@ -108,12 +113,26 @@ def _run_evaluation_background(
 ) -> None:
     _eval_results[eval_id]["status"] = "running"
     _eval_results[eval_id]["started_at"] = datetime.now(timezone.utc).isoformat()
+    _eval_results[eval_id].update({
+        "progress_stage": "starting",
+        "progress_current": 0,
+        "progress_total": n_indicators,
+    })
+
+    def _on_progress(stage: str, current: int, total: int) -> None:
+        _eval_results[eval_id].update({
+            "progress_stage": stage,
+            "progress_current": current,
+            "progress_total": total,
+        })
+
     try:
         result = run_ragas_evaluation(
             n_indicators=n_indicators,
             session_id=session_id,
             metrics_to_run=metrics,
             reference_path=reference_path,
+            progress_cb=_on_progress,
         )
         _eval_results[eval_id].update(
             {
@@ -124,6 +143,9 @@ def _run_evaluation_background(
                 "per_indicator": result.get("per_indicator"),
                 "provider": result.get("provider"),
                 "model": result.get("model"),
+                "progress_stage": "completed",
+                "progress_current": result.get("n_samples", 0),
+                "progress_total": result.get("n_samples", 0),
                 "finished_at": datetime.now(timezone.utc).isoformat(),
                 "error": result.get("error"),
             }
@@ -162,7 +184,7 @@ async def run_evaluation(
         )
 
     eval_id = str(uuid.uuid4())
-    cfg = get_active_llm_config()
+    cfg = get_judge_llm_config()
     _eval_results[eval_id] = {
         "status": "pending",
         "provider": cfg["provider"],
@@ -190,9 +212,21 @@ async def run_evaluation(
 
 @router.get("/config", response_model=EvalConfigResponse)
 def get_eval_config() -> EvalConfigResponse:
-    """Return the LLM that RAGAS will use (so the UI can label runs)."""
-    cfg = get_active_llm_config()
-    return EvalConfigResponse(provider=cfg["provider"], model=cfg["model"])
+    """Return the RAGAS judge config + the assessment model (the thing under test)."""
+    import os
+    judge = get_judge_llm_config()
+    assessment_provider = os.environ.get("LLM_PROVIDER", "ollama").lower()
+    if assessment_provider == "openrouter":
+        assessment_model = os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-r1")
+    else:
+        assessment_model = os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b")
+
+    return EvalConfigResponse(
+        judge_provider=judge["provider"],
+        judge_model=judge["model"],
+        assessment_provider=assessment_provider,
+        assessment_model=assessment_model,
+    )
 
 
 @router.get("/list", response_model=list[EvalListItem])
@@ -234,5 +268,8 @@ def get_eval_results(eval_id: str) -> EvalResultResponse:
         model=state.get("model"),
         started_at=state.get("started_at"),
         finished_at=state.get("finished_at"),
+        progress_stage=state.get("progress_stage"),
+        progress_current=state.get("progress_current"),
+        progress_total=state.get("progress_total"),
         error=state.get("error"),
     )

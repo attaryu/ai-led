@@ -46,25 +46,44 @@ ALL_METRICS = RETRIEVAL_METRICS + GENERATION_METRICS
 # ---------------------------------------------------------------------------
 
 
-def get_active_llm_config() -> dict:
-    """Return the active provider/model identifiers without instantiating the LLM."""
-    provider = os.environ.get("LLM_PROVIDER", "ollama").lower()
+def get_judge_llm_config() -> dict:
+    """Return the LLM config used as RAGAS judge.
+
+    Reads RAGAS_* env vars first; if unset, falls back to the assessment
+    model (LLM_PROVIDER / OLLAMA_MODEL / OPENROUTER_MODEL). This lets you
+    benchmark assessment models against a fixed judge for fair comparison.
+    """
+    provider = os.environ.get(
+        "RAGAS_PROVIDER",
+        os.environ.get("LLM_PROVIDER", "ollama"),
+    ).lower()
     if provider == "openrouter":
         return {
             "provider": "openrouter",
-            "model": os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-r1"),
+            "model": os.environ.get(
+                "RAGAS_OPENROUTER_MODEL",
+                os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-r1"),
+            ),
         }
     return {
         "provider": "ollama",
-        "model": os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b"),
+        "model": os.environ.get(
+            "RAGAS_OLLAMA_MODEL",
+            os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b"),
+        ),
     }
+
+
+# Back-compat alias — older code paths may import this name
+def get_active_llm_config() -> dict:
+    return get_judge_llm_config()
 
 
 def _build_ragas_llm():
     """Return a LangchainLLMWrapper compatible with legacy RAGAS metrics."""
     from ragas.llms import LangchainLLMWrapper
 
-    cfg = get_active_llm_config()
+    cfg = get_judge_llm_config()
 
     if cfg["provider"] == "openrouter":
         from langchain_openai import ChatOpenAI
@@ -79,11 +98,17 @@ def _build_ragas_llm():
         from langchain_ollama import ChatOllama
 
         kwargs: dict = {
-            "base_url": os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
+            "base_url": os.environ.get(
+                "RAGAS_OLLAMA_BASE_URL",
+                os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
+            ),
             "model": cfg["model"],
             "temperature": 0.1,
         }
-        api_key = os.environ.get("OLLAMA_API_KEY")
+        api_key = os.environ.get(
+            "RAGAS_OLLAMA_API_KEY",
+            os.environ.get("OLLAMA_API_KEY"),
+        )
         if api_key and not api_key.startswith("<"):
             kwargs["client_kwargs"] = {"headers": {"Authorization": f"Bearer {api_key}"}}
         chat = ChatOllama(**kwargs)
@@ -178,6 +203,7 @@ def build_eval_samples(
     session_id: Optional[str] = None,
     chroma_persist_dir: Optional[str] = None,
     reference_path: Optional[str] = None,
+    progress_cb=None,
 ) -> list[EvalSample]:
     """Build EvalSample list by retrieving real LED chunks and optionally
     reading actual agent justifications from a Supabase session.
@@ -228,8 +254,15 @@ def build_eval_samples(
         except Exception as exc:
             logger.warning("Could not load Supabase justifications: %s", exc)
 
+    target_rubrics = rubrics[:n_indicators]
+    total = len(target_rubrics)
     samples: list[EvalSample] = []
-    for rubric in rubrics[:n_indicators]:
+    for idx, rubric in enumerate(target_rubrics):
+        if progress_cb:
+            try:
+                progress_cb(stage="building_samples", current=idx, total=total)
+            except Exception:
+                pass
         question = _form_question(rubric.no, rubric.kriteria)
 
         # Retrieve LED chunks
@@ -277,6 +310,7 @@ def run_ragas_evaluation(
     chroma_persist_dir: Optional[str] = None,
     metrics_to_run: Optional[list[str]] = None,
     reference_path: Optional[str] = None,
+    progress_cb=None,
 ) -> dict:
     """Run RAGAS evaluation and return a results dict.
 
@@ -317,7 +351,14 @@ def run_ragas_evaluation(
         session_id=session_id,
         chroma_persist_dir=chroma_persist_dir,
         reference_path=reference_path,
+        progress_cb=progress_cb,
     )
+
+    if progress_cb:
+        try:
+            progress_cb(stage="evaluating", current=0, total=len(samples))
+        except Exception:
+            pass
 
     if not samples:
         return {"error": "No evaluation samples could be built.", "n_samples": 0}

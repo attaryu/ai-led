@@ -311,14 +311,45 @@ def test_run_evaluation_background_success():
     assert ev._eval_results[eval_id].get("finished_at")  # ISO timestamp set
 
 
-def test_eval_config_endpoint(client):
+def test_eval_config_endpoint_falls_back_to_assessment(client):
+    """When no RAGAS_* vars set, judge config falls back to assessment model."""
     import os
-    with patch.dict(os.environ, {"LLM_PROVIDER": "openrouter", "OPENROUTER_MODEL": "test/model"}):
+    with patch.dict(
+        os.environ,
+        {"LLM_PROVIDER": "openrouter", "OPENROUTER_MODEL": "test/model"},
+        clear=False,
+    ):
+        # Make sure RAGAS_* vars are NOT set
+        for k in ("RAGAS_PROVIDER", "RAGAS_OPENROUTER_MODEL", "RAGAS_OLLAMA_MODEL"):
+            os.environ.pop(k, None)
         resp = client.get("/eval/config")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["provider"] == "openrouter"
-    assert data["model"] == "test/model"
+    assert data["assessment_provider"] == "openrouter"
+    assert data["assessment_model"] == "test/model"
+    assert data["judge_provider"] == "openrouter"
+    assert data["judge_model"] == "test/model"
+
+
+def test_eval_config_endpoint_judge_overrides_assessment(client):
+    """RAGAS_* vars override the assessment model for judge config."""
+    import os
+    with patch.dict(
+        os.environ,
+        {
+            "LLM_PROVIDER": "ollama",
+            "OLLAMA_MODEL": "qwen3.5:35b",
+            "RAGAS_PROVIDER": "openrouter",
+            "RAGAS_OPENROUTER_MODEL": "anthropic/claude-haiku-4.5",
+        },
+        clear=False,
+    ):
+        resp = client.get("/eval/config")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["assessment_model"] == "qwen3.5:35b"
+    assert data["judge_model"] == "anthropic/claude-haiku-4.5"
+    assert data["judge_provider"] == "openrouter"
 
 
 def test_eval_list_endpoint(client):
