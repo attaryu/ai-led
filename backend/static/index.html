@@ -497,6 +497,17 @@
     <div class="assess-status-text" id="assess-msg"></div>
   </div>
 
+  <!-- Assessment history panel -->
+  <div id="history-panel" style="background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:1.4rem 1.6rem; margin-top:1.5rem;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem; gap:1rem; flex-wrap:wrap;">
+      <h2 style="font-size:1rem; font-weight:600;">Riwayat Penilaian</h2>
+      <button class="btn btn-primary" style="margin:0; padding:0.4rem 0.9rem; font-size:0.8rem;" onclick="loadHistory()">Refresh</button>
+    </div>
+    <div class="results-table-wrap" id="history-content">
+      <div class="compare-empty">Memuat riwayat…</div>
+    </div>
+  </div>
+
   <!-- Results table panel (shown after completion) -->
   <div id="results-panel">
     <div class="results-header">
@@ -781,6 +792,7 @@ function pollAssessment() {
         clearInterval(pollTimer);
         document.getElementById('btn-start').textContent = 'Penilaian Selesai ✓';
         loadAndRenderResults();
+        loadHistory();  // refresh history list
       } else if (data.status === 'failed') {
         statusEl.textContent = 'Gagal';
         statusEl.className   = 'stat-value badge-failed';
@@ -861,6 +873,76 @@ function renderResults(data) {
   `;
 }
 
+/* ── Assessment history ────────────────────────────────────────────────────── */
+async function loadHistory() {
+  const wrap = document.getElementById('history-content');
+  wrap.innerHTML = '<div class="compare-empty">Memuat…</div>';
+  try {
+    const sessions = await fetch('/assessment/list?limit=50').then(r => r.json());
+    if (!Array.isArray(sessions) || sessions.length === 0) {
+      wrap.innerHTML = '<div class="compare-empty">Belum ada penilaian. Jalankan Step 5 untuk memulai.</div>';
+      return;
+    }
+
+    const rows = sessions.map(s => {
+      const created = s.created_at ? new Date(s.created_at).toLocaleString('id-ID') : '—';
+      const avg = s.avg_score != null ? s.avg_score.toFixed(2) : '—';
+      const progress = `${s.completed_indicators}/${s.total_indicators}`;
+      const statusBadge = (
+        s.status === 'completed' ? '<span style="color:#16a34a; font-weight:600;">✓ Selesai</span>' :
+        s.status === 'running'   ? '<span style="color:#a16207; font-weight:600;">⏳ Berjalan</span>' :
+        s.status === 'failed'    ? '<span style="color:#dc2626; font-weight:600;">✗ Gagal</span>' :
+        s.status
+      );
+      const idShort = s.session_id.slice(0, 8);
+      return `
+        <tr>
+          <td><code style="font-size:0.78rem;">${idShort}…</code></td>
+          <td>${statusBadge}</td>
+          <td style="text-align:center;">${progress}</td>
+          <td class="metric-cell">${avg}</td>
+          <td style="font-size:0.78rem; color:#64748b;">${created}</td>
+          <td>
+            <button class="btn btn-primary" style="margin:0; padding:0.3rem 0.7rem; font-size:0.78rem;"
+              onclick="loadSessionResults('${s.session_id}')">Lihat</button>
+          </td>
+        </tr>`;
+    }).join('');
+
+    wrap.innerHTML = `
+      <table class="results">
+        <thead>
+          <tr>
+            <th>Session ID</th>
+            <th>Status</th>
+            <th style="text-align:center;">Progress</th>
+            <th style="text-align:center;">Skor Rata²</th>
+            <th>Dibuat</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } catch (e) {
+    wrap.innerHTML = `<div class="compare-empty" style="color:#dc2626;">Gagal load: ${e.message}</div>`;
+  }
+}
+
+async function loadSessionResults(sid) {
+  sessionId = sid;
+  try {
+    const data = await fetch(`/assessment/${sid}/results`).then(r => r.json());
+    document.getElementById('stat-total').textContent = data.total_indicators;
+    document.getElementById('stat-done').textContent = data.completed_indicators;
+    document.getElementById('result-panel').style.display = 'block';
+    renderResults(data);
+    document.getElementById('results-panel').style.display = 'block';
+    document.getElementById('results-panel').scrollIntoView({behavior:'smooth', block:'start'});
+  } catch (e) {
+    alert('Gagal load session: ' + e.message);
+  }
+}
+
 /* ── Bootstrap: reflect server-side state on page load ─────────────────────── */
 (async function bootstrap() {
   try {
@@ -888,6 +970,9 @@ function renderResults(data) {
     document.getElementById('eval-model').textContent = 'unavailable';
   }
   renderCompareTable();
+
+  // Assessment history (Supabase-backed)
+  loadHistory();
 })();
 
 /* ── RAGAS evaluation ──────────────────────────────────────────────────────── */

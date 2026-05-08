@@ -89,6 +89,17 @@ class SessionResultsResponse(BaseModel):
     results: list[IndicatorResultItem]
 
 
+class SessionSummary(BaseModel):
+    session_id: str
+    status: str
+    total_indicators: int
+    completed_indicators: int
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    avg_score: Optional[float] = None
+    error: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Lightweight indicator stub (used when no Laporan AK uploaded)
 # ---------------------------------------------------------------------------
@@ -159,6 +170,60 @@ async def start_assessment(
         total_indicators=len(indicators),
         message="Assessment pipeline started. Poll /assessment/{session_id}/status for progress.",
     )
+
+
+@router.get("/list", response_model=list[SessionSummary])
+async def list_sessions(limit: int = 50) -> list[SessionSummary]:
+    """List recent assessment sessions (newest first), with avg score per session."""
+    sb = get_supabase()
+
+    sessions_resp = (
+        sb.table("assessment_sessions")
+        .select("session_id, status, total_indicators, completed_indicators, created_at, updated_at, error")
+        .order("created_at", desc=True)
+        .limit(max(1, min(limit, 200)))
+        .execute()
+    )
+    sessions = sessions_resp.data or []
+    if not sessions:
+        return []
+
+    # Fetch avg scores per session in one query
+    ids = [s["session_id"] for s in sessions]
+    scores_resp = (
+        sb.table("indicator_results")
+        .select("session_id, score")
+        .in_("session_id", ids)
+        .execute()
+    )
+
+    avg_by_session: dict[str, float] = {}
+    counts: dict[str, int] = {}
+    for row in (scores_resp.data or []):
+        sid = row["session_id"]
+        sc = row.get("score")
+        if sc is None:
+            continue
+        avg_by_session[sid] = avg_by_session.get(sid, 0.0) + float(sc)
+        counts[sid] = counts.get(sid, 0) + 1
+
+    out: list[SessionSummary] = []
+    for s in sessions:
+        sid = s["session_id"]
+        avg = (avg_by_session.get(sid, 0.0) / counts[sid]) if counts.get(sid) else None
+        out.append(
+            SessionSummary(
+                session_id=sid,
+                status=s["status"],
+                total_indicators=s["total_indicators"],
+                completed_indicators=s["completed_indicators"],
+                created_at=s.get("created_at"),
+                updated_at=s.get("updated_at"),
+                avg_score=round(avg, 2) if avg is not None else None,
+                error=s.get("error"),
+            )
+        )
+    return out
 
 
 @router.get("/{session_id}/status", response_model=SessionStatusResponse)
