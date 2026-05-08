@@ -78,11 +78,15 @@ def _build_ragas_llm():
     else:
         from langchain_ollama import ChatOllama
 
-        chat = ChatOllama(
-            base_url=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
-            model=cfg["model"],
-            temperature=0.1,
-        )
+        kwargs: dict = {
+            "base_url": os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
+            "model": cfg["model"],
+            "temperature": 0.1,
+        }
+        api_key = os.environ.get("OLLAMA_API_KEY")
+        if api_key and not api_key.startswith("<"):
+            kwargs["client_kwargs"] = {"headers": {"Authorization": f"Bearer {api_key}"}}
+        chat = ChatOllama(**kwargs)
 
     return LangchainLLMWrapper(chat)
 

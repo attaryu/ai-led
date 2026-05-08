@@ -53,11 +53,17 @@ def _build_llm(ollama_client: OllamaClient):
     # Default: Ollama
     from langchain_ollama import ChatOllama
 
-    return ChatOllama(
-        base_url=ollama_client.base_url,
-        model=ollama_client.model,
-        temperature=0.1,
-    ).bind_tools(TOOLS)
+    kwargs: dict = {
+        "base_url": ollama_client.base_url,
+        "model": ollama_client.model,
+        "temperature": 0.1,
+    }
+    api_key = os.environ.get("OLLAMA_API_KEY")
+    if api_key and not api_key.startswith("<"):
+        # Pass Bearer token to the underlying ollama Client
+        kwargs["client_kwargs"] = {"headers": {"Authorization": f"Bearer {api_key}"}}
+
+    return ChatOllama(**kwargs).bind_tools(TOOLS)
 
 _SYSTEM_PROMPT = """Anda adalah asisten penilaian akreditasi program studi (AMI) yang ahli.
 Tugas Anda: menentukan skor (0-4) untuk setiap indikator berdasarkan:
