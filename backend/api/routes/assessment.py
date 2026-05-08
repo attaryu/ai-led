@@ -29,7 +29,7 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
-from agent.graph import build_graph
+from agent.graph import build_graph_auto
 from agent.tools.rubric_tool import _get_rubrics
 from db.supabase_client import (
     create_session,
@@ -326,7 +326,7 @@ async def _run_assessment_pipeline(
     """Background task: score all indicators and update session status when done."""
     try:
         ollama_client = create_ollama_client_from_env()
-        graph = build_graph(ollama_client)
+        graph = build_graph_auto(ollama_client)
         semaphore = asyncio.Semaphore(max_parallel)
 
         tasks = [

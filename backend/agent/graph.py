@@ -28,6 +28,45 @@ from llm.ollama_client import OllamaClient
 
 TOOLS = [get_indicator_rubric, search_led_evidence, get_lkps_table, compute_formula_score]
 
+# Reasoning models that emit <think>...</think> and lack native tool-calling
+# on Ollama. Override per-deployment with REASONING_MODEL_PATTERNS env var
+# (comma-separated substrings, case-insensitive).
+_DEFAULT_REASONING_PATTERNS = ["deepseek-r1", "qwq", "o1-", "o1:", "thinking", "deepthink"]
+
+
+def is_reasoning_model(model_name: str) -> bool:
+    """True if the given model name looks like a reasoning/CoT model."""
+    if not model_name:
+        return False
+    override = os.environ.get("LLM_REASONING_MODE", "").strip().lower()
+    if override in {"true", "1", "yes", "on"}:
+        return True
+    if override in {"false", "0", "no", "off"}:
+        return False
+    extra = [
+        p.strip().lower()
+        for p in os.environ.get("REASONING_MODEL_PATTERNS", "").split(",")
+        if p.strip()
+    ]
+    patterns = _DEFAULT_REASONING_PATTERNS + extra
+    name_l = model_name.lower()
+    return any(p in name_l for p in patterns)
+
+
+def build_graph_auto(ollama_client: OllamaClient):
+    """Pick native or reasoning graph based on the active model name."""
+    provider = os.environ.get("LLM_PROVIDER", "ollama").lower()
+    if provider == "openrouter":
+        model = os.environ.get("OPENROUTER_MODEL", "")
+    else:
+        model = ollama_client.model
+
+    if is_reasoning_model(model):
+        from agent.reasoning_graph import build_reasoning_graph
+        return build_reasoning_graph(ollama_client)
+
+    return build_graph(ollama_client)
+
 
 def _build_llm(ollama_client: OllamaClient):
     """Return a tool-bound LangChain chat model.
