@@ -173,6 +173,82 @@
     }
     .alert-err { background: #fee2e2; color: #991b1b; }
     .alert-info { background: #dbeafe; color: #1e40af; }
+
+    /* ── Results table ────────────────────────────────────────────────────── */
+    #results-panel {
+      display: none;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 1.4rem 1.6rem;
+      margin-top: 1.5rem;
+    }
+    .results-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .results-header h2 { font-size: 1rem; font-weight: 600; }
+    .btn-pdf {
+      background: #dc2626; color: #fff;
+      padding: 0.5rem 1rem; font-size: 0.85rem;
+      border: none; border-radius: 6px; cursor: pointer; font-weight: 600;
+    }
+    .btn-pdf:hover { background: #b91c1c; }
+
+    .results-table-wrap {
+      overflow-x: auto;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+    }
+    table.results {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+    table.results thead th {
+      background: #f8fafc;
+      padding: 0.6rem 0.7rem;
+      text-align: left;
+      font-weight: 600;
+      color: #334155;
+      border-bottom: 1px solid #e2e8f0;
+      white-space: nowrap;
+    }
+    table.results tbody td {
+      padding: 0.55rem 0.7rem;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: top;
+    }
+    table.results tbody tr:last-child td { border-bottom: none; }
+    table.results td.no-col { text-align: center; width: 40px; font-weight: 600; }
+    table.results td.score-col { text-align: center; width: 60px; font-weight: 700; }
+    table.results td.conf-col { text-align: center; width: 70px; color: #64748b; }
+    .score-pill {
+      display: inline-block;
+      min-width: 28px;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+    .score-0, .score-1 { background: #fee2e2; color: #991b1b; }
+    .score-2          { background: #fef3c7; color: #92400e; }
+    .score-3          { background: #dbeafe; color: #1e40af; }
+    .score-4          { background: #dcfce7; color: #166534; }
+    .score-na         { background: #f1f5f9; color: #64748b; }
+    .justification    { color: #334155; line-height: 1.4; }
+    .err-text         { color: #dc2626; font-style: italic; }
+
+    /* Print styles for PDF export */
+    @media print {
+      body { background: #fff; padding: 0; }
+      .container > .steps, #result-panel, .btn-pdf { display: none !important; }
+      #results-panel { border: none; padding: 0; margin: 0; }
+    }
   </style>
 </head>
 <body>
@@ -228,14 +304,14 @@
       <button class="btn btn-primary" id="btn-lkps" disabled onclick="uploadLkps()">Unggah &amp; Muat</button>
     </div>
 
-    <!-- Step 3: Upload Laporan AK -->
+    <!-- Step 3: Upload Laporan AK (optional) -->
     <div class="card" id="card-laporan">
-      <div class="card-status status-idle" id="status-laporan">Belum diunggah</div>
+      <div class="card-status status-idle" id="status-laporan">Opsional</div>
       <div class="card-header">
         <div class="step-num">3</div>
         <div>
-          <div class="card-title">Laporan AK (Excel)</div>
-          <div class="card-desc">Template Laporan Akhir — hasil penilaian akan ditulis ke file ini</div>
+          <div class="card-title">Laporan AK (Excel) — Opsional</div>
+          <div class="card-desc">Filter subset indikator yang dinilai. Kosongkan untuk menilai 78 indikator default.</div>
         </div>
       </div>
 
@@ -253,7 +329,7 @@
         <div class="step-num">4</div>
         <div>
           <div class="card-title">Mulai Penilaian</div>
-          <div class="card-desc">Jalankan agen AI untuk menilai 78 indikator secara paralel</div>
+          <div class="card-desc">Jalankan agen AI untuk menilai indikator secara paralel</div>
         </div>
       </div>
       <button class="btn btn-success" id="btn-start" disabled onclick="startAssessment()">
@@ -286,7 +362,21 @@
     <div class="assess-status-text" id="assess-msg"></div>
   </div>
 
+  <!-- Results table panel (shown after completion) -->
+  <div id="results-panel">
+    <div class="results-header">
+      <h2>Hasil Penilaian</h2>
+      <button class="btn-pdf" onclick="downloadPdf()">Unduh PDF</button>
+    </div>
+    <div id="results-content">
+      <!-- Table is rendered here by renderResults() -->
+    </div>
+  </div>
+
 </div><!-- /container -->
+
+<!-- html2pdf.js for client-side PDF generation -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
 <script>
 /* ── State ─────────────────────────────────────────────────────────────────── */
@@ -428,12 +518,11 @@ async function uploadLaporan() {
   }
 }
 
-/* ── Enable start button when all three are ready ───────────────────────────── */
+/* ── Enable start button when LED + LKPS are ready (laporan optional) ──────── */
 function checkAllReady() {
   const s1 = document.getElementById('status-led').className.includes('status-ok');
   const s2 = document.getElementById('status-lkps').className.includes('status-ok');
-  const s3 = document.getElementById('status-laporan').className.includes('status-ok');
-  document.getElementById('btn-start').disabled = !(s1 && s2 && s3);
+  document.getElementById('btn-start').disabled = !(s1 && s2);
 }
 
 /* ── Assessment pipeline ────────────────────────────────────────────────────── */
@@ -443,10 +532,12 @@ async function startAssessment() {
   btn.textContent = 'Memulai…';
 
   try {
+    // Only include laporan_path if user uploaded one
+    const body = laporanPath ? { laporan_path: laporanPath } : {};
     const resp = await fetch('/assessment/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ laporan_path: laporanPath }),
+      body: JSON.stringify(body),
     });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({ detail: resp.statusText }));
@@ -489,9 +580,10 @@ function pollAssessment() {
       } else if (data.status === 'completed') {
         statusEl.textContent = 'Selesai ✓';
         statusEl.className   = 'stat-value badge-completed';
-        msgEl.textContent    = `Semua ${total} indikator berhasil dinilai. Cek Laporan_AK.xlsx.`;
+        msgEl.textContent    = `Semua ${total} indikator berhasil dinilai. Tabel hasil di bawah.`;
         clearInterval(pollTimer);
         document.getElementById('btn-start').textContent = 'Penilaian Selesai ✓';
+        loadAndRenderResults();
       } else if (data.status === 'failed') {
         statusEl.textContent = 'Gagal';
         statusEl.className   = 'stat-value badge-failed';
@@ -502,6 +594,92 @@ function pollAssessment() {
       }
     } catch(e) { /* retry next tick */ }
   }, 4000);
+}
+
+/* ── Results: fetch, render table, PDF export ───────────────────────────────── */
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
+    .replaceAll('"','&quot;').replaceAll("'",'&#39;');
+}
+
+function scorePill(score) {
+  if (score == null) return '<span class="score-pill score-na">–</span>';
+  const rounded = Math.round(score);
+  return `<span class="score-pill score-${rounded}">${score.toFixed(1)}</span>`;
+}
+
+async function loadAndRenderResults() {
+  try {
+    const data = await fetch(`/assessment/${sessionId}/results`).then(r => r.json());
+    renderResults(data);
+    document.getElementById('results-panel').style.display = 'block';
+  } catch (e) {
+    console.error('Failed to load results:', e);
+  }
+}
+
+function renderResults(data) {
+  const rows = data.results.map(r => {
+    const justOrErr = r.error
+      ? `<span class="err-text">Error: ${escapeHtml(r.error)}</span>`
+      : `<span class="justification">${escapeHtml(r.justification || '—')}</span>`;
+    const conf = r.confidence != null ? r.confidence.toFixed(2) : '—';
+    return `
+      <tr>
+        <td class="no-col">${r.indicator_no}</td>
+        <td>${escapeHtml(r.kriteria || '—')}</td>
+        <td class="score-col">${scorePill(r.score)}</td>
+        <td>${justOrErr}</td>
+        <td class="conf-col">${conf}</td>
+      </tr>`;
+  }).join('');
+
+  const avgScore = (() => {
+    const valid = data.results.filter(r => r.score != null).map(r => r.score);
+    if (!valid.length) return '–';
+    return (valid.reduce((a,b) => a+b, 0) / valid.length).toFixed(2);
+  })();
+
+  document.getElementById('results-content').innerHTML = `
+    <div style="margin-bottom: 1rem; font-size: 0.85rem; color: #64748b;">
+      Total: <strong>${data.total_indicators}</strong> indikator •
+      Skor rata-rata: <strong>${avgScore}</strong>
+    </div>
+    <div class="results-table-wrap">
+      <table class="results">
+        <thead>
+          <tr>
+            <th>No</th>
+            <th>Kriteria</th>
+            <th style="text-align:center;">Skor</th>
+            <th>Justifikasi</th>
+            <th style="text-align:center;">Conf.</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function downloadPdf() {
+  const el = document.getElementById('results-panel');
+  const opt = {
+    margin:       [10, 10, 10, 10],
+    filename:     `AMI_Hasil_Penilaian_${sessionId || 'session'}.pdf`,
+    image:        { type: 'jpeg', quality: 0.98 },
+    html2canvas:  { scale: 2, useCORS: true },
+    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' },
+    pagebreak:    { mode: ['css', 'legacy'] },
+  };
+  // Hide the PDF button itself during capture
+  const pdfBtn = el.querySelector('.btn-pdf');
+  pdfBtn.style.display = 'none';
+  html2pdf().set(opt).from(el).save().then(() => {
+    pdfBtn.style.display = '';
+  });
 }
 </script>
 </body>

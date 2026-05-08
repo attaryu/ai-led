@@ -1,4 +1,4 @@
-"""Tests for POST /assessment/start and GET /assessment/{session_id}/status.
+"""Tests for POST /assessment/start and GET /assessment/{session_id}/status, /results.
 
 All external I/O is mocked:
 - Supabase calls are patched at the function level (db.supabase_client.*)
@@ -110,6 +110,29 @@ def test_start_custom_max_parallel(fake_indicators):
     assert captured.get("max_parallel") == 3
 
 
+def test_start_without_laporan_path_uses_default_rubrics():
+    """When laporan_path is omitted, all rubrics from _get_rubrics() are used."""
+    from main import app
+
+    fake_rubric_a = MagicMock()
+    fake_rubric_a.no = 1
+    fake_rubric_a.kriteria = "K1"
+    fake_rubric_b = MagicMock()
+    fake_rubric_b.no = 2
+    fake_rubric_b.kriteria = "K2"
+
+    with (
+        patch("api.routes.assessment._get_rubrics", return_value=[fake_rubric_a, fake_rubric_b]),
+        patch("api.routes.assessment.create_session"),
+        patch("api.routes.assessment._run_assessment_pipeline", new=AsyncMock()),
+    ):
+        with TestClient(app) as c:
+            resp = c.post("/assessment/start", json={})
+
+    assert resp.status_code == 200
+    assert resp.json()["total_indicators"] == 2
+
+
 # ── GET /assessment/{session_id}/status ───────────────────────────────────────
 
 
@@ -170,13 +193,11 @@ async def test_process_single_indicator_success(fake_indicators):
 
     with (
         patch("api.routes.assessment.log_reasoning_step"),
-        patch("api.routes.assessment.write_assessment_result"),
         patch("api.routes.assessment.log_indicator_result") as mock_log,
     ):
         result = await _process_single_indicator(
             graph=fake_graph,
             indicator=indicator,
-            laporan_path="/fake/path.xlsx",
             session_id="test-session",
             semaphore=semaphore,
         )
@@ -203,7 +224,6 @@ async def test_process_single_indicator_handles_exception(fake_indicators):
         result = await _process_single_indicator(
             graph=fake_graph,
             indicator=indicator,
-            laporan_path="/fake/path.xlsx",
             session_id="test-session",
             semaphore=semaphore,
         )
@@ -212,3 +232,43 @@ async def test_process_single_indicator_handles_exception(fake_indicators):
     call_kwargs = mock_log.call_args.kwargs
     assert call_kwargs["error"] is not None
     assert call_kwargs["score"] is None
+
+
+# ── GET /assessment/{session_id}/results ──────────────────────────────────────
+
+
+def test_results_returns_indicators_with_kriteria():
+    from main import app
+
+    fake_supabase = MagicMock()
+    # session row
+    fake_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
+        "session_id": "sess-1",
+        "status": "completed",
+        "total_indicators": 2,
+        "completed_indicators": 2,
+    }
+    # indicator_results rows — chained call, separate from .single()
+    rows_execute = MagicMock()
+    rows_execute.data = [
+        {"indicator_no": 1, "score": 3.0, "justification": "OK", "confidence": 0.9, "error": None},
+        {"indicator_no": 2, "score": 4.0, "justification": "Sangat baik", "confidence": 0.95, "error": None},
+    ]
+    fake_supabase.table.return_value.select.return_value.eq.return_value.order.return_value.execute.return_value = rows_execute
+
+    fake_rubric_1 = MagicMock(); fake_rubric_1.no = 1; fake_rubric_1.kriteria = "K1"
+    fake_rubric_2 = MagicMock(); fake_rubric_2.no = 2; fake_rubric_2.kriteria = "K2"
+
+    with (
+        patch("api.routes.assessment.get_supabase", return_value=fake_supabase),
+        patch("api.routes.assessment._get_rubrics", return_value=[fake_rubric_1, fake_rubric_2]),
+    ):
+        with TestClient(app) as c:
+            resp = c.get("/assessment/sess-1/results")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "completed"
+    assert len(data["results"]) == 2
+    assert data["results"][0]["kriteria"] == "K1"
+    assert data["results"][1]["score"] == 4.0

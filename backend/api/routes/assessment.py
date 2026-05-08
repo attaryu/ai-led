@@ -1,12 +1,16 @@
 """Assessment pipeline API routes.
 
 POST /assessment/start
-    Accepts a JSON body with laporan_path (path to Laporan_AK.xlsx on the server).
-    Fires off the full 78-indicator pipeline in the background and returns a session_id
+    Optional JSON body with laporan_path. If provided, indicator subset is read
+    from the Laporan_AK.xlsx template; otherwise all 78 default indicators run.
+    Fires off the assessment pipeline in the background and returns a session_id
     immediately so the caller can poll for status.
 
 GET /assessment/{session_id}/status
     Returns current session status from Supabase.
+
+GET /assessment/{session_id}/results
+    Returns all per-indicator results (score, justification, confidence) for a session.
 
 Parallelism: up to MAX_PARALLEL indicators run concurrently (asyncio.Semaphore).
 Each indicator is scored by an independent LangGraph graph invocation so there is
@@ -19,12 +23,14 @@ import asyncio
 import logging
 import os
 import uuid
+from dataclasses import dataclass
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 from agent.graph import build_graph
+from agent.tools.rubric_tool import _get_rubrics
 from db.supabase_client import (
     create_session,
     get_supabase,
@@ -33,7 +39,6 @@ from db.supabase_client import (
     update_session_status,
 )
 from excel.reader import read_indicator_rows
-from excel.writer import write_assessment_result
 from llm.ollama_client import create_ollama_client_from_env
 
 logger = logging.getLogger(__name__)
@@ -49,7 +54,7 @@ MAX_PARALLEL: int = int(os.environ.get("ASSESSMENT_MAX_PARALLEL", "5"))
 
 
 class StartAssessmentRequest(BaseModel):
-    laporan_path: str
+    laporan_path: Optional[str] = None
     max_parallel: Optional[int] = None
 
 
@@ -67,6 +72,35 @@ class SessionStatusResponse(BaseModel):
     error: Optional[str] = None
 
 
+class IndicatorResultItem(BaseModel):
+    indicator_no: int
+    kriteria: Optional[str] = None
+    score: Optional[float] = None
+    justification: Optional[str] = None
+    confidence: Optional[float] = None
+    error: Optional[str] = None
+
+
+class SessionResultsResponse(BaseModel):
+    session_id: str
+    status: str
+    total_indicators: int
+    completed_indicators: int
+    results: list[IndicatorResultItem]
+
+
+# ---------------------------------------------------------------------------
+# Lightweight indicator stub (used when no Laporan AK uploaded)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _SimpleIndicator:
+    """Minimal shape compatible with what agent.graph needs from indicator_row."""
+    indicator_no: int
+    kriteria: str
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -77,32 +111,45 @@ async def start_assessment(
     body: StartAssessmentRequest,
     background_tasks: BackgroundTasks,
 ) -> StartAssessmentResponse:
-    """Start a full assessment pipeline for Laporan_AK.xlsx.
+    """Start an assessment pipeline.
 
-    Returns immediately with a session_id; the assessment runs in the background.
+    If ``laporan_path`` is provided, the indicator subset is extracted from that
+    Excel template. Otherwise, all 78 default indicators are evaluated.
+    Results are persisted to Supabase only — nothing is written back to Excel.
     """
-    if not os.path.exists(body.laporan_path):
-        raise HTTPException(
-            status_code=400,
-            detail=f"File not found on server: {body.laporan_path}",
-        )
-
-    indicators = read_indicator_rows(body.laporan_path)
-    if not indicators:
-        raise HTTPException(
-            status_code=422,
-            detail="No indicator rows found in the provided Laporan_AK.xlsx file.",
-        )
+    if body.laporan_path:
+        if not os.path.exists(body.laporan_path):
+            raise HTTPException(
+                status_code=400,
+                detail=f"File not found on server: {body.laporan_path}",
+            )
+        indicators = read_indicator_rows(body.laporan_path)
+        if not indicators:
+            raise HTTPException(
+                status_code=422,
+                detail="No indicator rows found in the provided Laporan_AK.xlsx file.",
+            )
+    else:
+        # Default: evaluate every rubric in the cached matrix
+        rubrics = _get_rubrics()
+        indicators = [
+            _SimpleIndicator(indicator_no=r.no, kriteria=r.kriteria)
+            for r in rubrics
+        ]
+        if not indicators:
+            raise HTTPException(
+                status_code=500,
+                detail="No rubrics available — has the matrix been parsed?",
+            )
 
     session_id = str(uuid.uuid4())
     parallel = body.max_parallel or MAX_PARALLEL
 
-    create_session(session_id, body.laporan_path, len(indicators))
+    create_session(session_id, body.laporan_path or "", len(indicators))
 
     background_tasks.add_task(
         _run_assessment_pipeline,
         session_id=session_id,
-        laporan_path=body.laporan_path,
         indicators=indicators,
         max_parallel=parallel,
     )
@@ -142,6 +189,57 @@ async def get_session_status(session_id: str) -> SessionStatusResponse:
     )
 
 
+@router.get("/{session_id}/results", response_model=SessionResultsResponse)
+async def get_session_results(session_id: str) -> SessionResultsResponse:
+    """Return all per-indicator results for a session, joined with rubric kriteria."""
+    sb = get_supabase()
+
+    try:
+        sess = (
+            sb.table("assessment_sessions")
+            .select("*")
+            .eq("session_id", session_id)
+            .single()
+            .execute()
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}") from exc
+
+    if not sess.data:
+        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
+
+    rows_resp = (
+        sb.table("indicator_results")
+        .select("indicator_no, score, justification, confidence, error")
+        .eq("session_id", session_id)
+        .order("indicator_no")
+        .execute()
+    )
+
+    # Map indicator_no → kriteria for fast lookup
+    kriteria_map: dict[int, str] = {r.no: r.kriteria for r in _get_rubrics()}
+
+    items: list[IndicatorResultItem] = [
+        IndicatorResultItem(
+            indicator_no=row["indicator_no"],
+            kriteria=kriteria_map.get(row["indicator_no"]),
+            score=row.get("score"),
+            justification=row.get("justification"),
+            confidence=row.get("confidence"),
+            error=row.get("error"),
+        )
+        for row in (rows_resp.data or [])
+    ]
+
+    return SessionResultsResponse(
+        session_id=session_id,
+        status=sess.data["status"],
+        total_indicators=sess.data["total_indicators"],
+        completed_indicators=sess.data["completed_indicators"],
+        results=items,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Pipeline internals
 # ---------------------------------------------------------------------------
@@ -150,11 +248,10 @@ async def get_session_status(session_id: str) -> SessionStatusResponse:
 async def _process_single_indicator(
     graph,
     indicator,
-    laporan_path: str,
     session_id: str,
     semaphore: asyncio.Semaphore,
 ) -> bool:
-    """Run the LangGraph agent for one indicator and persist results.
+    """Run the LangGraph agent for one indicator and persist results to Supabase.
 
     Returns True on success, False on error (error is logged and stored in Supabase).
     """
@@ -177,8 +274,6 @@ async def _process_single_indicator(
                 "error": None,
             }
 
-            # LangGraph .invoke is synchronous; run it in a thread to avoid
-            # blocking the event loop while the LLM is generating.
             result = await asyncio.get_event_loop().run_in_executor(
                 None, graph.invoke, initial_state
             )
@@ -188,22 +283,12 @@ async def _process_single_indicator(
             confidence = result.get("confidence")
             error = result.get("error")
 
-            # Persist reasoning steps
             for idx, step in enumerate(result.get("reasoning_steps", [])):
                 log_reasoning_step(
                     session_id=session_id,
                     indicator_no=indicator.indicator_no,
                     step_index=idx,
                     content=str(step),
-                )
-
-            # Write score + justification back to Excel (thread-safe via writer lock)
-            if score is not None:
-                write_assessment_result(
-                    xlsx_path=laporan_path,
-                    row_index=indicator.row_index,
-                    score=round(score),
-                    justification=justification or "",
                 )
 
             log_indicator_result(
@@ -235,7 +320,6 @@ async def _process_single_indicator(
 
 async def _run_assessment_pipeline(
     session_id: str,
-    laporan_path: str,
     indicators: list,
     max_parallel: int,
 ) -> None:
@@ -249,7 +333,6 @@ async def _run_assessment_pipeline(
             _process_single_indicator(
                 graph=graph,
                 indicator=indicator,
-                laporan_path=laporan_path,
                 session_id=session_id,
                 semaphore=semaphore,
             )

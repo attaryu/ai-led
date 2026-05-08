@@ -27,6 +27,9 @@ def _connect():
         print("ERROR: DATABASE_URL is not set.")
         print("  Get it from Supabase dashboard → Settings → Database → Connection string (URI)")
         sys.exit(1)
+    # Supabase requires SSL
+    if "sslmode" not in url:
+        url += "?sslmode=require"
     return psycopg2.connect(url)
 
 
@@ -47,6 +50,8 @@ def _applied_migrations(cur) -> set[str]:
 
 def main() -> None:
     from dotenv import load_dotenv
+    # Try .env in backend dir first, then parent (project root)
+    load_dotenv(Path(__file__).parent.parent.parent / ".env")
     load_dotenv()
 
     conn = _connect()
