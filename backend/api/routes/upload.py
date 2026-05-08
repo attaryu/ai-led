@@ -1,5 +1,6 @@
 """File upload API routes.
 
+POST /upload/matrix    — Upload Matriks Penilaian PDF; parses + caches to RUBRIC_CACHE_PATH.
 POST /upload/led       — Upload LED PDF; triggers background chunking + ChromaDB indexing.
 POST /upload/lkps      — Upload LKPS Excel; loads LKPSRegistry and injects into lkps_tool.
 POST /upload/laporan   — Upload Laporan_AK.xlsx; stores it for use by /assessment/start.
@@ -7,6 +8,7 @@ GET  /upload/status    — Returns which files have been uploaded and LED indexi
 
 All files are saved to UPLOAD_DIR (default: data/uploads).
 LED indexing writes to CHROMA_PERSIST_DIR (default: data/chroma_db).
+Rubric cache is written to RUBRIC_CACHE_PATH (default: data/rubric_cache/matrix.json).
 """
 
 from __future__ import annotations
@@ -26,7 +28,11 @@ router = APIRouter(prefix="/upload", tags=["upload"])
 
 UPLOAD_DIR: str = os.environ.get("UPLOAD_DIR", "data/uploads")
 CHROMA_PERSIST_DIR: str = os.environ.get("CHROMA_PERSIST_DIR", "data/chroma_db")
+RUBRIC_CACHE_PATH: str = os.environ.get(
+    "RUBRIC_CACHE_PATH", "data/rubric_cache/matrix.json"
+)
 
+MATRIX_FILENAME = "matrix.pdf"
 LED_FILENAME = "led.pdf"
 LKPS_FILENAME = "lkps.xlsx"
 LAPORAN_FILENAME = "laporan_ak.xlsx"
@@ -39,7 +45,13 @@ _led_index_status: dict = {
     "error": None,
 }
 
+_matrix_status: dict = {
+    "rubric_count": 0,
+    "error": None,
+}
+
 _uploaded: dict[str, bool] = {
+    "matrix": False,
     "led": False,
     "lkps": False,
     "laporan": False,
@@ -50,12 +62,22 @@ _uploaded: dict[str, bool] = {
 
 
 class UploadStatusResponse(BaseModel):
+    matrix_uploaded: bool
+    matrix_rubric_count: int
+    matrix_error: str | None
     led_uploaded: bool
     lkps_uploaded: bool
     laporan_uploaded: bool
     led_index_state: Literal["idle", "indexing", "ready", "error"]
     led_chunk_count: int
     led_error: str | None
+
+
+class MatrixUploadResponse(BaseModel):
+    message: str
+    filename: str
+    rubric_count: int
+    cache_path: str
 
 
 class LedUploadResponse(BaseModel):
@@ -126,14 +148,76 @@ def _index_led_background(pdf_path: str) -> None:
 
 @router.get("/status", response_model=UploadStatusResponse)
 def get_upload_status() -> UploadStatusResponse:
-    """Return which files are uploaded and the LED indexing state."""
+    """Return which files are uploaded, LED indexing state, and matrix rubric count."""
+    # Auto-detect matrix from disk so a pre-existing cache is reflected after restart
+    if not _uploaded["matrix"] and os.path.exists(RUBRIC_CACHE_PATH):
+        try:
+            import json
+            with open(RUBRIC_CACHE_PATH, encoding="utf-8") as f:
+                cached = json.load(f)
+            _uploaded["matrix"] = True
+            _matrix_status["rubric_count"] = len(cached)
+        except Exception:
+            pass
+
     return UploadStatusResponse(
+        matrix_uploaded=_uploaded["matrix"],
+        matrix_rubric_count=_matrix_status["rubric_count"],
+        matrix_error=_matrix_status["error"],
         led_uploaded=_uploaded["led"],
         lkps_uploaded=_uploaded["lkps"],
         laporan_uploaded=_uploaded["laporan"],
         led_index_state=_led_index_status["state"],
         led_chunk_count=_led_index_status["chunk_count"],
         led_error=_led_index_status["error"],
+    )
+
+
+@router.post("/matrix", response_model=MatrixUploadResponse)
+async def upload_matrix(file: UploadFile) -> MatrixUploadResponse:
+    """Upload Matriks Penilaian PDF; parses rubrics and writes them to RUBRIC_CACHE_PATH.
+
+    The cache is consumed by `agent.tools.rubric_tool._get_rubrics()` and by the
+    default-78-indicator path in `/assessment/start`. Re-uploading replaces the cache.
+    """
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="File must be a PDF (.pdf)")
+
+    path, _ = await asyncio.get_event_loop().run_in_executor(
+        None, _save_upload, file, MATRIX_FILENAME
+    )
+
+    def _parse_and_cache(p: str) -> int:
+        from agent.tools.rubric_tool import _rubric_cache
+        from ingestion.matrix_parser import cache_rubrics, parse_matrix_pdf
+
+        rubrics = parse_matrix_pdf(p)
+        cache_rubrics(rubrics, RUBRIC_CACHE_PATH)
+        # Invalidate in-memory cache so subsequent calls reload from new file
+        _rubric_cache.pop("rubrics", None)
+        return len(rubrics)
+
+    try:
+        count = await asyncio.get_event_loop().run_in_executor(
+            None, _parse_and_cache, path
+        )
+    except Exception as exc:
+        logger.exception("Matrix parsing failed")
+        _matrix_status["error"] = str(exc)
+        _uploaded["matrix"] = False
+        raise HTTPException(
+            status_code=422, detail=f"Failed to parse matrix PDF: {exc}"
+        ) from exc
+
+    _matrix_status["rubric_count"] = count
+    _matrix_status["error"] = None
+    _uploaded["matrix"] = True
+
+    return MatrixUploadResponse(
+        message=f"Matrix parsed: {count} rubrics cached.",
+        filename=MATRIX_FILENAME,
+        rubric_count=count,
+        cache_path=RUBRIC_CACHE_PATH,
     )
 
 

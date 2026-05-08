@@ -19,10 +19,14 @@ from fastapi.testclient import TestClient
 def reset_upload_state():
     """Reset in-process upload state before each test."""
     import api.routes.upload as up
+    up._uploaded["matrix"] = False
     up._uploaded["led"] = False
     up._uploaded["lkps"] = False
     up._uploaded["laporan"] = False
     up._led_index_status = {"state": "idle", "chunk_count": 0, "error": None}
+    up._matrix_status = {"rubric_count": 0, "error": None}
+    # Point cache path to a non-existent location so auto-detect doesn't see leftover files
+    up.RUBRIC_CACHE_PATH = "/tmp/_test_nonexistent_matrix.json"
     yield
 
 
@@ -49,11 +53,60 @@ def test_status_initial_state(client):
     resp = client.get("/upload/status")
     assert resp.status_code == 200
     data = resp.json()
+    assert data["matrix_uploaded"] is False
+    assert data["matrix_rubric_count"] == 0
     assert data["led_uploaded"] is False
     assert data["lkps_uploaded"] is False
     assert data["laporan_uploaded"] is False
     assert data["led_index_state"] == "idle"
     assert data["led_chunk_count"] == 0
+
+
+# ── POST /upload/matrix ───────────────────────────────────────────────────────
+
+
+def test_upload_matrix_requires_pdf(client):
+    resp = client.post(
+        "/upload/matrix",
+        files={"file": ("rubric.docx", io.BytesIO(b"docx"), "application/octet-stream")},
+    )
+    assert resp.status_code == 400
+
+
+def test_upload_matrix_parses_and_caches(client, tmp_path):
+    fake_rubrics = [MagicMock() for _ in range(60)]
+
+    with (
+        patch("api.routes.upload.UPLOAD_DIR", str(tmp_path)),
+        patch("api.routes.upload._save_upload", return_value=(str(tmp_path / "matrix.pdf"), 1024)),
+        patch("ingestion.matrix_parser.parse_matrix_pdf", return_value=fake_rubrics),
+        patch("ingestion.matrix_parser.cache_rubrics"),
+    ):
+        resp = client.post(
+            "/upload/matrix",
+            files={"file": ("matrix.pdf", io.BytesIO(_pdf_bytes()), "application/pdf")},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["rubric_count"] == 60
+
+    import api.routes.upload as up
+    assert up._uploaded["matrix"] is True
+
+
+def test_upload_matrix_returns_422_on_parse_failure(client, tmp_path):
+    with (
+        patch("api.routes.upload.UPLOAD_DIR", str(tmp_path)),
+        patch("api.routes.upload._save_upload", return_value=(str(tmp_path / "matrix.pdf"), 1024)),
+        patch("ingestion.matrix_parser.parse_matrix_pdf", side_effect=ValueError("bad PDF")),
+    ):
+        resp = client.post(
+            "/upload/matrix",
+            files={"file": ("matrix.pdf", io.BytesIO(_pdf_bytes()), "application/pdf")},
+        )
+
+    assert resp.status_code == 422
 
 
 # ── POST /upload/led ──────────────────────────────────────────────────────────

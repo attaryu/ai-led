@@ -258,11 +258,30 @@
 
   <div class="steps">
 
-    <!-- Step 1: Upload LED PDF -->
+    <!-- Step 1: Upload Matriks Penilaian PDF -->
+    <div class="card" id="card-matrix">
+      <div class="card-status status-idle" id="status-matrix">Belum diunggah</div>
+      <div class="card-header">
+        <div class="step-num">1</div>
+        <div>
+          <div class="card-title">Matriks Penilaian (PDF)</div>
+          <div class="card-desc">Rubrik penilaian dari LAM — sumber kriteria dan skor 0–4</div>
+        </div>
+      </div>
+
+      <div class="drop-zone" id="drop-matrix" onclick="document.getElementById('file-matrix').click()">
+        <input type="file" id="file-matrix" accept=".pdf" />
+        <div>Klik atau seret file PDF rubrik ke sini</div>
+        <div class="chosen" id="chosen-matrix"></div>
+      </div>
+      <button class="btn btn-primary" id="btn-matrix" disabled onclick="uploadMatrix()">Unggah &amp; Parse</button>
+    </div>
+
+    <!-- Step 2: Upload LED PDF -->
     <div class="card" id="card-led">
       <div class="card-status status-idle" id="status-led">Belum diunggah</div>
       <div class="card-header">
-        <div class="step-num">1</div>
+        <div class="step-num">2</div>
         <div>
           <div class="card-title">Dokumen LED (PDF)</div>
           <div class="card-desc">Laporan Evaluasi Diri — narasi kualitatif program studi</div>
@@ -285,11 +304,11 @@
       </div>
     </div>
 
-    <!-- Step 2: Upload LKPS Excel -->
+    <!-- Step 3: Upload LKPS Excel -->
     <div class="card" id="card-lkps">
       <div class="card-status status-idle" id="status-lkps">Belum diunggah</div>
       <div class="card-header">
-        <div class="step-num">2</div>
+        <div class="step-num">3</div>
         <div>
           <div class="card-title">Data LKPS (Excel)</div>
           <div class="card-desc">Laporan Kinerja Program Studi — 50 tabel kuantitatif</div>
@@ -304,14 +323,14 @@
       <button class="btn btn-primary" id="btn-lkps" disabled onclick="uploadLkps()">Unggah &amp; Muat</button>
     </div>
 
-    <!-- Step 3: Upload Laporan AK (optional) -->
+    <!-- Step 4: Upload Laporan AK (optional) -->
     <div class="card" id="card-laporan">
       <div class="card-status status-idle" id="status-laporan">Opsional</div>
       <div class="card-header">
-        <div class="step-num">3</div>
+        <div class="step-num">4</div>
         <div>
           <div class="card-title">Laporan AK (Excel) — Opsional</div>
-          <div class="card-desc">Filter subset indikator yang dinilai. Kosongkan untuk menilai 78 indikator default.</div>
+          <div class="card-desc">Filter subset indikator yang dinilai. Kosongkan untuk menilai semua indikator dari matriks.</div>
         </div>
       </div>
 
@@ -323,10 +342,10 @@
       <button class="btn btn-primary" id="btn-laporan" disabled onclick="uploadLaporan()">Unggah</button>
     </div>
 
-    <!-- Step 4: Start Assessment -->
+    <!-- Step 5: Start Assessment -->
     <div class="card">
       <div class="card-header">
-        <div class="step-num">4</div>
+        <div class="step-num">5</div>
         <div>
           <div class="card-title">Mulai Penilaian</div>
           <div class="card-desc">Jalankan agen AI untuk menilai indikator secara paralel</div>
@@ -386,7 +405,8 @@ let pollTimer   = null;
 let ledIndexPollTimer = null;
 
 /* ── File input wiring ─────────────────────────────────────────────────────── */
-['led','lkps','laporan'].forEach(key => {
+const PDF_KEYS = new Set(['matrix', 'led']);
+['matrix','led','lkps','laporan'].forEach(key => {
   const input = document.getElementById(`file-${key}`);
   const btn   = document.getElementById(`btn-${key}`);
   const label = document.getElementById(`chosen-${key}`);
@@ -406,11 +426,9 @@ let ledIndexPollTimer = null;
     drop.classList.remove('dragover');
     const dt = e.dataTransfer;
     if (dt.files[0]) {
-      // Validate extension
       const name = dt.files[0].name.toLowerCase();
-      const ok = key === 'led' ? name.endsWith('.pdf') : (name.endsWith('.xlsx') || name.endsWith('.xls'));
-      if (!ok) { alert(`File harus berformat ${key === 'led' ? 'PDF' : 'Excel'}.`); return; }
-      // Transfer to file input
+      const ok = PDF_KEYS.has(key) ? name.endsWith('.pdf') : (name.endsWith('.xlsx') || name.endsWith('.xls'));
+      if (!ok) { alert(`File harus berformat ${PDF_KEYS.has(key) ? 'PDF' : 'Excel'}.`); return; }
       const dataTransfer = new DataTransfer();
       dataTransfer.items.add(dt.files[0]);
       input.files = dataTransfer.files;
@@ -438,6 +456,22 @@ async function doUpload(endpoint, fileInputId, key) {
     throw new Error(err.detail || resp.statusText);
   }
   return resp.json();
+}
+
+/* ── Matrix upload (parses rubrics) ─────────────────────────────────────────── */
+async function uploadMatrix() {
+  const btn = document.getElementById('btn-matrix');
+  btn.disabled = true;
+  setCardStatus('matrix', 'status-busy', 'Mem-parse…');
+  try {
+    const data = await doUpload('/upload/matrix', 'file-matrix', 'matrix');
+    setCardStatus('matrix', 'status-ok', `✓ ${data.rubric_count} rubrik`);
+    checkAllReady();
+  } catch(e) {
+    setCardStatus('matrix', 'status-err', 'Error');
+    alert('Upload Matriks gagal: ' + e.message);
+    btn.disabled = false;
+  }
 }
 
 /* ── LED upload + index polling ─────────────────────────────────────────────── */
@@ -518,11 +552,12 @@ async function uploadLaporan() {
   }
 }
 
-/* ── Enable start button when LED + LKPS are ready (laporan optional) ──────── */
+/* ── Enable start button when matrix + LED + LKPS are ready (laporan optional) ── */
 function checkAllReady() {
+  const s0 = document.getElementById('status-matrix').className.includes('status-ok');
   const s1 = document.getElementById('status-led').className.includes('status-ok');
   const s2 = document.getElementById('status-lkps').className.includes('status-ok');
-  document.getElementById('btn-start').disabled = !(s1 && s2);
+  document.getElementById('btn-start').disabled = !(s0 && s1 && s2);
 }
 
 /* ── Assessment pipeline ────────────────────────────────────────────────────── */
@@ -663,6 +698,25 @@ function renderResults(data) {
     </div>
   `;
 }
+
+/* ── Bootstrap: reflect server-side state on page load ─────────────────────── */
+(async function bootstrap() {
+  try {
+    const data = await fetch('/upload/status').then(r => r.json());
+    if (data.matrix_uploaded) {
+      setCardStatus('matrix', 'status-ok', `✓ ${data.matrix_rubric_count} rubrik`);
+      checkAllReady();
+    }
+    if (data.led_index_state === 'ready') {
+      setCardStatus('led', 'status-ok', `✓ ${data.led_chunk_count} chunks`);
+      checkAllReady();
+    }
+    if (data.lkps_uploaded) {
+      setCardStatus('lkps', 'status-ok', `✓ tersimpan`);
+      checkAllReady();
+    }
+  } catch (e) { /* server might be cold-starting */ }
+})();
 
 function downloadPdf() {
   const el = document.getElementById('results-panel');
