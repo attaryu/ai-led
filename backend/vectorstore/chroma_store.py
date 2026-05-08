@@ -46,23 +46,32 @@ def index_led_chunks(chunks: list[LEDChunk], persist_dir: str) -> None:
     Metadata stored per chunk:
         page_start, page_end, section_heading (empty string when None), char_start
     """
+    import logging
+    import time
+    log = logging.getLogger(__name__)
+
     client = get_chroma_client(persist_dir)
 
-    # Delete existing collection so indexing is idempotent
     try:
         client.delete_collection(_COLLECTION_NAME)
     except Exception:
-        pass  # Collection didn't exist yet — that's fine
+        pass
+
+    log.info("Loading embedding model (first run downloads ~118MB)…")
+    t0 = time.time()
+    ef = _get_ef()
+    log.info("Embedding model ready in %.1fs", time.time() - t0)
 
     collection = client.create_collection(
         name=_COLLECTION_NAME,
-        embedding_function=_get_ef(),
+        embedding_function=ef,
         metadata={"hnsw:space": "cosine"},
     )
 
-    # ChromaDB add() can handle large lists but batching avoids memory spikes
+    total = len(chunks)
     _BATCH_SIZE = 100
-    for i in range(0, len(chunks), _BATCH_SIZE):
+    t_start = time.time()
+    for i in range(0, total, _BATCH_SIZE):
         batch = chunks[i : i + _BATCH_SIZE]
         collection.add(
             ids=[c.chunk_id for c in batch],
@@ -77,6 +86,9 @@ def index_led_chunks(chunks: list[LEDChunk], persist_dir: str) -> None:
                 for c in batch
             ],
         )
+        done = min(i + _BATCH_SIZE, total)
+        log.info("Indexed %d/%d chunks (%.1fs elapsed)", done, total, time.time() - t_start)
+    log.info("LED indexing finished: %d chunks in %.1fs", total, time.time() - t_start)
 
 
 def search_led(

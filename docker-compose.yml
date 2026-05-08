@@ -6,7 +6,15 @@ services:
     volumes:
       - ./data:/app/data
       - ./backend:/app  # dev only: hot-reload; remove for production
+      - hf_cache:/root/.cache/huggingface  # persist embedding model across restarts
+      - st_cache:/root/.cache/torch        # sentence-transformers torch cache
     env_file: .env
     environment:
       - DATA_DIR=/app/data
+      - HF_HOME=/root/.cache/huggingface
+      - SENTENCE_TRANSFORMERS_HOME=/root/.cache/huggingface/sentence-transformers
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  hf_cache:
+  st_cache:
