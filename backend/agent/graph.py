@@ -71,10 +71,14 @@ PRINSIP CROSS-REFERENCING:
 - Jika narasi LED mengklaim "≥25 SKS basic sciences" tapi LKPS menunjukkan 20 SKS → gunakan data LKPS
 - Berikan skor yang konservatif jika bukti tidak konsisten antara LED dan LKPS
 
-INSTRUKSI OUTPUT: Setelah mengumpulkan semua bukti, akhiri dengan format:
-SKOR: <angka 0-4 atau pecahan desimal untuk composite>
-JUSTIFIKASI: <paragraf ringkas dalam Bahasa Indonesia menjelaskan dasar penilaian>
-CONFIDENCE: <0.0-1.0>"""
+INSTRUKSI OUTPUT (WAJIB DIIKUTI):
+Setelah mengumpulkan semua bukti, akhiri jawaban Anda TEPAT dengan 3 baris
+berikut. JANGAN gunakan markdown (**bold**, ## heading, atau backtick).
+JANGAN tambahkan baris setelahnya. Ini krusial untuk parsing otomatis:
+
+SKOR: <satu angka antara 0 dan 4, contoh: 3 atau 3.5>
+JUSTIFIKASI: <2-3 kalimat Bahasa Indonesia menjelaskan dasar penilaian>
+CONFIDENCE: <satu angka antara 0.0 dan 1.0, contoh: 0.85>"""
 
 
 def build_graph(ollama_client: OllamaClient) -> StateGraph:
@@ -118,20 +122,58 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
     # ── Node: parse_output ────────────────────────────────────────────────────
 
     def parse_output_node(state: AssessmentState) -> AssessmentState:
-        """Extract score, justification, and confidence from the final LLM message."""
+        """Extract score, justification, and confidence from the final LLM message.
+
+        Permissive parser — handles plain (SKOR: 3), markdown bold (**Skor:** 3),
+        heading (## Skor Akhir: 3), and case variations. Picks the LAST valid
+        score value to avoid grabbing a formula reference like "Skor = (I × 2)…"
+        that may appear earlier in the response.
+        """
         last_content = state["messages"][-1].content
+        # Strip markdown noise that confuses regex
+        cleaned = re.sub(r"\*{1,3}|`+|#+\s*", "", last_content)
 
-        score_match = re.search(r"SKOR:\s*([\d\.]+)", last_content)
+        # Find ALL "skor[ final|akhir]: <number>" matches; take the last numeric one
+        # in 0..4 range so a stray "Skor = formula" earlier doesn't win.
+        score_candidates = re.findall(
+            r"(?im)\bskor(?:\s+(?:final|akhir))?\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)",
+            cleaned,
+        )
+        score: float | None = None
+        for cand in reversed(score_candidates):
+            try:
+                v = float(cand)
+            except ValueError:
+                continue
+            if 0.0 <= v <= 4.0:
+                score = v
+                break
+        state["final_score"] = score
+
+        # Justification: prefer explicit JUSTIFIKASI line; fallback to first
+        # ~600 chars after stripping markdown so user still sees something useful.
         just_match = re.search(
-            r"JUSTIFIKASI:\s*(.+?)(?=CONFIDENCE:|$)", last_content, re.DOTALL
+            r"(?is)\bjustifikasi\s*[:=]\s*(.+?)(?=\bconfidence\b|$)",
+            cleaned,
         )
-        conf_match = re.search(r"CONFIDENCE:\s*([\d\.]+)", last_content)
-
-        state["final_score"] = float(score_match.group(1)) if score_match else None
         state["justification"] = (
-            just_match.group(1).strip() if just_match else last_content[:500]
+            just_match.group(1).strip() if just_match else cleaned.strip()[:600]
         )
-        state["confidence"] = float(conf_match.group(1)) if conf_match else 0.5
+
+        # Confidence: 0.0–1.0
+        conf_match = re.search(
+            r"(?i)\bconfidence\s*[:=]\s*([0-9]*\.?[0-9]+)",
+            cleaned,
+        )
+        if conf_match:
+            try:
+                cv = float(conf_match.group(1))
+                state["confidence"] = max(0.0, min(1.0, cv))
+            except ValueError:
+                state["confidence"] = 0.5
+        else:
+            state["confidence"] = 0.5
+
         return state
 
     # ── Build graph ───────────────────────────────────────────────────────────
