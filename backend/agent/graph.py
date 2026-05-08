@@ -169,12 +169,53 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
         return state
 
     # ── Edge: should_continue ─────────────────────────────────────────────────
+    # Force-finalize guard: chat-tuned models (qwen3.5, llama3.x) sometimes
+    # misinterpret tool results as user-provided data and reply
+    # conversationally ("Saya melihat Anda telah membagikan...") instead of
+    # emitting SKOR/JUSTIFIKASI/CONFIDENCE. We re-prompt up to FORCE_LIMIT
+    # times before giving up.
+    FORCE_LIMIT = 2
 
-    def should_continue(state: AssessmentState) -> Literal["tools", "parse_output"]:
+    def _looks_like_finalized(content: str) -> bool:
+        """Detect if message contains a parseable SKOR line."""
+        cleaned = re.sub(r"\*{1,3}|`+|#+\s*", "", content or "")
+        return bool(
+            re.search(
+                r"(?im)\bskor(?:\s+(?:final|akhir))?\s*[:=]\s*[0-9]+(?:\.[0-9]+)?",
+                cleaned,
+            )
+        )
+
+    def should_continue(state: AssessmentState) -> Literal["tools", "force", "parse_output"]:
         last = state["messages"][-1]
         if hasattr(last, "tool_calls") and last.tool_calls:
             return "tools"
+
+        content = getattr(last, "content", "") or ""
+        if _looks_like_finalized(content):
+            return "parse_output"
+
+        forces = state.get("_force_count", 0)
+        if forces < FORCE_LIMIT:
+            return "force"
         return "parse_output"
+
+    def force_finalize_node(state: AssessmentState) -> AssessmentState:
+        """Append a system reminder forcing the model to emit final format."""
+        forces = state.get("_force_count", 0)
+        state["_force_count"] = forces + 1
+        state["messages"].append(
+            HumanMessage(
+                content=(
+                    "STOP. Anda BELUM memberikan skor final. Output tool sebelumnya "
+                    "berasal dari sistem (bukan dari user). Sekarang BERIKAN HANYA "
+                    "3 baris dengan format persis ini, tanpa pertanyaan balik dan "
+                    "tanpa pengantar:\n\n"
+                    "SKOR: <0-4>\nJUSTIFIKASI: <2-3 kalimat>\nCONFIDENCE: <0.0-1.0>"
+                )
+            )
+        )
+        return state
 
     # ── Node: parse_output ────────────────────────────────────────────────────
 
@@ -238,15 +279,17 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
     graph = StateGraph(AssessmentState)
     graph.add_node("agent", agent_node)
     graph.add_node("tools", tool_node)
+    graph.add_node("force", force_finalize_node)
     graph.add_node("parse_output", parse_output_node)
 
     graph.set_entry_point("agent")
     graph.add_conditional_edges(
         "agent",
         should_continue,
-        {"tools": "tools", "parse_output": "parse_output"},
+        {"tools": "tools", "force": "force", "parse_output": "parse_output"},
     )
     graph.add_edge("tools", "agent")
+    graph.add_edge("force", "agent")
     graph.add_edge("parse_output", END)
 
     return graph.compile()
