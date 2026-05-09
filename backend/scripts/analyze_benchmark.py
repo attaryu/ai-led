@@ -231,6 +231,69 @@ def main():
 
     print(f"\n→ Markdown report written to: {md_path}")
 
+    # ─── Three flat CSVs for downstream analysis (Excel / pandas / sheets) ──
+    out_dir = Path("/app/data")
+
+    # 1) Aggregate stats per model
+    agg_path = out_dir / "report_aggregate.csv"
+    with open(agg_path, "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(["model", "n", "mae", "rmse", "exact_pct", "within1_pct",
+                    "pearson_r", "avg_confidence", "avg_runtime_sec",
+                    "total_runtime_sec", "n_errors", "n_none"])
+        for s in sorted(model_stats, key=lambda x: x["mae"]):
+            w.writerow([
+                s["model"], s["n_paired"],
+                round(s["mae"], 4), round(s["rmse"], 4),
+                round(s["exact"] * 100, 2), round(s["within1"] * 100, 2),
+                round(s["pearson_r"], 4) if s["pearson_r"] is not None else "",
+                round(s["avg_confidence"], 4),
+                round(s["avg_runtime_sec"], 2),
+                round(s["total_runtime_sec"], 2),
+                s["n_errors"], s["n_none"],
+            ])
+
+    # 2) Per-indicator wide-form (one row per indicator, one col per model)
+    pi_path = out_dir / "report_per_indicator.csv"
+    with open(pi_path, "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        header = ["indicator_no", "score_type", "ref_score"]
+        for m in models_sorted:
+            header += [f"{m}_score", f"{m}_diff", f"{m}_marker"]
+        w.writerow(header)
+        for ino in indicators_sorted:
+            ref_s = ref.get(ino)
+            row = [ino, ref_type.get(ino, ""), ref_s if ref_s is not None else ""]
+            for m in models_sorted:
+                rec = next((r for r in by_model[m] if int(r["indicator_no"]) == ino), None)
+                ms = _f(rec["score"]) if rec else None
+                if ms is None or ref_s is None:
+                    row += ["", "", "missing"]
+                else:
+                    diff = abs(ms - ref_s)
+                    marker = "exact" if diff == 0 else ("within1" if diff <= 1 else "off")
+                    row += [ms, round(diff, 2), marker]
+            w.writerow(row)
+
+    # 3) Per-type breakdown long-form
+    pt_path = out_dir / "report_per_type.csv"
+    with open(pt_path, "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(["model", "score_type", "n", "mae", "exact_pct",
+                    "within1_pct", "score_zero_count"])
+        for r in per_type_rows:
+            w.writerow([
+                r["model"], r["type"], r["n"],
+                round(r["mae"], 4),
+                round(r["exact"] * 100, 2),
+                round(r["within1"] * 100, 2),
+                r["zeros"],
+            ])
+
+    print(f"→ Aggregate CSV:    {agg_path}")
+    print(f"→ Per-indicator CSV: {pi_path}")
+    print(f"→ Per-type CSV:      {pt_path}")
+
 
 if __name__ == "__main__":
     main()
