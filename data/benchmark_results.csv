@@ -37,3 +37,8 @@ deepseek-r1:32b,50,4.0,KBK rata-rata adalah 63.78% yang lebih dari atau sama den
 deepseek-r1:32b,53,2.0,"Aspek 1, 3, dan 4 terpenuhi namun aspek 2 tidak lengkap dan tidak ada pengakuan mutu internasional.",0.7,,86.3
 deepseek-r1:32b,58,3.0,"UPPS telah melakukan analisis SWOT yang memenuhi aspek identifikasi kekuatan, kelemahan, peluang, dan ancaman secara tepat. Namun, keterkaitan dengan hasil analisis capaian kinerja dan rumusan strategi pengembangan UPPS perlu ditingkatkan.",0.8,,181.9
 deepseek-r1:32b,60,4.0,"UPPS memiliki kebijakan yang komprehensif dan upaya yang diturunkan dalam berbagai peraturan untuk menjamin keberlanjutan program pengembangan. Bukti mencakup alokasi sumber daya, kemampuan pelaksanaan, rencana penjaminan mutu, dan dukungan dari pemangku kepentingan eksternal.",0.95,,50.6
+mistral-small3.2:24b,1,0.0,"Tidak ada data atau informasi yang diberikan untuk menilai kriteria ""Kekhasan VMTS"".",0.0,,55.8
+mistral-small3.2:24b,2,0.0,Tidak ada bukti yang menunjukkan keterlibatan pemangku kepentingan dalam penyusunan VMTS.,0.0,,14.4
+mistral-small3.2:24b,4,2.0,"Sistem tata pamong UPPS mencakup statuta Perguruan Tinggi dan kewenangan yang dijalankan secara efektif, tetapi belum menunjukkan dampak yang signifikan bagi seluruh pemangku kepentingan internal dan eksternal.",0.8,,19.9
+mistral-small3.2:24b,7,0.0,Tidak ada bukti yang disediakan atau informasi yang cukup untuk mengevaluasi pelaksanaan kerja sama UPPS.,0.0,,17.5
+mistral-small3.2:24b,8,0.0,Tidak ada bukti yang disediakan terkait pelaksanaan pengelolaan keuangan di UPPS.,0.0,,8.1
