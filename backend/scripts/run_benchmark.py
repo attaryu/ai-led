@@ -72,9 +72,14 @@ def _run_one(graph, indicator: _Indicator) -> dict:
     try:
         result = graph.invoke(initial)
         elapsed = time.time() - t0
+        # Collapse newlines/tabs in justification so each CSV row stays on one
+        # physical line (mistral outputs multiline tutorials that break grep,
+        # head, line-counters and human reading even though it's spec-valid).
+        raw_just = (result.get("justification") or "")
+        clean_just = " ".join(raw_just.split())[:500]
         return {
             "score": result.get("final_score"),
-            "justification": (result.get("justification") or "")[:500],
+            "justification": clean_just,
             "confidence": result.get("confidence"),
             "error": result.get("error"),
             "runtime_sec": round(elapsed, 1),
