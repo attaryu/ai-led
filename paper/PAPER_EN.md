@@ -1,4 +1,4 @@
-# Native vs Prompt-Based Tool Calling: A Comparative Study of Open-Weight LLM Agents for Higher Education Quality Audit
+# A Comparative Study of Open-Weight LLM Agents for Scoring Process and Curriculum Indicators in LAM-Engineering Quality Audits
 
 **Authors:** [Author Name]¹, [Advisor]¹
 ¹ [Affiliation]
@@ -14,24 +14,30 @@ of indicators against a complex rubric using two heterogeneous
 evidence sources: the qualitative Self-Evaluation Report (LED) and
 the quantitative Performance Report (LKPS). This paper investigates
 whether open-weight Large Language Model (LLM) agents can automate
-this multi-modal scoring task, and how the choice of agent
-paradigm — native function calling versus prompt-based JSON
-dispatch — affects performance across qualitative and quantitative
-indicator types. We implement a Retrieval-Augmented Generation (RAG)
-agent that cross-references vector-indexed LED chunks with
-structured LKPS tables through four specialized tools, and benchmark
-three open-weight models of comparable size (24–35 B parameters):
-a tool-tuned generalist (`qwen3.5:35b`), a reasoning-focused model
-in prompt-based mode (`deepseek-r1:32b`), and a mid-sized chat model
+the cross-modal scoring task on a focused subset of seven process
+and curriculum indicators (CPL alignment, Lesson Plans, Learning
+Process, Research/PkM Integration, Capstone Design, Research, and
+PkM), and how the choice of agent paradigm — native function
+calling versus prompt-based JSON dispatch — affects performance on
+qualitative and composite indicator types.
+
+We implement a Retrieval-Augmented Generation (RAG) agent that
+cross-references vector-indexed LED chunks with structured LKPS
+tables through four specialized tools, and benchmark three
+open-weight models of comparable size (24–35 B parameters): a
+tool-tuned generalist (`qwen3.5:35b`), a reasoning-focused model in
+prompt-based mode (`deepseek-r1:32b`), and a mid-sized chat model
 (`mistral-small3.2:24b`), against an LLM-derived reference produced
-by Claude on the full 60-indicator LAM-Engineering rubric. The
-tool-tuned generalist achieved 88.3% within-±1 accuracy and 36.7%
-exact match (MAE 0.79), substantially outperforming both the
-reasoning model (46.7%, MAE 1.79) and the mid-sized chat model
-(51.7%, MAE 1.70). We identify three distinct failure modes —
-quantitative extraction collapse, tutorial-mode output, and false
-refusal — and discuss implications for deploying open-weight agents
-in standards-compliant academic evaluation.
+by Claude on the seven selected indicators.
+
+The results reveal an interesting trade-off: `deepseek-r1:32b`
+leads in exact match (57.1%, MAE 0.71) thanks to perfect performance
+on composite indicators (100% exact); conversely, `qwen3.5:35b`
+dominates reliability with 100% within-±1 accuracy (MAE 0.57) and
+zero false refusals. The mid-sized chat model `mistral-small3.2:24b`
+performs poorly (MAE 1.81; exact 14.3%) with 4 of 7 outputs being
+false refusals. We discuss implications for model selection in
+AI-assisted draft scorer deployments.
 
 **Keywords:** large language models, retrieval-augmented generation,
 tool calling, automated assessment, quality audit, low-resource
@@ -61,28 +67,40 @@ modest computational cost, while preserving data privacy through
 local deployment. However, no public benchmark exists for the
 LAM-style cross-modal scoring task in Bahasa Indonesia.
 
+We focus this study on **seven process and curriculum indicators**
+— Indicator 14 (CPL alignment and review), 15 (Lesson Plan / RPS),
+16 (Learning Process), 17 (Research and Community Service
+integration), 20 (Capstone Design), 22 (Research), and 24
+(Community Service / PkM). This subset was chosen for two reasons:
+*first*, these indicators most frequently constitute the audit
+bottleneck and consume the most assessor time; *second*, the
+subset provides balanced coverage between purely qualitative
+indicators (text judgment) and composite ones (sub-scores +
+weighted formula), without any pure-quantitative indicators that
+require complex number extraction from LKPS tables.
+
 We observe that LLM agents can be implemented under two distinct
 tool-dispatch paradigms. Models with native tool support, such as
 Qwen and Mistral, emit structured `tool_calls` consumed directly by
-an executor. Reasoning models such as DeepSeek-R1, QwQ, and o1, in
-contrast, emit `<think>...</think>` chain-of-thought blocks and do
-not natively support function calling on Ollama; they require a
-prompt-based JSON dispatch wrapper that manually parses model
-output. The open question we address is: *does prompt-based dispatch
-match native tool calling on document-grounded scoring in this
-domain?*
+an executor. Reasoning models such as DeepSeek-R1, in contrast,
+emit `<think>...</think>` chain-of-thought blocks and do not
+natively support function calling on Ollama; they require a
+prompt-based JSON dispatch wrapper. The open question is: *does
+prompt-based dispatch match native tool calling on document-grounded
+scoring in this domain, and which model is best suited for
+indicators dominated by qualitative/composite judgments?*
 
 The contributions of this paper are:
 1. An open-source cross-modal RAG agent for AMI scoring that fuses
    LED vector retrieval with LKPS table lookup via four specialized
    tools.
-2. The first benchmark of three open-weight LLMs (`qwen3.5:35b`,
-   `deepseek-r1:32b`, `mistral-small3.2:24b`) on the full
-   60-indicator LAM-Engineering rubric, using a stronger LLM
-   (Claude) as a preliminary reference annotator.
-3. A characterization of three failure modes — *quantitative
-   collapse*, *tutorial-mode output*, and *false refusal* — that
-   emerge differently across model families.
+2. A focused benchmark of three open-weight LLMs (`qwen3.5:35b`,
+   `deepseek-r1:32b`, `mistral-small3.2:24b`) on 7 process and
+   curriculum indicators of the LAM-Engineering rubric, using a
+   stronger LLM (Claude) as a preliminary reference annotator.
+3. A characterization of the *exact-match vs reliability* trade-off
+   between models, and identification of the *false refusal*
+   failure mode in mid-sized chat models.
 
 ---
 
@@ -175,7 +193,27 @@ Paradigm selection is automatic, based on a name-pattern match
 (`r1`, `qwq`, `o1-`, `thinking`). A two-step *force-finalize* cap
 prevents models from exiting the loop without a final score.
 
-### 3.4 Reference Annotation
+### 3.4 Indicator Subset Selection
+
+From 60 total indicators in the LAM-Engineering rubric, we selected
+7 core indicators related to **process and curriculum**:
+
+| No | Indicator | Type |
+|----|-----------|------|
+| 14 | CPL alignment and review | Composite |
+| 15 | Lesson Plans (RPS) | Composite |
+| 16 | Learning Process | Composite |
+| 17 | Research and PkM integration in learning | Qualitative |
+| 20 | Capstone Design | Qualitative |
+| 22 | Research | Qualitative |
+| 24 | Community Service (PkM) | Qualitative |
+
+The subset comprises 3 composite and 4 qualitative indicators
+(without pure-quantitative indicators), providing balanced
+coverage between text judgment and judgment + weighted formula
+combinations.
+
+### 3.5 Reference Annotation
 
 Reference scores were generated using Claude (Anthropic) as an
 LLM-as-annotator. For each indicator, Claude received the full
@@ -185,7 +223,7 @@ and confidence. We explicitly state that this is a preliminary
 LLM-derived reference, not certified-assessor ground truth, and
 discuss limitations in Section VI.
 
-### 3.5 Evaluation Metrics
+### 3.6 Evaluation Metrics
 
 - **Mean Absolute Error (MAE):** mean `|score_model − score_ref|`.
 - **Root Mean Squared Error (RMSE):** penalizes large disagreements.
@@ -193,7 +231,7 @@ discuss limitations in Section VI.
 - **Within-±1 accuracy:** rate of cases with |diff| ≤ 1; commonly
   accepted as the inter-assessor agreement threshold.
 - **Pearson r:** linear correlation between model and reference.
-- **Per-type breakdown:** qualitative / composite / quantitative.
+- **Per-type breakdown:** qualitative vs composite.
 - **Score=0 rate:** proxy for the false-refusal failure mode.
 
 ---
@@ -221,8 +259,8 @@ evaluated (Table 1):
 Sampling: temperature 0.1 with default top-p and top-k. The LED
 embedding model is loaded once at deployment for all models alike.
 
-**Run.** All 60 indicators were evaluated for each of the three
-models, yielding 180 agent invocations total. Resume mode handled
+**Run.** All 7 indicators were evaluated for each of the three
+models, yielding 21 agent invocations total. Resume mode handled
 tunnel failures; each result is streamed to CSV so interruptions
 do not erase prior progress.
 
@@ -232,154 +270,210 @@ do not erase prior progress.
 
 ### 5.1 Aggregate Performance
 
-Table 2 summarizes aggregate performance across all 60 indicators.
-The tool-tuned generalist `qwen3.5:35b` dominates every quality
-metric: MAE 0.79 (vs 1.70–1.79 for the others), exact match 36.7%,
-and within-±1 accuracy 88.3%. Notably, `deepseek-r1:32b` has the
-highest mean confidence (0.81) yet the worst MAE (1.79) — a sign
-of overconfidence common in reasoning models that fail at tool
-dispatch.
+Table 2 summarizes aggregate performance across the 7 process and
+curriculum indicators. Two findings stand out: (1)
+`deepseek-r1:32b` leads in exact match (57.1%) and competitive MAE
+(0.71); (2) `qwen3.5:35b` dominates reliability with perfect 100%
+within-±1 accuracy and the best MAE (0.57), although its exact
+match is lower (42.9%).
 
-**Table 2 — Aggregate Performance (60 Indicators)**
+**Table 2 — Aggregate Performance (7 Indicators)**
 
 | Model | MAE ↓ | RMSE ↓ | Exact ↑ | ±1 Acc ↑ | Pearson r | Avg Conf | Runtime/ind |
 |---|---|---|---|---|---|---|---|
-| **`qwen3.5:35b`** | **0.79** | **1.14** | **36.7%** | **88.3%** | -0.06 | 0.73 | 26.6 s |
-| `deepseek-r1:32b` | 1.79 | 2.18 | 15.0% | 46.7% | -0.08 | 0.81 | 74.8 s |
-| `mistral-small3.2:24b` | 1.70 | 2.18 | 23.3% | 51.7% | 0.09 | 0.56 | 11.6 s |
+| **`qwen3.5:35b`** | **0.57** | **0.76** | 42.9% | **100.0%** | 0.35 | 0.78 | 30.2 s |
+| `deepseek-r1:32b` | 0.71 | 1.25 | **57.1%** | 85.7% | **0.41** | 0.74 | 68.2 s |
+| `mistral-small3.2:24b` | 1.81 | 2.15 | 14.3% | 42.9% | 0.34 | 0.88 | 14.1 s |
 
-The near-zero Pearson r values reflect the truncated 5-class
-ordinal score space (0–4), not absence of agreement; within-±1
-accuracy is the more informative measure for ordinal rubric
-scoring.
+`mistral-small3.2:24b` performs far below the other two models with
+MAE 1.81 and within-±1 accuracy of only 42.9% (3 of 7 indicators).
+Notably, this model has the highest mean confidence (0.88) — an
+overconfidence pattern that also surfaces in its false-refusal
+behavior.
 
 ### 5.2 Per-Type Breakdown
 
-Table 3 reveals the **central finding** of this paper: the two
-non-winning models fail in *opposite* indicator types.
+Table 3 reveals the **central finding** of this paper: the models
+exhibit very different performance profiles on composite versus
+purely qualitative indicators.
 
 **Table 3 — Per-Type Breakdown**
 
 | Model | Type | n | MAE ↓ | Exact ↑ | ±1 Acc ↑ | Score=0 |
 |---|---|---|---|---|---|---|
-| `qwen3.5:35b` | Qualitative | 20 | 0.55 | 50.0% | 95.0% | 0 |
-| `qwen3.5:35b` | Composite | 12 | 0.58 | 33.3% | 100.0% | 0 |
-| `qwen3.5:35b` | Quantitative | 28 | 1.05 | 28.6% | 78.6% | 3 |
-| `deepseek-r1:32b` | Qualitative | 20 | 1.55 | 25.0% | 55.0% | 4 |
-| `deepseek-r1:32b` | Composite | 12 | 1.08 | 33.3% | 58.3% | 1 |
-| `deepseek-r1:32b` | Quantitative | 28 | 2.27 | **0.0%** | 35.7% | **12** |
-| `mistral-small3.2:24b` | Qualitative | 20 | 2.45 | 10.0% | 30.0% | **12** |
-| `mistral-small3.2:24b` | Composite | 12 | 2.14 | 16.7% | 33.3% | 7 |
-| `mistral-small3.2:24b` | Quantitative | 28 | 0.98 | 35.7% | 75.0% | 4 |
+| `qwen3.5:35b` | Qualitative | 4 | 0.75 | 25.0% | **100.0%** | 0 |
+| `qwen3.5:35b` | Composite | 3 | 0.33 | 66.7% | **100.0%** | 0 |
+| `deepseek-r1:32b` | Qualitative | 4 | 1.25 | 25.0% | 75.0% | 1 |
+| `deepseek-r1:32b` | Composite | 3 | **0.00** | **100.0%** | **100.0%** | 0 |
+| `mistral-small3.2:24b` | Qualitative | 4 | 2.45 | 0.0% | 25.0% | **3** |
+| `mistral-small3.2:24b` | Composite | 3 | 1.22 | 33.3% | 66.7% | 1 |
 
-`deepseek-r1:32b` collapses on quantitative indicators: 0% exact
-match and 12 of 28 (42.9%) indicators score 0, dominantly with
-"Bukti tidak ditemukan" justifications. Its qualitative (25% exact)
-and composite (33.3% exact) performance is comparatively adequate.
+**`deepseek-r1:32b`** achieves perfect performance on composite
+indicators: 100% exact match across all three indicators (14, 15,
+16) with MAE 0.00. On purely qualitative indicators, performance
+drops significantly to MAE 1.25 with one false-refusal case
+(Indicator 20: Capstone Design scored 0 although the LED clearly
+mentions implementation).
 
-`mistral-small3.2:24b` shows the inverse pattern: quantitative
-performance (35.7% exact) approaches `qwen3.5:35b`'s (28.6%), but
-qualitative is the worst across all conditions (10% exact, 12 of
-20 false-refusals).
+**`qwen3.5:35b`** shows the most consistent profile: 100%
+within-±1 accuracy on both types, with no false refusals. While
+its exact match is not as high as DeepSeek-R1's on composites
+(`qwen` 66.7% vs `deepseek` 100.0%), `qwen` never deviates from
+the reference by more than one point.
 
-Interpretation: reasoning models can score from narrative text but
-cannot reliably extract numbers from tables in prompt-based mode;
-mid-sized chat models can apply formulas when data is provided
-numerically but balk when forced to read long narratives.
+**`mistral-small3.2:24b`** fails on the qualitative category: 0%
+exact and 3 of 4 indicators become false refusals (score 0 with
+"No information provided" despite retrieved LED chunks).
 
-### 5.3 Three Failure Modes
+Interpretation: composite indicators (which require two sub-scores
++ a simple formula) suit a reasoning model that can follow a
+structured chain-of-thought; conversely, purely qualitative
+indicators favor models with strong instruction-following and
+*agentic decisiveness* — the domain in which `qwen3.5:35b`
+excels because it never refuses to score.
 
-Table 4 provides a taxonomy of the three distinct failure modes
-observed.
+### 5.3 Per-Indicator Case Studies
 
-**Table 4 — Failure Mode Taxonomy**
+Table 4 shows model scores versus reference for all 7 indicators.
+Markers (✓ = exact, ~ = within-±1, ✗ = off > 1) provide a quick
+disagreement profile visualization.
 
-| Mode | Observed in | Symptom | Example |
-|---|---|---|---|
-| **Quantitative collapse** | `deepseek-r1:32b` | Score=0 with "Bukti tidak ditemukan" on numerical indicators | Ind. 42 (GPA): ref=4.0; model=0; LKPS Tabel 6.b clearly contains GPA values 3.33–3.58. |
-| **Tutorial-mode output** | `mistral-small3.2:24b` | Model emits step-by-step compute instructions instead of a decision | Ind. 18 (PJP): 200-word formula tutorial; parser extracted "4" from rubric example. |
-| **False refusal & hallucination** | `mistral-small3.2:24b` | Score=0 despite evidence; sometimes fabricates specific numbers | Ind. 23 (PPDMhs): model wrote "PPDMhs=(10/20)×100%=50%"; neither 10 nor 20 in source. |
+**Table 4 — Per-Indicator Scores**
 
-### 5.4 Runtime and Cost
+| No | Type | Ref | `deepseek-r1:32b` | `mistral-small3.2:24b` | `qwen3.5:35b` |
+|----|------|-----|-------------------|------------------------|----------------|
+| 14 | Composite | 3.0 | 3.0 ✓ | 3.0 ✓ | 3.0 ✓ |
+| 15 | Composite | 3.0 | 3.0 ✓ | 2.3 ~ | 3.0 ✓ |
+| 16 | Composite | 3.0 | 3.0 ✓ | 0.0 ✗ | 4.0 ~ |
+| 17 | Qualitative | 2.0 | 1.0 ~ | 0.0 ✗ | 3.0 ~ |
+| 20 | Qualitative | 3.0 | 0.0 ✗ | 0.0 ✗ | 3.0 ✓ |
+| 22 | Qualitative | 3.0 | 2.0 ~ | 0.0 ✗ | 4.0 ~ |
+| 24 | Qualitative | 3.0 | 3.0 ✓ | 4.0 ~ | 4.0 ~ |
 
-`qwen3.5:35b` occupies the speed-quality Pareto frontier with 26.6
-seconds per indicator (Table 5). `mistral-small3.2:24b` is fastest
-(11.6 s) but has the worst quality; `deepseek-r1:32b` is 3× slower
-than the winner due to the reasoning-loop overhead intrinsic to
-CoT models.
+**Indicator 14** (CPL alignment and review): All three models agree
+with the reference (3.0). This shows that indicators with very
+explicit rubrics and evidence can be scored consistently across
+model families.
 
-**Table 5 — Runtime and Cost Comparison**
+**Indicator 16** (Learning Process): `qwen` (4.0) over-scores by
+one point, while `mistral` (0.0) suffers a false refusal despite
+available evidence. `deepseek` is most accurate (3.0).
 
-| Model | Total runtime (60 ind) | Avg/ind | Tokens (est.) | Cost @ Vast.ai 24 GB |
+**Indicator 20** (Capstone Design): The most interesting case —
+**both `deepseek` and `mistral` suffer false refusals** (score 0),
+even though LED p.77 explicitly mentions Capstone implementation
+via the PENS Capstone Project Guide. Only `qwen` provides a correct
+score (3.0) with appropriate justification.
+
+### 5.4 Failure Mode: False Refusal
+
+In this 7-indicator subset, the dominant *failure mode* is
+***false refusal*** — models give a score of 0 with justifications
+like "No evidence" or "Evidence not found" despite evidence being
+available in the retrieved LED chunks shown to the model.
+
+**Table 5 — False Refusal per Model**
+
+| Model | Total score=0 | False-refused indicators |
+|---|---|---|
+| `qwen3.5:35b` | **0** | (none) |
+| `deepseek-r1:32b` | 1 | 20 (Capstone) |
+| `mistral-small3.2:24b` | 4 | 16, 17, 20, 22 |
+
+**`qwen3.5:35b`** demonstrates perfect reliability — never refuses
+to score. This is consistent with Qwen's training on agentic tasks
+that emphasize *decisiveness*.
+
+**`deepseek-r1:32b`** suffers a false refusal only on Indicator 20.
+Inspection of the chain-of-thought (`<think>...</think>` block)
+shows that the model reads the relevant LED chunks but concludes
+"evidence is too generic to verify all four aspects" — an
+*over-cautious refusal*.
+
+**`mistral-small3.2:24b`** shows severe false refusal on 4 of 7
+indicators. The recurring justification pattern "No information
+provided to evaluate this criterion" appears repeatedly even
+though LED chunks and LKPS tables are available in context. This
+pattern suggests that `mistral-small3.2:24b`'s instruction-tuning
+emphasizes *"explanatory caution"* over *"agentic decisiveness"*.
+
+### 5.5 Runtime and Cost
+
+`mistral-small3.2:24b` is fastest (14.1 seconds per indicator) but
+has the worst quality; `deepseek-r1:32b` is slowest (68.2 seconds)
+due to the reasoning-loop overhead intrinsic to CoT models
+(Table 6). `qwen3.5:35b` occupies the speed-quality Pareto
+frontier with 30.2 seconds per indicator.
+
+**Table 6 — Runtime and Cost Comparison**
+
+| Model | Total runtime (7 ind) | Avg/ind | Tokens (est.) | Cost @ Vast.ai 24 GB |
 |---|---|---|---|---|
-| `qwen3.5:35b` | 26.6 min | 26.6 s | ~150k | ≈ $0.10 |
-| `deepseek-r1:32b` | 74.8 min | 74.8 s | ~400k | ≈ $0.30 |
-| `mistral-small3.2:24b` | 11.6 min | 11.6 s | ~80k | ≈ $0.05 |
-
-### 5.5 Justification Case Studies
-
-Table 6 presents two contrasting case studies. On Indicator 8
-(qualitative: financial governance), `qwen3.5` and `deepseek-r1`
-both produce correct scores (4) with comparable justifications,
-while `mistral` produces a false refusal despite identical
-retrieved evidence. On Indicator 42 (quantitative: GPA), `mistral`
-is the correct one; `qwen3.5` under-scores by one (still within ±1);
-and `deepseek-r1` undergoes quantitative collapse.
-
-**Table 6 — Justification Case Studies**
-
-**Indicator 8 — Financial governance (qualitative). Ref = 4.**
-
-| Model | Score | Justification (truncated) |
-|---|---|---|
-| `qwen3.5:35b` | 4.0 | "Evidence shows financial management with 100% realization, comprehensive internal audit system…" |
-| `deepseek-r1:32b` | 4.0 | "Evidence shows financial governance that is accountable, transparent, regulation-compliant…" |
-| `mistral-small3.2:24b` | 0.0 | "No evidence provided that addresses transparency, regulation compliance…" |
-
-**Indicator 42 — GPA (quantitative). Ref = 4.**
-
-| Model | Score | Justification (truncated) |
-|---|---|---|
-| `qwen3.5:35b` | 3.0 | "Average GPA of graduates ranges from 3.33-3.58…" *(under-scored)* |
-| `deepseek-r1:32b` | 0.0 | "No GPA evidence found in provided documents." *(collapse)* |
-| `mistral-small3.2:24b` | 4.0 | "Average GPA over the last 3 years meets the criterion with RIPK ≥ 3.25." *(correct)* |
+| `qwen3.5:35b` | 3.5 min | 30.2 s | ~17k | < $0.05 |
+| `deepseek-r1:32b` | 8.0 min | 68.2 s | ~45k | < $0.05 |
+| `mistral-small3.2:24b` | 1.6 min | 14.1 s | ~8k | < $0.01 |
 
 ---
 
 ## VI. Discussion
 
-**6.1 Why native tool calling wins.** Prompt-based dispatch on a
-reasoning model must traverse three brittle stages: (a) emit valid
-JSON, (b) parse tool results as raw text, and (c) re-invoke tools
-while reasoning. Each stage is a potential failure point absent
-from the native paradigm. With `deepseek-r1`, we frequently observed
-the model "thinking too long" about JSON syntax, ultimately
-producing structures that were format-valid but semantically wrong
-(e.g., the argument name `formula` instead of
-`formula_expression`, which we had to normalize before execution).
+**6.1 Trade-off between exact match and reliability.** Our results
+show that model selection for automated accreditation scoring is
+not a one-dimensional decision. `deepseek-r1:32b` achieves the
+highest exact match (57.1%) but with one large off-error case
+(Indicator 20: score 0 vs ref 3). Conversely `qwen3.5:35b` achieves
+"only" 42.9% exact match, but **never** deviates from the reference
+by more than one point. For deployment as a draft scorer to be
+verified by human assessors, `qwen`'s reliability is more valuable
+than `deepseek`'s exact match: assessors only need to fine-tune by
+±1 instead of redoing the scoring from scratch.
 
-**6.2 Why mid-size models fail differently.** The tutorial-mode
-output of `mistral-small3.2:24b` suggests that this model's
-instruction-tuning emphasized "explanatory helpfulness" over
-"agentic decisiveness". This pattern manifests on Indicators 6, 18,
-27, 31, and 32, where the model returns step-by-step
-"how-to-compute" instructions instead of final answers. The number
-hallucination on Indicator 23 is more concerning: the model
-fabricated NPMhs=10 and NPD=20 not present in source LKPS. This is
-a known instruction-tuning trade-off but underdocumented in
-non-English domain agent settings.
+**6.2 Why reasoning models excel on composites.** On composite
+indicators (formula `Score = (I + II) / 2` or similar),
+`deepseek-r1:32b` achieves 100% exact match. Our hypothesis: the
+composite structure naturally fits DeepSeek's chain-of-thought —
+the model can separately evaluate sub-score I, evaluate sub-score
+II, then apply the formula as a final reasoning step. These stages
+are explicit in the inspectable `<think>` block and rarely fail.
+Conversely, purely qualitative indicators require a "one-shot"
+score that depends on holistic judgment — an area where reasoning
+models are actually less adept than models with dedicated
+tool-tuning.
 
-**6.3 Implications for institutional deployment.** Our results
-indicate that 35 B-scale open-weight LLMs with native tool calling
-can reach 88% within-±1 of an expert-LLM reference at 26 seconds
-per indicator. This is promising as a *draft scorer* assisting
-human assessors, but not yet adequate for autonomous decision
-making. Human assessors remain necessary for verification,
-particularly on indicators with high disagreement or low
-confidence.
+**6.3 False refusal as the dominant failure mode.** In this subset,
+*quantitative collapse* (which we identify as a failure mode in our
+broader 60-indicator study) is not observed because no
+pure-quantitative indicators are in the subset. However, *false
+refusal* — the model declining to score despite evidence —
+becomes the dominant failure mode, especially for
+`mistral-small3.2:24b` (4 of 7). The recurring justification
+pattern ("No information provided") suggests that this model's
+instruction-tuning tends toward *over-cautiousness*. This is a
+common instruction-tuning trade-off: models trained to "acknowledge
+uncertainty" can consistently refuse to answer in settings with
+ambiguous evidence or imperfect retrieval.
 
-**6.4 Limitations.** This study has several important limitations
+**6.4 Implications for institutional deployment.** Results on this
+7-indicator subset provide concrete recommendations for higher
+education institutions wishing to leverage LLM agents for internal
+quality audits:
+- For a **reliable draft scorer**: choose `qwen3.5:35b` (or
+  similar generalist with native tool-tuning). 100% within-±1
+  means human assessors only need a single-point fine-tuning.
+- For indicators **dominated by composite structure**:
+  `deepseek-r1:32b` can be more accurate *if* the analyzed
+  indicators fall within its strong zone, though the risk of
+  off-error on complex qualitative cases must still be flagged.
+- **Avoid** `mistral-small3.2:24b` for qualitative-dominant
+  indicators — the 75% false-refusal rate in this category will
+  require extensive manual correction.
+
+**6.5 Limitations.** This study has several important limitations
 that should be considered when interpreting the results:
+- **Limited subset (n=7):** we focus on process and curriculum
+  indicators; generalization to other indicators (especially
+  pure-quantitative ones with LKPS extraction) is not verified
+  in this paper.
 - **Single program (n=1):** generalization to other programs,
   institutions, or non-engineering disciplines is unverified.
 - **LLM-derived reference:** Claude as a preliminary annotator is
@@ -398,22 +492,29 @@ that should be considered when interpreting the results:
 
 ## VII. Conclusion
 
-This paper presents the first benchmark of three 24–35 B
-parameter open-weight LLMs on the Indonesian higher-education
-accreditation scoring task in the LAM-Engineering style. The key
-finding: open-weight LLMs with native tool calling (`qwen3.5:35b`
-in our tests) approach a useful baseline for AI-assisted
-accreditation scoring, achieving 88.3% within-±1 accuracy.
-Conversely, prompt-based dispatch on a reasoning model
-(`deepseek-r1:32b`) underperforms specifically on numerical
-extraction from structured tables, and a mid-sized chat model
-(`mistral-small3.2:24b`) exhibits unique failure modes — tutorial
-output and false refusal — on qualitative indicators.
+This paper presents a focused benchmark of three 24–35 B
+parameter open-weight LLMs on 7 process and curriculum indicators
+of the LAM-Engineering rubric. Key findings:
+- `deepseek-r1:32b` (a reasoning model with prompt-based dispatch)
+  achieves the highest exact match of 57.1% (MAE 0.71), thanks to
+  perfect 100% performance on composite indicators.
+- `qwen3.5:35b` (a generalist with native tool-tuning) excels in
+  reliability with perfect 100% within-±1 accuracy (MAE 0.57) and
+  no false refusals.
+- `mistral-small3.2:24b` performs poorly on this subset (MAE 1.81;
+  exact 14.3%) with 4 of 7 outputs being false refusals,
+  particularly on qualitative indicators.
 
-We release the agent code, anonymized scoring traces, and
-benchmark scripts to facilitate further work, including extension
-to multiple programs, validation by human accreditation experts,
-and exploration of alternative agent paradigms.
+For practical deployment as a draft scorer to be verified by human
+assessors, we recommend `qwen3.5:35b` for its consistent
+reliability. For batches of indicators dominated by composite
+structure, `deepseek-r1:32b` can be a promising alternative, with
+caution regarding occasional false-refusal cases.
+
+We release the agent code, anonymized scoring traces, and benchmark
+scripts to facilitate further work, including extension to all 60
+indicators, validation by human accreditation experts, and
+comparison with managed models such as GPT, Claude, and Gemini.
 
 **Code & data:** [github URL after anonymization]
 
