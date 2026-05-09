@@ -5,11 +5,19 @@ Indonesian higher education accreditation.
 
 ## Files
 
+### English version
 | File | Purpose |
 |---|---|
 | `01_abstract_outline.md` | Title, abstract (~220 words), 7-section IMRaD outline (~6 pages) |
 | `02_figures.md` | 5 figures: architecture diagram + 4 plottable matplotlib recipes with data |
 | `03_tables.md` | 6 tables in both Markdown and LaTeX; ready to drop into Overleaf |
+
+### Versi Bahasa Indonesia (untuk Sinta 2-3 / konferensi Indonesia)
+| File | Tujuan |
+|---|---|
+| `01_abstrak_outline_id.md` | Judul, abstrak (~220 kata), outline IMRaD 7-bagian (~6 halaman) |
+| `02_gambar_id.md` | 5 gambar: diagram arsitektur + 4 resep matplotlib siap-plot dengan data |
+| `03_tabel_id.md` | 6 tabel dalam Markdown dan LaTeX; siap drop ke Overleaf |
 
 ## Generation pipeline
 
