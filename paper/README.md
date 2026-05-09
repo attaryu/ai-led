@@ -3,7 +3,28 @@
 Ready-to-paste materials for the open-weight LLM benchmark paper on
 Indonesian higher education accreditation.
 
+## Quick start
+
+**Untuk submit cepat → langsung pakai 1 file utuh:**
+- `PAPER_EN.md` — paper lengkap versi English (siap convert ke LaTeX/PDF)
+- `PAPER_ID.md` — paper lengkap versi Bahasa Indonesia
+
+Konversi ke PDF cepat:
+```bash
+pandoc PAPER_ID.md -o paper.pdf --pdf-engine=xelatex
+# atau IEEE template:
+pandoc PAPER_EN.md -o paper.pdf --template=ieee.tex
+```
+
 ## Files
+
+### Single-file complete papers (recommended for submission)
+| File | Tujuan |
+|---|---|
+| `PAPER_EN.md` | Paper lengkap English: Abstract → I. Intro → II. Related Work → III. Method → IV. Setup → V. Results → VI. Discussion → VII. Conclusion → References. ~6 hal saat di-render. |
+| `PAPER_ID.md` | Paper lengkap Bahasa Indonesia, struktur identik. |
+
+### Modular pieces (jika ingin remix per-section)
 
 ### English version
 | File | Purpose |
