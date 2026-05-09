@@ -58,7 +58,7 @@ Tool yang tersedia:
 1. get_indicator_rubric  — args: {"indicator_no": <int 1-78>}
 2. search_led_evidence   — args: {"query": "<id>", "n_results": <int, default 5>}
 3. get_lkps_table        — args: {"table_reference": "<misal 'Tabel 2.a. LKPS' atau '6.f.2'>"}
-4. compute_formula_score — args: {"formula": "<expr>", "variables": {<key: value>}}
+4. compute_formula_score — args: {"formula_expression": "<expr Python: BOP / 5000000>", "variables": {<key: value>}}
 
 ALUR WAJIB:
 1. Mulai: get_indicator_rubric untuk pahami kriteria scoring
@@ -262,6 +262,18 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
         elif action == "search_led_evidence":
             if "q" in args and "query" not in args:
                 args["query"] = args.pop("q")
+        elif action == "compute_formula_score":
+            if "formula" in args and "formula_expression" not in args:
+                args["formula_expression"] = args.pop("formula")
+            if "expression" in args and "formula_expression" not in args:
+                args["formula_expression"] = args.pop("expression")
+            if "vars" in args and "variables" not in args:
+                args["variables"] = args.pop("vars")
+        elif action == "get_indicator_rubric":
+            if "indicator" in args and "indicator_no" not in args:
+                args["indicator_no"] = args.pop("indicator")
+            if "no" in args and "indicator_no" not in args:
+                args["indicator_no"] = args.pop("no")
 
         try:
             result = tool.invoke(args) if hasattr(tool, "invoke") else tool(**args)
