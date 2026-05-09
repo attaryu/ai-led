@@ -4,12 +4,16 @@ Outputs:
   - Per-model aggregate stats (MAE, exact match, ±1 accuracy, Pearson r)
   - Per-indicator comparison table
   - Saves Markdown report to data/benchmark_report.md
+  - Three flat CSVs: aggregate, per-indicator, per-type
 
 Usage:
     python -m scripts.analyze_benchmark
+    python -m scripts.analyze_benchmark --indicators 14,15,16,17,20,22,24
+    python -m scripts.analyze_benchmark --indicators 14,15,16,17,20,22,24 --suffix _focus7
 """
 from __future__ import annotations
 
+import argparse
 import csv
 import math
 import statistics
@@ -47,10 +51,28 @@ def _pearson(xs: list[float], ys: list[float]) -> float | None:
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--indicators", default="",
+                    help="Comma-separated indicator numbers to include (default: all). "
+                         "Example: --indicators 14,15,16,17,20,22,24")
+    ap.add_argument("--suffix", default="",
+                    help="Filename suffix for outputs, e.g. '_focus7' produces "
+                         "report_aggregate_focus7.csv. Default: empty (overwrites canonical).")
+    args = ap.parse_args()
+
+    indicator_filter: set[int] | None = None
+    if args.indicators.strip():
+        indicator_filter = {int(x.strip()) for x in args.indicators.split(",") if x.strip()}
+
     ref_rows = _load_csv("/app/data/reference_scores_claude.csv")
     ref = {int(r["indicator_no"]): _f(r["score"]) for r in ref_rows}
     ref_type = {int(r["indicator_no"]): r.get("score_type", "unknown") for r in ref_rows}
     bench = _load_csv("/app/data/benchmark_results.csv")
+
+    if indicator_filter is not None:
+        bench = [r for r in bench if int(r["indicator_no"]) in indicator_filter]
+        print(f"Filtering to {len(indicator_filter)} indicators: "
+              f"{sorted(indicator_filter)}")
 
     # group by model
     by_model: dict[str, list[dict]] = defaultdict(list)
@@ -184,7 +206,7 @@ def main():
         print(f"  {ino:<4} {ref_str:<5} " + " ".join(cells))
 
     # ─── Markdown report ───────────────────────────────────────────────────
-    md_path = Path("/app/data/benchmark_report.md")
+    md_path = Path(f"/app/data/benchmark_report{args.suffix}.md")
     with open(md_path, "w", encoding="utf-8") as fh:
         fh.write("# Benchmark Report — AMI Assessment\n\n")
         fh.write(f"Reference: `data/reference_scores_claude.csv` (Claude as preliminary annotator)\n\n")
@@ -235,7 +257,7 @@ def main():
     out_dir = Path("/app/data")
 
     # 1) Aggregate stats per model
-    agg_path = out_dir / "report_aggregate.csv"
+    agg_path = out_dir / f"report_aggregate{args.suffix}.csv"
     with open(agg_path, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(["model", "n", "mae", "rmse", "exact_pct", "within1_pct",
@@ -254,7 +276,7 @@ def main():
             ])
 
     # 2) Per-indicator wide-form (one row per indicator, one col per model)
-    pi_path = out_dir / "report_per_indicator.csv"
+    pi_path = out_dir / f"report_per_indicator{args.suffix}.csv"
     with open(pi_path, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         header = ["indicator_no", "score_type", "ref_score"]
@@ -276,7 +298,7 @@ def main():
             w.writerow(row)
 
     # 3) Per-type breakdown long-form
-    pt_path = out_dir / "report_per_type.csv"
+    pt_path = out_dir / f"report_per_type{args.suffix}.csv"
     with open(pt_path, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(["model", "score_type", "n", "mae", "exact_pct",
