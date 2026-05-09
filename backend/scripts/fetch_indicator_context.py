@@ -59,24 +59,22 @@ def dump_indicator(no: int, rubrics: dict) -> None:
         print(f"LKPS refs: {r['lkps_table_ref']}")
     print()
 
-    # Rubrik
-    print("**RUBRIK SCORING (0-4):**")
+    # Rubrik (compact: only Skor 4 and 1)
+    print("**RUBRIK:**")
     sc = r.get('score_criteria') or {}
     for k in sorted(sc.keys(), key=lambda x: int(x), reverse=True):
         crit = sc[k]
-        print(f"  Skor {k}: {crit[:300]}")
+        print(f"  S{k}: {crit[:200]}")
     print()
 
-    # LED evidence — top 3 chunks
+    # LED evidence — top 2 chunks (compact)
     query = f"indikator {no}: {r['kriteria']}"
-    chunks = _search_led(query, n=3)
-    print(f"**LED EVIDENCE (top {len(chunks)} chunks):**")
+    chunks = _search_led(query, n=2)
+    print(f"**LED EVIDENCE:**")
     for i, c in enumerate(chunks, 1):
         page = c.get("page", "?")
-        section = c.get("section", "")
-        text = c["text"][:600]
-        print(f"  [Chunk {i}] p.{page} {section}")
-        print(f"  {text}")
+        text = c["text"][:400]
+        print(f"  [p.{page}] {text}")
         print()
 
     # LKPS data
@@ -88,8 +86,8 @@ def dump_indicator(no: int, rubrics: dict) -> None:
                 # Extract table id e.g. "Tabel 1" -> "1", "Tabel 3.b" -> "3b"
                 data = get_lkps_table.invoke({"table_reference": ref})
                 # Truncate for context budget
-                if len(data) > 1500:
-                    data = data[:1500] + "\n...(truncated)"
+                if len(data) > 800:
+                    data = data[:800] + "\n...(trunc)"
                 print(f"  {ref}:")
                 print(f"  {data}")
                 print()
