@@ -7,6 +7,8 @@ queries are handled correctly.
 
 from __future__ import annotations
 
+import threading
+
 import chromadb
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
@@ -35,9 +37,21 @@ def _get_ef() -> SentenceTransformerEmbeddingFunction:
 # ---------------------------------------------------------------------------
 
 
-def get_chroma_client(persist_dir: str) -> chromadb.ClientAPI:
-    """Return a persistent ChromaDB client stored at *persist_dir*."""
-    return chromadb.PersistentClient(path=persist_dir)
+# Per-process client cache + lock. ChromaDB 1.x has a thread-safety bug in
+# SharedSystemClient._create_system_if_not_exists where concurrent calls
+# race between the dict-check and the return, throwing
+# "KeyError: '/app/data/chroma_db'". We serialize PersistentClient
+# construction and cache the result.
+_clients: dict[str, "chromadb.ClientAPI"] = {}
+_client_lock = threading.Lock()
+
+
+def get_chroma_client(persist_dir: str) -> "chromadb.ClientAPI":
+    """Return a thread-safe cached persistent ChromaDB client at *persist_dir*."""
+    with _client_lock:
+        if persist_dir not in _clients:
+            _clients[persist_dir] = chromadb.PersistentClient(path=persist_dir)
+        return _clients[persist_dir]
 
 
 def index_led_chunks(chunks: list[LEDChunk], persist_dir: str) -> None:

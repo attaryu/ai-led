@@ -108,6 +108,11 @@ def main():
         default="/app/data/benchmark_results.csv",
         help="Output CSV path",
     )
+    parser.add_argument(
+        "--fresh",
+        action="store_true",
+        help="Start from scratch (overwrite CSV). Default: resume — skip pairs already completed (non-null score).",
+    )
     args = parser.parse_args()
 
     indicator_nos = [int(x.strip()) for x in args.indicators.split(",")]
@@ -119,16 +124,30 @@ def main():
 
     _ensure_lkps_loaded()
 
-    # Write header (overwrite — fresh benchmark each run)
-    with open(args.output, "w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(
-            fh,
-            fieldnames=["model", "indicator_no", "score", "justification", "confidence", "error", "runtime_sec"],
-        )
-        writer.writeheader()
+    fieldnames = ["model", "indicator_no", "score", "justification", "confidence", "error", "runtime_sec"]
+
+    # Resume logic: collect (model, indicator_no) pairs already completed (non-null score)
+    completed: set[tuple[str, int]] = set()
+    if not args.fresh and os.path.exists(args.output):
+        with open(args.output, encoding="utf-8") as fh:
+            for row in csv.DictReader(fh):
+                score_str = (row.get("score") or "").strip()
+                if score_str and score_str.lower() != "none":
+                    try:
+                        completed.add((row["model"], int(row["indicator_no"])))
+                    except (KeyError, ValueError):
+                        pass
+        log.info("RESUME mode: %d pairs already completed, will skip.", len(completed))
+
+    # Open in append mode if resuming, else write header fresh
+    file_exists = os.path.exists(args.output)
+    if args.fresh or not file_exists:
+        with open(args.output, "w", newline="", encoding="utf-8") as fh:
+            csv.DictWriter(fh, fieldnames=fieldnames).writeheader()
 
     total_pairs = len(models) * len(indicators)
     done = 0
+    skipped = 0
 
     for model in models:
         log.info("=" * 60)
@@ -147,14 +166,17 @@ def main():
 
         for indicator in indicators:
             done += 1
+            if (model, indicator.indicator_no) in completed:
+                skipped += 1
+                log.info("[%d/%d] %s — Indikator %d → SKIP (already done)",
+                         done, total_pairs, model, indicator.indicator_no)
+                continue
+
             log.info("[%d/%d] %s — Indikator %d", done, total_pairs, model, indicator.indicator_no)
             res = _run_one(graph, indicator)
 
             with open(args.output, "a", newline="", encoding="utf-8") as fh:
-                writer = csv.DictWriter(
-                    fh,
-                    fieldnames=["model", "indicator_no", "score", "justification", "confidence", "error", "runtime_sec"],
-                )
+                writer = csv.DictWriter(fh, fieldnames=fieldnames)
                 writer.writerow({
                     "model": model,
                     "indicator_no": indicator.indicator_no,
@@ -166,6 +188,8 @@ def main():
                 })
             log.info("  → score=%s confidence=%s runtime=%ss",
                      res["score"], res["confidence"], res["runtime_sec"])
+
+    log.info("Skipped (already done): %d / %d", skipped, total_pairs)
 
     log.info("Benchmark complete. Output: %s", args.output)
 
