@@ -57,7 +57,7 @@ Tool yang tersedia:
 
 1. get_indicator_rubric  — args: {"indicator_no": <int 1-78>}
 2. search_led_evidence   — args: {"query": "<id>", "n_results": <int, default 5>}
-3. get_lkps_table        — args: {"table_id": "<misal 2a1>"}
+3. get_lkps_table        — args: {"table_reference": "<misal 'Tabel 2.a. LKPS' atau '6.f.2'>"}
 4. compute_formula_score — args: {"formula": "<expr>", "variables": {<key: value>}}
 
 ALUR WAJIB:
@@ -252,6 +252,16 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
         tool = _TOOL_REGISTRY.get(action)
         if tool is None:
             return state
+
+        # Normalize common arg-name mistakes from LLMs
+        if action == "get_lkps_table":
+            if "table_id" in args and "table_reference" not in args:
+                args["table_reference"] = args.pop("table_id")
+            if "table" in args and "table_reference" not in args:
+                args["table_reference"] = args.pop("table")
+        elif action == "search_led_evidence":
+            if "q" in args and "query" not in args:
+                args["query"] = args.pop("q")
 
         try:
             result = tool.invoke(args) if hasattr(tool, "invoke") else tool(**args)
