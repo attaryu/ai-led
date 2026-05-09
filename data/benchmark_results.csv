@@ -33,3 +33,7 @@ deepseek-r1:32b,35,2.0,"Bukti menunjukkan adanya usaha dalam mengembangkan kegia
 deepseek-r1:32b,39,4.0,All four aspects of K3L are sufficiently evidenced.,1.0,,42.1
 deepseek-r1:32b,42,3.6,"The average IPK (RIPK) of graduates over the last three years is 3.00, which falls within the range of 2.00 ≤ RIPK < 3.25. Using the formula ((8 * RIPK) - 6) / 5, the calculated score is 3.6.",1.0,,249.7
 deepseek-r1:32b,48,1.0,Bukti tidak mencukupi untuk koordinasi di tingkat PT dan penggunaan hasil tracer study.,0.8,,58.2
+deepseek-r1:32b,50,4.0,KBK rata-rata adalah 63.78% yang lebih dari atau sama dengan 60%,1.0,,115.2
+deepseek-r1:32b,53,2.0,"Aspek 1, 3, dan 4 terpenuhi namun aspek 2 tidak lengkap dan tidak ada pengakuan mutu internasional.",0.7,,86.3
+deepseek-r1:32b,58,3.0,"UPPS telah melakukan analisis SWOT yang memenuhi aspek identifikasi kekuatan, kelemahan, peluang, dan ancaman secara tepat. Namun, keterkaitan dengan hasil analisis capaian kinerja dan rumusan strategi pengembangan UPPS perlu ditingkatkan.",0.8,,181.9
+deepseek-r1:32b,60,4.0,"UPPS memiliki kebijakan yang komprehensif dan upaya yang diturunkan dalam berbagai peraturan untuk menjamin keberlanjutan program pengembangan. Bukti mencakup alokasi sumber daya, kemampuan pelaksanaan, rencana penjaminan mutu, dan dukungan dari pemangku kepentingan eksternal.",0.95,,50.6

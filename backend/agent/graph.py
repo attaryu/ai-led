@@ -175,6 +175,11 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
     # emitting SKOR/JUSTIFIKASI/CONFIDENCE. We re-prompt up to FORCE_LIMIT
     # times before giving up.
     FORCE_LIMIT = 2
+    # Hard cap on tool-calling iterations. Some models (e.g. gemma4) loop
+    # forever calling tools without ever emitting a final answer. Once this
+    # cap is hit, route to force-finalize regardless of the model's last
+    # tool_calls request.
+    MAX_TOOL_CALLS = 10
 
     def _looks_like_finalized(content: str) -> bool:
         """Detect if message contains a parseable SKOR line."""
@@ -188,7 +193,17 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
 
     def should_continue(state: AssessmentState) -> Literal["tools", "force", "parse_output"]:
         last = state["messages"][-1]
+        # Count tool messages to detect runaway loops (some models never finalize).
+        tool_msg_count = sum(
+            1 for m in state["messages"]
+            if getattr(m, "type", "") == "tool" or m.__class__.__name__ == "ToolMessage"
+        )
+
         if hasattr(last, "tool_calls") and last.tool_calls:
+            if tool_msg_count >= MAX_TOOL_CALLS:
+                # Cap exceeded — drop the pending tool_calls and force finalize
+                # to break the loop.
+                return "force"
             return "tools"
 
         content = getattr(last, "content", "") or ""
@@ -201,16 +216,32 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
         return "parse_output"
 
     def force_finalize_node(state: AssessmentState) -> AssessmentState:
-        """Append a system reminder forcing the model to emit final format."""
+        """Append a system reminder forcing the model to emit final format.
+
+        If the last message is an AIMessage with pending tool_calls (because
+        we hit MAX_TOOL_CALLS cap), fabricate dummy ToolMessage replies first
+        so the conversation history stays valid.
+        """
+        from langchain_core.messages import ToolMessage
+
+        last = state["messages"][-1]
+        if hasattr(last, "tool_calls") and last.tool_calls:
+            for call in last.tool_calls:
+                state["messages"].append(
+                    ToolMessage(
+                        content="(Tool call dibatalkan — batas iterasi tercapai. Finalisasi sekarang dengan bukti yang sudah ada.)",
+                        tool_call_id=call.get("id", ""),
+                    )
+                )
+
         forces = state.get("_force_count", 0)
         state["_force_count"] = forces + 1
         state["messages"].append(
             HumanMessage(
                 content=(
-                    "STOP. Anda BELUM memberikan skor final. Output tool sebelumnya "
-                    "berasal dari sistem (bukan dari user). Sekarang BERIKAN HANYA "
-                    "3 baris dengan format persis ini, tanpa pertanyaan balik dan "
-                    "tanpa pengantar:\n\n"
+                    "STOP. Batas iterasi tool tercapai atau Anda belum memberikan skor final. "
+                    "Output tool sebelumnya dari sistem, bukan user. "
+                    "Sekarang berikan HANYA 3 baris dengan format ini, tanpa pertanyaan balik:\n\n"
                     "SKOR: <0-4>\nJUSTIFIKASI: <2-3 kalimat>\nCONFIDENCE: <0.0-1.0>"
                 )
             )
