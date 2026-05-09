@@ -47,7 +47,9 @@ def _pearson(xs: list[float], ys: list[float]) -> float | None:
 
 
 def main():
-    ref = {int(r["indicator_no"]): _f(r["score"]) for r in _load_csv("/app/data/reference_scores_claude.csv")}
+    ref_rows = _load_csv("/app/data/reference_scores_claude.csv")
+    ref = {int(r["indicator_no"]): _f(r["score"]) for r in ref_rows}
+    ref_type = {int(r["indicator_no"]): r.get("score_type", "unknown") for r in ref_rows}
     bench = _load_csv("/app/data/benchmark_results.csv")
 
     # group by model
@@ -124,6 +126,36 @@ def main():
         print(f"  Avg runtime/ind:  {avg_runtime:.1f}s")
         print(f"  Total runtime:    {total_runtime:.0f}s ({total_runtime/60:.1f} min)")
 
+    # ─── Per-type breakdown ────────────────────────────────────────────────
+    print("\n" + "=" * 80)
+    print("PER-TYPE BREAKDOWN (qualitative / composite / quantitative)")
+    print("=" * 80)
+    per_type_rows = []
+    for model, rows in by_model.items():
+        for typ in ("qualitative", "composite", "quantitative"):
+            paired = []
+            n_zero = 0
+            for r in rows:
+                ino = int(r["indicator_no"])
+                if ref_type.get(ino) != typ:
+                    continue
+                ref_score = ref.get(ino)
+                ms = _f(r["score"])
+                if ms == 0.0:
+                    n_zero += 1
+                if ref_score is not None and ms is not None:
+                    paired.append((ref_score, ms))
+            if not paired:
+                continue
+            mae = statistics.mean(abs(rs - ms) for rs, ms in paired)
+            exact = sum(1 for rs, ms in paired if rs == ms) / len(paired)
+            within1 = sum(1 for rs, ms in paired if abs(rs - ms) <= 1) / len(paired)
+            print(f"  {model:30s} {typ:14s}  n={len(paired):2d}  MAE={mae:.2f}  Exact={exact:.1%}  ±1={within1:.1%}  zeros={n_zero}")
+            per_type_rows.append({
+                "model": model, "type": typ, "n": len(paired),
+                "mae": mae, "exact": exact, "within1": within1, "zeros": n_zero,
+            })
+
     # ─── Per-indicator comparison ──────────────────────────────────────────
     print("\n" + "=" * 80)
     print("PER-INDICATOR COMPARISON")
@@ -184,6 +216,12 @@ def main():
                     else: marker = " ✗"
                     cells.append(f"{ms:.1f}{marker}")
             fh.write(f"| {ino} | {ref_str} | " + " | ".join(cells) + " |\n")
+
+        fh.write("\n## Per-Type Breakdown\n\n")
+        fh.write("| Model | Type | N | MAE ↓ | Exact ↑ | ±1 Acc ↑ | Score=0 (false-refusal proxy) |\n")
+        fh.write("|---|---|---|---|---|---|---|\n")
+        for r in per_type_rows:
+            fh.write(f"| `{r['model']}` | {r['type']} | {r['n']} | {r['mae']:.2f} | {r['exact']:.1%} | {r['within1']:.1%} | {r['zeros']} |\n")
 
         fh.write("\n## Legend\n\n")
         fh.write("- ✓ = exact match with reference\n")
