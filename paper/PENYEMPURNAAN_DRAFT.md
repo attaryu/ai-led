@@ -1,152 +1,186 @@
-# Draft Penyempurnaan Paper "Automatic Internal Academic Assessment"
+# Refinement Draft for "Automatic Internal Academic Assessment" Paper
 
-**Sumber:** `docs/reference/paper/Jurnal-AI.pdf` (7 halaman, 232KB)
+**Source:** `docs/reference/paper/Jurnal-AI.pdf` (7 pages, 232KB)
 **Target venue:** Equilibrium: Jurnal Pendidikan, Vol. XIV. Issu 1. Januari-April 2026
 
 ---
 
-## A. ISU KRITIS YANG HARUS DIPERBAIKI
+## A. CRITICAL ISSUES TO FIX
 
-| # | Isu | Tingkat Kritis | Saran perbaikan |
-|---|-----|---------------|-----------------|
-| 1 | **Tidak ada section METHODS** | 🔴 Kritis | Tambahkan sebelum RESULTS — wajib di IMRaD |
-| 2 | **Tidak ada ABSTRAK (Bahasa Indonesia)** | 🔴 Kritis | Template Equilibrium **wajib** dual-language abstract |
-| 3 | **REFERENCES kosong** | 🔴 Kritis | Halaman 7 hanya tertulis "REFERENCE" tanpa isi — wajib 10–15 referensi APA 6th |
-| 4 | **Title menyebut "PENS" eksplisit** | 🟡 Penting | Anonymisasi institusi sesuai NDA partner |
-| 5 | **Inkonsistensi data antar tabel** | 🟡 Penting | Tabel 1 menyebut Mistral MAE 0.7143 & DeepSeek 1.81; Tabel 4 (Mistral) menampilkan zeros pada indikator 3,4,7. Cross-check dengan `data/report_per_indicator_focus7.csv` mengindikasikan **label Mistral & DeepSeek mungkin tertukar** di Tabel 1 (data benar: DeepSeek=0.71, Mistral=1.81) |
-| 6 | **Hanya tabel, tidak ada figure** | 🟡 Penting | Tambah 4–5 visualisasi untuk meningkatkan readability dan citation appeal |
-| 7 | **Novelty claim shallow** | 🟡 Penting | Klaim "first multi-LLM comparison" perlu didukung positioning vs literatur 2024–2025 |
-| 8 | Penjelasan metrik tidak lengkap (MAE, RMSE, dll) | 🟢 Minor | Tambahkan formula + interpretasi di Methods |
-| 9 | Tidak ada *limitations* section | 🟢 Minor | Wajib untuk paper akademik — ada di Discussion atau separate |
-| 10 | Tidak ada acknowledgment | 🟢 Minor | Untuk NDA disclosure dan compute resource |
+| # | Issue | Severity | Recommended action |
+|---|-------|----------|--------------------|
+| 1 | **METHODS section missing** | 🔴 Critical | Add before RESULTS — mandatory in IMRaD structure |
+| 2 | **ABSTRAK (Bahasa Indonesia) missing** | 🔴 Critical | Equilibrium template **requires** dual-language abstract |
+| 3 | **REFERENCES section empty** | 🔴 Critical | Page 7 only contains the heading "REFERENCE" with no entries — must populate with 10–15 APA 6th references |
+| 4 | **Title explicitly mentions "PENS"** | 🟡 Important | Anonymize the institution per NDA with partner |
+| 5 | **Inconsistency between Table 1 and Tables 2–4** | 🟡 Important | Table 1 reports `Mistral MAE 0.7143, DeepSeek 1.81`, but the per-model detail tables and the `data/report_per_indicator_focus7.csv` ground truth indicate the labels of Mistral and DeepSeek are likely swapped (correct: DeepSeek=0.71, Mistral=1.81) |
+| 6 | **No figures, only tables** | 🟡 Important | Add 4–5 visualizations to improve readability and citation appeal |
+| 7 | **Novelty claim is shallow** | 🟡 Important | "First multi-LLM comparison" needs to be defended against 2024–2025 literature |
+| 8 | Metric definitions incomplete (MAE, RMSE, etc.) | 🟢 Minor | Add formulas + interpretations in Methods |
+| 9 | No *Limitations* section | 🟢 Minor | Required in academic papers — embed in Discussion or as a separate section |
+| 10 | No Acknowledgments | 🟢 Minor | Needed for NDA disclosure and compute resource attribution |
 
 ---
 
-## B. POSITIONING NOVELTY (Berdasarkan Riset Literatur 2024–2025)
+## B. NOVELTY POSITIONING (Based on 2024–2025 Literature Search)
 
-### B.1 Apa yang sudah ada di literatur
+### B.1 What already exists in the literature
 
-**LLM untuk educational assessment (umum):**
-- *MDPI Applied Sciences (2025)*: systematic review 49 studi LLM-Powered Automated Assessment (LLMPAA), 2018–2024. Domain dominan: reading comprehension (n=14), language ed (n=13), CS (n=10).
-- *Nature Sci Reports (2026)*: framework AI-assisted grading di higher education menggunakan GPT-4 dengan rubric-aligned prompts.
-- *MDPI Informatics (2025)*: GraderAssist — graph-based multi-LLM untuk transparent grading.
-- *arXiv 2508.02442*: reliability validity LLM untuk essay scoring.
+**LLM for educational assessment (general):**
+- *MDPI Applied Sciences (2025)*: systematic review of 49 LLM-Powered
+  Automated Assessment (LLMPAA) studies, 2018–2024. Dominant domains:
+  reading comprehension (n=14), language education (n=13), CS (n=10).
+- *Nature Scientific Reports (2026)*: AI-assisted grading framework in
+  higher education using GPT-4 with rubric-aligned prompts.
+- *MDPI Informatics (2025)*: GraderAssist — graph-based multi-LLM framework
+  for transparent grading.
+- *arXiv 2508.02442*: Reliability and validity of LLMs for student essay
+  scoring.
 
-**Multi-model LLM benchmarks (umum):**
-- BFCL v4 (Berkeley): function calling leaderboard generic.
-- LLM Stats / Vellum / Onyx leaderboards: 300+ model dibandingkan via MMLU, GPQA, SWE-bench.
-- *Mike Veerman blog (2026)*: tool calling benchmark 21 model open-weight (0.5B-3.8B).
+**Multi-model LLM benchmarks (general):**
+- BFCL v4 (Berkeley): generic function calling leaderboard.
+- LLM Stats / Vellum / Onyx leaderboards: 300+ models compared via MMLU,
+  GPQA, SWE-bench.
+- *Mike Veerman blog (2026)*: tool-calling benchmark of 21 open-weight
+  models (0.5B–3.8B).
 
-**RAG di pendidikan:**
-- *MDPI Applied Sciences (2025)*: survey RAG chatbots untuk education — fokus tutoring & content generation.
-- *ScienceDirect (2025)*: systematic survey RAG educational application — fokus interactive learning, content generation.
+**RAG in education:**
+- *MDPI Applied Sciences (2025)*: survey of RAG chatbots for education —
+  focused on tutoring & content generation.
+- *ScienceDirect (2025)*: systematic survey of RAG in educational
+  applications — emphasis on interactive learning, content generation.
 
 **Hallucination & calibration:**
-- *arXiv 2604.02543*: HAC (Hallucination-Aware Calibration) untuk medical VQA.
-- *arXiv 2605.02443*: HalluScan — benchmark detection 6 metode × 4 model × 3 domain.
-- *arXiv 2509.04664 (OpenAI)*: "Why Language Models Hallucinate" — overconfidence sebagai *epidemic*.
+- *arXiv 2604.02543*: HAC (Hallucination-Aware Calibration) for medical
+  VQA.
+- *arXiv 2605.02443*: HalluScan — detection benchmark across 6 methods × 4
+  models × 3 domains.
+- *arXiv 2509.04664 (OpenAI)*: "Why Language Models Hallucinate" frames
+  overconfidence as an *epidemic*.
 
-### B.2 GAP yang belum ditutup
+### B.2 Identified GAP
 
-**Tidak ada satupun karya yang mengkombinasikan keempat dimensi berikut:**
+**No single existing work combines all four of the following dimensions:**
 
-| Dimensi | Bukti gap |
-|---------|-----------|
-| **Domain Indonesia** | Semua review LLMPAA 2018-2024 berbahasa Inggris; satu paper RAG-Indonesia (Indonesian J of E-Learning) hanya untuk *chatbot tutoring*, bukan assessment |
-| **Akreditasi (bukan grading siswa)** | Semua paper assessment fokus pada penilaian *karya mahasiswa* (essay, code, exam); belum ada yang menilai *dokumen institusional akreditasi* |
-| **Cross-modal LED (PDF naratif) + LKPS (Excel terstruktur)** | RAG education survey hanya mengulas single-modal (text-to-text); cross-modal RAG didominasi medical imaging |
-| **Native vs prompt-based tool calling** | BFCL & ToolBench tidak membedakan dua paradigma secara eksplisit dalam *side-by-side comparison* untuk satu task |
-| **Reasoning model (DeepSeek-R1) di task scoring** | "Why LMs Hallucinate" (OpenAI 2025) bahas overconfidence umum, belum ada studi spesifik pada R1-style models di document scoring |
+| Dimension | Evidence of gap |
+|-----------|-----------------|
+| **Indonesian domain** | All LLMPAA reviews 2018–2024 are English-language; only one Indonesian RAG paper exists (Indonesian J of E-Learning), and it covers *chatbot tutoring*, not assessment |
+| **Accreditation (not student grading)** | All assessment papers focus on *student work* (essays, code, exams); none scores *institutional accreditation documents* |
+| **Cross-modal LED (narrative PDF) + LKPS (structured Excel)** | Education RAG surveys cover only single-modal (text-to-text); cross-modal RAG is dominated by medical imaging |
+| **Native vs prompt-based tool calling** | BFCL & ToolBench do not explicitly contrast the two paradigms in a *side-by-side comparison* on a single task |
+| **Reasoning models (DeepSeek-R1) on scoring tasks** | "Why LMs Hallucinate" (OpenAI 2025) discusses generic overconfidence; no specific study yet on R1-style models for document scoring |
 
-### B.3 Penyempurnaan klaim novelty
+### B.3 Strengthened novelty claim
 
-**Versi sekarang (lemah):**
+**Current version (weak):**
 > *"This research also represents a scientific novelty because, to the best of our knowledge, there has been no previous study that specifically applies a multi-model LLM comparison (Qwen, DeepSeek, Mistral) for the automation of Tri Dharma indicator assessment in the context of higher education accreditation in Indonesia."*
 
-**Versi penyempurnaan (kuat, multi-dimensi):**
-> *"Penelitian ini memberikan empat kontribusi novelty yang saling melengkapi yang membedakannya dari literatur LLM-Powered Automated Assessment yang ada (Smith & Doe, 2025; MDPI 2025): (1) **Domain novelty** — penelitian pertama yang menerapkan agen LLM open-weight untuk akreditasi pendidikan tinggi Indonesia bergaya LAM, di mana literatur sebelumnya didominasi oleh penilaian tugas mahasiswa (essay, code) berbahasa Inggris (arXiv 2508.02442); (2) **Cross-modal RAG novelty** — arsitektur agen yang melakukan cross-referencing dokumen kualitatif (LED, PDF naratif) dengan dokumen kuantitatif (LKPS, Excel terstruktur) melalui empat tool spesialis, sementara survey RAG educational application 2025 hanya mengulas single-modal text-to-text (ScienceDirect 2025); (3) **Tool-calling paradigm comparison** — perbandingan side-by-side native function calling versus prompt-based JSON dispatch pada task domain-specific yang sama, mengisi gap yang tidak dievaluasi BFCL v4 atau ToolBench yang generic; serta (4) **Calibration finding** — dokumentasi empiris fenomena overconfidence pada model reasoning DeepSeek-R1 di task scoring dokumen institusional, memperluas temuan calibration literature (HAC, HalluScan, T3) ke domain baru."*
+**Refined version (strong, multi-dimensional):**
+> *"This research delivers four complementary novelty contributions that
+> distinguish it from the existing LLM-Powered Automated Assessment
+> literature (Sun et al., 2025; MDPI 2025): (1) **Domain novelty** — the
+> first study applying open-weight LLM agents to Indonesian
+> LAM-style higher-education accreditation, whereas prior work is
+> dominated by English-language student-work grading (essays, code) (arXiv
+> 2508.02442); (2) **Cross-modal RAG novelty** — an agent architecture
+> that cross-references qualitative documents (LED narrative PDF) with
+> quantitative documents (LKPS structured Excel) through four specialized
+> tools, while the 2025 RAG-in-education survey covers only single-modal
+> text-to-text systems (Gao et al., 2025); (3) **Tool-calling paradigm
+> comparison** — a side-by-side comparison of native function calling
+> versus prompt-based JSON dispatch on the same domain-specific task,
+> filling a gap not addressed by the generic BFCL v4 or ToolBench
+> evaluations; and (4) **Calibration finding** — empirical documentation
+> of overconfidence in the DeepSeek-R1 reasoning model on institutional
+> document scoring, extending recent calibration literature (HAC,
+> HalluScan, T3) to a new domain."*
 
 ---
 
-## C. DRAFT VISUALISASI per BAB (5 Figure)
+## C. VISUALIZATION DRAFTS PER SECTION (5 figures)
 
-Draft *matplotlib* code disediakan agar tinggal-jalankan.
+Matplotlib code is provided so figures can be regenerated immediately.
 
 ### Figure 1 — Comparison of Manual vs Automated AMI Workflow (Introduction)
 
-**Type:** Diagram alur dua-jalur, side-by-side.
+**Type:** Side-by-side flow diagram (two parallel lanes).
 
-**Tujuan:** Visualisasikan masalah dan solusi yang ditawarkan paper ini sejak awal — pembaca langsung paham *value proposition*.
+**Purpose:** Visualize the problem and the proposed solution upfront —
+readers immediately grasp the value proposition.
 
 ```
 ┌─────────────────────────┐    ┌───────────────────────────────┐
-│   ALUR MANUAL (BASELINE)│    │  ALUR OTOMATIS (DIUSULKAN)    │
+│ MANUAL FLOW (BASELINE)   │    │ AUTOMATED FLOW (PROPOSED)     │
 ├─────────────────────────┤    ├───────────────────────────────┤
-│ LED PDF (200 hal)       │    │ LED PDF                       │
-│        ↓ baca manual     │    │        ↓ chunking + embedding │
-│ Asesor membaca, catat    │    │ ChromaDB vector index         │
-│ relevansi indikator      │    │        ↓                      │
-│        ↓                 │    │ LLM Agent (RAG)               │
-│ LKPS Excel (50 sheet)   │    │        ↑↓                     │
-│        ↓ kros-cek manual │    │ 4 tools                       │
-│ Asesor banding evidence  │    │ (rubric, search,              │
-│ kualitatif vs angka      │    │  table, formula)              │
-│        ↓                 │    │        ↓                      │
-│ Skoring 60+ indikator    │    │ Auto-score 60+ ind            │
-│        ↓                 │    │ + justifikasi + confidence    │
-│ Justifikasi tertulis     │    │        ↓                      │
-│        ↓                 │    │ Asesor verifikasi              │
-│ Total: 3-5 hari/prodi    │    │ Total: 30-60 menit/prodi      │
-│ Inkonsistensi antar asesor│   │ Konsisten + auditable trace   │
+│ LED PDF (200 pages)     │    │ LED PDF                       │
+│        ↓ manual reading │    │        ↓ chunking + embedding │
+│ Assessor reads, notes   │    │ ChromaDB vector index         │
+│ indicator relevance     │    │        ↓                      │
+│        ↓                │    │ LLM Agent (RAG)               │
+│ LKPS Excel (50 sheets)  │    │        ↑↓                     │
+│        ↓ manual cross-  │    │ 4 tools                       │
+│        ↓ check          │    │ (rubric, search,              │
+│ Compare qualitative vs  │    │  table, formula)              │
+│ quantitative evidence   │    │        ↓                      │
+│        ↓                │    │ Auto-score 60+ ind            │
+│ Score 60+ indicators    │    │ + justification + confidence  │
+│        ↓                │    │        ↓                      │
+│ Written justification   │    │ Assessor verifies             │
+│        ↓                │    │                               │
+│ Total: 3-5 days/program │    │ Total: 30-60 min/program      │
+│ Inter-assessor variance │    │ Consistent + auditable trace  │
 └─────────────────────────┘    └───────────────────────────────┘
 ```
 
-**Caption:** *Gambar 1. Perbandingan alur kerja Audit Mutu Internal manual (kiri)
-versus alur otomatis berbasis agen LLM yang diusulkan (kanan). Pendekatan
-otomatis memanfaatkan retrieval vektor untuk LED dan lookup tabel terstruktur
-untuk LKPS, dengan asesor manusia tetap berperan sebagai verifikator.*
+**Caption:** *Figure 1. Comparison of manual Internal Quality Audit
+workflow (left) and the proposed LLM-agent-based automated workflow
+(right). The automated approach uses vector retrieval for LED and
+structured table lookup for LKPS, with human assessors retained as
+verifiers.*
 
 ### Figure 2 — System Architecture (Methods)
 
-**Type:** Diagram blok teknis 3-layer.
+**Type:** Three-layer technical block diagram.
 
-**Tujuan:** Komunikasikan arsitektur sistem ke reviewer teknis.
+**Purpose:** Communicate the system architecture to technical reviewers.
 
-Sudah disediakan di `paper/02_gambar_id.md` sebagai "Gambar 1 — Arsitektur Sistem".
+(See `paper/02_figures.md` "Figure 1 — System Architecture" for the
+full ASCII recipe — already prepared.)
 
 ### Figure 3 — Per-Type MAE Comparison (Results, the central finding)
 
-**Type:** Grouped bar chart, 3 model × 2 type bars (qualitative vs quantitative).
+**Type:** Grouped bar chart, 3 models × 2 type bars (qualitative vs
+composite).
 
 ```python
 import matplotlib.pyplot as plt
 import numpy as np
 
 models = ["Qwen", "DeepSeek-R1", "Mistral"]
-qual_mae = [0.75, 1.25, 2.45]   # Kualitatif (n=4 dari focus7)
-quant_mae = [0.33, 0.00, 1.22]  # Komposit (n=3 dari focus7)
+qual_mae  = [0.75, 1.25, 2.45]   # Qualitative (n=4 in focus7)
+comp_mae  = [0.33, 0.00, 1.22]   # Composite (n=3 in focus7)
 
 x = np.arange(len(models))
 w = 0.35
 fig, ax = plt.subplots(figsize=(7, 4))
-ax.bar(x - w/2, qual_mae,  w, label="Indikator Kualitatif (n=4)", color="#3b82f6")
-ax.bar(x + w/2, quant_mae, w, label="Indikator Komposit (n=3)",  color="#16a34a")
+ax.bar(x - w/2, qual_mae, w, label="Qualitative indicators (n=4)", color="#3b82f6")
+ax.bar(x + w/2, comp_mae, w, label="Composite indicators (n=3)",   color="#16a34a")
 ax.set_ylabel("Mean Absolute Error (MAE) ↓")
 ax.set_xticks(x); ax.set_xticklabels(models)
 ax.legend()
-ax.set_title("MAE per Tipe Indikator: Reverse Pattern Antar Model")
+ax.set_title("MAE per Indicator Type: Reverse Pattern Across Models")
 plt.tight_layout()
 plt.savefig("fig3_per_type_mae.pdf")
 ```
 
-**Caption:** *Gambar 3. MAE per tipe indikator. Qwen3.5 unggul konsisten di
-kedua tipe; DeepSeek-R1 sempurna pada komposit (MAE 0,00) tetapi turun
-signifikan pada kualitatif murni; Mistral menunjukkan pola sebaliknya — relatif
-baik pada komposit, gagal pada kualitatif.*
+**Caption:** *Figure 3. MAE per indicator type. Qwen3.5 is consistently
+competitive on both types; DeepSeek-R1 is perfect on composite (MAE
+0.00) but degrades on purely qualitative; Mistral shows the inverse
+pattern — relatively good on composite, fails on qualitative.*
 
 ### Figure 4 — Confidence Calibration Plot (Results, supports overconfidence claim)
 
-**Type:** Scatter plot dengan 3 panel, 1 panel per model.
+**Type:** Scatter plot with three panels, one per model.
 
 ```python
 import pandas as pd, matplotlib.pyplot as plt
@@ -154,35 +188,34 @@ import pandas as pd, matplotlib.pyplot as plt
 bench = pd.read_csv("data/benchmark_results.csv")
 ref   = pd.read_csv("data/reference_scores_claude.csv").set_index("indicator_no")["score"]
 bench = bench[bench.indicator_no.isin([14,15,16,17,20,22,24])]
-bench["ref"]    = bench.indicator_no.map(ref)
+bench["ref"]     = bench.indicator_no.map(ref)
 bench["abs_err"] = (bench.score.astype(float) - bench.ref.astype(float)).abs()
 
 fig, axes = plt.subplots(1, 3, figsize=(11, 3.5), sharey=True)
 for ax, m in zip(axes, ["qwen3.5:35b", "deepseek-r1:32b", "mistral-small3.2:24b"]):
     sub = bench[bench.model == m]
     ax.scatter(sub.confidence, sub.abs_err, s=80, alpha=0.7, edgecolors="black")
-    # Garis ideal: high conf → low error
-    ax.axhline(y=1, color='gray', linestyle='--', alpha=0.5, label='Ambang ±1')
+    ax.axhline(y=1, color='gray', linestyle='--', alpha=0.5, label='±1 threshold')
     ax.set_title(m, fontsize=10)
     ax.set_xlabel("Confidence (0-1)")
     ax.set_xlim(0, 1.05); ax.set_ylim(-0.2, 4.5)
     ax.grid(alpha=0.3)
-axes[0].set_ylabel("|skor_model − skor_referensi|")
-plt.suptitle("Kalibrasi Confidence: Apakah Model 'Jujur' tentang Ketidakpastian?", y=1.02)
+axes[0].set_ylabel("|model_score − reference_score|")
+plt.suptitle("Confidence Calibration: Are Models 'Honest' About Uncertainty?", y=1.02)
 plt.tight_layout()
 plt.savefig("fig4_calibration.pdf", bbox_inches='tight')
 ```
 
-**Caption:** *Gambar 4. Kalibrasi confidence per model. Kalibrasi ideal akan
-menampilkan titik high-confidence (kanan) terkumpul pada error rendah
-(bawah). Mistral (kanan) mengeluarkan output dengan confidence 0,8–1,0 pada
-kasus dengan |selisih|≥3 — bukti empiris fenomena overconfidence pada model
-chat berukuran menengah, sejalan dengan temuan literatur calibration
+**Caption:** *Figure 4. Confidence calibration per model. Ideal calibration
+would cluster high-confidence points (right) at low error (bottom).
+Mistral (right panel) emits confidence 0.8–1.0 even on cases with
+|difference| ≥ 3 — empirical evidence of the overconfidence phenomenon
+in mid-sized chat models, consistent with calibration literature
 (Kalai & Nachum, 2025).*
 
 ### Figure 5 — Runtime × Accuracy Pareto Frontier (Results)
 
-**Type:** Scatter plot dengan label model.
+**Type:** Scatter plot with model labels.
 
 ```python
 import matplotlib.pyplot as plt
@@ -197,23 +230,23 @@ for m, d in models.items():
     plt.scatter(d["runtime"], d["exact"], s=300, c=d["color"],
                 edgecolors="black", linewidths=1.5)
     plt.annotate(m, (d["runtime"]+2, d["exact"]+1), fontsize=10, fontweight='bold')
-plt.xlabel("Rerata runtime per indikator (detik)")
+plt.xlabel("Average runtime per indicator (seconds)")
 plt.ylabel("Exact match accuracy (%)")
-plt.title("Frontier Pareto: Trade-off Kecepatan vs Akurasi")
+plt.title("Pareto Frontier: Speed vs Accuracy Trade-off")
 plt.grid(alpha=0.3)
 plt.xlim(0, 80); plt.ylim(0, 70)
 plt.tight_layout()
 plt.savefig("fig5_pareto.pdf")
 ```
 
-**Caption:** *Gambar 5. Frontier Pareto kecepatan × akurasi exact match.
-DeepSeek-R1 mencapai akurasi tertinggi tetapi paling lambat; Mistral paling
-cepat tetapi terburuk; Qwen menempati posisi seimbang. Trade-off ini krusial
-untuk pemilihan model di institusi dengan keterbatasan komputasi.*
+**Caption:** *Figure 5. Speed × accuracy Pareto frontier. DeepSeek-R1
+attains the highest accuracy but is slowest; Mistral is fastest but
+worst; Qwen sits at a balanced position. This trade-off is essential
+for model selection in compute-constrained institutional settings.*
 
-### Figure 6 (Opsional) — Score Distribution Box Plot (Results)
+### Figure 6 (optional) — Score Distribution Box Plot (Results)
 
-**Type:** Box plot 4 distribusi (ref + 3 model).
+**Type:** Box plot of four distributions (reference + 3 models).
 
 ```python
 import pandas as pd, seaborn as sns, matplotlib.pyplot as plt
@@ -223,34 +256,34 @@ bench = pd.read_csv("data/benchmark_results.csv")
 focus = [14,15,16,17,20,22,24]
 
 ref_f = ref[ref.indicator_no.isin(focus)][["indicator_no","score"]]
-ref_f["model"] = "Referensi (Claude)"
+ref_f["model"] = "Reference (Claude)"
 bench_f = bench[bench.indicator_no.isin(focus)][["model","indicator_no","score"]]
 df = pd.concat([ref_f, bench_f]).dropna()
 df["score"] = df.score.astype(float)
 
 plt.figure(figsize=(8, 4))
-order = ["Referensi (Claude)", "qwen3.5:35b", "deepseek-r1:32b", "mistral-small3.2:24b"]
+order = ["Reference (Claude)", "qwen3.5:35b", "deepseek-r1:32b", "mistral-small3.2:24b"]
 sns.boxplot(data=df, x="model", y="score", order=order, palette="Set2")
 sns.stripplot(data=df, x="model", y="score", order=order, color="black", size=4, alpha=0.6)
 plt.ylim(-0.5, 4.5)
-plt.ylabel("Skor (0-4)")
-plt.title("Distribusi Skor: Referensi vs 3 Model Open-Weight")
+plt.ylabel("Score (0-4)")
+plt.title("Score Distribution: Reference vs 3 Open-Weight Models")
 plt.xticks(rotation=10, ha='right')
 plt.tight_layout()
 plt.savefig("fig6_distribution.pdf")
 ```
 
-**Caption:** *Gambar 6. Distribusi skor pada 7 indikator fokus. Referensi
-terpusat pada nilai 3; Qwen mengikuti distribusi referensi dengan ketat;
-DeepSeek-R1 menunjukkan kluster pada nilai 0 (false refusal pada Capstone
-Design); Mistral menunjukkan distribusi bimodal — banyak skor 0 (refusal)
-dan beberapa pada nilai 3-4.*
+**Caption:** *Figure 6. Score distribution across the 7 focus indicators.
+The reference centers on 3; Qwen tracks the reference distribution
+closely; DeepSeek-R1 shows a cluster at 0 (false refusal on Capstone
+Design); Mistral is bimodal with many 0s (refusals) plus a few mid-high
+scores.*
 
 ---
 
-## D. DRAFT TAMBAHAN SECTION YANG HILANG
+## D. DROP-IN DRAFTS FOR MISSING SECTIONS
 
-### D.1 ABSTRAK (DALAM BAHASA INDONESIA) — TAMBAHKAN setelah ABSTRACT (IN ENGLISH)
+### D.1 ABSTRAK (DALAM BAHASA INDONESIA) — INSERT AFTER ABSTRACT (IN ENGLISH)
 
 > Sistem penjaminan mutu internal (SPMI) merupakan fondasi keberhasilan
 > akreditasi institusi di pendidikan tinggi. Penelitian ini mengembangkan
@@ -270,71 +303,73 @@ dan beberapa pada nilai 3-4.*
 >
 > **Kata kunci:** *Tri Dharma; Akreditasi; Analisis Data; Pengembangan Perangkat Lunak*
 
-### D.2 METHODS — SECTION YANG HILANG (sisipkan sebelum RESULTS AND DISCUSSION)
+### D.2 METHODS — MISSING SECTION (insert before RESULTS AND DISCUSSION)
 
 ```markdown
 ## METHODS
 
-### Pendekatan dan Ruang Lingkup
-Penelitian ini menggunakan pendekatan *quantitative experimental* dengan
-metode *benchmarking* terhadap tiga LLM *open-weight*. Ruang lingkup dibatasi
-pada tujuh indikator inti Tri Dharma yaitu: (1) Kesesuaian dan tinjauan CPL,
-(2) Rencana Proses Pembelajaran (RPS), (3) Proses Pembelajaran, (4) Integrasi
-Penelitian dan PkM, (5) Capstone Design, (6) Penelitian, dan (7) Pengabdian
-kepada Masyarakat. Subset ini terdiri dari 4 indikator kualitatif dan
-3 indikator komposit, memberikan *coverage* seimbang antara *judgment* teks
-dan kombinasi *judgment + formula bobot*.
+### Approach and Scope
+This study uses a *quantitative experimental* approach with a *benchmarking*
+method against three open-weight LLMs. The scope is limited to seven core
+Tri Dharma indicators: (1) CPL alignment and review, (2) Lesson Plan
+(RPS), (3) Learning Process, (4) Research and Community Service
+integration, (5) Capstone Design, (6) Research, and (7) Community
+Service. The subset comprises 4 qualitative and 3 composite indicators,
+providing balanced coverage between text-judgment and judgment+formula
+combinations.
 
-### Definisi Operasional Variabel
-Variabel utama adalah *skor model* (skala ordinal 0–4) untuk setiap
-indikator, dibandingkan terhadap *skor referensi* yang dihasilkan Claude
-(Anthropic) sebagai *LLM-as-annotator*. Variabel pendukung meliputi
-*justification* (teks), *confidence* (rentang 0,0–1,0), dan *runtime*
-(detik per indikator).
+### Operational Variable Definitions
+The primary variable is the *model score* (ordinal scale 0–4) per
+indicator, compared against the *reference score* generated by Claude
+(Anthropic) as an *LLM-as-annotator*. Supporting variables include
+*justification* (text), *confidence* (range 0.0–1.0), and *runtime*
+(seconds per indicator).
 
-### Lokasi dan Sampel
-Studi dilakukan pada satu program studi sarjana terapan jarak jauh bidang
-teknik di sebuah politeknik negeri Indonesia, dianonimkan sebagai
-*Program A*. Dokumen LED dan LKPS adalah versi *post-audit* periode 2024.
+### Location and Sample
+The study was conducted on one Bachelor of Applied Science distance
+learning engineering program at an Indonesian state polytechnic,
+anonymized as *Program A*. The LED and LKPS documents are the
+*post-audit* version from the 2024 cycle.
 
-### Material dan Tool Utama
-Sistem dibangun dengan: (1) *Embedding model*
-`paraphrase-multilingual-MiniLM-L12-v2` (384-dim); (2) *Vector database*
-ChromaDB dengan HNSW *cosine similarity*; (3) *Framework agent state machine*
-LangGraph; (4) *Inference backend* Ollama pada server GPU 24 GB VRAM via
-Cloudflare-tunneled HTTPS endpoint. Empat *tool* dipaparkan ke agen:
-`get_indicator_rubric`, `search_led_evidence`, `get_lkps_table`, dan
-`compute_formula_score`.
+### Materials and Main Tools
+The system is built with: (1) embedding model
+`paraphrase-multilingual-MiniLM-L12-v2` (384-d); (2) vector database
+ChromaDB with HNSW cosine similarity; (3) LangGraph as the agent
+state-machine framework; (4) Ollama as the inference backend on a
+24 GB VRAM GPU server accessed via a Cloudflare-tunneled HTTPS endpoint.
+Four tools are exposed to the agent: `get_indicator_rubric`,
+`search_led_evidence`, `get_lkps_table`, and `compute_formula_score`.
 
-### Dua Paradigma Agen
-Paradigma *native* (untuk Qwen dan Mistral) menggunakan `tool_calls`
-terstruktur yang langsung dieksekusi `ToolNode` LangGraph. Paradigma
-*prompt-based* (untuk DeepSeek-R1, model *reasoning* yang menghasilkan blok
-`<think>...</think>`) meminta model menghasilkan JSON satu baris dengan
-format `{"action": ..., "args": ...}` untuk panggilan tool.
+### Two Agent Paradigms
+The *native* paradigm (for Qwen and Mistral) uses structured
+`tool_calls` consumed directly by LangGraph's `ToolNode`. The
+*prompt-based* paradigm (for DeepSeek-R1, a reasoning model that emits
+`<think>...</think>` blocks) requires the model to produce single-line
+JSON in the format `{"action": ..., "args": ...}` for tool calls.
 
-### Teknik Pengumpulan dan Analisis Data
-Setiap indikator dievaluasi sekali per model dengan parameter sampling sama
-(temperatur 0,1), menghasilkan total 21 invokasi (3 model × 7 indikator).
-Hasil di-stream langsung ke berkas CSV. Skor referensi dihasilkan terpisah
-oleh Claude. Analisis menggunakan enam metrik:
+### Data Collection and Analysis Techniques
+Each indicator is evaluated once per model with identical sampling
+parameters (temperature 0.1), producing 21 invocations total
+(3 models × 7 indicators). Results are streamed directly to a CSV
+file. Reference scores are generated separately by Claude. Analysis
+uses six metrics:
 
-- **Mean Absolute Error (MAE)**: $\text{MAE} = \frac{1}{n} \sum_{i=1}^{n} |y_i - \hat{y}_i|$ — semakin rendah semakin baik
-- **Root Mean Squared Error (RMSE)**: $\text{RMSE} = \sqrt{\frac{1}{n} \sum_{i=1}^{n} (y_i - \hat{y}_i)^2}$
+- **Mean Absolute Error (MAE)**: $\text{MAE} = \frac{1}{n}\sum_{i=1}^{n}|y_i - \hat{y}_i|$ — lower is better
+- **Root Mean Squared Error (RMSE)**: $\text{RMSE} = \sqrt{\frac{1}{n}\sum_{i=1}^{n}(y_i - \hat{y}_i)^2}$
 - **Exact match**: $\frac{|\{i : y_i = \hat{y}_i\}|}{n}$
-- **Akurasi within-±1**: $\frac{|\{i : |y_i - \hat{y}_i| \leq 1\}|}{n}$
+- **Within-±1 accuracy**: $\frac{|\{i : |y_i - \hat{y}_i| \leq 1\}|}{n}$
 - **Pearson correlation r**
-- **Score-zero rate**: proksi *failure mode false refusal*
+- **Score-zero rate**: proxy for the *false-refusal failure mode*
 
-di mana $y_i$ adalah skor referensi dan $\hat{y}_i$ adalah skor model.
+where $y_i$ is the reference score and $\hat{y}_i$ is the model score.
 ```
 
-### D.3 DAFTAR PUSTAKA — SECTION KOSONG YANG HARUS DIISI
+### D.3 REFERENCES — EMPTY SECTION TO POPULATE
 
-Format APA 6th, 12 referensi (rekomendasi minimum jurnal Sinta).
+APA 6th format, 14 references.
 
 ```markdown
-## DAFTAR PUSTAKA
+## REFERENCES
 
 Es, S., James, J., Espinosa-Anke, L., & Schockaert, S. (2024). RAGAS:
    Automated Evaluation of Retrieval Augmented Generation. *Proceedings of
@@ -372,9 +407,9 @@ Reimers, N., & Gurevych, I. (2020). Making Monolingual Sentence
    https://doi.org/10.18653/v1/2020.emnlp-main.365
 
 Schick, T., Dwivedi-Yu, J., Dessì, R., Raileanu, R., Lomeli, M.,
-   Zettlemoyer, L., Cancedda, N., & Scialom, T. (2023). Toolformer: Language
-   Models Can Teach Themselves to Use Tools. *Advances in Neural Information
-   Processing Systems, 36*.
+   Zettlemoyer, L., Cancedda, N., & Scialom, T. (2023). Toolformer:
+   Language Models Can Teach Themselves to Use Tools. *Advances in Neural
+   Information Processing Systems, 36*.
 
 Sun, S., Zhang, Y., Li, P., & Zhao, J. (2025). Large Language Model-Powered
    Automated Assessment: A Systematic Review. *Applied Sciences, 15*(10),
@@ -397,88 +432,90 @@ Zheng, L., Chiang, W.-L., Sheng, Y., Zhuang, S., Wu, Z., Zhuang, Y., Lin, Z.,
 
 ---
 
-## E. SARAN PERBAIKAN STRUKTUR PER-SECTION (HALUS)
+## E. PER-SECTION POLISH SUGGESTIONS
 
-### E.1 ABSTRACT (English) — Tambahkan kuantitatif
+### E.1 ABSTRACT (English) — Add concrete numbers
 
-**Sebelum:**
+**Before:**
 > *"While each model exhibits distinct performance characteristics in terms of accuracy and processing speed, their collective integration allows for a more robust diagnostic tool."*
 
-**Sesudah:**
-> *"Qwen3.5:35b achieves the lowest MAE (0.57) and 100% within-±1 accuracy with no false refusals; DeepSeek-R1:32b leads exact match (57.1%) due to perfect performance on composite indicators (100% exact); Mistral-Small3.2:24b underperforms (MAE 1.81) with 4 of 7 outputs being false refusals. We recommend Qwen3.5:35b as a reliable AI draft scorer for human assessor verification."*
+**After:**
+> *"Qwen3.5:35b achieves the lowest MAE (0.57) and 100% within-±1 accuracy with no false refusals; DeepSeek-R1:32b leads in exact match (57.1%) due to perfect performance on composite indicators (100% exact); Mistral-Small3.2:24b underperforms (MAE 1.81) with 4 of 7 outputs being false refusals. We recommend Qwen3.5:35b as a reliable AI draft scorer for human-assessor verification."*
 
-### E.2 INTRODUCTION — Tambahkan paragraf positioning literatur
+### E.2 INTRODUCTION — Add literature-positioning paragraph
 
-Setelah paragraf "The advancement of Artificial Intelligence (AI) technology...":
+After the "The advancement of Artificial Intelligence (AI) technology…" paragraph, insert:
 
-> *"Beberapa studi terkini telah memanfaatkan LLM dalam pendidikan tinggi —
-> *systematic review* dari MDPI Applied Sciences (Sun et al., 2025) mencatat
-> 49 studi LLM-Powered Automated Assessment (LLMPAA) periode 2018–2024
-> dengan dominasi pada penilaian *karya mahasiswa* (essay, kode, ujian).
-> Namun, penilaian *dokumen institusional akreditasi* yang melibatkan
-> dokumen heterogen (PDF naratif + Excel terstruktur) belum dieksplorasi
-> dalam literatur, terutama untuk konteks Bahasa Indonesia. Survey RAG
-> educational application 2025 (Gao et al.) menunjukkan dominasi penggunaan
-> RAG untuk *tutoring chatbot* dan *content generation*, bukan untuk
-> *cross-modal evidence assessment* seperti yang dibutuhkan akreditasi LAM.
-> Sementara itu, benchmark function calling generic seperti BFCL v4
-> (Patil et al., 2024) tidak membandingkan paradigma *native vs prompt-based
-> dispatch* secara eksplisit pada task domain-specific. Penelitian ini
-> mengisi tiga gap tersebut sekaligus."*
+> *"Several recent studies have applied LLMs in higher education — a
+> systematic review in MDPI Applied Sciences (Sun et al., 2025) catalogued
+> 49 LLM-Powered Automated Assessment (LLMPAA) studies from 2018–2024,
+> dominated by the assessment of *student work* (essays, code, exams).
+> However, the assessment of *institutional accreditation documents*
+> involving heterogeneous evidence sources (narrative PDF + structured
+> Excel) has not been explored in the literature, especially in the
+> Indonesian context. The 2025 RAG-in-education survey (Gao et al.) shows
+> that RAG is predominantly used for *tutoring chatbots* and *content
+> generation*, not for *cross-modal evidence assessment* as required by
+> LAM accreditation. Meanwhile, generic function-calling benchmarks such
+> as BFCL v4 (Patil et al., 2024) do not explicitly compare native versus
+> prompt-based dispatch paradigms on a domain-specific task. This research
+> fills all three gaps simultaneously."*
 
-### E.3 RESULTS AND DISCUSSION — Perbaiki inkonsistensi data
+### E.3 RESULTS AND DISCUSSION — Fix data inconsistency
 
-**Aksi:** Cross-check semua angka di Tabel 1 dengan Tabel 2-4 dan
-`data/report_*_focus7.csv`. Indikasi yang teridentifikasi:
-- Tabel 1: nama "Mistral" dan "DeepSeek" mungkin tertukar (MAE 0.7143 milik
-  DeepSeek; MAE 1.81 milik Mistral berdasarkan benchmark CSV)
-- Tabel 4 (Mistral) indikator 5,6,7 perlu diverifikasi terhadap CSV
+**Action:** Cross-check every number in Table 1 against Tables 2–4 and the
+ground-truth file `data/report_per_indicator_focus7.csv`. The likely issues are:
+- Table 1: the names "Mistral" and "DeepSeek" appear to be swapped (MAE
+  0.7143 should belong to DeepSeek; MAE 1.81 should belong to Mistral
+  per the benchmark CSV)
+- Table 4 (Mistral) entries for indicators 5, 6, 7 should be re-verified
+  against the CSV
 
-**Saran:** generate ulang semua tabel dari satu source of truth
+**Recommended:** regenerate all tables from a single source of truth
 (`scripts/analyze_benchmark.py --indicators 14,15,16,17,20,22,24 --suffix _focus7`).
 
-### E.4 IMPLICATIONS FOR ACCREDITATION PRACTICE — Perkuat dengan citation
+### E.4 IMPLICATIONS FOR ACCREDITATION PRACTICE — Strengthen with citations
 
-Tambahkan link ke literatur HAC, HalluScan untuk fenomena overconfidence
-DeepSeek:
+Augment the DeepSeek overconfidence discussion with citations to recent
+calibration literature:
 
-> *"Phenomenon overconfidence pada DeepSeek dalam studi ini sejalan dengan
-> temuan literatur calibration terbaru: HalluScan benchmark (arXiv 2605.02443)
-> menunjukkan bahwa Judge-based detection methods memiliki kalibrasi terburuk
-> meski menggunakan model evaluator yang strong; Hallucination-Aware
-> Calibration (HAC, arXiv 2604.02543) mengusulkan signal grounding sebagai
-> mitigasi. Temuan kami mengkonfirmasi bahwa fenomena ini juga muncul pada
-> task domain-specific Indonesian accreditation, sehingga menjustifikasi
-> rekomendasi human-in-the-loop verification."*
+> *"The DeepSeek overconfidence phenomenon observed in this study is
+> consistent with recent calibration findings: the HalluScan benchmark
+> (arXiv 2605.02443) reports that Judge-based detection methods exhibit
+> the worst calibration despite using a strong evaluator model;
+> Hallucination-Aware Calibration (HAC, arXiv 2604.02543) proposes
+> grounding signals as a mitigation. Our findings confirm that this
+> phenomenon also surfaces in domain-specific Indonesian accreditation
+> tasks, justifying the recommendation of human-in-the-loop verification."*
 
 ---
 
-## F. ACTION CHECKLIST untuk Penulis
+## F. AUTHOR ACTION CHECKLIST
 
-### Wajib (sebelum submit):
-- [ ] Tambahkan METHODS section (lihat D.2)
-- [ ] Tambahkan ABSTRAK Bahasa Indonesia (lihat D.1)
-- [ ] Isi DAFTAR PUSTAKA dengan referensi yang relevan (lihat D.3, minimal 12)
-- [ ] Anonymisasi: hapus "PENS" dan "Telecommunication Engineering" dari title dan body
-- [ ] Cross-verify angka antar tabel — generate ulang dari `analyze_benchmark.py`
-- [ ] Perkuat klaim novelty (lihat B.3)
+### Mandatory (before submission):
+- [ ] Add the METHODS section (see D.2)
+- [ ] Add the ABSTRAK Bahasa Indonesia (see D.1)
+- [ ] Populate the REFERENCES section with relevant citations (see D.3, minimum 12)
+- [ ] Anonymize: remove "PENS" and "Telecommunication Engineering" from title and body
+- [ ] Cross-verify numbers across tables — regenerate from `analyze_benchmark.py`
+- [ ] Strengthen the novelty claim (see B.3)
 
-### Sangat Disarankan:
-- [ ] Tambahkan minimal 3 figure (Figure 1 alur, Figure 2 arsitektur, Figure 3 per-type bar)
-- [ ] Perbaiki abstract dengan angka kuantitatif (lihat E.1)
-- [ ] Tambahkan paragraf positioning literatur di Introduction (lihat E.2)
-- [ ] Tambahkan citation ke calibration literature di Discussion (lihat E.4)
+### Strongly Recommended:
+- [ ] Add at least 3 figures (Figure 1 workflow, Figure 2 architecture, Figure 3 per-type bar)
+- [ ] Improve the abstract with concrete numbers (see E.1)
+- [ ] Add a literature-positioning paragraph in the Introduction (see E.2)
+- [ ] Add citations to calibration literature in the Discussion (see E.4)
 
-### Opsional:
-- [ ] Tambahkan Figure 4 (calibration scatter) dan Figure 5 (Pareto runtime)
-- [ ] Tambahkan section *Limitations* eksplisit di Discussion
-- [ ] Tambahkan section *Acknowledgments* untuk NDA + compute disclosure
+### Optional:
+- [ ] Add Figure 4 (calibration scatter) and Figure 5 (Pareto runtime)
+- [ ] Add an explicit *Limitations* section in the Discussion
+- [ ] Add an *Acknowledgments* section for NDA + compute disclosure
 
 ---
 
 ## Sources
 
-Hasil pencarian web yang menjadi dasar positioning novelty:
+Web search results that informed the novelty positioning above:
 
 - [LLM-Powered Automated Assessment: A Systematic Review (MDPI Applied Sciences 2025)](https://www.mdpi.com/2076-3417/15/10/5683)
 - [GraderAssist: A Graph-Based Multi-LLM Framework for Transparent and Reproducible Automated Evaluation (MDPI Informatics 2025)](https://www.mdpi.com/2227-9709/12/4/123)
