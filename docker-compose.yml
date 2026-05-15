@@ -1,0 +1,74 @@
+services:
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+      network: host          # bypass Docker bridge saat pip install (lebih cepat)
+    container_name: led-api
+    # GPU access utk embedding sentence-transformers
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ports:
+      - "8000:8000"
+    volumes:
+      # SQLite + Chroma persisted on host so generate results survive rebuilds
+      - ./data:/data
+      # Mount source dataset read-only (chunks_all.json + LED existing PDF)
+      - ../code/output/chunks_all.json:/data/chunks_all.json:ro
+      - ../code/output/led_bab_tabel.json:/data/led_bab_tabel.json:ro
+      - ../document/result:/data/led_existing:ro
+      - ../document/intruction:/data/instruction:ro
+      # Live reload during dev
+      - ./api:/app
+      - ./scripts:/scripts
+    environment:
+      # Ollama endpoint - bisa ke host lokal atau remote (Vast.ai dst)
+      OLLAMA_HOST:  ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      OLLAMA_TOKEN: ${OLLAMA_TOKEN:-}
+      # Model dedicated utk LLM-as-Judge (4 metrik RAGAS).
+      # gpt-oss:20b bagus karena instruction-following kuat & JSON-clean.
+      JUDGE_MODEL: ${JUDGE_MODEL:-gpt-oss:20b}
+      # LangSmith tracing (dashboard visualisasi pipeline)
+      LANGCHAIN_TRACING_V2: ${LANGCHAIN_TRACING_V2:-false}
+      LANGCHAIN_API_KEY:    ${LANGCHAIN_API_KEY:-}
+      LANGCHAIN_PROJECT:    ${LANGCHAIN_PROJECT:-led-generator}
+      LANGCHAIN_ENDPOINT:   ${LANGCHAIN_ENDPOINT:-https://api.smith.langchain.com}
+      DB_PATH: /data/led.db
+      CHROMA_PATH: /data/chroma_db
+      CHUNKS_PATH: /data/chunks_all.json
+      LED_STRUCT_PATH: /data/led_bab_tabel.json
+      # bge-m3: multilingual (100+ bahasa), 1024 dim, ~1.4 GB model file.
+      # Lebih kuat dari firqaaa/indo-sbert utk vocabulary mismatch (synonym/alias).
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-m3}
+      # Override: set EMBEDDING_DEVICE=cpu di .env utk skip GPU (auto-detect default)
+      EMBEDDING_DEVICE: ${EMBEDDING_DEVICE:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      HF_HOME: /data/hf_cache
+      PYTHONUNBUFFERED: "1"
+      ANONYMIZED_TELEMETRY: "False"
+      CHROMA_TELEMETRY_IMPL: "none"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: >
+      uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: led-web
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    environment:
+      VITE_API_BASE: http://localhost:8000
+    depends_on:
+      - api
+    command: npm run dev -- --host 0.0.0.0

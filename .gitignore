@@ -1,0 +1,75 @@
+# ============================================================
+# Secrets & local config
+# ============================================================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ============================================================
+# Runtime data (di-mount ke /data di container)
+#   - SQLite DB, vector store, model cache, dataset besar.
+#   - Direktori `data/` di-mount oleh docker-compose.
+# ============================================================
+data/led.db
+data/led.db-journal
+data/led.db-wal
+data/led.db-shm
+data/chroma_db/
+data/hf_cache/
+data/led_existing/
+data/instruction/
+data/chunks_all.json
+data/led_bab_tabel.json
+data/*.sqlite
+data/*.db
+
+# ============================================================
+# Python (api/)
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+*.egg-info/
+build/
+dist/
+
+# ============================================================
+# Node / Vite (web/)
+# ============================================================
+web/node_modules/
+web/dist/
+web/.vite/
+web/coverage/
+web/*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ============================================================
+# Editor / OS junk
+# ============================================================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ============================================================
+# Misc
+# ============================================================
+*.tmp
+*.bak
