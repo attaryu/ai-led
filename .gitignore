@@ -6,6 +6,8 @@
 .env.*.local
 *.pem
 *.key
+.env
+*.env
 
 # ============================================================
 # Runtime data (di-mount ke /data di container)
