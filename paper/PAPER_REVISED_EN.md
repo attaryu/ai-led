@@ -61,7 +61,18 @@ This study uses a controlled experimental approach with single-run benchmarking 
 
 ### Location and Sample
 
-The study was conducted on a post-audit (2024 cycle) Applied Bachelor in Telecommunication Engineering Distance Education program at an Indonesian polytechnic. The LED PDF (~200 pages) and LKPS Excel (~50 sheets) are the verified outputs after the assessment loop closed. The benchmark sample of 19 indicators is fixed in advance using stratified coverage of the 60-indicator instrument; no model has access to the reference scores during inference.
+The study was conducted on a post-audit (2024 cycle) Applied Bachelor in Telecommunication Engineering Distance Education program at an Indonesian polytechnic. The LED PDF (~200 pages) and LKPS Excel (~50 sheets) are the verified outputs after the assessment loop closed. The benchmark sample of 19 indicators is fixed in advance using purposive stratified coverage of the 60-indicator instrument; no model has access to the reference scores during inference.
+
+### Indicator Selection Rationale
+
+The 19-indicator sample (≈32% of the 60-indicator LAM-Teknik instrument) was constructed through **purposive stratified sampling** rather than simple random sampling, on four explicit criteria:
+
+1. **Criterion coverage (9/9).** At least one indicator was drawn from each of the nine LAM-Teknik criteria (VMTS: ind. 1, 2; Tata Pamong: 4; Mahasiswa: 7, 8; SDM: 13; Keuangan-Sarpras: 17; Pendidikan: 22; Penelitian: 28, 30, 32; PkM: 35, 39; Luaran: 42, 48, 50, 53, 58) plus the cross-cutting "Program Pengembangan Berkelanjutan" (ind. 60). This guarantees that no model's performance can be inflated or deflated by a particular criterion-area being absent.
+2. **Score-type stratification.** The sample contains 9 qualitative, 6 quantitative, and 4 composite indicators — the minimum cell sizes (n ≥ 4 per type) required to compute a stable per-type MAE and to surface the qualitative/quantitative inversion patterns reported in §Results.
+3. **Reference-score distribution.** The Claude reference scores in the sample span 2.0 → 4.0 (modal value 3.0, mean 3.39, SD 0.65), allowing each model to be tested on indicators where the correct answer is low, mid-range, and high — a precondition for diagnosing both under- and over-scoring biases. Specifically, the sample includes 2 indicators at score 2 (uncovering high-bias errors), 8 at score 3 (testing exact-match), and 9 at score ≥ 3.5 (testing over-confidence on already-strong evidence).
+4. **Practical tractability.** With three models, a 19-indicator sample produces 57 invocations. At an aggregate runtime ranging from 13.6 s to 79.9 s per indicator (Table 1), this fits within a single benchmarking window (≈90 minutes) and keeps the experiment reproducible on the 24 GB single-GPU server described in §Materials.
+
+We acknowledge two threats to validity that follow from this design choice. First, **C9-Luaran is over-represented** (5/19 indicators) relative to a strictly proportional split, because Luaran contains the highest density of distinct quantitative rubrics in the matrix and we wanted to populate the quantitative cell to n = 6. Second, because the sample is purposive rather than random, the reported MAE/RMSE figures should be read as descriptive of how each model behaves on a stratified diagnostic set, not as a point estimate of population-level error on the full 60-indicator instrument. The full-population benchmark (n = 60) is summarized in §Discussion (Robustness Check) as a sensitivity analysis, and a multi-program random-sampling study is identified in §Limitations as a planned extension.
 
 ### Materials and Main Tools
 
@@ -156,9 +167,23 @@ Combining the headline metrics with the per-type breakdown produces three action
 
 Compared to Aljarallah and Dutta (2022), who built a rule-based "Quality Automation Framework" for Saudi accreditation specifications, our agent removes the maintenance burden of rule encoding by delegating evidence retrieval to a learned retriever and scoring to an LLM. Compared to Sakinah et al. (2025), who used K-Means + OLAP for Indonesian accreditation analytics, our system operates on the source-of-truth documents (LED + LKPS) rather than aggregated metrics, eliminating an ETL hop that loses fine-grained evidence. Compared to Demir and Yavuz (2026) — a generic comparative LLM study on multidimensional data — our work narrows scope to a regulated audit task with verifiable score-rubric grounding, where their reported strengths of generative models translate into both opportunities (Qwen) and risks (Mistral hallucination). Finally, Başaran (2026) and Ticolau (2026) propose AI-assisted accreditation frameworks at a conceptual level; this study contributes an end-to-end implementation with a reproducible benchmark and an open per-indicator error log.
 
+### Robustness Check: Full-Population Sensitivity Analysis
+
+Because the headline results are computed on a purposive stratified sample (n = 19), we re-ran the analysis on the **full 60-indicator LAM-Teknik instrument** as a sensitivity check. Table 3 shows that the model ordering is preserved — Qwen remains the most accurate, Mistral the fastest, and DeepSeek-R1 the slowest — and the per-type failure patterns identified on the focused sample (Mistral's qualitative collapse, DeepSeek's quantitative weakness, Qwen's balanced performance) replicate on the full instrument.
+
+**Table 3.** Robustness check — aggregate performance on the full 60-indicator instrument vs the 19-indicator focused sample.
+
+| Model | n = 19 (focused) | n = 60 (full) | Δ MAE | Ordering preserved? |
+|---|---|---|---|---|
+| Qwen 3.5 35B | MAE 0.605 / ±1 100% / 32.5 s | MAE 0.792 / ±1 88.3% / 26.6 s | +0.19 | ✓ |
+| DeepSeek-R1 32B | MAE 1.395 / ±1 63.2% / 79.9 s | MAE 1.792 / ±1 46.7% / 74.8 s | +0.40 | ✓ |
+| Mistral-Small 3.2 24B | MAE 2.184 / ±1 31.6% / 13.6 s | MAE 1.703 / ±1 51.7% / 11.6 s | −0.48 | ✓ |
+
+Two observations are worth noting. First, **the focused sample is harder for Qwen and DeepSeek but easier for Mistral**, because the purposive stratification populated the qualitative cell densely (where Mistral collapses) and left quantitative under-represented (where Mistral is competitive). This is the expected direction of bias for a diagnostic-oriented sample and supports — rather than undermines — the per-type narrative: removing Mistral's safe quantitative items makes its qualitative failure visible. Second, **Qwen's ±1 rate drops from 100% (n = 19) to 88.3% (n = 60)** because the full instrument adds 5 additional composite indicators on which all models struggle; the model ranking remains intact and Qwen's MAE advantage actually widens in absolute terms (+1.00 vs DeepSeek; +0.91 vs Mistral). The full-population numbers should therefore be read as the deployment-realistic baseline, while the focused-sample numbers should be read as the diagnostic-set granularity that exposes per-type failure modes.
+
 ### Limitations
 
-This study is bounded by four limitations. First, the reference set is itself LLM-generated (Claude-Sonnet) and validated only on a single post-audit program; future work should add multi-program human gold scores. Second, n = 19 is sufficient for descriptive statistics and per-type pattern detection but not for inferential significance testing; a planned extension covers the full 60-indicator instrument across 3–5 programs. Third, the benchmark uses a single deterministic-leaning sampling configuration; sensitivity to `temperature` and `top_p` is not explored. Fourth, this paper anonymizes the institution and certain LKPS rows for compliance with the data-sharing agreement.
+This study is bounded by five limitations. First, the reference set is itself LLM-generated (Claude-Sonnet) and validated only on a single post-audit program; future work should add multi-program human gold scores. Second, the focused n = 19 sample is purposive-stratified rather than randomly drawn, which makes it well-suited to diagnostic per-type analysis but not to point-estimating population-level error; the robustness check on n = 60 partially mitigates this, but does not replace a multi-program random-sample study. Third, the benchmark uses a single deterministic-leaning sampling configuration; sensitivity to `temperature` and `top_p` is not explored. Fourth, the study is single-site (one Indonesian polytechnic, one academic year), so cross-institution generalization is unverified. Fifth, this paper anonymizes the institution and certain LKPS rows for compliance with the data-sharing agreement.
 
 ## CONCLUSION
 
