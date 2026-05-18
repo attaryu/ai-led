@@ -29,7 +29,8 @@ plt.rcParams.update({
     "savefig.bbox": "tight",
 })
 
-FOCUS = [14, 15, 16, 17, 20, 22, 24]
+FOCUS = [1, 2, 4, 7, 8, 13, 17, 22, 28, 30, 32, 35, 39, 42, 48, 50, 53, 58, 60]
+SUFFIX = "_focus19"
 
 
 def save(fig, stem: str) -> None:
@@ -157,29 +158,35 @@ def fig2_architecture() -> None:
 # Figure 3 — Per-Type MAE bar chart
 # ─────────────────────────────────────────────────────────────────────────
 def fig3_per_type_mae() -> None:
-    pt = pd.read_csv(DATA / "report_per_type_focus7.csv")
+    pt = pd.read_csv(DATA / f"report_per_type{SUFFIX}.csv")
     models = ["qwen3.5:35b", "deepseek-r1:32b", "mistral-small3.2:24b"]
     short = ["Qwen", "DeepSeek-R1", "Mistral"]
 
-    qual = [pt[(pt.model == m) & (pt.score_type == "qualitative")]["mae"].iloc[0] for m in models]
-    comp = [pt[(pt.model == m) & (pt.score_type == "composite")]["mae"].iloc[0]   for m in models]
+    def get(m, t):
+        sub = pt[(pt.model == m) & (pt.score_type == t)]
+        return sub["mae"].iloc[0] if len(sub) else 0.0
+
+    qual = [get(m, "qualitative")  for m in models]
+    comp = [get(m, "composite")    for m in models]
+    quan = [get(m, "quantitative") for m in models]
 
     x = np.arange(len(models))
-    w = 0.35
+    w = 0.27
     fig, ax = plt.subplots(figsize=(8, 5))
-    bars1 = ax.bar(x - w/2, qual, w, label="Qualitative (n=4)", color="#3b82f6", edgecolor="black")
-    bars2 = ax.bar(x + w/2, comp, w, label="Composite (n=3)",   color="#16a34a", edgecolor="black")
+    bars1 = ax.bar(x - w,     qual, w, label="Qualitative (n=9)",  color="#3b82f6", edgecolor="black")
+    bars2 = ax.bar(x,         comp, w, label="Composite (n=4)",    color="#16a34a", edgecolor="black")
+    bars3 = ax.bar(x + w,     quan, w, label="Quantitative (n=6)", color="#f59e0b", edgecolor="black")
 
-    for bars in (bars1, bars2):
+    for bars in (bars1, bars2, bars3):
         for b in bars:
-            ax.text(b.get_x() + b.get_width()/2, b.get_height() + 0.04,
-                    f"{b.get_height():.2f}", ha="center", fontsize=9)
+            ax.text(b.get_x() + b.get_width()/2, b.get_height() + 0.06,
+                    f"{b.get_height():.2f}", ha="center", fontsize=8.5)
 
-    ax.set_ylabel("Mean Absolute Error (MAE)  ↓", fontsize=11)
+    ax.set_ylabel("Mean Absolute Error (MAE)  (lower is better)", fontsize=11)
     ax.set_xticks(x); ax.set_xticklabels(short, fontsize=11)
     ax.legend(loc="upper left")
-    ax.set_ylim(0, max(max(qual), max(comp)) * 1.2)
-    ax.set_title("Figure 3 — MAE per Indicator Type: Reverse Failure Pattern Across Models",
+    ax.set_ylim(0, max(qual + comp + quan) * 1.25)
+    ax.set_title("Figure 3 — MAE per Indicator Type (n=19, multi-criteria sample)",
                  fontsize=11, fontweight="bold")
     ax.grid(axis="y", alpha=0.3)
     plt.tight_layout()
@@ -231,7 +238,7 @@ def fig4_calibration() -> None:
 # Figure 5 — Runtime × Accuracy Pareto frontier
 # ─────────────────────────────────────────────────────────────────────────
 def fig5_pareto() -> None:
-    agg = pd.read_csv(DATA / "report_aggregate_focus7.csv")
+    agg = pd.read_csv(DATA / f"report_aggregate{SUFFIX}.csv")
     fig, ax = plt.subplots(figsize=(7, 5))
 
     colors = {"qwen3.5:35b": "#16a34a",
@@ -297,7 +304,8 @@ def fig6_distribution() -> None:
     ax.set_ylabel("Score (0–4)")
     ax.set_xlabel("")
     ax.set_xticklabels(["Reference\n(Claude)", "Qwen\n3.5:35b", "DeepSeek\nR1:32b", "Mistral\nSmall 3.2"], fontsize=10)
-    ax.set_title("Figure 6 — Score Distribution Across 7 Focus Indicators", fontsize=11, fontweight="bold")
+    ax.set_title(f"Figure 6 — Score Distribution Across {len(FOCUS)} Focus Indicators (multi-criteria sample)",
+                 fontsize=11, fontweight="bold")
     ax.grid(axis="y", alpha=0.3)
     plt.tight_layout()
     save(fig, "fig6_distribution")
