@@ -35,11 +35,8 @@ def replace_figure_markers(md: str) -> str:
     """Replace `**[Figure N here — …]**` markers with markdown image links."""
     figure_map = {
         "Figure 1": "fig1_workflow.png",
-        "Figure 2": "fig2_architecture.png",
+        "Figure 2": "fig5_pareto.png",
         "Figure 3": "fig3_per_type_mae.png",
-        "Figure 4": "fig4_calibration.png",
-        "Figure 5": "fig5_pareto.png",
-        "Figure 6": "fig6_distribution.png",
     }
     for label, fname in figure_map.items():
         path = (FIGURES / fname).as_posix()
