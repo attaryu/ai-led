@@ -131,11 +131,45 @@ Qwen 3.5 maintains 100% within-±1 across all three types — it is the only mod
 
 **[Figure 3 here — Per-type MAE bar chart]**
 
+### Analysis of Indicator Scoring per Model
+
+Table 3 reports the per-indicator scoring for all three models against the human-assessor reference (marker: ✓ = *exact*, ~ = *within-*±1, ✗ = differs by > 1).
+
+**Table 3.** Per-Indicator Scores Across the Three Models
+
+| No | Type | Ref | deepseek-r1 | mistral-small | qwen3.5 |
+|---|---|---|---|---|---|
+| 1 | Qualitative | 3.0 | 4.0 ~ | 0.0 ✗ | 3.0 ✓ |
+| 2 | Qualitative | 3.0 | 4.0 ~ | 0.0 ✗ | 3.0 ✓ |
+| 4 | Composite | 2.0 | 1.0 ~ | 4.0 ✗ | 3.0 ~ |
+| 7 | Qualitative | 3.0 | 3.0 ✓ | 0.0 ✗ | 3.0 ✓ |
+| 8 | Qualitative | 4.0 | 4.0 ✓ | 0.0 ✗ | 4.0 ✓ |
+| 13 | Composite | 3.0 | 2.0 ~ | 0.0 ✗ | 4.0 ~ |
+| 17 | Qualitative | 2.0 | 1.0 ~ | 0.0 ✗ | 3.0 ~ |
+| 22 | Qualitative | 3.0 | 2.0 ~ | 0.0 ✗ | 4.0 ~ |
+| 28 | Quantitative | 4.0 | 2.0 ✗ | 4.0 ✓ | 4.0 ✓ |
+| 30 | Quantitative | 3.0 | 0.0 ✗ | 3.0 ✓ | 3.0 ✓ |
+| 32 | Quantitative | 4.0 | 2.0 ✗ | 3.0 ~ | 3.0 ~ |
+| 35 | Quantitative | 3.0 | 4.0 ~ | 1.0 ✗ | 4.0 ~ |
+| 39 | Qualitative | 4.0 | 2.0 ✗ | 1.0 ✗ | 3.0 ~ |
+| 42 | Quantitative | 4.0 | 0.0 ✗ | 4.0 ✓ | 3.0 ~ |
+| 48 | Qualitative | 4.0 | 0.0 ✗ | 0.0 ✗ | 4.0 ✓ |
+| 50 | Quantitative | 4.0 | 3.0 ~ | 4.0 ✓ | 3.0 ~ |
+| 53 | Composite | 3.5 | 2.0 ✗ | 0.0 ✗ | 3.0 ~ |
+| 58 | Composite | 4.0 | 4.0 ✓ | 0.0 ✗ | 3.0 ~ |
+| 60 | Qualitative | 4.0 | 4.0 ✓ | 3.0 ~ | 3.0 ~ |
+
+**Qwen 3.5** is the only model that never breaches the ±1 band on any of the 19 indicators and never produces a score of 0; it matches the reference exactly on seven items (ind. 1, 2, 7, 8, 28, 30, 48) and stays within one point on the remaining twelve. Its conservative tendency is visible on high-score indicators (39, 42, 50, 53, 58, 60) where the reference is 4 but Qwen issues 3 — a one-point under-estimation that is easy for a human assessor to verify and adjust.
+
+**DeepSeek-R1** displays a bimodal pattern: on qualitative items (ind. 7, 8, 60) and the high-evidence composite item 58 it matches exactly, but it accumulates five large miss-by-more-than-one errors (ind. 28, 30, 32, 42, 48, 53) clustered on quantitative items. Chain-of-thought inspection of the `<think>` block for ind. 30 (Beban Kerja DTPS) and ind. 42 (IPK Lulusan) shows the model correctly retrieving the LKPS rows but rejecting them with phrases like "the LKPS table is partial" — an over-cautious refusal that the model rationalizes inside its own reasoning chain.
+
+**Mistral-Small 3.2** exhibits a near-total collapse on qualitative and composite items: ten of thirteen non-quantitative items receive score 0, including straightforward indicators such as Pengelolaan Keuangan (ind. 8) where the LED p.52 explicitly states all five required aspects. However, Mistral matches the reference exactly on three of six quantitative items (ind. 28, 30, 42, 50) — every formula-driven item. The split suggests that the failure is not generic incapacity but a specific *qualitative-prompt pathology*: when the rubric is descriptive and admits multi-aspect judgment, Mistral reverts to a default "no evidence → score 0" template; when the rubric is formula-based, the deterministic tool call (`compute_formula_score`) by-passes that template.
+
 ### Failure Mode: False Refusal
 
-Across the 19 indicators, the dominant failure mode is *false refusal* — the model emits a score of 0 with the justification "no evidence" even when LED chunks containing the evidence are retrieved. Table 3 summarizes the false-refusal rate per model.
+Across the 19 indicators, the dominant failure mode is *false refusal* — the model emits a score of 0 with the justification "no evidence" even when LED chunks containing the evidence are retrieved. Table 4 summarizes the false-refusal rate per model.
 
-**Table 3.** False-Refusal Rate per Model
+**Table 4.** False-Refusal Rate per Model
 
 | Model | Total score = 0 | Affected indicators |
 |---|---|---|
