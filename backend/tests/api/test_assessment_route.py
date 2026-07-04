@@ -248,8 +248,8 @@ def test_results_returns_indicators_with_kriteria():
     fake_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
         "session_id": "sess-1",
         "status": "completed",
-        "total_indicators": 2,
-        "completed_indicators": 2,
+        "total_indicators": 3,
+        "completed_indicators": 3,
     }
     # indicator_results rows — chained call, separate from .single()
     rows_execute = MagicMock()
@@ -262,15 +262,20 @@ def test_results_returns_indicators_with_kriteria():
             "indicator_no": 2, "score": 4.0, "justification": "Sangat baik", "confidence": 0.95,
             "recommendation": "Pertahankan capaian ini.", "error": None,
         },
+        {
+            "indicator_no": 3, "score": 2.0, "justification": "Cukup.", "confidence": 0.7,
+            "recommendation": None, "error": None,
+        },
     ]
     fake_supabase.table.return_value.select.return_value.eq.return_value.order.return_value.execute.return_value = rows_execute
 
     fake_rubric_1 = MagicMock(); fake_rubric_1.no = 1; fake_rubric_1.kriteria = "K1"
     fake_rubric_2 = MagicMock(); fake_rubric_2.no = 2; fake_rubric_2.kriteria = "K2"
+    fake_rubric_3 = MagicMock(); fake_rubric_3.no = 3; fake_rubric_3.kriteria = "K3"
 
     with (
         patch("api.routes.assessment.get_supabase", return_value=fake_supabase),
-        patch("api.routes.assessment._get_rubrics", return_value=[fake_rubric_1, fake_rubric_2]),
+        patch("api.routes.assessment._get_rubrics", return_value=[fake_rubric_1, fake_rubric_2, fake_rubric_3]),
     ):
         with TestClient(app) as c:
             resp = c.get("/assessment/sess-1/results")
@@ -278,7 +283,44 @@ def test_results_returns_indicators_with_kriteria():
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "completed"
-    assert len(data["results"]) == 2
+    assert len(data["results"]) == 3
     assert data["results"][0]["kriteria"] == "K1"
     assert data["results"][0]["recommendation"] == "Tingkatkan dokumentasi."
     assert data["results"][1]["score"] == 4.0
+    assert data["results"][2]["recommendation"] is None
+
+
+def test_results_null_recommendation_row_does_not_crash():
+    """A DB row with recommendation=None (pre-migration or LLM skipped) must be
+    returned as null in the API response without raising an exception."""
+    from main import app
+
+    fake_supabase = MagicMock()
+    fake_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
+        "session_id": "sess-null",
+        "status": "completed",
+        "total_indicators": 1,
+        "completed_indicators": 1,
+    }
+    rows_execute = MagicMock()
+    rows_execute.data = [
+        {
+            "indicator_no": 5, "score": 2.0, "justification": "Perlu perbaikan.",
+            "confidence": 0.6, "recommendation": None, "error": None,
+        },
+    ]
+    fake_supabase.table.return_value.select.return_value.eq.return_value.order.return_value.execute.return_value = rows_execute
+
+    fake_rubric = MagicMock(); fake_rubric.no = 5; fake_rubric.kriteria = "K5"
+
+    with (
+        patch("api.routes.assessment.get_supabase", return_value=fake_supabase),
+        patch("api.routes.assessment._get_rubrics", return_value=[fake_rubric]),
+    ):
+        with TestClient(app) as c:
+            resp = c.get("/assessment/sess-null/results")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["results"]) == 1
+    assert data["results"][0]["recommendation"] is None

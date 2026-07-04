@@ -137,6 +137,12 @@ def test_finalize_extracts_recommendation():
     assert result["recommendation"] == "Tingkatkan dokumentasi kerjasama industri."
 
 
+def test_finalize_truncates_recommendation_to_500_chars():
+    long_text = "A" * 600
+    result = _finalize({"action": "final", "score": 2, "justification": "Cukup.", "confidence": 0.7, "recommendation": long_text})
+    assert len(result["recommendation"]) == 500
+
+
 def test_finalize_recommendation_defaults_to_none_when_missing():
     result = _finalize(
         {"action": "final", "score": 4, "justification": "Sudah baik.", "confidence": 0.9}

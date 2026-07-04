@@ -51,7 +51,7 @@ Selesaikan penilaian SAMPAI keluar skor final.
 PROTOKOL: setiap respons HARUS berupa JSON satu baris. Pilih salah satu:
 
   {"action": "<tool_name>", "args": {<arguments>}}    ← panggil tool
-  {"action": "final", "score": <0-4>, "justification": "<2-3 kalimat>", "confidence": <0.0-1.0>, "recommendation": "<2-3 kalimat actionable, spesifik terhadap kekurangan>"}    ← skor final
+  {"action": "final", "score": <0-4>, "justification": "<2-3 kalimat>", "confidence": <0.0-1.0>, "recommendation": "<2-3 kalimat actionable, spesifik terhadap kekurangan. Jika skor sudah 4, tulis rekomendasi untuk mempertahankan praktik yang sudah baik>"}    ← skor final
 
 Tool yang tersedia:
 

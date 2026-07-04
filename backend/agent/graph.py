@@ -239,7 +239,7 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
     # ── Node: parse_output ────────────────────────────────────────────────────
 
     def parse_output_node(state: AssessmentState) -> AssessmentState:
-        """Extract score, justification, and confidence from the final LLM message.
+        """Extract score, justification, confidence, and recommendation from the final LLM message.
 
         Permissive parser — handles plain (SKOR: 3), markdown bold (**Skor:** 3),
         heading (## Skor Akhir: 3), and case variations. Picks the LAST valid
@@ -297,7 +297,7 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
             r"(?is)\brekomendasi\s*[:=]\s*(.+)$",
             cleaned,
         )
-        state["recommendation"] = rekom_match.group(1).strip() if rekom_match else None
+        state["recommendation"] = rekom_match.group(1).strip()[:500] if rekom_match else None
 
         return state
 
