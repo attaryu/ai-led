@@ -10,7 +10,8 @@ GET /assessment/{session_id}/status
     Returns current session status from Supabase.
 
 GET /assessment/{session_id}/results
-    Returns all per-indicator results (score, justification, confidence) for a session.
+    Returns all per-indicator results (score, justification, confidence,
+    recommendation) for a session.
 
 Parallelism: up to MAX_PARALLEL indicators run concurrently (asyncio.Semaphore).
 Each indicator is scored by an independent LangGraph graph invocation so there is
@@ -78,6 +79,7 @@ class IndicatorResultItem(BaseModel):
     score: Optional[float] = None
     justification: Optional[str] = None
     confidence: Optional[float] = None
+    recommendation: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -275,7 +277,7 @@ async def get_session_results(session_id: str) -> SessionResultsResponse:
 
     rows_resp = (
         sb.table("indicator_results")
-        .select("indicator_no, score, justification, confidence, error")
+        .select("indicator_no, score, justification, confidence, recommendation, error")
         .eq("session_id", session_id)
         .order("indicator_no")
         .execute()
@@ -291,6 +293,7 @@ async def get_session_results(session_id: str) -> SessionResultsResponse:
             score=row.get("score"),
             justification=row.get("justification"),
             confidence=row.get("confidence"),
+            recommendation=row.get("recommendation"),
             error=row.get("error"),
         )
         for row in (rows_resp.data or [])
@@ -336,6 +339,7 @@ async def _process_single_indicator(
                 "sub_score_ii": None,
                 "justification": None,
                 "confidence": None,
+                "recommendation": None,
                 "error": None,
             }
 
@@ -346,6 +350,7 @@ async def _process_single_indicator(
             score = result.get("final_score")
             justification = result.get("justification", "")
             confidence = result.get("confidence")
+            recommendation = result.get("recommendation")
             error = result.get("error")
 
             for idx, step in enumerate(result.get("reasoning_steps", [])):
@@ -362,6 +367,7 @@ async def _process_single_indicator(
                 score=score,
                 justification=justification,
                 confidence=confidence,
+                recommendation=recommendation,
                 error=error,
             )
             return True
@@ -378,6 +384,7 @@ async def _process_single_indicator(
                 score=None,
                 justification=None,
                 confidence=None,
+                recommendation=None,
                 error=str(exc),
             )
             return False

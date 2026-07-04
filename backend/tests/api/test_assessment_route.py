@@ -185,6 +185,7 @@ async def test_process_single_indicator_success(fake_indicators):
         "final_score": 3.0,
         "justification": "Program studi cukup baik.",
         "confidence": 0.85,
+        "recommendation": "Tingkatkan rasio DTPS.",
         "reasoning_steps": ["step1", "step2"],
         "error": None,
     }
@@ -207,6 +208,7 @@ async def test_process_single_indicator_success(fake_indicators):
     call_kwargs = mock_log.call_args.kwargs
     assert call_kwargs["score"] == 3.0
     assert call_kwargs["indicator_no"] == 1
+    assert call_kwargs["recommendation"] == "Tingkatkan rasio DTPS."
 
 
 @pytest.mark.asyncio
@@ -232,6 +234,7 @@ async def test_process_single_indicator_handles_exception(fake_indicators):
     call_kwargs = mock_log.call_args.kwargs
     assert call_kwargs["error"] is not None
     assert call_kwargs["score"] is None
+    assert call_kwargs["recommendation"] is None
 
 
 # ── GET /assessment/{session_id}/results ──────────────────────────────────────
@@ -251,8 +254,14 @@ def test_results_returns_indicators_with_kriteria():
     # indicator_results rows — chained call, separate from .single()
     rows_execute = MagicMock()
     rows_execute.data = [
-        {"indicator_no": 1, "score": 3.0, "justification": "OK", "confidence": 0.9, "error": None},
-        {"indicator_no": 2, "score": 4.0, "justification": "Sangat baik", "confidence": 0.95, "error": None},
+        {
+            "indicator_no": 1, "score": 3.0, "justification": "OK", "confidence": 0.9,
+            "recommendation": "Tingkatkan dokumentasi.", "error": None,
+        },
+        {
+            "indicator_no": 2, "score": 4.0, "justification": "Sangat baik", "confidence": 0.95,
+            "recommendation": "Pertahankan capaian ini.", "error": None,
+        },
     ]
     fake_supabase.table.return_value.select.return_value.eq.return_value.order.return_value.execute.return_value = rows_execute
 
@@ -271,4 +280,5 @@ def test_results_returns_indicators_with_kriteria():
     assert data["status"] == "completed"
     assert len(data["results"]) == 2
     assert data["results"][0]["kriteria"] == "K1"
+    assert data["results"][0]["recommendation"] == "Tingkatkan dokumentasi."
     assert data["results"][1]["score"] == 4.0
