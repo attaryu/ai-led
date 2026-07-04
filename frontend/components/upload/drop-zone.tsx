@@ -34,6 +34,12 @@ export function DropZone({ accept, onFileSelected, chosenFileName, disabled }: D
       role="button"
       tabIndex={0}
       onClick={() => !disabled && inputRef.current?.click()}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          if (!disabled) inputRef.current?.click()
+        }
+      }}
       onDragOver={(e) => {
         e.preventDefault()
         setIsDragOver(true)
