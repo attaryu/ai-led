@@ -22,6 +22,7 @@ def _make_state(**overrides) -> AssessmentState:
         "sub_score_ii": None,
         "justification": None,
         "confidence": None,
+        "recommendation": None,
         "error": None,
     }
     base.update(overrides)
@@ -154,6 +155,6 @@ def test_assessment_state_has_required_keys():
     required = {
         "session_id", "indicator_no", "indicator_row", "rubric",
         "led_evidence", "lkps_data", "messages", "reasoning_steps",
-        "final_score", "justification", "confidence", "error",
+        "final_score", "justification", "confidence", "recommendation", "error",
     }
     assert required.issubset(state.keys())
