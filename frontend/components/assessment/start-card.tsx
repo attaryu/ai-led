@@ -1,7 +1,7 @@
 // ami-assessment/frontend/components/assessment/start-card.tsx
 'use client'
 
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -16,11 +16,13 @@ interface StartCardProps {
 export function StartCard({ laporanPath }: StartCardProps) {
   const { data: status } = useUploadStatus()
   const setSessionId = useAppStore((s) => s.setSessionId)
+  const queryClient = useQueryClient()
 
   const mutation = useMutation({
     mutationFn: () => startAssessment(laporanPath ? { laporan_path: laporanPath } : {}),
     onSuccess: (data) => {
       setSessionId(data.session_id)
+      queryClient.invalidateQueries({ queryKey: ['assessment-list'] })
     },
     onError: (err: Error) => {
       toast.error('Gagal memulai penilaian', { description: err.message })

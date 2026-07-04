@@ -1,6 +1,8 @@
 // ami-assessment/frontend/components/assessment/progress-panel.tsx
 'use client'
 
+import { useEffect, useRef } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { useAppStore } from '@/lib/store'
@@ -9,6 +11,16 @@ import { useAssessmentStatus } from '@/hooks/use-assessment-polling'
 export function ProgressPanel() {
   const sessionId = useAppStore((s) => s.sessionId)
   const { data: status } = useAssessmentStatus(sessionId)
+  const queryClient = useQueryClient()
+  // Track which session we've already invalidated for, so we fire exactly once per completed session.
+  const invalidatedForRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (status?.status === 'completed' && sessionId && invalidatedForRef.current !== sessionId) {
+      invalidatedForRef.current = sessionId
+      queryClient.invalidateQueries({ queryKey: ['assessment-list'] })
+    }
+  }, [status?.status, sessionId, queryClient])
 
   if (!sessionId || !status) return null
 

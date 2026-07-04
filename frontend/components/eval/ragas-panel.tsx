@@ -77,15 +77,35 @@ export function RagasPanel() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex flex-wrap gap-6 rounded-md border p-3 text-sm">
-          <div>
-            Model dinilai: <strong>{config?.assessment_model ?? '—'}</strong> (
-            {config?.assessment_provider ?? '—'})
-          </div>
-          <div>
-            Judge RAGAS: <strong>{config?.judge_model ?? '—'}</strong> ({config?.judge_provider ?? '—'})
-          </div>
-        </div>
+        {(() => {
+          const isSameModel = !!(
+            config &&
+            config.judge_model === config.assessment_model &&
+            config.judge_provider === config.assessment_provider
+          )
+          return (
+            <div className="flex flex-wrap gap-6 rounded-md border p-3 text-sm">
+              <div>
+                Model dinilai: <strong>{config?.assessment_model ?? '—'}</strong> (
+                {config?.assessment_provider ?? '—'})
+              </div>
+              <div>
+                Judge RAGAS:{' '}
+                <strong
+                  className={isSameModel ? 'text-destructive' : undefined}
+                  title={
+                    isSameModel
+                      ? 'Judge = Assessment model. Set RAGAS_* env vars untuk benchmark yang fair.'
+                      : undefined
+                  }
+                >
+                  {config?.judge_model ?? '—'}
+                </strong>{' '}
+                ({config?.judge_provider ?? '—'})
+              </div>
+            </div>
+          )
+        })()}
 
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -101,12 +121,25 @@ export function RagasPanel() {
           </div>
           <div>
             <Label htmlFor="eval-session">Session ID (opsional)</Label>
-            <Input
-              id="eval-session"
-              placeholder="Pakai justifikasi dari session ini"
-              value={sessionIdInput}
-              onChange={(e) => setSessionIdInput(e.target.value)}
-            />
+            <div className="flex gap-2">
+              <Input
+                id="eval-session"
+                placeholder="Pakai justifikasi dari session ini"
+                value={sessionIdInput}
+                onChange={(e) => setSessionIdInput(e.target.value)}
+              />
+              {storeSessionId && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => setSessionIdInput(storeSessionId)}
+                >
+                  → Isi dari sesi aktif
+                </Button>
+              )}
+            </div>
           </div>
         </div>
 
