@@ -93,6 +93,7 @@ def log_indicator_result(
     score: Optional[float],
     justification: Optional[str],
     confidence: Optional[float],
+    recommendation: Optional[str] = None,
     error: Optional[str] = None,
 ) -> None:
     """Upsert a scored indicator into indicator_results."""
@@ -104,6 +105,7 @@ def log_indicator_result(
                 "score": score,
                 "justification": justification,
                 "confidence": confidence,
+                "recommendation": recommendation,
                 "error": error,
             }
         ).execute()
