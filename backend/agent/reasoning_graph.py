@@ -51,7 +51,7 @@ Selesaikan penilaian SAMPAI keluar skor final.
 PROTOKOL: setiap respons HARUS berupa JSON satu baris. Pilih salah satu:
 
   {"action": "<tool_name>", "args": {<arguments>}}    ← panggil tool
-  {"action": "final", "score": <0-4>, "justification": "<2-3 kalimat>", "confidence": <0.0-1.0>}    ← skor final
+  {"action": "final", "score": <0-4>, "justification": "<2-3 kalimat>", "confidence": <0.0-1.0>, "recommendation": "<2-3 kalimat actionable, spesifik terhadap kekurangan>"}    ← skor final
 
 Tool yang tersedia:
 
@@ -311,9 +311,12 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
         except (TypeError, ValueError):
             conf_f = 0.5
 
+        recommendation = parsed.get("recommendation")
+
         state["final_score"] = score_f
         state["justification"] = str(parsed.get("justification", ""))[:2000]
         state["confidence"] = conf_f
+        state["recommendation"] = str(recommendation)[:500] if recommendation else None
         return state
 
     graph = StateGraph(AssessmentState)
