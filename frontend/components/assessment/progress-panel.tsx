@@ -8,6 +8,18 @@ import { Progress } from '@/components/ui/progress'
 import { useAppStore } from '@/lib/store'
 import { useAssessmentStatus } from '@/hooks/use-assessment-polling'
 
+const STATUS_LABEL: Record<string, string> = {
+  running: 'Berjalan',
+  completed: 'Selesai ✓',
+  failed: 'Gagal',
+}
+
+const STATUS_COLOR: Record<string, string> = {
+  running: 'text-amber-600',
+  completed: 'text-green-600',
+  failed: 'text-destructive',
+}
+
 export function ProgressPanel() {
   const sessionId = useAppStore((s) => s.sessionId)
   const { data: status } = useAssessmentStatus(sessionId)
@@ -44,7 +56,9 @@ export function ProgressPanel() {
             <div className="text-xs text-muted-foreground">Selesai Dinilai</div>
           </div>
           <div className="rounded-md border p-3">
-            <div className="text-2xl font-bold capitalize">{status.status}</div>
+            <div className={`text-2xl font-bold ${STATUS_COLOR[status.status] ?? ''}`}>
+              {STATUS_LABEL[status.status] ?? status.status}
+            </div>
             <div className="text-xs text-muted-foreground">Status</div>
           </div>
         </div>
