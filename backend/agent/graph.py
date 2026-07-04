@@ -6,7 +6,7 @@ Flow per indicator:
 The agent node sends the current message list to the LLM. If the LLM returns
 tool calls, the ToolNode executes them and appends results to the message list
 before going back to the agent. Once the LLM responds without tool calls,
-parse_output extracts score, justification, and confidence.
+parse_output extracts score, justification, confidence, and recommendation.
 """
 
 from __future__ import annotations
@@ -123,7 +123,7 @@ LARANGAN KETAT:
 - DILARANG bertanya balik ke user ("untuk membantu Anda...", "saya perlu mengetahui...")
 - DILARANG menawarkan bantuan tambahan ("apakah Anda ingin...")
 - DILARANG menulis "Saya melihat Anda telah..." — Anda yang bekerja, bukan user
-- DILARANG keluar dari loop tanpa SKOR/JUSTIFIKASI/CONFIDENCE final
+- DILARANG keluar dari loop tanpa SKOR/JUSTIFIKASI/CONFIDENCE/REKOMENDASI final
 - Jika bukti tidak cukup → tetap beri skor 0 atau 1 dengan justifikasi "bukti tidak ditemukan"
 
 FORMAT OUTPUT FINAL (WAJIB tepat seperti ini, tanpa markdown apapun):
@@ -131,11 +131,13 @@ FORMAT OUTPUT FINAL (WAJIB tepat seperti ini, tanpa markdown apapun):
 SKOR: <angka 0-4, contoh: 3 atau 3.5>
 JUSTIFIKASI: <2-3 kalimat Bahasa Indonesia tentang dasar penilaian>
 CONFIDENCE: <angka 0.0-1.0, contoh: 0.85>
+REKOMENDASI: <2-3 kalimat Bahasa Indonesia, actionable, spesifik terhadap kekurangan. Jika skor sudah 4, tulis rekomendasi untuk mempertahankan praktik yang sudah baik>
 
 Contoh respons final yang BENAR:
 SKOR: 3
 JUSTIFIKASI: Program studi memiliki dokumen VMTS yang lengkap dan disusun secara partisipatif (LED hal. 30). LKPS menunjukkan 72% DTPS sesuai bidang keilmuan. Bukti memadai namun belum mencapai standar maksimal.
-CONFIDENCE: 0.85"""
+CONFIDENCE: 0.85
+REKOMENDASI: Tingkatkan persentase DTPS yang sesuai bidang keilmuan hingga di atas 80% melalui rekrutmen dosen baru atau penyesuaian penugasan mengajar."""
 
 
 def build_graph(ollama_client: OllamaClient) -> StateGraph:
@@ -226,8 +228,9 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
                 content=(
                     "STOP. Batas iterasi tool tercapai atau Anda belum memberikan skor final. "
                     "Output tool sebelumnya dari sistem, bukan user. "
-                    "Sekarang berikan HANYA 3 baris dengan format ini, tanpa pertanyaan balik:\n\n"
-                    "SKOR: <0-4>\nJUSTIFIKASI: <2-3 kalimat>\nCONFIDENCE: <0.0-1.0>"
+                    "Sekarang berikan HANYA 4 baris dengan format ini, tanpa pertanyaan balik:\n\n"
+                    "SKOR: <0-4>\nJUSTIFIKASI: <2-3 kalimat>\nCONFIDENCE: <0.0-1.0>\n"
+                    "REKOMENDASI: <2-3 kalimat actionable>"
                 )
             )
         )
@@ -236,7 +239,7 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
     # ── Node: parse_output ────────────────────────────────────────────────────
 
     def parse_output_node(state: AssessmentState) -> AssessmentState:
-        """Extract score, justification, and confidence from the final LLM message.
+        """Extract score, justification, confidence, and recommendation from the final LLM message.
 
         Permissive parser — handles plain (SKOR: 3), markdown bold (**Skor:** 3),
         heading (## Skor Akhir: 3), and case variations. Picks the LAST valid
@@ -287,6 +290,14 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
                 state["confidence"] = 0.5
         else:
             state["confidence"] = 0.5
+
+        # Recommendation: last field, capture to end of message. None if absent
+        # (missing recommendation must not block finalization or trigger retry).
+        rekom_match = re.search(
+            r"(?is)\brekomendasi\s*[:=]\s*(.+)$",
+            cleaned,
+        )
+        state["recommendation"] = rekom_match.group(1).strip()[:500] if rekom_match else None
 
         return state
 

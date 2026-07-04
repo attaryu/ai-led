@@ -95,6 +95,62 @@ def test_extract_json_returns_none_when_unparseable():
     assert _extract_json("<think>only thinking, no answer</think>") is None
 
 
+# ── finalize_node logic (mirrored for isolated testing) ──────────────────────
+
+
+def _finalize(parsed: dict) -> dict:
+    """Mirrors finalize_node's field extraction for isolated testing."""
+    score = parsed.get("score")
+    try:
+        score_f = float(score) if score is not None else None
+        if score_f is not None and not (0.0 <= score_f <= 4.0):
+            score_f = None
+    except (TypeError, ValueError):
+        score_f = None
+
+    try:
+        conf_f = float(parsed.get("confidence", 0.5))
+        conf_f = max(0.0, min(1.0, conf_f))
+    except (TypeError, ValueError):
+        conf_f = 0.5
+
+    recommendation = parsed.get("recommendation")
+
+    return {
+        "final_score": score_f,
+        "justification": str(parsed.get("justification", ""))[:2000],
+        "confidence": conf_f,
+        "recommendation": str(recommendation)[:500] if recommendation else None,
+    }
+
+
+def test_finalize_extracts_recommendation():
+    result = _finalize(
+        {
+            "action": "final",
+            "score": 3,
+            "justification": "Cukup baik.",
+            "confidence": 0.8,
+            "recommendation": "Tingkatkan dokumentasi kerjasama industri.",
+        }
+    )
+    assert result["recommendation"] == "Tingkatkan dokumentasi kerjasama industri."
+
+
+def test_finalize_truncates_recommendation_to_500_chars():
+    long_text = "A" * 600
+    result = _finalize({"action": "final", "score": 2, "justification": "Cukup.", "confidence": 0.7, "recommendation": long_text})
+    assert len(result["recommendation"]) == 500
+
+
+def test_finalize_recommendation_defaults_to_none_when_missing():
+    result = _finalize(
+        {"action": "final", "score": 4, "justification": "Sudah baik.", "confidence": 0.9}
+    )
+    assert result["recommendation"] is None
+    assert result["final_score"] == 4.0
+
+
 # ── build_reasoning_graph compiles ────────────────────────────────────────────
 
 

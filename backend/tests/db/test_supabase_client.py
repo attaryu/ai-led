@@ -159,6 +159,7 @@ def test_log_indicator_result_upserts_correct_payload(fake_sb):
             score=3.0,
             justification="Sangat baik.",
             confidence=0.9,
+            recommendation="Pertahankan capaian ini.",
         )
 
     fake_sb.table.assert_called_with("indicator_results")
@@ -169,9 +170,26 @@ def test_log_indicator_result_upserts_correct_payload(fake_sb):
             "score": 3.0,
             "justification": "Sangat baik.",
             "confidence": 0.9,
+            "recommendation": "Pertahankan capaian ini.",
             "error": None,
         }
     )
+
+
+def test_log_indicator_result_recommendation_defaults_to_none(fake_sb):
+    from db.supabase_client import log_indicator_result
+
+    with patch("db.supabase_client.get_supabase", return_value=fake_sb):
+        log_indicator_result(
+            session_id="sess-1",
+            indicator_no=6,
+            score=2.0,
+            justification="Perlu ditingkatkan.",
+            confidence=0.6,
+        )
+
+    call_arg = fake_sb.table().upsert.call_args[0][0]
+    assert call_arg["recommendation"] is None
 
 
 def test_log_indicator_result_with_error_payload(fake_sb):

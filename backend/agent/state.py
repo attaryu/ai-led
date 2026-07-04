@@ -32,4 +32,5 @@ class AssessmentState(TypedDict):
     sub_score_ii: Optional[float]
     justification: Optional[str]
     confidence: Optional[float]
+    recommendation: Optional[str]
     error: Optional[str]

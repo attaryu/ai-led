@@ -66,6 +66,7 @@ def _run_one(graph, indicator: _Indicator) -> dict:
         "sub_score_ii": None,
         "justification": None,
         "confidence": None,
+        "recommendation": None,
         "error": None,
     }
     t0 = time.time()
