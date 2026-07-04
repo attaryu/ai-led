@@ -84,7 +84,15 @@ def _parse_output(content: str) -> dict:
     else:
         confidence = 0.5
 
-    return {"final_score": score, "justification": justification, "confidence": confidence}
+    rekom_match = re.search(r"(?is)\brekomendasi\s*[:=]\s*(.+)$", cleaned)
+    recommendation = rekom_match.group(1).strip() if rekom_match else None
+
+    return {
+        "final_score": score,
+        "justification": justification,
+        "confidence": confidence,
+        "recommendation": recommendation,
+    }
 
 
 def test_parse_output_extracts_score():
@@ -158,3 +166,28 @@ def test_assessment_state_has_required_keys():
         "final_score", "justification", "confidence", "recommendation", "error",
     }
     assert required.issubset(state.keys())
+
+
+# ── recommendation extraction ─────────────────────────────────────────────────
+
+def test_parse_output_extracts_recommendation():
+    result = _parse_output(
+        "SKOR: 3\nJUSTIFIKASI: Program studi cukup baik.\nCONFIDENCE: 0.8\n"
+        "REKOMENDASI: Tingkatkan rasio DTPS dengan merekrut tenaga pengajar baru."
+    )
+    assert result["recommendation"] == "Tingkatkan rasio DTPS dengan merekrut tenaga pengajar baru."
+
+
+def test_parse_output_recommendation_defaults_to_none_when_missing():
+    result = _parse_output("SKOR: 4\nJUSTIFIKASI: Lengkap.\nCONFIDENCE: 0.9")
+    assert result["recommendation"] is None
+    assert result["final_score"] == 4.0
+
+
+def test_parse_output_recommendation_handles_markdown_bold():
+    content = (
+        "**Skor:** 3\n**Justifikasi:** Bagus.\n"
+        "**Confidence:** 0.85\n**Rekomendasi:** Lengkapi dokumen kerjasama industri."
+    )
+    result = _parse_output(content)
+    assert result["recommendation"] == "Lengkapi dokumen kerjasama industri."
