@@ -4,7 +4,7 @@ import { HistoryPanel } from '@/components/history/history-panel'
 
 export default function RiwayatPage() {
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
+    <div className="space-y-6 p-6">
       <PageHeader
         title="Riwayat Penilaian"
         description="Daftar sesi penilaian yang pernah dijalankan"
