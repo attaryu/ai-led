@@ -20,7 +20,7 @@ const SCORE_STYLES: Record<number, string> = {
   0: 'bg-red-100 text-red-700 hover:bg-red-100',
   1: 'bg-red-100 text-red-700 hover:bg-red-100',
   2: 'bg-amber-100 text-amber-800 hover:bg-amber-100',
-  3: 'bg-blue-100 text-blue-800 hover:bg-blue-100',
+  3: 'bg-sky-100 text-sky-700 hover:bg-sky-100',
   4: 'bg-green-100 text-green-800 hover:bg-green-100',
 }
 
