@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
+import { StatCard } from '@/components/shared/stat-card'
 import { useAppStore } from '@/lib/store'
 import { useAssessmentStatus } from '@/hooks/use-assessment-polling'
 
@@ -47,20 +48,13 @@ export function ProgressPanel() {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-md border p-3">
-            <div className="text-2xl font-bold">{status.total_indicators}</div>
-            <div className="text-xs text-muted-foreground">Total Indikator</div>
-          </div>
-          <div className="rounded-md border p-3">
-            <div className="text-2xl font-bold">{done}</div>
-            <div className="text-xs text-muted-foreground">Selesai Dinilai</div>
-          </div>
-          <div className="rounded-md border p-3">
-            <div className={`text-2xl font-bold ${STATUS_COLOR[status.status] ?? ''}`}>
-              {STATUS_LABEL[status.status] ?? status.status}
-            </div>
-            <div className="text-xs text-muted-foreground">Status</div>
-          </div>
+          <StatCard label="Total Indikator" value={status.total_indicators} />
+          <StatCard label="Selesai Dinilai" value={done} />
+          <StatCard
+            label="Status"
+            value={STATUS_LABEL[status.status] ?? status.status}
+            valueClassName={STATUS_COLOR[status.status] ?? ''}
+          />
         </div>
         <Progress value={pct} />
         <p className="text-sm text-muted-foreground">
