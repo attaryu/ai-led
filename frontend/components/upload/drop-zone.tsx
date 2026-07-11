@@ -2,6 +2,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import { FileCheck2, UploadCloud } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface DropZoneProps {
@@ -47,8 +48,9 @@ export function DropZone({ accept, onFileSelected, chosenFileName, disabled }: D
       onDragLeave={() => setIsDragOver(false)}
       onDrop={handleDrop}
       className={cn(
-        'rounded-md border-2 border-dashed border-muted-foreground/30 p-5 text-center text-sm text-muted-foreground cursor-pointer transition-colors',
+        'flex flex-col items-center gap-2 rounded-md border-2 border-dashed border-muted-foreground/30 p-5 text-center text-sm text-muted-foreground cursor-pointer transition-colors',
         isDragOver && 'border-primary bg-primary/5 text-primary',
+        chosenFileName && !isDragOver && 'border-primary/40 bg-primary/5',
         disabled && 'pointer-events-none opacity-50'
       )}
     >
@@ -63,6 +65,11 @@ export function DropZone({ accept, onFileSelected, chosenFileName, disabled }: D
           if (file) onFileSelected(file)
         }}
       />
+      {chosenFileName ? (
+        <FileCheck2 className="size-6 text-primary" />
+      ) : (
+        <UploadCloud className="size-6" />
+      )}
       <div>Klik atau seret file ke sini</div>
       {chosenFileName && (
         <div className="mt-1 font-medium text-foreground">{chosenFileName}</div>
