@@ -1,7 +1,7 @@
 // ami-assessment/frontend/app/(shell)/page.tsx
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/layout/page-header'
 import { StepperNav } from '@/components/layout/stepper-nav'
@@ -23,7 +23,17 @@ const WIZARD_STEPS = [
 ]
 
 export default function Home() {
-  const [laporanPath, setLaporanPath] = useState<string | null>(null)
+  const [laporanPath, setLaporanPathState] = useState<string | null>(null)
+
+  useEffect(() => {
+    const stored = sessionStorage.getItem('ami_laporan_path')
+    if (stored) setLaporanPathState(stored)
+  }, [])
+
+  function setLaporanPath(path: string) {
+    setLaporanPathState(path)
+    sessionStorage.setItem('ami_laporan_path', path)
+  }
   const [displayedStep, setDisplayedStep] = useState(1)
   const [followUnlocked, setFollowUnlocked] = useState(true)
 

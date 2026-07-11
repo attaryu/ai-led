@@ -59,7 +59,7 @@ export function ProgressPanel() {
         <Progress value={pct} />
         <p className="text-sm text-muted-foreground">
           {status.status === 'completed'
-            ? `Semua ${total} indikator berhasil dinilai. Tabel hasil di bawah.`
+            ? `Semua ${total} indikator berhasil dinilai. Klik langkah "Hasil" untuk melihat tabel skor.`
             : status.status === 'failed'
               ? status.error || 'Pipeline gagal.'
               : `${done} dari ${total} indikator selesai (${pct}%)`}
