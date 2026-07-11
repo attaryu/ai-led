@@ -1,4 +1,4 @@
-// ami-assessment/frontend/app/page.tsx
+// ami-assessment/frontend/app/(shell)/page.tsx
 'use client'
 
 import { useState } from 'react'
