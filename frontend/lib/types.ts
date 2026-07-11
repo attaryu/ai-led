@@ -61,6 +61,7 @@ export interface IndicatorResultItem {
   score?: number | null
   justification?: string | null
   confidence?: number | null
+  recommendation?: string | null
   error?: string | null
 }
 

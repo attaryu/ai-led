@@ -61,6 +61,7 @@ export function ResultsTable() {
                 <TableHead>Kriteria</TableHead>
                 <TableHead className="w-16 text-center">Skor</TableHead>
                 <TableHead>Justifikasi</TableHead>
+                <TableHead>Rekomendasi</TableHead>
                 <TableHead className="w-16 text-center">Conf.</TableHead>
               </TableRow>
             </TableHeader>
@@ -72,12 +73,15 @@ export function ResultsTable() {
                   <TableCell className="text-center">
                     <ScorePill score={r.score} />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="whitespace-normal">
                     {r.error ? (
                       <span className="italic text-destructive">Error: {r.error}</span>
                     ) : (
                       r.justification || '—'
                     )}
+                  </TableCell>
+                  <TableCell className="whitespace-normal">
+                    {r.error ? '—' : r.recommendation || '—'}
                   </TableCell>
                   <TableCell className="text-center text-muted-foreground">
                     {r.confidence != null ? r.confidence.toFixed(2) : '—'}

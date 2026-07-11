@@ -16,6 +16,7 @@ const styles = StyleSheet.create({
   colKriteria: { width: 130 },
   colSkor: { width: 40, textAlign: 'center' },
   colJust: { flex: 1 },
+  colRekom: { flex: 1 },
   colConf: { width: 40, textAlign: 'center' },
 })
 
@@ -39,6 +40,7 @@ function ResultsDocument({
           <Text style={styles.colKriteria}>Kriteria</Text>
           <Text style={styles.colSkor}>Skor</Text>
           <Text style={styles.colJust}>Justifikasi</Text>
+          <Text style={styles.colRekom}>Rekomendasi</Text>
           <Text style={styles.colConf}>Conf.</Text>
         </View>
         {results.results.map((r) => (
@@ -47,6 +49,7 @@ function ResultsDocument({
             <Text style={styles.colKriteria}>{r.kriteria || '—'}</Text>
             <Text style={styles.colSkor}>{r.score != null ? r.score.toFixed(1) : '–'}</Text>
             <Text style={styles.colJust}>{r.error ? `Error: ${r.error}` : r.justification || '—'}</Text>
+            <Text style={styles.colRekom}>{r.error ? '—' : r.recommendation || '—'}</Text>
             <Text style={styles.colConf}>{r.confidence != null ? r.confidence.toFixed(2) : '—'}</Text>
           </View>
         ))}
