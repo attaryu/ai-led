@@ -14,9 +14,6 @@ export const userSchema = z.object({
 		.string('Nama universitas tidak valid')
 		.min(1, 'Nama universitas wajib diisi')
 		.max(100, 'Nama universitas maksimal 100 karakter'),
-	password: z
-		.string('Password tidak valid')
-		.min(6, 'Password minimal 6 karakter'),
 });
 
 export type UserEntity = z.infer<typeof userSchema>;
