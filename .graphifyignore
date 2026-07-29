@@ -3,6 +3,3 @@
 /node_modules/
 /.react-router/
 /build/
-/.opencode/
-/graphify-out/
-package-lock.json
