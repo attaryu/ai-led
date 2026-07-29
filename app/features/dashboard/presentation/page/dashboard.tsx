@@ -16,21 +16,23 @@ export function Dashboard() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md">
+    <div className="flex flex-col gap-6">
+      <Card className="w-full">
         <CardHeader>
           <CardTitle>Dashboard</CardTitle>
           <CardDescription>
-            Selamat datang di dashboard Anda (Halaman Kosongan)
+            Selamat datang di dashboard Anda (Halaman Utama)
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <p className="text-sm text-muted-foreground">
-            Ini adalah tempat penampung halaman utama setelah Anda berhasil login atau mendaftar.
+            Ini adalah dashboard utama. Silakan gunakan menu di sidebar untuk mengelola User dan Program Studi (StudyProgram).
           </p>
-          <Button variant="destructive" onClick={handleLogout}>
-            Keluar (Logout)
-          </Button>
+          <div>
+            <Button variant="destructive" onClick={handleLogout}>
+              Keluar (Logout)
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>
