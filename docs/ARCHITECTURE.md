@@ -32,13 +32,14 @@ Struktur aplikasi memisahkan kode global (di bawah `app/`) dengan kode spesifik 
 ```
 led-ai-frontend/
 ├── app/
-│   ├── routes/                 # Thin Routing (Hanya mendefinisikan URL/Path)
-│   ├── components/ui/          # Global Reusable Components (Shadcn UI, Button, dll)
-│   ├── lib/                    # Global Utilities
-│   └── features/               # Domain Bisnis Aplikasi (Inti Arsitektur)
-│       ├── auth/
-│       ├── document-editor/
-│       ├── ...
+│   ├── core/                   # Modul Global & Shared Resources
+│   │   ├── components/ui/      # Komponen UI Reusable (Shadcn UI, Button, dll)
+│   │   ├── hooks/              # Custom Hooks yang digunakan lintas fitur
+│   │   └── lib/                # Utilities Global (utils.ts, formatter, dll)
+│   ├── features/               # Domain Bisnis Aplikasi (Inti Arsitektur)
+│   │   └── auth/               # Contoh: Fitur Otentikasi
+│   ├── root.tsx                # Entry point utama UI aplikasi
+│   └── routes.ts               # Konfigurasi routing terpusat (React Router v7)
 ```
 
 ---
@@ -92,13 +93,16 @@ Bertanggung jawab untuk berkomunikasi dengan dunia luar (API, WebSockets, SSE, a
 
 ## Keputusan Arsitektural Utama (Key Decisions)
 
-1. **Pola Thin Routing**:
+1. **Pengelompokan Modul Inti (Core Module)**:
+   Semua komponen (components), hooks, dan utils yang bersifat agnostik dan dibagikan ke lebih dari satu fitur ditempatkan di dalam folder `app/core/`. Ini menjaga folder root aplikasi tetap bersih dan mencegah redudansi komponen UI (seperti sistem Design System / Shadcn UI).
+
+2. **Pola Thin Routing**:
    Folder `app/routes/` hanya bertugas mendaftarkan URL path dan menangani fungsi spesifik framework (`loader/action`). Komponen UI dirender dengan memanggil `<Page/>` dari `features/.../presentation/pages/`.
 
-2. **Reposisi TanStack Query**:
+3. **Reposisi TanStack Query**:
    TanStack Query diposisikan murni sebagai jembatan UI / State Adapter di dalam layer presentation, bukan sebagai alat fetching utama. Pengambilan data murni tetap dilakukan oleh Repository di layer data.
 
-3. **Strategi Validasi Data (Zod + React Hook Form):**
+4. **Strategi Validasi Data (Zod + React Hook Form):**
    Aturan validasi form (seperti _required_, batas karakter, format email) dianggap sebagai aturan bisnis (_Business Rules_), sehingga skemanya didefinisikan secara murni di layer `domain/entities/` menggunakan **Zod**. Layer UI (React Hook Form) di `presentation` murni hanya bertugas sebagai konsumen (_consumer_) dari skema tersebut melalui resolver. Hal ini mencegah bercampurnya aturan validasi dengan elemen TSX dan memungkinkan skema digunakan ulang (dibagikan) ke sisi backend jika dibutuhkan.
 
 ## Alur Komunikasi Data (Data Flow)
