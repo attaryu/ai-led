@@ -19,8 +19,8 @@ import {
 } from '~/core/components/ui/field';
 import {
 	registerSchema,
-	type RegisterInput,
-} from '../../domain/entities/auth.schema';
+	type RegisterDto,
+} from '../../domain/dtos/register.dto';
 
 const formId = 'register-form';
 
@@ -30,17 +30,17 @@ export function Register() {
 		register,
 		handleSubmit,
 		formState: { errors, isSubmitting },
-	} = useForm<RegisterInput>({
+	} = useForm<RegisterDto>({
 		resolver: zodResolver(registerSchema),
 		defaultValues: {
-			username: '',
+			fullname: '',
 			email: '',
 			password: '',
-			organizationName: '',
+			universityName: '',
 		},
 	});
 
-	const onSubmit = (data: RegisterInput) => {
+	const onSubmit = (data: RegisterDto) => {
 		console.log('Register Success:', data);
 		navigate('/dashboard');
 	};
@@ -58,18 +58,18 @@ export function Register() {
 				<CardContent>
 					<form id={formId} onSubmit={handleSubmit(onSubmit)}>
 						<FieldGroup>
-							<Field data-invalid={!!errors.username}>
-								<FieldLabel htmlFor="username">Username</FieldLabel>
+							<Field data-invalid={!!errors.fullname}>
+								<FieldLabel htmlFor="fullname">Nama Lengkap</FieldLabel>
 								<Input
-									id="username"
+									id="fullname"
 									type="text"
-									placeholder="johndoe"
-									aria-invalid={!!errors.username}
+									placeholder="John Doe"
+									aria-invalid={!!errors.fullname}
 									disabled={isSubmitting}
-									{...register('username')}
+									{...register('fullname')}
 								/>
-								{errors.username && (
-									<FieldError>{errors.username.message}</FieldError>
+								{errors.fullname && (
+									<FieldError>{errors.fullname.message}</FieldError>
 								)}
 							</Field>
 
@@ -103,20 +103,20 @@ export function Register() {
 								)}
 							</Field>
 
-							<Field data-invalid={!!errors.organizationName}>
-								<FieldLabel htmlFor="organizationName">
-									Nama Organisasi
+							<Field data-invalid={!!errors.universityName}>
+								<FieldLabel htmlFor="universityName">
+									Nama Universitas
 								</FieldLabel>
 								<Input
-									id="organizationName"
+									id="universityName"
 									type="text"
-									placeholder="Acme Corp"
-									aria-invalid={!!errors.organizationName}
+									placeholder="Universitas Indonesia"
+									aria-invalid={!!errors.universityName}
 									disabled={isSubmitting}
-									{...register('organizationName')}
+									{...register('universityName')}
 								/>
-								{errors.organizationName && (
-									<FieldError>{errors.organizationName.message}</FieldError>
+								{errors.universityName && (
+									<FieldError>{errors.universityName.message}</FieldError>
 								)}
 							</Field>
 						</FieldGroup>

@@ -17,10 +17,7 @@ import {
 	FieldGroup,
 	FieldLabel,
 } from '~/core/components/ui/field';
-import {
-	loginSchema,
-	type LoginInput,
-} from '../../domain/entities/auth.schema';
+import { loginSchema, type LoginDto } from '../../domain/dtos/login.dto';
 
 const formId = 'login-form';
 
@@ -30,7 +27,7 @@ export function Login() {
 		register,
 		handleSubmit,
 		formState: { errors, isSubmitting },
-	} = useForm<LoginInput>({
+	} = useForm<LoginDto>({
 		resolver: zodResolver(loginSchema),
 		defaultValues: {
 			email: '',
@@ -38,7 +35,7 @@ export function Login() {
 		},
 	});
 
-	const onSubmit = (data: LoginInput) => {
+	const onSubmit = (data: LoginDto) => {
 		console.log('Login Success:', data);
 		navigate('/dashboard');
 	};
