@@ -73,11 +73,55 @@ Bertanggung jawab atas semua hal yang berkaitan dengan React, tampilan, dan inte
 
 ### 2. Layer `domain` (Business Rules)
 
-Merupakan pusat kebenaran (_Single Source of Truth_) dari bentuk data dan aturan validasi. Tidak bergantung pada React maupun komponen UI.
+Merupakan pusat kebenaran (_Single Source of Truth_) dari bentuk data dan aturan validasi. Tidak bergantung pada React maupun komponen UI. Layer ini terdiri dari dua sub-folder dengan tanggung jawab yang berbeda.
 
-- **`entities/`**: Tempat mendefinisikan skema validasi menggunakan **Zod** (misal: `auth.schema.ts`). Tipe data TypeScript tidak ditulis manual menggunakan `interface`, melainkan di- _infer_ otomatis dari skema Zod (menggunakan `z.infer`). Ini menjadi acuan bentuk data mutlak bagi layer `presentation` (UI form) maupun `data` (Repository API).
+- **`entities/`**: Mendefinisikan struktur data lengkap beserta **seluruh pesan error validasi** menggunakan **Zod**. Tipe TypeScript di-_infer_ otomatis dari skema Zod (`z.infer`) — tidak ada `interface` manual. Ini menjadi acuan bentuk data mutlak bagi layer `presentation` maupun `data`.
 
-**Catatan Keputusan:** Layer `models` (DTO) dilewati/dihapus untuk menghindari duplikasi (_boilerplate_), karena pengembangan _frontend_ dan _backend_ dikendalikan oleh tim yang sama.
+- **`dtos/`**: Mendefinisikan bentuk data khusus untuk operasi tertentu (misal: payload form _create/update_). DTO tidak mendefinisikan validasinya sendiri — ia diturunkan dari entity melalui `.pick()`, `.omit()`, atau `.extend()`.
+
+- **`use-cases/`**: Mengorkestasi logika bisnis yang lebih kompleks, seperti memanggil lebih dari satu repository.
+
+#### Aturan `entities/` vs `dtos/`
+
+| | `entities/` | `dtos/` |
+|---|---|---|
+| **Tanggung jawab** | Struktur data & validasi | Bentuk payload operasi tertentu |
+| **Pesan error** | Didefinisikan di sini | Diwarisi dari entity |
+| **Field baru** | Tidak relevan | Boleh ditambahkan via `.extend()` |
+
+**Aturan wajib:**
+1. Semua pesan error validasi didefinisikan di `entities/`, bukan di DTO.
+2. DTO selalu diturunkan dari entity via `.pick()`, `.omit()`, atau `.extend()`.
+3. `.extend()` di DTO hanya digunakan untuk menambahkan field yang **tidak ada** di entity (beserta pesan error field baru tersebut).
+
+**Contoh — `users` domain:**
+
+```typescript
+// domain/entities/user.entity.ts
+// Pesan error validasi didefinisikan di sini, sebagai sumber kebenaran tunggal
+export const userSchema = z.object({
+  id: z.string(),
+  namaLengkap: z.string().min(3, 'Nama lengkap minimal 3 karakter'),
+  email: z.string().min(1, 'Email wajib diisi').email('Email tidak valid'),
+  role: userRoleEnum,
+  studyProgramId: z.string().optional().nullable(),
+  createdAt: z.string(),
+});
+export type UserEntity = z.infer<typeof userSchema>;
+```
+
+```typescript
+// domain/dtos/create-user.dto.ts
+// DTO murni pick dari entity + extend HANYA untuk field baru (password)
+export const createUserSchema = userSchema
+  .pick({ namaLengkap: true, email: true, role: true, studyProgramId: true })
+  .extend({
+    // field `password` tidak ada di entity, sehingga didefinisikan di sini
+    password: z.string().min(6, 'Password minimal 6 karakter'),
+  })
+  .refine(/* ... */);
+export type CreateUserDto = z.infer<typeof createUserSchema>;
+```
 
 ---
 
@@ -102,7 +146,8 @@ Bertanggung jawab untuk berkomunikasi dengan dunia luar (API, WebSockets, SSE, a
 3. **Reposisi TanStack Query**:
    TanStack Query diposisikan murni sebagai jembatan UI / State Adapter di dalam layer presentation, bukan sebagai alat fetching utama. Pengambilan data murni tetap dilakukan oleh Repository di layer data.
 
-4. **Strategi Validasi Data (Zod + React Hook Form):**
+5. **Pemisahan Entity dan DTO di Layer `domain`:**
+   Setiap fitur memisahkan secara tegas antara entity (`entities/`) dan DTO (`dtos/`). Entity adalah sumber kebenaran tunggal untuk struktur data dan seluruh pesan error validasi. DTO tidak mendefinisikan validasi sendiri, melainkan murni diturunkan dari entity via `.pick()`, `.omit()`, atau `.extend()`. Penggunaan `.extend()` di DTO hanya diperbolehkan untuk menambahkan field yang memang tidak ada di entity (seperti `password` pada `CreateUserDto`), bukan untuk menimpa (_override_) validasi field yang sudah didefinisikan di entity.
    Aturan validasi form (seperti _required_, batas karakter, format email) dianggap sebagai aturan bisnis (_Business Rules_), sehingga skemanya didefinisikan secara murni di layer `domain/entities/` menggunakan **Zod**. Layer UI (React Hook Form) di `presentation` murni hanya bertugas sebagai konsumen (_consumer_) dari skema tersebut melalui resolver. Hal ini mencegah bercampurnya aturan validasi dengan elemen TSX dan memungkinkan skema digunakan ulang (dibagikan) ke sisi backend jika dibutuhkan.
 
 ## Alur Komunikasi Data (Data Flow)
