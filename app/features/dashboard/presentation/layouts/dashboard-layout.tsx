@@ -1,7 +1,39 @@
-import { Outlet } from "react-router"
+import { Outlet, useLocation, Link } from "react-router"
+import * as React from "react"
 import { Sidebar } from "../components/sidebar"
+import {
+  Breadcrumb,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "~/core/components/ui/breadcrumb"
+
+const breadcrumbNameMap: Record<string, string> = {
+  "/dashboard": "Dashboard",
+  "/dashboard/users": "Manajemen User",
+  "/dashboard/users/create": "Tambah User",
+  "/dashboard/study-programs": "Manajemen Program Studi",
+  "/dashboard/study-programs/create": "Tambah Program Studi",
+}
 
 export function DashboardLayout() {
+  const location = useLocation()
+  const pathnames = location.pathname.split("/").filter((x) => x)
+
+  const breadcrumbs = pathnames.map((_, index) => {
+    const to = `/${pathnames.slice(0, index + 1).join("/")}`
+    const label = breadcrumbNameMap[to] || to
+    const isLast = index === pathnames.length - 1
+
+    return {
+      to,
+      label,
+      isLast,
+    }
+  })
+
   return (
     <div className="min-h-screen bg-background">
       {/* Sidebar Component */}
@@ -9,12 +41,27 @@ export function DashboardLayout() {
 
       {/* Main Content Area */}
       <div className="pl-64">
-        {/* Top Navbar Placeholder */}
+        {/* Top Navbar with shadcn Breadcrumb */}
         <header className="flex h-16 items-center justify-between border-b border-border bg-card px-8">
           <div className="flex items-center gap-4">
-            <span className="text-sm font-medium text-muted-foreground">
-              Halaman Administrasi
-            </span>
+            <Breadcrumb>
+              <BreadcrumbList>
+                {breadcrumbs.map((breadcrumb, index) => (
+                  <React.Fragment key={breadcrumb.to}>
+                    <BreadcrumbItem>
+                      {breadcrumb.isLast ? (
+                        <BreadcrumbPage>{breadcrumb.label}</BreadcrumbPage>
+                      ) : (
+                        <BreadcrumbLink render={<Link to={breadcrumb.to} />}>
+                          {breadcrumb.label}
+                        </BreadcrumbLink>
+                      )}
+                    </BreadcrumbItem>
+                    {index < breadcrumbs.length - 1 && <BreadcrumbSeparator />}
+                  </React.Fragment>
+                ))}
+              </BreadcrumbList>
+            </Breadcrumb>
           </div>
         </header>
 
