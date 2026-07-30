@@ -32,7 +32,14 @@ export function UserManagement() {
 		}
 	}, [loadData]);
 
-	const tableMeta = React.useMemo(() => ({ onDelete: handleDelete }), [handleDelete]);
+	const handleEdit = React.useCallback((id: string) => {
+		navigate(`/dashboard/users/${id}/edit`);
+	}, [navigate]);
+
+	const tableMeta = React.useMemo(() => ({
+		onDelete: handleDelete,
+		onEdit: handleEdit,
+	}), [handleDelete, handleEdit]);
 
 	const {
 		sorting,

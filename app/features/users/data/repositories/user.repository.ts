@@ -56,4 +56,14 @@ export const userRepository = {
 		const updated = users.filter((u) => u.id !== id);
 		this.save(updated);
 	},
+
+	findById(id: string): UserEntity | undefined {
+		return this.findAll().find((u) => u.id === id);
+	},
+
+	update(id: string, data: Partial<UserEntity>): void {
+		const users = this.findAll();
+		const updated = users.map((u) => (u.id === id ? { ...u, ...data } : u));
+		this.save(updated);
+	},
 };

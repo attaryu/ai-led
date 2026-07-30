@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { createColumnHelper, type ColumnDef } from '@tanstack/react-table';
-import { TrashIcon } from '@phosphor-icons/react';
+import { TrashIcon, PencilSimpleIcon } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
 import { type UserEntity } from '../../domain/entities/user.entity';
@@ -66,15 +66,26 @@ export const getUserColumns = (): ColumnDef<UserEntity, any>[] => [
 		cell: (props) => {
 			const id = props.row.original.id;
 			const onDelete = props.table.options.meta?.onDelete;
+			const onEdit = props.table.options.meta?.onEdit;
 			return (
-				<Button
-					variant="destructive"
-					size="icon-sm"
-					onClick={() => onDelete?.(id)}
-					className="cursor-pointer"
-				>
-					<TrashIcon className="size-4" />
-				</Button>
+				<div className="flex items-center gap-2">
+					<Button
+						variant="outline"
+						size="icon-sm"
+						onClick={() => onEdit?.(id)}
+						className="cursor-pointer"
+					>
+						<PencilSimpleIcon className="size-4" />
+					</Button>
+					<Button
+						variant="destructive"
+						size="icon-sm"
+						onClick={() => onDelete?.(id)}
+						className="cursor-pointer"
+					>
+						<TrashIcon className="size-4" />
+					</Button>
+				</div>
 			);
 		},
 	}),

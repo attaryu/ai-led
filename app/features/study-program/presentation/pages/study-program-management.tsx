@@ -34,7 +34,14 @@ export function StudyProgramManagement() {
 		}
 	}, [loadData]);
 
-	const tableMeta = React.useMemo(() => ({ onDelete: handleDelete }), [handleDelete]);
+	const handleEdit = React.useCallback((id: string) => {
+		navigate(`/dashboard/study-programs/${id}/edit`);
+	}, [navigate]);
+
+	const tableMeta = React.useMemo(() => ({
+		onDelete: handleDelete,
+		onEdit: handleEdit,
+	}), [handleDelete, handleEdit]);
 
 	const {
 		sorting,

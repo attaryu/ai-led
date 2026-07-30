@@ -69,4 +69,37 @@ export const studyProgramRepository = {
 			}
 		}
 	},
+
+	findById(id: string): StudyProgramEntity | undefined {
+		return this.findAll().find((p) => p.id === id);
+	},
+
+	update(id: string, data: Partial<StudyProgramEntity>): void {
+		const programs = this.findAll();
+		const updated = programs.map((p) => (p.id === id ? { ...p, ...data } : p));
+		this.save(updated);
+
+		// Cascade update to users referencing this prodi
+		if (data.studyProgramName) {
+			const storedUsers = localStorage.getItem('user_data');
+			if (storedUsers) {
+				try {
+					const users = JSON.parse(storedUsers);
+					const updatedUsers = users.map((u: any) => {
+						if (u.studyProgramId === id) {
+							return {
+								...u,
+								studyProgramName: data.studyProgramName,
+							};
+						}
+						return u;
+					});
+					localStorage.setItem('user_data', JSON.stringify(updatedUsers));
+					window.dispatchEvent(new Event('storage-update'));
+				} catch (e) {
+					console.error(e);
+				}
+			}
+		}
+	},
 };

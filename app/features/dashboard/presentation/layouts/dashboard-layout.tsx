@@ -22,17 +22,18 @@ export function DashboardLayout() {
   const location = useLocation()
   const pathnames = location.pathname.split("/").filter((x) => x)
 
-  const breadcrumbs = pathnames.map((_, index) => {
+  const allBreadcrumbs = pathnames.map((_, index) => {
     const to = `/${pathnames.slice(0, index + 1).join("/")}`
-    const label = breadcrumbNameMap[to] || to
-    const isLast = index === pathnames.length - 1
-
-    return {
-      to,
-      label,
-      isLast,
-    }
+    const label = breadcrumbNameMap[to]
+    return { to, label }
   })
+
+  const breadcrumbs = allBreadcrumbs
+    .filter((b): b is { to: string; label: string } => !!b.label)
+    .map((b, index, arr) => ({
+      ...b,
+      isLast: index === arr.length - 1,
+    }))
 
   return (
     <div className="min-h-screen bg-background">
