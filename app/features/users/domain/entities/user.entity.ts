@@ -15,6 +15,7 @@ export const userSchema = z.object({
 		.max(100, 'Email maksimal 100 karakter'),
 	role: userRoleEnum,
 	studyProgramId: z.string().optional().nullable(),
+	studyProgramName: z.string().optional().nullable(),
 	createdAt: z.string(),
 });
 
