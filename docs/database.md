@@ -26,10 +26,9 @@ Skema database disusun secara hierarkis sebagai berikut:
 TENANT (universitas)
  └── USER (admin, penjamin mutu, pimpinan, penyusun)
  └── PROGRAM_STUDI
-      └── USER (opsional, user bisa terikat ke satu prodi)
-      └── DOKUMEN_LED
-           └── BAB_DOKUMEN
-                └── BAB_DRAFT (checkpoint)
+      |── DOKUMEN_LED
+      |    └── BAB_DOKUMEN
+      |         └── BAB_DRAFT (checkpoint)
       └── BUKTI_DUKUNG (level prodi)
  └── BUKTI_DUKUNG (level tenant)
 
