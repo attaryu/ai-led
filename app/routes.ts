@@ -11,5 +11,8 @@ export default [
     route("study-programs", "routes/dashboard-study-program.tsx"),
     route("study-programs/create", "routes/dashboard-study-program-create.tsx"),
     route("study-programs/:programId/edit", "routes/dashboard-study-program-edit.tsx"),
+    route("led-projects", "routes/dashboard-led-project.tsx"),
+    route("led-projects/create", "routes/dashboard-led-project-create.tsx"),
+    route("led-projects/:projectId/edit", "routes/dashboard-led-project-edit.tsx"),
   ]),
 ] satisfies RouteConfig;

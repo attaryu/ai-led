@@ -1,5 +1,5 @@
 import { NavLink } from "react-router"
-import { UsersIcon, GraduationCapIcon, HouseIcon, SignOutIcon } from "@phosphor-icons/react"
+import { UsersIcon, GraduationCapIcon, HouseIcon, FileIcon, SignOutIcon } from "@phosphor-icons/react"
 import { useNavigate } from "react-router"
 
 export function Sidebar() {
@@ -17,15 +17,21 @@ export function Sidebar() {
       end: true,
     },
     {
-      name: "Manajemen User",
-      path: "/dashboard/users",
-      icon: UsersIcon,
+      name: "Proyek LED",
+      path: "/dashboard/led-projects",
+      icon: FileIcon,
       end: false,
     },
     {
-      name: "Manajemen Program Studi",
+      name: "Program Studi",
       path: "/dashboard/study-programs",
       icon: GraduationCapIcon,
+      end: false,
+    },
+    {
+      name: "User",
+      path: "/dashboard/users",
+      icon: UsersIcon,
       end: false,
     },
   ]

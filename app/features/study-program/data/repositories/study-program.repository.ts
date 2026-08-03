@@ -68,6 +68,19 @@ export const studyProgramRepository = {
 				console.error(e);
 			}
 		}
+
+		// Clean up LED projects referencing deleted prodi (cascade delete projects or update studyProgramName)
+		const storedProjects = localStorage.getItem('led_project_data');
+		if (storedProjects) {
+			try {
+				const projects = JSON.parse(storedProjects);
+				const updatedProjects = projects.filter((p: any) => updated.some((sp) => sp.id === p.studyProgramId));
+				localStorage.setItem('led_project_data', JSON.stringify(updatedProjects));
+				window.dispatchEvent(new Event('storage-update'));
+			} catch (e) {
+				console.error(e);
+			}
+		}
 	},
 
 	findById(id: string): StudyProgramEntity | undefined {
@@ -95,6 +108,27 @@ export const studyProgramRepository = {
 						return u;
 					});
 					localStorage.setItem('user_data', JSON.stringify(updatedUsers));
+					window.dispatchEvent(new Event('storage-update'));
+				} catch (e) {
+					console.error(e);
+				}
+			}
+
+			// Cascade update to LED projects referencing this prodi
+			const storedProjects = localStorage.getItem('led_project_data');
+			if (storedProjects) {
+				try {
+					const projects = JSON.parse(storedProjects);
+					const updatedProjects = projects.map((p: any) => {
+						if (p.studyProgramId === id) {
+							return {
+								...p,
+								studyProgramName: data.studyProgramName,
+							};
+						}
+						return p;
+					});
+					localStorage.setItem('led_project_data', JSON.stringify(updatedProjects));
 					window.dispatchEvent(new Event('storage-update'));
 				} catch (e) {
 					console.error(e);

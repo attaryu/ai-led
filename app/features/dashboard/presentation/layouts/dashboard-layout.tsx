@@ -16,6 +16,8 @@ const breadcrumbNameMap: Record<string, string> = {
   "/dashboard/users/create": "Tambah User",
   "/dashboard/study-programs": "Manajemen Program Studi",
   "/dashboard/study-programs/create": "Tambah Program Studi",
+  "/dashboard/led-projects": "Manajemen Proyek LED",
+  "/dashboard/led-projects/create": "Tambah Proyek LED",
 }
 
 export function DashboardLayout() {
