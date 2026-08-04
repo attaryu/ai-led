@@ -43,32 +43,39 @@ Dua prinsip desain yang berlaku konsisten di seluruh aplikasi:
 
 ## 3. Struktur Navigasi (Tiga Lapis)
 
+Tiap lapis berdiri sebagai **root URL sendiri**, bukan bersarang di bawah URL lapis di atasnya. Jadi begitu pengguna masuk lebih dalam, alamatnya ikut berganti akar — sejalan dengan sidebar yang juga berganti total.
+
 ```
-[Dashboard Utama]                         ← level TENANT
- ├─ Manajemen Program Studi
- ├─ Manajemen User
- ├─ Daftar Program Studi (untuk navigasi masuk ke tiap prodi)
- └─ Perpustakaan Bukti Dukung (level TENANT)
-      │ klik salah satu Program Studi
-      ▼
-[Dashboard Prodi]                         ← level PROGRAM_STUDI
- ├─ Daftar Dokumen LED (khusus prodi ini)
- └─ Perpustakaan Bukti Dukung (level PROGRAM_STUDI)
-      │ klik salah satu Dokumen LED
-      ▼
-[Dashboard Project LED]                   ← level DOKUMEN_LED, sidebar terpisah total
- ├─ tombol "← Kembali" (ke Dashboard Prodi)
+/dashboard ................................ ← level TENANT
+ ├─ /dashboard/study-programs              Manajemen + Daftar Program Studi
+ ├─ /dashboard/users                       Manajemen User
+ ├─ /dashboard/led-projects                Daftar Dokumen LED lintas prodi ────┐
+ └─ /dashboard/evidence                    Perpustakaan Bukti Dukung (TENANT)  │
+      │ klik nama Program Studi                                                │
+      ▼                                                                        │
+/study-programs/:programId ................ ← level PROGRAM_STUDI              │
+ ├─ tombol "← Kembali" (ke Dashboard Utama; disembunyikan untuk PENYUSUN)      │
+ ├─ (index)                                Daftar Dokumen LED prodi ini        │
+ └─ /evidence                              Perpustakaan Bukti Dukung (PRODI)   │
+      │ klik salah satu Dokumen LED                                            │
+      ▼                                                                        ▼
+/led-projects/:projectId .................. ← level DOKUMEN_LED, sidebar terpisah total
+ ├─ tombol "← Kembali" (ke Dashboard Prodi pemilik dokumen)
  ├─ Ringkasan/Progres per bab
  └─ Navigasi ke Editor per Bab
       │ klik salah satu Bab
       ▼
-[Editor Bab]                              ← level BAB_DOKUMEN, dua sidebar ala Figma
+/led-projects/:projectId/chapters/:babId .. ← level BAB_DOKUMEN, dua sidebar ala Figma
  ├─ Sidebar kiri: Daftar Isi / navigasi antar bab
  ├─ Kanvas tengah: rich text editor
  └─ Sidebar kanan: tab Generate, Rujukan, Rubrik, Skor, Draft
 ```
 
-Setiap lapis punya sidebar/navigasi yang **berbeda total** dari lapis sebelumnya (bukan sub-tab di halaman yang sama) — perpindahan antar lapis selalu lewat aksi klik eksplisit (klik card prodi, klik card dokumen, klik nama bab), dan selalu ada tombol kembali ke satu level di atasnya.
+Setiap lapis punya sidebar/navigasi yang **berbeda total** dari lapis sebelumnya (bukan sub-tab di halaman yang sama) — perpindahan antar lapis selalu lewat aksi klik eksplisit (klik nama prodi, klik card dokumen, klik nama bab), dan selalu ada tombol kembali ke satu level di atasnya.
+
+> **Catatan desain — kenapa prodi ada di URL, bukan di session.** `USER.program_studi_id` hanya terisi untuk `PENYUSUN`; `PIMPINAN` dan `PENJAMIN_MUTU` justru harus bisa membuka prodi mana pun (§5), sehingga konteks prodi mereka tidak bisa diturunkan dari session dan harus dipilih lewat navigasi. Menaruh `:programId` di URL membuat pilihan itu bertahan saat halaman dimuat ulang dan bisa dibagikan lewat tautan, sekaligus memberi satu titik penjagaan hak akses per lapis alih-alih menyebar penyaringan ke tiap daftar. Konsekuensinya, `/dashboard/led-projects` (lintas prodi) dan `/study-programs/:id` (satu prodi) adalah dua jalan masuk berbeda ke dokumen yang sama — keduanya sengaja dipertahankan.
+>
+> `/dashboard/study-programs/:programId/edit` (manajemen) dan `/study-programs/:programId` (ruang kerja) tidak bertabrakan karena berada di akar yang berbeda.
 
 ---
 
@@ -90,8 +97,10 @@ Setiap lapis punya sidebar/navigasi yang **berbeda total** dari lapis sebelumnya
 
 ### 4.3 Daftar Program Studi (navigasi)
 
-- Kartu/daftar seluruh `PROGRAM_STUDI` di tenant tersebut, diklik untuk masuk ke **Dashboard Prodi** terkait.
+- Daftar seluruh `PROGRAM_STUDI` di tenant tersebut; nama prodi diklik untuk masuk ke **Dashboard Prodi** terkait.
 - Terlihat oleh `ADMIN`, `PIMPINAN`, `PENJAMIN_MUTU`.
+
+> **Catatan desain — digabung dengan §4.1.** Daftar navigasi ini dan menu manajemen di §4.1 ditempatkan pada satu halaman yang sama (`/dashboard/study-programs`), bukan dua halaman terpisah. `PENJAMIN_MUTU` ikut melihat daftarnya sebagai jalan masuk ke Dashboard Prodi, tetapi tombol "Tambah Prodi" dan kolom aksi (edit/hapus) disembunyikan sepenuhnya untuknya sesuai prinsip §1 — sehingga larangan "tidak punya menu manajemen" di §4.1 tetap terjaga tanpa menduplikasi daftar yang isinya identik.
 
 ### 4.4 Perpustakaan Bukti Dukung (level Tenant)
 
@@ -297,10 +306,12 @@ Kedua lapis ini **independen** dan bisa aktif bersamaan (misal bab sedang di-loc
 | Aksi                                           | Admin           | Pimpinan        | Penjamin Mutu   | Penyusun                   |
 | ---------------------------------------------- | --------------- | --------------- | --------------- | -------------------------- |
 | Buat/kelola Program Studi                      | ✅              | ✅              | ❌              | ❌                         |
+| Lihat daftar Program Studi (navigasi)          | ✅              | ✅              | ✅              | ❌                         |
 | Buat User baru                                 | ✅              | ❌              | ❌              | ❌                         |
 | Assign/edit User ke Prodi                      | ✅\*            | ✅              | ❌              | ❌                         |
 | Landing setelah login                          | Dashboard Utama | Dashboard Utama | Dashboard Utama | Dashboard Prodi (langsung) |
 | Lihat Dashboard Prodi/Project LED lintas prodi | ❌              | ✅              | ✅              | ❌ (hanya prodinya)        |
+| Buat Dokumen LED baru                          | ❌              | ❌              | ✅              | ❌                         |
 | Edit konten bab / generate / buat draft        | ❌              | ❌ (read-only)  | ✅              | ✅                         |
 | Jalankan simulasi skor (Rubrik)                | ❌              | ❌ (read-only)  | ✅              | ✅                         |
 | Kunci/buka kunci bab                           | ❌              | ❌              | ✅              | ❌                         |
@@ -309,6 +320,8 @@ Kedua lapis ini **independen** dan bisa aktif bersamaan (misal bab sedang di-loc
 | Upload bukti dukung level Prodi                | ❌              | ✅              | ✅              | ✅ (prodinya)              |
 
 _\* Admin hanya bisa membuat user, belum tentu punya kemampuan assign ke prodi — perlu dikonfirmasi ulang bila ada kebutuhan lanjutan._
+
+> **Catatan desain — siklus Dokumen LED milik Penjamin Mutu.** Baris "Buat Dokumen LED baru" ditetapkan menyusul karena matriks awal tidak memuatnya. Wewenangnya diberikan ke `PENJAMIN_MUTU` saja agar konsisten dengan dua baris di bawahnya (kunci bab dan ubah status dokumen): satu role memegang seluruh siklus hidup dokumen dari pembuatan sampai penyelesaian. `PIMPINAN` tetap read-only di level ini (§6.2), dan `PENYUSUN` tidak pernah masuk Dashboard Utama sehingga tidak punya jalan ke form pembuatan.
 
 ---
 
