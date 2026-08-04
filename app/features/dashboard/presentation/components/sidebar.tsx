@@ -2,39 +2,67 @@ import { NavLink } from "react-router"
 import { UsersIcon, GraduationCapIcon, HouseIcon, FileIcon, SignOutIcon } from "@phosphor-icons/react"
 import { useNavigate } from "react-router"
 
+import { useSession } from "~/features/auth/presentation/hooks/use-session"
+import type { UserRole } from "~/features/users/domain/entities/user.entity"
+
+/**
+ * Menu yang boleh dilihat tiap role, mengikuti docs/application_flow.md §4.
+ *
+ * Prinsipnya: menu yang tidak boleh diakses disembunyikan sepenuhnya, bukan
+ * sekadar dinonaktifkan (§1).
+ */
+const menuItems: {
+  name: string
+  path: string
+  icon: typeof HouseIcon
+  end: boolean
+  roles: UserRole[]
+}[] = [
+  {
+    name: "Dashboard",
+    path: "/dashboard",
+    icon: HouseIcon,
+    end: true,
+    // Penyusun mendarat langsung di Dashboard Prodi dan tidak pernah melihat
+    // Dashboard Utama (§4).
+    roles: ["Pimpinan", "Penjamin Mutu"],
+  },
+  {
+    name: "Proyek LED",
+    path: "/dashboard/led-projects",
+    icon: FileIcon,
+    end: false,
+    roles: ["Pimpinan", "Penjamin Mutu", "Penyusun"],
+  },
+  {
+    name: "Program Studi",
+    path: "/dashboard/study-programs",
+    icon: GraduationCapIcon,
+    end: false,
+    // Penjamin Mutu tidak punya menu ini sama sekali (§4.1).
+    roles: ["Pimpinan"],
+  },
+  {
+    name: "User",
+    path: "/dashboard/users",
+    icon: UsersIcon,
+    end: false,
+    // Penjamin Mutu tidak punya menu ini sama sekali (§4.2).
+    roles: ["Pimpinan"],
+  },
+]
+
 export function Sidebar() {
   const navigate = useNavigate()
+  const session = useSession()
 
   const handleLogout = () => {
     navigate("/login")
   }
 
-  const menuItems = [
-    {
-      name: "Dashboard",
-      path: "/dashboard",
-      icon: HouseIcon,
-      end: true,
-    },
-    {
-      name: "Proyek LED",
-      path: "/dashboard/led-projects",
-      icon: FileIcon,
-      end: false,
-    },
-    {
-      name: "Program Studi",
-      path: "/dashboard/study-programs",
-      icon: GraduationCapIcon,
-      end: false,
-    },
-    {
-      name: "User",
-      path: "/dashboard/users",
-      icon: UsersIcon,
-      end: false,
-    },
-  ]
+  const visibleMenuItems = session
+    ? menuItems.filter((item) => item.roles.includes(session.role))
+    : []
 
   return (
     <aside className="fixed inset-y-0 left-0 z-20 flex w-64 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
@@ -47,7 +75,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 px-4 py-6">
-        {menuItems.map((item) => {
+        {visibleMenuItems.map((item) => {
           const Icon = item.icon
           return (
             <NavLink

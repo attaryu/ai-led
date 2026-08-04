@@ -1,6 +1,7 @@
 import { Outlet, useLocation, Link } from "react-router"
 import * as React from "react"
 import { Sidebar } from "../components/sidebar"
+import { RoleSwitcher } from "~/features/auth/presentation/components/role-switcher"
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -66,6 +67,9 @@ export function DashboardLayout() {
               </BreadcrumbList>
             </Breadcrumb>
           </div>
+
+          {/* Sementara: alat uji hak akses, dihapus begitu autentikasi jalan */}
+          <RoleSwitcher />
         </header>
 
         {/* Content Wrapper */}
