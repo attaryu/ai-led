@@ -1,82 +1,74 @@
-import { Outlet, useLocation, Link } from "react-router"
-import * as React from "react"
-import { Sidebar } from "../components/sidebar"
+import { Outlet, useLocation, Navigate } from "react-router"
+
+import { AppShell, type AppShellBreadcrumb } from "~/core/components/app-shell"
 import { RoleSwitcher } from "~/features/auth/presentation/components/role-switcher"
-import {
-  Breadcrumb,
-  BreadcrumbList,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "~/core/components/ui/breadcrumb"
+import { useRoleGuard } from "~/features/auth/presentation/hooks/use-role-guard"
+import { useDashboardSidebar } from "../components/sidebar"
+
+/**
+ * Segmen yang merupakan bagian tetap dari pola rute. Segmen di luar daftar ini
+ * dianggap parameter dinamis (`:userId`, `:programId`, `:projectId`) dan
+ * dinormalkan jadi `:id` sebelum dicocokkan ke label.
+ */
+const staticSegments = new Set([
+  "dashboard",
+  "users",
+  "study-programs",
+  "led-projects",
+  "evidence",
+  "create",
+  "edit",
+])
 
 const breadcrumbNameMap: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/dashboard/users": "Manajemen User",
   "/dashboard/users/create": "Tambah User",
+  "/dashboard/users/:id/edit": "Edit User",
   "/dashboard/study-programs": "Manajemen Program Studi",
   "/dashboard/study-programs/create": "Tambah Program Studi",
+  "/dashboard/study-programs/:id/edit": "Edit Program Studi",
   "/dashboard/led-projects": "Manajemen Proyek LED",
   "/dashboard/led-projects/create": "Tambah Proyek LED",
+  "/dashboard/led-projects/:id/edit": "Edit Proyek LED",
+  "/dashboard/evidence": "Bukti Dukung Tenant",
 }
 
+/**
+ * Lapis 1 — Dashboard Utama, level tenant (docs/application_flow.md §4).
+ *
+ * Satu-satunya lapis yang label breadcrumb-nya murni statis, karena seluruh
+ * segmennya bagian dari pola rute. Lapis 2 & 3 merakit breadcrumb dari data.
+ */
 export function DashboardLayout() {
   const location = useLocation()
+  const guard = useRoleGuard("tenant")
+  const sidebar = useDashboardSidebar()
   const pathnames = location.pathname.split("/").filter((x) => x)
 
-  const allBreadcrumbs = pathnames.map((_, index) => {
-    const to = `/${pathnames.slice(0, index + 1).join("/")}`
-    const label = breadcrumbNameMap[to]
-    return { to, label }
+  const breadcrumbs: AppShellBreadcrumb[] = pathnames.flatMap((_, index) => {
+    const segments = pathnames.slice(0, index + 1)
+    // Segmen id sendiri tidak punya halaman, jadi ia tidak menghasilkan label —
+    // tapi pola yang memuatnya (…/:id/edit) tetap dikenali.
+    const pattern = `/${segments
+      .map((segment) => (staticSegments.has(segment) ? segment : ":id"))
+      .join("/")}`
+    const label = breadcrumbNameMap[pattern]
+    return label ? [{ to: `/${segments.join("/")}`, label }] : []
   })
 
-  const breadcrumbs = allBreadcrumbs
-    .filter((b): b is { to: string; label: string } => !!b.label)
-    .map((b, index, arr) => ({
-      ...b,
-      isLast: index === arr.length - 1,
-    }))
+  if (guard.status === "denied") {
+    return <Navigate to={guard.redirectTo} replace />
+  }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Sidebar Component */}
-      <Sidebar />
-
-      {/* Main Content Area */}
-      <div className="pl-64">
-        {/* Top Navbar with shadcn Breadcrumb */}
-        <header className="flex h-16 items-center justify-between border-b border-border bg-card px-8">
-          <div className="flex items-center gap-4">
-            <Breadcrumb>
-              <BreadcrumbList>
-                {breadcrumbs.map((breadcrumb, index) => (
-                  <React.Fragment key={breadcrumb.to}>
-                    <BreadcrumbItem>
-                      {breadcrumb.isLast ? (
-                        <BreadcrumbPage>{breadcrumb.label}</BreadcrumbPage>
-                      ) : (
-                        <BreadcrumbLink render={<Link to={breadcrumb.to} />}>
-                          {breadcrumb.label}
-                        </BreadcrumbLink>
-                      )}
-                    </BreadcrumbItem>
-                    {index < breadcrumbs.length - 1 && <BreadcrumbSeparator />}
-                  </React.Fragment>
-                ))}
-              </BreadcrumbList>
-            </Breadcrumb>
-          </div>
-
-          {/* Sementara: alat uji hak akses, dihapus begitu autentikasi jalan */}
-          <RoleSwitcher />
-        </header>
-
-        {/* Content Wrapper */}
-        <main className="p-8">
-          <Outlet />
-        </main>
-      </div>
-    </div>
+    <AppShell
+      sidebar={sidebar}
+      breadcrumbs={breadcrumbs}
+      // Sementara: alat uji hak akses, dihapus begitu autentikasi jalan.
+      headerAction={<RoleSwitcher />}
+    >
+      <Outlet />
+    </AppShell>
   )
 }

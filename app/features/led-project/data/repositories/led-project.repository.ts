@@ -60,6 +60,15 @@ export const ledProjectRepository = {
 		return this.findAll().find((p) => p.id === id);
 	},
 
+	/**
+	 * Penyaringan per prodi ditaruh di repository, bukan di halaman, supaya saat
+	 * sumber datanya berpindah ke API nanti ia tinggal jadi query param tanpa
+	 * menyentuh lapis presentasi.
+	 */
+	findByStudyProgramId(studyProgramId: string): LedProjectEntity[] {
+		return this.findAll().filter((p) => p.studyProgramId === studyProgramId);
+	},
+
 	update(id: string, data: Partial<LedProjectEntity>): void {
 		const projects = this.findAll();
 		const updated = projects.map((p) => (p.id === id ? { ...p, ...data } : p));

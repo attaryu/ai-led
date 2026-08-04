@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { createColumnHelper, type ColumnDef } from '@tanstack/react-table';
 import { TrashIcon, PencilSimpleIcon } from '@phosphor-icons/react';
+import { Link } from 'react-router';
 
 import { Button } from '~/core/components/ui/button';
 import { type StudyProgramEntity } from '../../domain/entities/study-program.entity';
@@ -15,10 +16,15 @@ declare module '@tanstack/react-table' {
 
 const columnHelper = createColumnHelper<StudyProgramEntity>();
 
-export const getStudyProgramColumns = (): ColumnDef<
-	StudyProgramEntity,
-	any
->[] => [
+/**
+ * `withActions` mengikuti prinsip §1: kontrol yang tidak boleh dipakai suatu
+ * role disembunyikan sepenuhnya, bukan dinonaktifkan. Penjamin Mutu memakai
+ * tabel ini murni sebagai jalan masuk ke Dashboard Prodi (§4.3), bukan untuk
+ * mengelola prodi (§4.1).
+ */
+export const getStudyProgramColumns = ({
+	withActions = true,
+}: { withActions?: boolean } = {}): ColumnDef<StudyProgramEntity, any>[] => [
 	columnHelper.accessor('id', {
 		header: 'ID',
 		cell: (info) => (
@@ -28,7 +34,15 @@ export const getStudyProgramColumns = (): ColumnDef<
 	}),
 	columnHelper.accessor('studyProgramName', {
 		header: 'Nama Program Studi',
-		cell: (info) => <span className="font-medium">{info.getValue()}</span>,
+		// Jalan masuk ke Lapis 2 (Dashboard Prodi).
+		cell: (info) => (
+			<Link
+				to={`/study-programs/${info.row.original.id}`}
+				className="font-medium text-primary underline-offset-4 hover:underline"
+			>
+				{info.getValue()}
+			</Link>
+		),
 		enableSorting: true,
 	}),
 	columnHelper.accessor('createdAt', {
@@ -41,34 +55,38 @@ export const getStudyProgramColumns = (): ColumnDef<
 			}),
 		enableSorting: true,
 	}),
-	columnHelper.display({
-		id: 'actions',
-		header: 'Aksi',
-		enableHiding: false, // Kolom aksi tidak boleh disembunyikan
-		cell: (props) => {
-			const id = props.row.original.id;
-			const onDelete = props.table.options.meta?.onDelete;
-			const onEdit = props.table.options.meta?.onEdit;
-			return (
-				<div className="flex items-center gap-2">
-					<Button
-						variant="outline"
-						size="icon-sm"
-						onClick={() => onEdit?.(id)}
-						className="cursor-pointer"
-					>
-						<PencilSimpleIcon className="size-4" />
-					</Button>
-					<Button
-						variant="destructive"
-						size="icon-sm"
-						onClick={() => onDelete?.(id)}
-						className="cursor-pointer"
-					>
-						<TrashIcon className="size-4" />
-					</Button>
-				</div>
-			);
-		},
-	}),
+	...(withActions
+		? [
+				columnHelper.display({
+					id: 'actions',
+					header: 'Aksi',
+					enableHiding: false, // Kolom aksi tidak boleh disembunyikan
+					cell: (props) => {
+						const id = props.row.original.id;
+						const onDelete = props.table.options.meta?.onDelete;
+						const onEdit = props.table.options.meta?.onEdit;
+						return (
+							<div className="flex items-center gap-2">
+								<Button
+									variant="outline"
+									size="icon-sm"
+									onClick={() => onEdit?.(id)}
+									className="cursor-pointer"
+								>
+									<PencilSimpleIcon className="size-4" />
+								</Button>
+								<Button
+									variant="destructive"
+									size="icon-sm"
+									onClick={() => onDelete?.(id)}
+									className="cursor-pointer"
+								>
+									<TrashIcon className="size-4" />
+								</Button>
+							</div>
+						);
+					},
+				}),
+			]
+		: []),
 ];

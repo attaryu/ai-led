@@ -5,12 +5,17 @@ import { PlusIcon } from '@phosphor-icons/react';
 import { Button } from '~/core/components/ui/button';
 import { DataTable } from '~/core/components/ui/data-table';
 import { useDataTableState } from '~/core/hooks/use-data-table-state';
+import { useSession } from '~/features/auth/presentation/hooks/use-session';
 import { ledProjectRepository } from '../../data/repositories/led-project.repository';
 import { getLedProjectColumns } from '../components/led-project-columns';
 import { type LedProjectEntity } from '../../domain/entities/led-project.entity';
 
 export function LedProjectManagement() {
 	const navigate = useNavigate();
+	const session = useSession();
+	// Siklus Dokumen LED sepenuhnya wewenang Penjamin Mutu; Pimpinan read-only
+	// di level ini (§6.2).
+	const canManage = session?.role === 'Penjamin Mutu';
 	const [ledProjects, setLedProjects] = React.useState<LedProjectEntity[]>([]);
 
 	const loadData = React.useCallback(() => {
@@ -55,7 +60,10 @@ export function LedProjectManagement() {
 		clearAll,
 	} = useDataTableState('led-projects');
 
-	const columns = React.useMemo(() => getLedProjectColumns(), []);
+	const columns = React.useMemo(
+		() => getLedProjectColumns({ withActions: canManage }),
+		[canManage],
+	);
 
 	return (
 		<div className="flex flex-col gap-6">
@@ -65,16 +73,19 @@ export function LedProjectManagement() {
 						Manajemen Proyek/Dokumen LED Lintas Prodi
 					</h2>
 					<p className="text-sm text-muted-foreground">
-						Kelola data Proyek dan Dokumen Laporan Evaluasi Diri (LED) tiap Program Studi
+						Klik judul untuk membuka dokumennya, atau nama prodi untuk membuka
+						Dashboard Prodi
 					</p>
 				</div>
-				<Button
-					onClick={() => navigate('/dashboard/led-projects/create')}
-					className="gap-2 cursor-pointer"
-				>
-					<PlusIcon className="size-4" />
-					Tambah Proyek LED
-				</Button>
+				{canManage && (
+					<Button
+						onClick={() => navigate('/dashboard/led-projects/create')}
+						className="gap-2 cursor-pointer"
+					>
+						<PlusIcon className="size-4" />
+						Tambah Proyek LED
+					</Button>
+				)}
 			</div>
 
 			<DataTable

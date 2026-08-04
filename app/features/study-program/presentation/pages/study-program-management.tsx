@@ -5,12 +5,17 @@ import { PlusIcon } from '@phosphor-icons/react';
 import { Button } from '~/core/components/ui/button';
 import { DataTable } from '~/core/components/ui/data-table';
 import { useDataTableState } from '~/core/hooks/use-data-table-state';
+import { useSession } from '~/features/auth/presentation/hooks/use-session';
 import { studyProgramRepository } from '../../data/repositories/study-program.repository';
 import { getStudyProgramColumns } from '../components/study-program-columns';
 import { type StudyProgramEntity } from '../../domain/entities/study-program.entity';
 
 export function StudyProgramManagement() {
 	const navigate = useNavigate();
+	const session = useSession();
+	// Penjamin Mutu tidak mengelola prodi (§4.1) — halaman ini baginya hanya
+	// daftar navigasi ke Dashboard Prodi (§4.3).
+	const canManage = session?.role === 'Admin' || session?.role === 'Pimpinan';
 	const [studyPrograms, setStudyPrograms] = React.useState<
 		StudyProgramEntity[]
 	>([]);
@@ -55,26 +60,31 @@ export function StudyProgramManagement() {
 		clearAll,
 	} = useDataTableState('study-programs');
 
-	const columns = React.useMemo(() => getStudyProgramColumns(), []);
+	const columns = React.useMemo(
+		() => getStudyProgramColumns({ withActions: canManage }),
+		[canManage],
+	);
 
 	return (
 		<div className="flex flex-col gap-6">
 			<div className="flex items-center justify-between">
 				<div>
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						Manajemen Program Studi (Prodi)
+						{canManage ? 'Manajemen Program Studi (Prodi)' : 'Daftar Program Studi'}
 					</h2>
 					<p className="text-sm text-muted-foreground">
-						Kelola data Program Studi yang tersedia di sistem
+						Klik nama prodi untuk membuka Dashboard Prodi-nya
 					</p>
 				</div>
-				<Button
-					onClick={() => navigate('/dashboard/study-programs/create')}
-					className="gap-2 cursor-pointer"
-				>
-					<PlusIcon className="size-4" />
-					Tambah Prodi
-				</Button>
+				{canManage && (
+					<Button
+						onClick={() => navigate('/dashboard/study-programs/create')}
+						className="gap-2 cursor-pointer"
+					>
+						<PlusIcon className="size-4" />
+						Tambah Prodi
+					</Button>
+				)}
 			</div>
 
 			<DataTable
