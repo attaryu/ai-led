@@ -25,13 +25,15 @@ const menuItems: {
     end: true,
     // Penyusun mendarat langsung di Dashboard Prodi dan tidak pernah melihat
     // Dashboard Utama (§4).
-    roles: ["Pimpinan", "Penjamin Mutu"],
+    roles: ["Admin", "Pimpinan", "Penjamin Mutu"],
   },
   {
     name: "Proyek LED",
     path: "/dashboard/led-projects",
     icon: FileIcon,
     end: false,
+    // Admin murni back office — tidak punya akses ke dashboard progres LED,
+    // editor bab, maupun bukti dukung (database.md → USER, tabel role).
     roles: ["Pimpinan", "Penjamin Mutu", "Penyusun"],
   },
   {
@@ -40,15 +42,16 @@ const menuItems: {
     icon: GraduationCapIcon,
     end: false,
     // Penjamin Mutu tidak punya menu ini sama sekali (§4.1).
-    roles: ["Pimpinan"],
+    roles: ["Admin", "Pimpinan"],
   },
   {
     name: "User",
     path: "/dashboard/users",
     icon: UsersIcon,
     end: false,
-    // Penjamin Mutu tidak punya menu ini sama sekali (§4.2).
-    roles: ["Pimpinan"],
+    // Membuat user hanya Admin; Pimpinan yang meng-assign user ke prodi (§4.2).
+    // Keduanya masuk lewat menu yang sama, jadi keduanya melihatnya.
+    roles: ["Admin", "Pimpinan"],
   },
 ]
 

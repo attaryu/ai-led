@@ -24,7 +24,10 @@ import {
 	createUserSchema,
 	type CreateUserDto,
 } from '../../domain/dtos/create-user.dto';
-import { type UserEntity } from '../../domain/entities/user.entity';
+import {
+	userRoleEnum,
+	type UserEntity,
+} from '../../domain/entities/user.entity';
 import type { StudyProgramEntity } from '../../../study-program/domain/entities/study-program.entity';
 
 export function CreateUser() {
@@ -181,9 +184,11 @@ export function CreateUser() {
 							<Field data-invalid={!!errors.role}>
 								<FieldLabel htmlFor="role">Role</FieldLabel>
 								<Select id="role" disabled={isSubmitting} {...register('role')}>
-									<option value="Penjamin Mutu">Penjamin Mutu</option>
-									<option value="Penyusun">Penyusun</option>
-									<option value="Pimpinan">Pimpinan</option>
+									{userRoleEnum.options.map((role) => (
+										<option key={role} value={role}>
+											{role}
+										</option>
+									))}
 								</Select>
 								{errors.role && <FieldError>{errors.role.message}</FieldError>}
 							</Field>

@@ -13,6 +13,12 @@ export const SESSION_UPDATE_EVENT = 'session-update';
  * pengalih role benar-benar ada di daftar user.
  */
 const sessionPerRole: Record<UserRole, SessionEntity> = {
+	Admin: {
+		userId: '4',
+		namaLengkap: 'Dewi Lestari',
+		role: 'Admin',
+		studyProgramId: null,
+	},
 	Pimpinan: {
 		userId: '3',
 		namaLengkap: 'Prof. Dr. Ir. H. Bambang',

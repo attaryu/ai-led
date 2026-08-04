@@ -30,6 +30,7 @@ export const getUserColumns = (): ColumnDef<UserEntity, any>[] => [
 					'bg-secondary/20 text-secondary-foreground border-secondary',
 				Pimpinan:
 					'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200/50 dark:border-amber-800/30',
+				Admin: 'bg-muted text-muted-foreground border-border',
 			};
 			return (
 				<span

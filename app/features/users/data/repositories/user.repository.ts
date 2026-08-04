@@ -29,6 +29,15 @@ const initialUsers: UserEntity[] = [
 		studyProgramName: null,
 		createdAt: '2026-07-29T10:20:00.000Z',
 	},
+	{
+		id: '4',
+		namaLengkap: 'Dewi Lestari',
+		email: 'dewi.admin@univ.ac.id',
+		role: 'Admin',
+		studyProgramId: null,
+		studyProgramName: null,
+		createdAt: '2026-07-29T10:30:00.000Z',
+	},
 ];
 
 export const userRepository = {
