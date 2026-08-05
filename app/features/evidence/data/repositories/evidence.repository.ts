@@ -413,6 +413,19 @@ export const evidenceRepository = {
 		return this.findAll().find((evidence) => evidence.id === id);
 	},
 
+	/**
+	 * Seluruh bukti dukung yang bisa dipakai satu prodi: miliknya sendiri
+	 * ditambah bukti level tenant yang berlaku lintas prodi
+	 * (docs/application_flow.md §5.2).
+	 */
+	findAvailableForStudyProgram(studyProgramId: string): EvidenceEntity[] {
+		return this.findAll().filter(
+			(evidence) =>
+				evidence.ownerTipe === 'TENANT' ||
+				evidence.studyProgramId === studyProgramId,
+		);
+	},
+
 	create(evidence: EvidenceEntity): void {
 		this.save([evidence, ...this.findAll()]);
 		this.notify();

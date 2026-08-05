@@ -1,13 +1,27 @@
+import {
+	ClockCounterClockwiseIcon,
+	LockSimpleIcon,
+	NotebookIcon,
+	PaperclipIcon,
+} from '@phosphor-icons/react';
 import { useParams } from 'react-router';
 
 import { PlaceholderPage } from '~/core/components/placeholder-page';
+import { StatCard } from '~/core/components/ui/stat-card';
+import { formatRelativeTime } from '~/features/evidence/presentation/utils/evidence-format';
 import { ledProjectRepository } from '../../data/repositories/led-project.repository';
+import { ChapterProgressTable } from '../components/chapter-progress-table';
+import { ProjectAttentionPanel } from '../components/project-attention-panel';
+import { useProjectProgress } from '../hooks/use-project-progress';
+import { type LedProjectEntity } from '../../domain/entities/led-project.entity';
 
 /**
- * Ringkasan/progres per bab (docs/application_flow.md §6.1).
+ * Dashboard Project LED — Ringkasan/Progres (docs/application_flow.md §6.1).
  *
- * Masih kosong karena entitas `BAB_DOKUMEN` belum ada di kode. Rutenya sudah
- * final supaya Editor Bab (Lapis 4) nanti tinggal menambah anak di sini.
+ * Halaman ini murni baca: tidak ada aksi ubah data di sini, jadi tidak ada yang
+ * perlu disembunyikan per role (§1) — penjagaannya sudah selesai di layout
+ * lapis ini. Baris tabel belum bisa diklik selama Editor Bab (Lapis 4) belum
+ * ada, supaya tidak ada tautan yang berujung ke halaman kosong.
  */
 export function LedProjectWorkspaceHome() {
 	const { projectId } = useParams<{ projectId: string }>();
@@ -15,21 +29,83 @@ export function LedProjectWorkspaceHome() {
 		? ledProjectRepository.findById(projectId)
 		: undefined;
 
+	// Layout sudah menampilkan keadaan "tidak ditemukan" dan tidak merender
+	// halaman ini; cabang ini hanya penjaga bila rutenya dipakai di luar layout.
+	if (!ledProject) {
+		return (
+			<PlaceholderPage
+				title="Dokumen LED tidak ditemukan"
+				description="Dokumen yang diminta tidak ada di daftar."
+				links={[
+					{ label: 'Dokumen LED lintas prodi', to: '/dashboard/led-projects' },
+				]}
+			/>
+		);
+	}
+
+	return <ProjectProgressView ledProject={ledProject} />;
+}
+
+/**
+ * Dipisah dari komponen di atas supaya hook progres tidak perlu berjalan (dan
+ * menyentuh penyimpanan) untuk dokumen yang belum tentu ada.
+ */
+function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
+	const { chapters, summary, attention, buktiDukungTersedia } =
+		useProjectProgress(ledProject.id, ledProject.studyProgramId);
+
 	return (
-		<PlaceholderPage
-			title="Progres per Bab"
-			description="Daftar bab beserta status kunci, waktu simpan terakhir, dan ringkasan skor rubrik akan tampil di sini. Entitas BAB_DOKUMEN belum tersedia."
-			links={[
-				...(ledProject
-					? [
-							{
-								label: 'Bukti Dukung prodi ini',
-								to: `/study-programs/${ledProject.studyProgramId}/evidence`,
-							},
-						]
-					: []),
-				{ label: 'Dokumen LED lintas prodi', to: '/dashboard/led-projects' },
-			]}
-		/>
+		<div className="flex flex-col gap-6">
+			<div>
+				<h2 className="font-heading text-2xl font-bold tracking-tight">
+					Progres per Bab
+				</h2>
+				<p className="text-sm text-muted-foreground">
+					Ringkasan penyusunan {ledProject.judul}.
+				</p>
+			</div>
+
+			<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+				<StatCard
+					label="Kelengkapan Bab"
+					icon={NotebookIcon}
+					value={`${summary.terisi}/${summary.total}`}
+					progress={summary.persenKelengkapan}
+					hint={`${summary.persenKelengkapan}% bab sudah ada isinya`}
+				/>
+				<StatCard
+					label="Kesiapan Review"
+					icon={LockSimpleIcon}
+					value={`${summary.terkunci}/${summary.total}`}
+					progress={
+						summary.total === 0 ? 0 : (summary.terkunci / summary.total) * 100
+					}
+					hint="Bab yang sudah dikunci Penjamin Mutu"
+				/>
+				<StatCard
+					label="Bukti Dukung Dipakai"
+					icon={PaperclipIcon}
+					value={String(summary.buktiDukungTerpakai)}
+					hint={`Dari ${buktiDukungTersedia} berkas tersedia untuk prodi ini`}
+				/>
+				<StatCard
+					label="Aktivitas Terakhir"
+					icon={ClockCounterClockwiseIcon}
+					value={
+						summary.terakhirDisimpan
+							? formatRelativeTime(summary.terakhirDisimpan)
+							: '—'
+					}
+					hint={
+						summary.babTerakhirDisentuh ?? 'Belum ada bab yang pernah disimpan'
+					}
+				/>
+			</div>
+
+			<div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+				<ChapterProgressTable chapters={chapters} />
+				<ProjectAttentionPanel project={ledProject} attention={attention} />
+			</div>
+		</div>
 	);
 }
