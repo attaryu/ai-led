@@ -193,14 +193,65 @@ Berlaku sama di lapis tenant maupun prodi:
 
 ### 6.1 Ringkasan/Progres
 
-- Daftar seluruh `BAB_DOKUMEN` milik `DOKUMEN_LED` ini, diurutkan berdasarkan `urutan_bab`.
-- Tiap baris menampilkan: `judul_bab`, indikator `terkunci` (ikon gembok jika `true`), waktu `terakhir_disimpan`, dan (jika sudah pernah disimulasikan) ringkasan skor rubrik.
-- Klik salah satu bab → masuk ke **Editor Bab**.
+Halaman tersusun dari tiga bagian, dari atas ke bawah:
+
+**a. Baris ringkasan (empat kartu angka)**
+
+| Kartu                    | Isi                                                                        | Dihitung dari                                                     |
+| ------------------------ | -------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **Kelengkapan Bab**      | `n/total` bab yang sudah ada isinya, beserta bar persentase                | `konten_kerja` tidak kosong                                       |
+| **Kesiapan Review**      | `n/total` bab yang sudah dikunci Penjamin Mutu                             | `terkunci = true`                                                 |
+| **Bukti Dukung Dipakai** | jumlah bukti dukung **unik** yang dirujuk seluruh bab, dari N yang tersedia | `BUKTI_DUKUNG_BAB`; pembanding = bukti level tenant + prodi (§5.2) |
+| **Aktivitas Terakhir**   | waktu relatif simpan terakhir + judul bab yang tersentuh terakhir           | `terakhir_disimpan` terbesar lintas bab                           |
+
+**b. Tabel progres bab** — seluruh `BAB_DOKUMEN` milik dokumen ini, diurutkan `urutan_bab`. Kolomnya: nomor, `judul_bab`, badge status (lihat §6.1a), jumlah bukti dukung terpakai, dan `terakhir_disimpan` sebagai waktu relatif. Tabel ini sengaja **tanpa pencarian, pengurutan, dan paginasi**: jumlah babnya tetap dan urutannya adalah urutan dokumen akreditasi itu sendiri, jadi mengacaknya justru merusak cara halaman ini dibaca.
+
+**c. Panel samping** — dua kartu: **Perlu Perhatian** (bab yang menunggu ditindaklanjuti, maksimal 5 baris lalu diringkas) dan **Status Dokumen** (`status_keseluruhan` + tautan ke Perpustakaan Bukti Dukung prodi). Di layar sempit panel ini turun ke bawah tabel.
+
+Klik salah satu bab → masuk ke **Editor Bab**. **Belum berlaku**: selama Editor Bab (Lapis 4) belum ada, baris tabel sengaja tidak dibuat dapat diklik agar tidak ada tautan yang berujung ke halaman kosong.
+
+**Menyusul**: ringkasan skor rubrik per bab belum ditampilkan karena `RUBRIK_KRITERIA`/`HASIL_SKOR_KRITERIA` belum ada — kolom yang selalu berisi "—" hanya menambah derau. Masuk bersamaan dengan fitur Simulasi Skor (§9). Begitu pula indikator "siapa sedang menyunting": datanya hidup di Redis (§13), bukan di basis data, jadi menunggu backend.
+
+### 6.1a Status bab adalah turunan, bukan kolom
+
+`BAB_DOKUMEN` **tidak** punya kolom status. Badge di tabel dihitung saat render dari fakta yang sudah ada:
+
+| Status turunan   | Aturan                                | Arti bagi pembaca                   |
+| ---------------- | ------------------------------------- | ----------------------------------- |
+| `BELUM_DIISI`    | `konten_kerja` kosong/null            | Belum disentuh sama sekali          |
+| `SEDANG_DISUSUN` | ada `konten_kerja`, `terkunci = false` | Sedang dikerjakan, masih bisa diedit |
+| `TERKUNCI`       | `terkunci = true`                     | Dikunci Penjamin Mutu untuk review  |
+
+`terkunci` **menang atas kondisi konten** — bab yang dikunci tetap tampil `TERKUNCI` walau isinya kosong, konsisten dengan §12.2 yang memblokir semua aksi ubah data apa pun isi babnya.
+
+> **Catatan desain — kenapa tidak jadi kolom.** Status ini murni kebutuhan tampilan dashboard. Menyimpannya sebagai kolom berarti ada dua sumber kebenaran yang harus dijaga tetap sinkron dengan `terkunci` dan `konten_kerja`; begitu ada satu jalur yang lupa memperbaruinya (mis. buka kunci lewat aksi lain), dashboard berbohong. Karena itu `docs/database.md` tidak berubah untuk fitur ini.
+
+### 6.1b Bab dibuat otomatis, termasuk untuk dokumen lama
+
+Struktur bab standar dibuat saat `DOKUMEN_LED` baru dibuat (§7.3), lewat satu-satunya jalur pembuatan dokumen. Selain itu, dokumen yang belum punya baris `BAB_DOKUMEN` sama sekali akan dibuatkan saat dashboardnya pertama kali dibuka — supaya dokumen yang telanjur ada sebelum fitur ini tidak perlu migrasi terpisah. Sebaliknya, menghapus `DOKUMEN_LED` ikut menghapus seluruh babnya.
 
 ### 6.2 Hak akses di level ini
 
 - `PIMPINAN`: seluruhnya **read-only** — bisa melihat progres dan membuka Editor Bab, tapi begitu masuk Editor Bab semua tombol aksi (generate, simulasi, buat draft, kunci) disembunyikan.
 - `PENJAMIN_MUTU`, `PENYUSUN`: bisa masuk Editor Bab dengan hak edit penuh sesuai matriks di [bagian 15](#15-matriks-hak-akses-ringkas).
+
+Halaman Ringkasan/Progres sendiri **tidak punya satu pun aksi ubah data**, jadi tidak ada tombol yang perlu disembunyikan per role (§1) — penjagaannya sudah selesai di lapis rutenya. Pembedaan read-vs-write baru muncul begitu masuk Editor Bab.
+
+### 6.3 Kasus Uji — Dashboard Project LED
+
+| #   | Kondisi                                              | Aksi                                     | Hasil yang diharapkan                                                              |
+| --- | ---------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------- |
+| 1   | Penjamin Mutu di Dashboard Utama                     | Buat Dokumen LED baru, lalu buka         | Seluruh bab standar sudah ada, semua `BELUM_DIISI`, Kelengkapan 0%                  |
+| 2   | Dokumen lama tanpa baris `BAB_DOKUMEN` di penyimpanan | Buka dashboardnya                        | Bab ikut dibuat saat itu juga; tidak ada keadaan kosong tanpa konteks               |
+| 3   | Satu bab `terkunci` walau `konten_kerja` kosong      | Lihat tabel                              | Badge `TERKUNCI` (kunci menang atas kondisi konten), bukan `BELUM_DIISI`            |
+| 4   | Dokumen dengan seluruh bab terisi & terkunci         | Buka dashboardnya                        | Kelengkapan 100%, Kesiapan Review penuh, panel Perlu Perhatian menampilkan kalimat positif |
+| 5   | Sebuah bab punya `catatan_penjamin_mutu`             | Lihat panel samping                      | Bab itu muncul di Perlu Perhatian dengan alasan catatan, di atas bab yang kosong    |
+| 6   | Belum ada satu bab pun yang pernah disimpan          | Lihat kartu Aktivitas Terakhir           | Menampilkan "—" beserta keterangannya, bukan tanggal yang dikarang                  |
+| 7   | Lebih dari 5 bab perlu perhatian                     | Lihat panel samping                      | 5 baris tampil, sisanya diringkas jadi satu baris penunjuk ke tabel                 |
+| 8   | Dokumen LED dihapus dari Dashboard Utama             | Periksa penyimpanan bab                  | Tidak ada baris bab tersisa milik dokumen itu                                       |
+| 9   | Bukti dukung baru diunggah dari halaman lain         | Kembali ke dashboard                     | Kartu Bukti Dukung ikut memperbarui angka pembandingnya tanpa muat ulang            |
+| 10  | Penyusun membuka dokumen milik prodi lain            | Ketik URL-nya langsung                   | Dialihkan oleh penjaga lapis dokumen; isi dashboard tidak pernah dirender           |
+| 11  | Layar sempit (mobile/tablet)                         | Buka dashboard                           | Panel samping turun ke bawah tabel; halaman tidak menggulir ke samping              |
 
 ---
 
