@@ -8,6 +8,7 @@ import {
 } from "react-router";
 
 import "./app.css";
+import { EvidenceUploadPanel } from "~/features/evidence/presentation/components/evidence-upload-panel";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -28,7 +29,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  return <Outlet />;
+  return (
+    <>
+      <Outlet />
+      {/*
+        Panel progres unggahan bukti dukung dipasang di akar aplikasi, bukan di
+        dalam halaman perpustakaannya: unggahan harus terus berjalan dan tetap
+        terlihat saat pengguna berpindah halaman maupun berpindah lapis ruang
+        kerja. Ia merender dirinya hanya ketika ada antrean unggahan.
+      */}
+      <EvidenceUploadPanel />
+    </>
+  );
 }
 
 export function ErrorBoundary({ error }: { error: unknown }) {
