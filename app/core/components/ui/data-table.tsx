@@ -62,6 +62,24 @@ interface DataTableProps<TData, TValue> {
 	// Optional pagination controlled state (if needed, otherwise default to local)
 	pagination?: { pageIndex: number; pageSize: number };
 	onPaginationChange?: OnChangeFn<{ pageIndex: number; pageSize: number }>;
+
+	/**
+	 * Jumlah seluruh baris hasil penyaringan di sisi sumber data.
+	 *
+	 * Tabel ini berjalan dalam mode manual (`manualPagination` dkk), artinya
+	 * `data` yang masuk sudah dipotong per halaman — tanpa nilai ini tabel tidak
+	 * punya cara tahu ada berapa halaman, dan "Total n data" hanya menghitung
+	 * baris halaman yang sedang tampil.
+	 */
+	rowCount?: number;
+
+	/**
+	 * Dimatikan bila pemanggil sudah menyediakan toolbar/footer sendiri di luar
+	 * tabel — dipakai halaman yang punya dua mode tampilan (kartu & tabel) agar
+	 * kontrolnya tidak dobel.
+	 */
+	showToolbar?: boolean;
+	showFooter?: boolean;
 }
 
 export function DataTable<TData, TValue>({
@@ -78,6 +96,9 @@ export function DataTable<TData, TValue>({
 	onClearAll,
 	pagination,
 	onPaginationChange,
+	rowCount,
+	showToolbar = true,
+	showFooter = true,
 }: DataTableProps<TData, TValue>) {
 	const [localPagination, setLocalPagination] = React.useState({
 		pageIndex: 0,
@@ -110,6 +131,7 @@ export function DataTable<TData, TValue>({
 		onColumnVisibilityChange,
 		onPaginationChange: handlePaginationChange,
 		getCoreRowModel: getCoreRowModel(),
+		rowCount,
 		manualPagination: true,
 		manualSorting: true,
 		manualFiltering: true,
@@ -146,6 +168,7 @@ export function DataTable<TData, TValue>({
 	return (
 		<div className="flex flex-col gap-4">
 			{/* Controls: Search, Column Visibility, Clear Button */}
+			{showToolbar && (
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<div className="flex flex-1 min-w-[240px] max-w-sm items-center gap-2">
 					<Input
@@ -272,6 +295,7 @@ export function DataTable<TData, TValue>({
 					</DropdownMenu>
 				</div>
 			</div>
+			)}
 
 			{/* Table Container */}
 			<div className="bg-card rounded-lg border border-border shadow-xs overflow-hidden">
@@ -324,6 +348,7 @@ export function DataTable<TData, TValue>({
 			</div>
 
 			{/* Pagination Controls */}
+			{showFooter && (
 			<div className="flex items-center justify-between gap-4 py-1">
 				<div className="flex items-center gap-4 text-sm text-muted-foreground">
 					<div className="flex items-center gap-2">
@@ -344,7 +369,7 @@ export function DataTable<TData, TValue>({
 						<span>baris</span>
 					</div>
 					<span className="hidden sm:inline">
-						Total {table.getFilteredRowModel().rows.length} data
+						Total {rowCount ?? table.getFilteredRowModel().rows.length} data
 					</span>
 				</div>
 
@@ -373,6 +398,7 @@ export function DataTable<TData, TValue>({
 					</Button>
 				</div>
 			</div>
+			)}
 		</div>
 	);
 }
