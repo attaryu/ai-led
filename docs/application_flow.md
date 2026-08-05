@@ -55,7 +55,8 @@ Tiap lapis berdiri sebagai **root URL sendiri**, bukan bersarang di bawah URL la
       ▼                                                                        │
 /study-programs/:programId ................ ← level PROGRAM_STUDI              │
  ├─ tombol "← Kembali" (ke Dashboard Utama; disembunyikan untuk PENYUSUN)      │
- ├─ (index)                                Daftar Dokumen LED prodi ini        │
+ ├─ (index)                                Dashboard Prodi (kesiapan akreditasi)│
+ ├─ /led-projects                          Daftar Dokumen LED prodi ini        │
  └─ /evidence                              Perpustakaan Bukti Dukung (PRODI)   │
       │ klik salah satu Dokumen LED                                            │
       ▼                                                                        ▼
@@ -216,7 +217,8 @@ Seluruh blok ini diganti satu kartu keadaan kosong bila tidak ada siklus berjala
 Kolom utama:
 
 - **Aktivitas Siklus Ini** — bab-bab yang paling baru disimpan, ditutup penanda kapan siklusnya dimulai; dipotong empat baris. Cakupannya sengaja hanya siklus berjalan. Ini bukan jejak audit — jejak permanen hidup di `BAB_DRAFT` — melainkan penanda apakah proses ini masih bergerak.
-- **Riwayat Siklus** — daftar tipis dokumen lain beserta statusnya, tetap bisa diklik.
+
+> **Catatan desain — riwayat siklus tidak didaftar di dashboard.** Versi awal blok ini memuat daftar dokumen lama yang bisa diklik. Setelah §5.3 berdiri, daftar itu jadi salinan kedua dengan isi yang sama tapi tanpa pencarian maupun paginasi, sementara menu sidebar sudah jadi jalan masuk yang jelas ke daftar penuhnya. Dashboard tetap **membaca** daftar dokumen prodi untuk membedakan dua keadaan kosong siklus berjalan, hanya tidak merendernya.
 
 Panel samping:
 
@@ -275,13 +277,34 @@ Mengikuti alasan yang sama dengan §6.1 — kolom yang selalu berisi "—" hanya
 - **Target unggahan terkunci** ke prodi yang sedang dibuka (`:programId` di URL), jadi pemilih level tidak dirender sama sekali di sini. Mau mengunggah untuk prodi lain atau untuk universitas? Lewat perpustakaan level tenant (§4.4.1). Alur unggah, status ekstraksi, dan bentuk tampilannya sama persis dengan §4.5 dan §4.6.
 - **Hapus**: `PIMPINAN` dan `PENJAMIN_MUTU` boleh menghapus bukti dukung apa pun; `PENYUSUN` hanya berkas yang ia unggah sendiri. Sesuai §1, tombol hapus untuk berkas milik orang lain **tidak dirender** bagi Penyusun, bukan sekadar dinonaktifkan.
 
-### 5.3 Kasus Uji — Dashboard Prodi
+### 5.3 Daftar Dokumen LED (khusus prodi ini)
+
+`/study-programs/:programId/led-projects` — seluruh `DOKUMEN_LED` dengan `program_studi_id` sesuai prodi yang sedang dibuka, dalam bentuk tabel penuh. Inilah yang memenuhi syarat "seluruh Dokumen LED prodi terlihat"; Dashboard Prodi (§5.1) hanya menonjolkan siklus yang berjalan.
+
+| Kolom | Isi |
+| --- | --- |
+| **Judul Proyek** | Tautan langsung ke Dashboard Project LED (Lapis 3) |
+| **Tahun Akademik** | `tahun_akademik` |
+| **Status** | Badge `status_keseluruhan` |
+| **Tenggat** | Tanggal `tenggat`; kosong ditulis `—`, dan yang sudah lewat/mendekat diberi warna peringatan |
+| **Tanggal Dibuat** | `createdAt` |
+| **Aksi** | Ubah & hapus — hanya dirender untuk `PENJAMIN_MUTU` (§15) |
+
+> **Catatan desain — kolom Program Studi dibuang.** Daftar lintas prodi di §4 memakainya sebagai jalan masuk ke Dashboard Prodi, tapi di sini seluruh baris memuat nilai yang sama sehingga kolomnya hanya mengulang judul halaman. Sebaliknya kolom **Tenggat** hanya ada di sini: di daftar lintas prodi ia belum tentu terbaca sebagai milik siapa, sedangkan di konteks satu prodi ia langsung menjawab "mana yang tersendat".
+
+> **Catatan desain — "—" di tabel, bukan "Tidak dipatok".** Kartu ringkasan §5.1b menulis kalimat penuh karena berdiri sendiri; di dalam tabel judul kolom sudah menyebut artinya, dan kalimat panjang di tiap baris justru meramaikannya.
+
+- **Tambah Dokumen LED** — hanya `PENJAMIN_MUTU`. Formulirnya tetap yang di lapis tenant, tapi dibuka dengan prodi yang sedang dibuka sebagai nilai awal (`?studyProgramId=`) dan tujuan pulang ke daftar ini (`?returnTo=`), supaya ia tidak perlu memilih ulang prodi yang sudah ia ketahui dan tidak terlempar ke lapis tenant setelah menyimpan. `returnTo` disaring hanya menerima path internal.
+- **Pencarian, urutan, halaman, dan jumlah baris hidup di URL** (`?q=&sort=&dir=&page=&limit=`), sama seperti §4.6. Penyaringan sampai pemotongan halaman dikerjakan repository, bukan komponen tabel.
+- `PENYUSUN` melihat daftar ini hanya untuk prodinya sendiri; `PIMPINAN` melihatnya lintas prodi tapi tanpa aksi apa pun.
+
+### 5.4 Kasus Uji — Dashboard Prodi & Daftar Dokumen LED
 
 | #   | Kondisi                                                              | Aksi                                          | Hasil yang diharapkan                                                                                                          |
 | --- | -------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | 1   | Prodi mana pun                                                        | Baca baris ringkasan Siklus Berjalan          | Keempat kartunya bercakupan siklus itu saja — tidak ada peringkat/masa berlaku akreditasi maupun akumulasi lintas siklus di sana |
-| 2   | Prodi punya satu dokumen `DRAFT` dan satu `SELESAI`                   | Buka `/study-programs/:id`                    | Yang `DRAFT` jadi blok Siklus Berjalan; yang `SELESAI` muncul di "Riwayat Siklus", bukan sebagai blok setara                    |
-| 3   | Seluruh dokumen prodi berstatus `SELESAI`                            | Buka Dashboard Prodi                          | Blok Siklus Berjalan diganti "Tidak ada siklus yang berjalan"; seluruh dokumen tetap terdaftar di Riwayat Siklus                |
+| 2   | Prodi punya satu dokumen `DRAFT` dan satu `SELESAI`                   | Buka `/study-programs/:id`                    | Yang `DRAFT` jadi blok Siklus Berjalan; yang `SELESAI` tidak dirender di dashboard sama sekali, hanya di §5.3                   |
+| 3   | Seluruh dokumen prodi berstatus `SELESAI`                            | Buka Dashboard Prodi                          | Blok Siklus Berjalan diganti "Tidak ada siklus yang berjalan"; seluruh dokumen tetap bisa dibuka lewat menu Dokumen LED         |
 | 4   | Prodi belum punya `DOKUMEN_LED` sama sekali                          | Buka Dashboard Prodi                          | Muncul "Belum ada Dokumen LED" (kalimat berbeda dari #3); Aktivitas Siklus Ini menyatakan belum ada siklus, bukan daftar kosong |
 | 5   | Prodi `BELUM_TERAKREDITASI` (`berlaku_sampai_akreditasi` kosong)      | Buka Dashboard Prodi                          | Kartu akreditasi berbunyi "Belum pernah terakreditasi"; tidak ada item "kedaluwarsa" di Perlu Perhatian                         |
 | 6   | Siklus berjalan tanpa `tenggat`                                      | Buka Dashboard Prodi                          | Kartu Sisa Tenggat berbunyi "Tidak dipatok" tanpa warna urgensi, dan tidak ada item tenggat di Perlu Perhatian                  |
@@ -297,6 +320,11 @@ Mengikuti alasan yang sama dengan §6.1 — kolom yang selalu berisi "—" hanya
 | 16  | Admin                                                                | Ketik `/study-programs/1` di address bar      | Dialihkan ke `/dashboard`; isi Dashboard Prodi tidak pernah dirender                                                            |
 | 17  | Prodi tersimpan sebelum kolom identitas akreditasi ada               | Buka Dashboard Prodi                          | Field yang belum terisi tampil sebagai "Belum diisi", bukan `undefined`; halaman tetap merender penuh                            |
 | 18  | Layar sempit (< 1280px)                                              | Buka Dashboard Prodi                          | Panel samping turun ke bawah kolom utama; tidak ada scroll horizontal pada halaman                                             |
+| 19  | Penjamin Mutu                                                        | Buka `/study-programs/1/led-projects`         | Hanya dokumen prodi 1 yang tampil (bukan lintas prodi); tombol Tambah dan kolom Aksi dirender                                   |
+| 20  | Pimpinan atau Penyusun                                               | Buka halaman yang sama                        | Tabel identik tanpa tombol Tambah dan tanpa kolom Aksi                                                                          |
+| 21  | Penjamin Mutu di daftar prodi                                        | Klik Tambah Dokumen LED                       | Formulir terbuka dengan prodi tersebut sudah terpilih; simpan maupun Batal memulangkan ke daftar prodi, bukan ke lapis tenant   |
+| 22  | Tautan formulir dikarang dengan `?returnTo=https://situs-lain`       | Tekan Batal                                   | Dipulangkan ke `/dashboard/led-projects`; tujuan di luar aplikasi diabaikan                                                     |
+| 23  | Daftar berisi lebih dari satu halaman                                | Ketik kata kunci, ubah urutan, muat ulang     | Hasil benar-benar tersaring dan terurut, `Total n data` menyesuaikan, dan `q`/`sort`/`page` bertahan di URL                     |
 
 ---
 
