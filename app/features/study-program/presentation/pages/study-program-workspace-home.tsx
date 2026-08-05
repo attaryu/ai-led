@@ -10,14 +10,8 @@ import {
 	CardTitle,
 } from '~/core/components/ui/card';
 import { ledProjectRepository } from '~/features/led-project/data/repositories/led-project.repository';
+import { LedProjectStatusBadge } from '~/features/led-project/presentation/components/led-project-status-badge';
 import { type LedProjectEntity } from '~/features/led-project/domain/entities/led-project.entity';
-
-const statusStyles: Record<string, string> = {
-	DRAFT: 'bg-slate-100 text-slate-800 dark:bg-slate-900/30 dark:text-slate-300',
-	REVIEW: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
-	SELESAI:
-		'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
-};
 
 /**
  * Daftar Dokumen LED milik satu prodi (docs/application_flow.md §5.1) — untuk
@@ -69,13 +63,7 @@ export function StudyProgramWorkspaceHome() {
 							</CardDescription>
 						</CardHeader>
 						<CardContent>
-							<span
-								className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-									statusStyles[project.statusKeseluruhan] ?? ''
-								}`}
-							>
-								{project.statusKeseluruhan}
-							</span>
+							<LedProjectStatusBadge status={project.statusKeseluruhan} />
 						</CardContent>
 					</Card>
 				</Link>
