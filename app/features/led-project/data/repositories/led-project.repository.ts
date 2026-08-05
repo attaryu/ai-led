@@ -2,6 +2,11 @@ import { chapterRepository } from '~/features/chapter/data/repositories/chapter.
 import { type LedProjectEntity } from '../../domain/entities/led-project.entity';
 import { ledProjectLocalSource } from '../sources/local/led-project-local.source';
 
+/** Tanggal ISO relatif terhadap hari ini, supaya data contoh tidak basi. */
+function inDays(days: number): string {
+	return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+}
+
 const initialLedProjects: LedProjectEntity[] = [
 	{
 		id: '1',
@@ -10,6 +15,8 @@ const initialLedProjects: LedProjectEntity[] = [
 		judul: 'Akreditasi LED Teknik Informatika 2026',
 		tahunAkademik: '2025/2026',
 		statusKeseluruhan: 'DRAFT',
+		// Di bawah 30 hari: keadaan "tenggat dekat" punya wujud tanpa perlu diedit.
+		tenggat: inDays(23),
 		createdAt: '2026-07-30T10:00:00.000Z',
 	},
 	{
@@ -19,6 +26,7 @@ const initialLedProjects: LedProjectEntity[] = [
 		judul: 'Laporan Evaluasi Diri Sistem Informasi 2026',
 		tahunAkademik: '2025/2026',
 		statusKeseluruhan: 'REVIEW',
+		tenggat: inDays(-6),
 		createdAt: '2026-07-30T10:15:00.000Z',
 	},
 	{
@@ -28,9 +36,32 @@ const initialLedProjects: LedProjectEntity[] = [
 		judul: 'LED Akreditasi LAM-TEKNIK Teknik Elektro',
 		tahunAkademik: '2026/2027',
 		statusKeseluruhan: 'SELESAI',
+		tenggat: null,
 		createdAt: '2026-07-30T10:30:00.000Z',
 	},
+	{
+		// Siklus lama Teknik Informatika, supaya bentuk "satu siklus aktif +
+		// arsip" di Dashboard Prodi benar-benar terlihat.
+		id: '4',
+		studyProgramId: '1',
+		studyProgramName: 'Teknik Informatika',
+		judul: 'Laporan Evaluasi Diri Teknik Informatika 2022',
+		tahunAkademik: '2021/2022',
+		statusKeseluruhan: 'SELESAI',
+		tenggat: null,
+		createdAt: '2022-08-01T10:00:00.000Z',
+	},
 ];
+
+/**
+ * Mengisi `tenggat` untuk baris lama di localStorage. `findAll` mem-parse JSON
+ * tanpa memvalidasinya ke skema, jadi tanpa ini dokumen yang tersimpan sebelum
+ * kolomnya ada akan bernilai `undefined` — yang tidak sama dengan `null` bagi
+ * `deriveDeadline`.
+ */
+function normalize(project: Partial<LedProjectEntity>): LedProjectEntity {
+	return { ...(project as LedProjectEntity), tenggat: project.tenggat ?? null };
+}
 
 export const ledProjectRepository = {
 	findAll(): LedProjectEntity[] {
@@ -40,7 +71,7 @@ export const ledProjectRepository = {
 			return initialLedProjects;
 		}
 		try {
-			return JSON.parse(stored);
+			return (JSON.parse(stored) as Partial<LedProjectEntity>[]).map(normalize);
 		} catch (e) {
 			this.save(initialLedProjects);
 			return initialLedProjects;

@@ -20,6 +20,7 @@ import {
 	CardTitle,
 	CardDescription,
 } from '~/core/components/ui/card';
+import { fromDateInputValue } from '~/core/lib/format-time';
 import {
 	createLedProjectSchema,
 	type CreateLedProjectDto,
@@ -48,6 +49,7 @@ export function CreateLedProject() {
 			studyProgramId: '',
 			judul: '',
 			tahunAkademik: '',
+			tenggat: '',
 		},
 	});
 
@@ -71,6 +73,7 @@ export function CreateLedProject() {
 			judul: data.judul,
 			tahunAkademik: data.tahunAkademik,
 			statusKeseluruhan: 'DRAFT',
+			tenggat: fromDateInputValue(data.tenggat),
 			createdAt: new Date().toISOString(),
 		};
 
@@ -164,6 +167,21 @@ export function CreateLedProject() {
 								/>
 								{errors.tahunAkademik && (
 									<FieldError>{errors.tahunAkademik.message}</FieldError>
+								)}
+							</Field>
+
+							<Field data-invalid={!!errors.tenggat}>
+								<FieldLabel htmlFor="tenggat">
+									Target Selesai (opsional)
+								</FieldLabel>
+								<Input
+									id="tenggat"
+									type="date"
+									disabled={isSubmitting}
+									{...register('tenggat')}
+								/>
+								{errors.tenggat && (
+									<FieldError>{errors.tenggat.message}</FieldError>
 								)}
 							</Field>
 						</FieldGroup>

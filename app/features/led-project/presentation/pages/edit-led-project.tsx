@@ -20,6 +20,7 @@ import {
 	CardTitle,
 	CardDescription,
 } from '~/core/components/ui/card';
+import { fromDateInputValue, toDateInputValue } from '~/core/lib/format-time';
 import {
 	updateLedProjectSchema,
 	type UpdateLedProjectDto,
@@ -60,6 +61,7 @@ export function EditLedProject() {
 			judul: '',
 			tahunAkademik: '',
 			statusKeseluruhan: 'DRAFT',
+			tenggat: '',
 		},
 	});
 
@@ -70,6 +72,7 @@ export function EditLedProject() {
 				judul: project.judul,
 				tahunAkademik: project.tahunAkademik,
 				statusKeseluruhan: project.statusKeseluruhan,
+				tenggat: toDateInputValue(project.tenggat),
 			});
 		}
 	}, [project, reset]);
@@ -89,6 +92,7 @@ export function EditLedProject() {
 			judul: data.judul,
 			tahunAkademik: data.tahunAkademik,
 			statusKeseluruhan: data.statusKeseluruhan,
+			tenggat: fromDateInputValue(data.tenggat),
 		});
 
 		window.dispatchEvent(new Event('storage-update'));
@@ -195,6 +199,21 @@ export function EditLedProject() {
 								</Select>
 								{errors.statusKeseluruhan && (
 									<FieldError>{errors.statusKeseluruhan.message}</FieldError>
+								)}
+							</Field>
+
+							<Field data-invalid={!!errors.tenggat}>
+								<FieldLabel htmlFor="tenggat">
+									Target Selesai (opsional)
+								</FieldLabel>
+								<Input
+									id="tenggat"
+									type="date"
+									disabled={isSubmitting}
+									{...register('tenggat')}
+								/>
+								{errors.tenggat && (
+									<FieldError>{errors.tenggat.message}</FieldError>
 								)}
 							</Field>
 						</FieldGroup>

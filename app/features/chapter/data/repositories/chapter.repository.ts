@@ -58,7 +58,7 @@ function contohKonten(judulBab: string): string {
 /**
  * Kondisi awal tiap dokumen contoh, dibuat berbeda-beda supaya dashboard punya
  * sesuatu yang layak dilihat: dokumen 1 baru berjalan, dokumen 2 sedang direview
- * sebagian, dokumen 3 sudah tuntas.
+ * sebagian, dokumen 3 dan 4 sudah tuntas.
  */
 const SEED_STATE: Record<
 	string,
@@ -103,6 +103,15 @@ const SEED_STATE: Record<
 			1: ['ev-01', 'ev-02'],
 			5: ['ev-18'],
 			10: ['ev-18', 'ev-04'],
+		},
+	},
+	// Siklus lama Teknik Informatika, sudah tuntas — isi arsip di Dashboard Prodi.
+	'4': {
+		babTerisi: CHAPTER_TEMPLATE.length,
+		babTerkunci: CHAPTER_TEMPLATE.length,
+		buktiDukung: {
+			1: ['ev-01'],
+			3: ['ev-13'],
 		},
 	},
 };
