@@ -144,6 +144,19 @@ Prodi adalah unit pemisah ruang kerja utama di bawah tenant — `PENYUSUN` hanya
 | `id` | string (PK) | Identitas unik program studi |
 | `tenant_id` | string (FK) | Universitas pemilik prodi ini |
 | `nama` | string | Nama program studi, misal "Teknik Informatika" |
+| `kode` | string | Kode prodi PDDikti, misal "55201" |
+| `jenjang` | string | `D3` \| `D4` \| `S1` \| `S2` \| `S3` |
+| `fakultas` | string | Fakultas induk, misal "Fakultas Teknik" |
+| `ketua_prodi` | string | Nama penanggung jawab prodi |
+| `peringkat_akreditasi` | string | `UNGGUL` \| `BAIK_SEKALI` \| `BAIK` \| `BELUM_TERAKREDITASI` — peringkat yang sedang berlaku |
+| `nomor_sk_akreditasi` | string (nullable) | Nomor SK peringkat yang berlaku; kosong bila belum terakreditasi |
+| `berlaku_sampai_akreditasi` | date (nullable) | Akhir masa berlaku; kosong bila belum terakreditasi |
+
+> **Catatan desain — kenapa identitas akreditasi ada di sini.** Enam kolom terakhir ditambahkan bersama Dashboard Prodi (`docs/application_flow.md` §5.1). Sebelumnya `PROGRAM_STUDI` hanya menyimpan `nama`, sehingga halaman level prodi tidak punya bahan untuk bicara tentang prodinya sendiri dan mau tak mau kembali jadi daftar dokumen.
+>
+> Yang **tidak** ikut ditambahkan: sisa masa berlaku dan status "mendekati kedaluwarsa". Keduanya diturunkan saat render dari `berlaku_sampai_akreditasi`, mengikuti alasan yang sama dengan status bab di §6.1a — nilai tersimpan yang bergantung pada waktu berjalan pasti basi, dan menjaganya tetap segar butuh pekerjaan terjadwal yang tidak sepadan dengan manfaatnya.
+>
+> `BELUM_TERAKREDITASI` sengaja punya makna berbeda dari masa berlaku yang habis: prodi baru belum pernah punya peringkat, sedangkan prodi kedaluwarsa pernah punya dan harus segera memperbarui. Karena itu `berlaku_sampai_akreditasi` boleh kosong, dan tampilan tidak boleh memperlakukan kosong sebagai keterlambatan.
 
 ### Relasi
 - Satu program studi dimiliki oleh satu `TENANT`.
@@ -176,6 +189,13 @@ Ini adalah "pintu masuk" ke ruang kerja khusus — begitu user mengklik salah sa
 | `judul` | string | Judul dokumen LED |
 | `tahun_akademik` | string | Contoh: "2026/2027" |
 | `status_keseluruhan` | string | `DRAFT` \| `REVIEW` \| `SELESAI` — status agregat seluruh dokumen |
+| `tenggat` | date (nullable) | Target internal kapan dokumen ini harus selesai; kosong berarti tidak dipatok |
+
+> **Catatan desain — tenggat di dokumen, bukan di prodi.** PRD §3.1 menyebut "tenggat waktu (opsional)" tapi tidak pernah menetapkan tempatnya. Diletakkan di sini karena masa berlaku akreditasi prodi jaraknya tahunan dan tidak berubah tiap siklus, sedangkan yang mendorong kerja sehari-hari adalah target penyelesaian dokumen yang sedang berjalan — dua hal berbeda yang keduanya tetap ditampilkan berdampingan di Dashboard Prodi (§5.1).
+>
+> Kosong berarti **tidak dipatok**, bukan "tenggatnya hari ini". Tampilan tidak boleh menghitungnya sebagai keterlambatan, dan barisnya tidak dirender sama sekali alih-alih diisi "—".
+
+> **Catatan desain — tidak ada kolom "siklus aktif".** Dashboard Prodi perlu tahu dokumen mana yang sedang dikerjakan, tapi itu diturunkan (`status_keseluruhan != SELESAI` dengan `tahun_akademik` terbesar), bukan disimpan. Kolom `is_aktif` akan jadi sumber kebenaran kedua yang bisa tidak sinkron dengan `status_keseluruhan` — dokumen bisa tertandai aktif padahal sudah `SELESAI`. Alasannya sama dengan status bab di §6.1a.
 
 ### Relasi
 - Satu dokumen LED dimiliki oleh satu `PROGRAM_STUDI`.
