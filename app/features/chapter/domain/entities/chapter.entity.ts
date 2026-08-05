@@ -125,6 +125,25 @@ export function summarizeChapters(chapters: ChapterEntity[]): ChapterSummary {
 	};
 }
 
+/**
+ * Bab yang paling baru disimpan, terbaru di atas. Bab yang belum pernah
+ * disentuh tidak ikut — daftar ini gunanya menunjukkan di mana pekerjaan
+ * terakhir terjadi, bukan mendaftar ulang isi dokumen.
+ *
+ * Di domain, bukan di komponen, dengan alasan yang sama seperti
+ * {@link summarizeChapters}: jejak aktivitas yang sama dipakai Dashboard Prodi
+ * dan akan dipakai dashboard institusi nanti.
+ */
+export function pickRecentChapterSaves(
+	chapters: ChapterEntity[],
+	limit: number,
+): ChapterEntity[] {
+	return chapters
+		.filter((chapter) => chapter.terakhirDisimpan !== null)
+		.sort((a, b) => b.terakhirDisimpan!.localeCompare(a.terakhirDisimpan!))
+		.slice(0, limit);
+}
+
 /** Ambang "terbengkalai" untuk bab yang sedang disusun tapi lama tak disentuh. */
 export const CHAPTER_STALE_DAYS = 14;
 

@@ -4,6 +4,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '~/core/components/ui/c
 import { cn } from '~/core/lib/utils';
 
 /**
+ * Nada angka. Dipakai untuk hal yang punya urgensi bawaan — tenggat yang lewat
+ * harus terbaca berbeda dari angka biasa tanpa perlu membaca keterangannya.
+ */
+const toneStyles = {
+	default: '',
+	warning: 'text-amber-700 dark:text-amber-400',
+	danger: 'text-destructive',
+} as const;
+
+export type StatCardTone = keyof typeof toneStyles;
+
+/**
  * Kartu satu angka untuk baris ringkasan dashboard.
  *
  * Ditaruh di `core` karena bentuk yang sama akan dipakai lagi oleh dashboard
@@ -15,6 +27,7 @@ export function StatCard({
 	hint,
 	icon: StatIcon,
 	progress,
+	tone = 'default',
 	className,
 }: {
 	label: string;
@@ -23,6 +36,7 @@ export function StatCard({
 	icon?: Icon;
 	/** 0–100. Bila diisi, bar progres dirender di bawah angka. */
 	progress?: number;
+	tone?: StatCardTone;
 	className?: string;
 }) {
 	const clamped =
@@ -39,7 +53,12 @@ export function StatCard({
 				</CardTitle>
 			</CardHeader>
 			<CardContent className="flex flex-col gap-2">
-				<p className="font-heading text-2xl font-bold tracking-tight tabular-nums">
+				<p
+					className={cn(
+						'font-heading text-2xl font-bold tracking-tight tabular-nums',
+						toneStyles[tone],
+					)}
+				>
 					{value}
 				</p>
 				{clamped !== undefined && (

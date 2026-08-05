@@ -1,4 +1,4 @@
-import { ArchiveIcon, FileIcon } from '@phosphor-icons/react';
+import { ArchiveIcon, IdentificationCardIcon } from '@phosphor-icons/react';
 import { Navigate, Outlet, useLocation, useParams } from 'react-router';
 
 import {
@@ -85,9 +85,12 @@ export function StudyProgramWorkspaceLayout() {
 				brand: studyProgram.studyProgramName,
 				items: [
 					{
-						name: 'Dokumen LED',
+						// Halamannya bukan daftar dokumen melainkan keadaan prodi itu
+						// sendiri — akreditasi berjalan, siklus yang disusun, dan timnya
+						// (§5.1), jadi namanya menyebut subjeknya.
+						name: 'Profil Prodi',
 						path: `/study-programs/${programId}`,
-						icon: FileIcon,
+						icon: IdentificationCardIcon,
 						end: true,
 					},
 					{
