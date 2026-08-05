@@ -281,9 +281,15 @@ Ini adalah "perpustakaan" bukti — dikelola di dua tempat berbeda sesuai leveln
 | `tenant_id` | string (FK, nullable) | Diisi jika `owner_tipe = TENANT` |
 | `program_studi_id` | string (FK, nullable) | Diisi jika `owner_tipe = PROGRAM_STUDI` |
 | `nama_dokumen` | string | Contoh: "SK_Rektor_2026.pdf" |
-| `file_url` | string | Lokasi penyimpanan file (S3/lokal) |
+| `file_url` | string | **Object key** di object storage (Cloudflare R2), misal `tenant/1721-SK_Rektor_2026.pdf` — bukan URL publik. Tautan unduh dibuat sesaat (presigned) ketika dibutuhkan |
 | `tipe_file` | string | PDF, JPG, dll |
+| `ukuran_bytes` | int | Ukuran berkas; dipakai UI untuk menampilkan ukuran dan menegakkan batas unggah |
+| `status_ekstraksi` | string | `MENUNGGU` \| `DIPROSES` \| `SIAP` \| `GAGAL` — tahap pipeline ekstraksi teks/OCR (PRD §3.3). Bukti dukung baru bisa dipakai sebagai konteks AI setelah `SIAP` |
+| `catatan_gagal` | string (nullable) | Alasan singkat saat `status_ekstraksi = GAGAL`, ditampilkan ke user beserta tombol coba lagi |
+| `diunggah_oleh_user_id` | string (FK) | User yang mengunggah; dipakai jejak audit (PRD §2.1) sekaligus penentu hak hapus bagi `PENYUSUN` |
 | `waktu_diunggah` | datetime | Waktu file diunggah |
+
+> **Catatan desain — unggahan lewat presigned URL.** Berkas tidak melewati server aplikasi: frontend meminta presigned URL ke backend, mengunggah langsung ke R2, lalu melapor balik. Baris `BUKTI_DUKUNG` baru dibuat pada langkah pelaporan itu — dengan `status_ekstraksi = MENUNGGU` — sehingga tidak ada baris menggantung untuk unggahan yang gagal di tengah jalan. Unggahan bersifat batch (banyak berkas sekaligus), tapi tiap berkas berdiri sendiri: satu berkas gagal tidak menggugurkan sisanya.
 
 > **Catatan desain**: `owner_tipe` bersama dua kolom FK nullable digunakan (bukan satu kolom polymorphic) agar integritas foreign key tetap terjaga oleh database. Perlu *constraint* di level aplikasi/`CHECK` agar hanya salah satu dari `tenant_id` atau `program_studi_id` yang terisi sesuai `owner_tipe`. Filter isolasi antar prodi (agar Prodi A tidak melihat bukti dukung Prodi B) ditegakkan lewat query terpusat berdasarkan kombinasi `owner_tipe` + `tenant_id`/`program_studi_id`, bukan lewat tabel terpisah per prodi.
 
@@ -296,6 +302,8 @@ Ini adalah "perpustakaan" bukti — dikelola di dua tempat berbeda sesuai leveln
 - **Manajemen bukti dukung**: `PIMPINAN` dan `PENJAMIN_MUTU` bisa upload di level tenant maupun prodi; `PENYUSUN` hanya bisa upload di level prodi tempatnya ditugaskan; `ADMIN` tidak punya akses ke bukti dukung sama sekali.
 - **Perpustakaan bukti dukung bersama**: bukti dukung level tenant (misal Statuta, Renstra Universitas) bisa dipakai berulang oleh banyak prodi tanpa perlu diunggah ulang.
 - **Pemilihan bukti dukung sebagai konteks generate**: sebelum menekan tombol generate di suatu bab, user memilih satu atau lebih `BUKTI_DUKUNG` yang relevan; pilihan ini menjadi dasar pencarian semantik (RAG) untuk menyusun konten bab.
+- **Ekstraksi asinkron & coba ulang**: setelah unggahan dilaporkan, backend mengantrekan ekstraksi teks/OCR dan memperbarui `status_ekstraksi`. Kegagalan tidak menghapus barisnya — berkas tetap tampil dengan status `GAGAL` beserta `catatan_gagal`, dan user berwenang bisa memicu ekstraksi ulang tanpa mengunggah berkasnya lagi.
+- **Hapus bukti dukung**: `PIMPINAN` dan `PENJAMIN_MUTU` boleh menghapus bukti dukung apa pun di cakupannya; `PENYUSUN` hanya boleh menghapus berkas yang ia unggah sendiri (dicocokkan lewat `diunggah_oleh_user_id`).
 
 ---
 

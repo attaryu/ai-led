@@ -107,6 +107,63 @@ Setiap lapis punya sidebar/navigasi yang **berbeda total** dari lapis sebelumnya
 - Menampilkan seluruh `BUKTI_DUKUNG` dengan `owner_tipe = TENANT` dan `tenant_id` sesuai tenant user.
 - **Upload**: `PIMPINAN`, `PENJAMIN_MUTU`. `ADMIN` tidak punya akses ke bukti dukung sama sekali (murni back office).
 
+> **Catatan desain — penolakan Admin ditegaskan di halaman, bukan cuma di sidebar.** Penjaga lapis tenant meloloskan `ADMIN` karena ia memang berwenang atas menu organisasi lain di lapis yang sama, sementara menu "Bukti Dukung" hanya disembunyikan dari sidebar-nya. Menyembunyikan menu saja tidak cukup — URL tetap bisa diketik langsung — jadi halaman ini menolak `ADMIN` secara eksplisit dan memulangkannya ke Dashboard Utama.
+
+#### 4.4.1 Target unggahan dari lapis tenant
+
+Satu batch unggahan punya **satu target** yang dipilih sebelum berkas dikirim, berlaku untuk seluruh berkas dalam batch itu:
+
+- **Universitas** → `owner_tipe = TENANT`, berlaku lintas prodi.
+- **Salah satu prodi** → `owner_tipe = PROGRAM_STUDI`; berkasnya tidak muncul di perpustakaan tenant, melainkan langsung di perpustakaan prodi tujuan.
+
+Mau mencampur dua level dalam sekali kerja? Unggah dua kali. Pemilihan target per berkas sengaja tidak disediakan karena membuat baris antrean ramai dan memperbesar peluang salah pilih, sementara kebutuhan mencampur level dalam satu batch jarang terjadi.
+
+### 4.5 Alur Unggah Bukti Dukung (berlaku di kedua lapis)
+
+Berkas tidak melewati server aplikasi. Urutannya:
+
+```
+pilih berkas (batch) → minta presigned URL ke backend → PUT langsung ke object storage (R2)
+   → lapor ke backend → baris BUKTI_DUKUNG dibuat berstatus MENUNGGU
+   → antrean ekstraksi: MENUNGGU → DIPROSES → SIAP | GAGAL
+```
+
+- **Batch**: beberapa berkas sekaligus, lewat tarik-lepas maupun pilih berkas. Tiap berkas berdiri sendiri — satu gagal tidak menggugurkan sisanya.
+- **Validasi sebelum kirim**: tipe berkas (PDF, DOC/DOCX, XLS/XLSX, JPG, PNG) dan batas ukuran 25 MB per berkas diperiksa di modal. Berkas yang tidak lolos ditandai dengan alasannya dan tidak ikut terkirim; berkas lain tetap jalan.
+- **Progres di panel melayang**: begitu tombol unggah ditekan, modal tertutup dan progres tiap berkas pindah ke panel kecil di pojok kanan bawah. Panel ini dipasang di akar aplikasi, jadi unggahan terus berjalan dan tetap terlihat meski pengguna berpindah halaman atau berpindah lapis ruang kerja.
+- **Gagal saat unggah** (jaringan/storage) → baris di panel menampilkan alasannya dengan tombol coba lagi; tidak ada baris `BUKTI_DUKUNG` yang tercipta.
+- **Gagal saat ekstraksi** → barisnya sudah ada dan tetap tampil di perpustakaan berstatus `GAGAL` beserta catatan; ekstraksi bisa diulang tanpa mengunggah berkasnya lagi.
+- Bukti dukung berstatus selain `SIAP` tetap terlihat di daftar, tapi belum bisa dipakai sebagai konteks AI (PRD §3.3).
+
+### 4.6 Tampilan Perpustakaan Bukti Dukung
+
+Berlaku sama di lapis tenant maupun prodi:
+
+- **Dua mode tampilan**: kartu ala penjelajah berkas (bawaan) dan tabel. Tombol ganti mode ada di toolbar; pilihannya tersimpan di peramban sebagai selera pribadi, bukan bagian dari konteks halaman.
+- **Pencarian, urutan, halaman, dan jumlah baris hidup di URL** (`?q=&sort=&dir=&page=&limit=`) — sehingga tautan bisa dibagikan dan muat ulang halaman tidak menghilangkan konteks. Mengubah kata kunci atau urutan otomatis mengembalikan ke halaman 1.
+- Penyaringan, pencarian, pengurutan, dan pemotongan halaman dianggap **pekerjaan sisi sumber data**, bukan sisi tampilan: daftar hanya menerima satu halaman data beserta jumlah totalnya.
+- **Detail berkas** dibuka lewat panel geser dari kanan (klik kartu atau baris): metadata lengkap, tahap pemrosesan, serta tombol coba lagi/hapus sesuai hak akses. Panelnya ikut memperbarui status bila ekstraksi selesai selagi panel terbuka.
+- **Keadaan kosong dibedakan**: "belum ada bukti dukung" (mengajak mengunggah, tombolnya hanya untuk yang berhak) berbeda dari "tidak ada yang cocok dengan pencarian" (mengajak membersihkan kata kunci).
+
+### 4.7 Kasus Uji — Perpustakaan & Unggah Bukti Dukung
+
+| #   | Kondisi                                          | Aksi                                          | Hasil yang diharapkan                                                                                                     |
+| --- | ------------------------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Pimpinan di `/dashboard/evidence`                | Unggah 3 berkas, target Universitas           | Modal tertutup, panel melayang muncul, tiap baris naik 0→100%, ketiganya masuk daftar berstatus `MENUNGGU`                  |
+| 2   | Lanjutan #1                                      | Tunggu ~8 detik                               | Status berpindah `MENUNGGU` → `DIPROSES` → `SIAP` tanpa muat ulang halaman                                                  |
+| 3   | Pimpinan di `/dashboard/evidence`                | Unggah dengan target prodi Teknik Informatika | Berkas **tidak** muncul di daftar tenant, tapi muncul di `/study-programs/1/evidence`                                       |
+| 4   | Penyusun di perpustakaan prodinya                | Buka modal unggah                             | Pemilih level tidak dirender; target terkunci ke prodi yang sedang dibuka                                                   |
+| 5   | Admin                                            | Ketik `/dashboard/evidence` di address bar    | Dialihkan ke `/dashboard`; isi perpustakaan tidak pernah dirender                                                           |
+| 6   | Pimpinan                                         | Unggah berkas `.exe` atau > 25 MB             | Ditolak di modal sebelum terkirim beserta alasannya; berkas lain dalam batch tetap bisa lanjut                              |
+| 7   | Ada berkas berstatus `GAGAL`                     | Klik "Coba proses lagi"                       | Status kembali `MENUNGGU` lalu berjalan lagi sampai `SIAP`/`GAGAL`                                                          |
+| 8   | Daftar berisi lebih dari satu halaman            | Ketik kata kunci di pencarian                 | Hasil tersaring, halaman balik ke 1, total & jumlah halaman menyesuaikan, kata kunci tercatat di URL                        |
+| 9   | Sedang di halaman 2 hasil pencarian              | Muat ulang halaman                            | Kata kunci, halaman, urutan, dan jumlah baris tetap sama karena dibaca dari URL                                             |
+| 10  | Mode kartu aktif                                 | Ganti ke tabel, pindah halaman, lalu kembali  | Mode tabel tetap terpilih; `q`/`page`/`sort` tidak hilang                                                                   |
+| 11  | Unggahan sedang berjalan                         | Pindah ke halaman lain (mis. Manajemen User)  | Panel melayang tetap tampil dan progresnya terus jalan                                                                      |
+| 12  | Penyusun melihat berkas unggahan orang lain      | Buka menu aksi berkas tersebut                | Tombol hapus tidak dirender untuk berkas itu, tapi dirender untuk unggahannya sendiri                                       |
+| 13  | Berkas sedang `DIPROSES`, panel detail terbuka   | Tunggu sampai ekstraksi selesai               | Badge status dan tahap pemrosesan di panel ikut berubah tanpa menutup panel                                                 |
+| 14  | Perpustakaan prodi yang belum punya bukti dukung | Buka halamannya                               | Keadaan kosong berisi ajakan mengunggah (tombol hanya untuk yang berhak), bukan daftar kosong tanpa konteks                 |
+
 ---
 
 ## 5. Dashboard Prodi
@@ -125,6 +182,8 @@ Setiap lapis punya sidebar/navigasi yang **berbeda total** dari lapis sebelumnya
 - Menampilkan `BUKTI_DUKUNG` dengan `owner_tipe = PROGRAM_STUDI` dan `program_studi_id` sesuai prodi ini.
 - **Upload**: `PIMPINAN`, `PENJAMIN_MUTU`, dan `PENYUSUN` (untuk prodinya sendiri).
 - Karena `BUKTI_DUKUNG` tidak terikat ke `DOKUMEN_LED` tertentu, bukti dukung yang diunggah di sini otomatis tersedia untuk **semua** `DOKUMEN_LED` milik prodi tersebut (misalnya jika prodi punya beberapa siklus akreditasi/tahun akademik berbeda) — tidak perlu upload ulang.
+- **Target unggahan terkunci** ke prodi yang sedang dibuka (`:programId` di URL), jadi pemilih level tidak dirender sama sekali di sini. Mau mengunggah untuk prodi lain atau untuk universitas? Lewat perpustakaan level tenant (§4.4.1). Alur unggah, status ekstraksi, dan bentuk tampilannya sama persis dengan §4.5 dan §4.6.
+- **Hapus**: `PIMPINAN` dan `PENJAMIN_MUTU` boleh menghapus bukti dukung apa pun; `PENYUSUN` hanya berkas yang ia unggah sendiri. Sesuai §1, tombol hapus untuk berkas milik orang lain **tidak dirender** bagi Penyusun, bukan sekadar dinonaktifkan.
 
 ---
 
@@ -318,8 +377,12 @@ Kedua lapis ini **independen** dan bisa aktif bersamaan (misal bab sedang di-loc
 | Ubah status dokumen                            | ❌              | ❌              | ✅              | ❌                         |
 | Upload bukti dukung level Tenant               | ❌              | ✅              | ✅              | ❌                         |
 | Upload bukti dukung level Prodi                | ❌              | ✅              | ✅              | ✅ (prodinya)              |
+| Hapus bukti dukung                             | ❌              | ✅              | ✅              | ✅ (unggahannya sendiri)   |
+| Ulangi ekstraksi bukti dukung yang gagal       | ❌              | ✅              | ✅              | ✅ (prodinya)              |
 
 _\* Admin hanya bisa membuat user, belum tentu punya kemampuan assign ke prodi — perlu dikonfirmasi ulang bila ada kebutuhan lanjutan._
+
+> **Catatan desain — dua baris bukti dukung yang ditetapkan menyusul.** Baris "Hapus bukti dukung" dan "Ulangi ekstraksi" tidak ada di matriks awal. PRD hanya menyebut penghapusan dilakukan "pengguna berwenang" tanpa merinci siapa. Keputusannya: `PIMPINAN`/`PENJAMIN_MUTU` boleh menghapus apa pun di cakupannya karena keduanya memang beroperasi di level tenant, sedangkan `PENYUSUN` dibatasi pada unggahannya sendiri — cukup untuk membereskan salah unggah, tanpa memberinya kuasa menghapus bukti yang dipakai prodi secara keseluruhan. Mengulang ekstraksi tidak menghapus apa pun dan tidak mengubah isi berkas, jadi haknya disamakan dengan hak unggah di lapis bersangkutan.
 
 > **Catatan desain — siklus Dokumen LED milik Penjamin Mutu.** Baris "Buat Dokumen LED baru" ditetapkan menyusul karena matriks awal tidak memuatnya. Wewenangnya diberikan ke `PENJAMIN_MUTU` saja agar konsisten dengan dua baris di bawahnya (kunci bab dan ubah status dokumen): satu role memegang seluruh siklus hidup dokumen dari pembuatan sampai penyelesaian. `PIMPINAN` tetap read-only di level ini (§6.2), dan `PENYUSUN` tidak pernah masuk Dashboard Utama sehingga tidak punya jalan ke form pembuatan.
 
@@ -345,3 +408,11 @@ Bagian ini mencatat hal-hal yang belum diputuskan/dibahas tuntas, untuk didiskus
 5. **Export dokumen LED** — fitur ekspor (kemungkinan ke Word/PDF) disebutkan ada, tapi detail mekanismenya belum dibahas sama sekali (format, apakah per bab atau seluruh dokumen, styling, dsb) — dilupakan dulu sesuai kesepakatan, dibahas belakangan.
 
 6. **Validasi perubahan status dokumen** — saat ini murni manual tanpa syarat. Apakah ke depannya perlu ditambah validasi (misal tidak bisa set `SELESAI` jika masih ada bab yang belum `terkunci`)?
+
+7. **Menghapus bukti dukung yang sedang dipakai suatu bab** — bukti dukung bisa sedang tercatat di `BUKTI_DUKUNG_BAB` (kondisi aktif) maupun `BUKTI_DUKUNG_DRAFT` (checkpoint permanen, jejak audit akreditasi). Apakah penghapusan diblokir selama masih dirujuk, atau tetap diizinkan dengan rujukan yang jadi menggantung? Untuk sekarang UI hanya memperingatkan lewat dialog konfirmasi.
+
+8. **Batas ukuran dan kuota penyimpanan** — batas 25 MB per berkas dipakai sebagai angka awal yang belum divalidasi ke kebutuhan nyata (LKPS hasil pindai bisa jauh lebih besar). Apakah perlu kuota total per tenant/prodi, dan apa yang terjadi saat kuota habis?
+
+9. **Pengelompokan bukti dukung** — perpustakaan saat ini datar dengan pencarian sebagai satu-satunya alat penyaring. Apakah nanti perlu folder, tag, atau kategori (mis. per kriteria LAM Teknik) begitu jumlah berkasnya membesar?
+
+10. **Pembatalan unggahan yang sedang berjalan** — panel progres saat ini hanya bisa disembunyikan, bukan membatalkan unggahan, karena pembatalan perlu dukungan pembatalan permintaan ke object storage sekaligus pembersihan objek separuh jalan di sisi backend.
