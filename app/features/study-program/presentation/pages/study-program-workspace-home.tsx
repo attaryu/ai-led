@@ -10,7 +10,6 @@ import {
 import { studyProgramRepository } from '../../data/repositories/study-program.repository';
 import { type StudyProgramEntity } from '../../domain/entities/study-program.entity';
 import { ActiveCycleSection } from '../components/active-cycle-section';
-import { CycleArchiveList } from '../components/cycle-archive-list';
 import { ProgramAccreditationCard } from '../components/program-accreditation-card';
 import { ProgramActivityTimeline } from '../components/program-activity-timeline';
 import { ProgramAttentionPanel } from '../components/program-attention-panel';
@@ -115,9 +114,14 @@ function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 			)}
 
 			<div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+				{/*
+				 * Riwayat siklus tidak lagi didaftar di sini: tempatnya halaman Dokumen
+				 * LED prodi (§5.3) yang punya pencarian dan paginasi, dan menu sidebar
+				 * sudah jadi jalan masuknya. `arsip` tetap dibaca untuk membedakan dua
+				 * keadaan kosong di atas.
+				 */}
 				<div className="flex min-w-0 flex-col gap-6">
 					<ProgramActivityTimeline activities={aktivitas} />
-					<CycleArchiveList projects={arsip} />
 				</div>
 
 				<div className="flex flex-col gap-4">
