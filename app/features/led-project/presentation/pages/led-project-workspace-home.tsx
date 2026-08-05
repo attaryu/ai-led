@@ -16,7 +16,7 @@ import { useProjectProgress } from '../hooks/use-project-progress';
 import { type LedProjectEntity } from '../../domain/entities/led-project.entity';
 
 /**
- * Dashboard Project LED — Ringkasan/Progres (docs/application_flow.md §6.1).
+ * Dashboard Project LED — Progres Dokumen (docs/application_flow.md §6.1).
  *
  * Halaman ini murni baca: tidak ada aksi ubah data di sini, jadi tidak ada yang
  * perlu disembunyikan per role (§1) — penjagaannya sudah selesai di layout
@@ -58,7 +58,7 @@ function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
 		<div className="flex flex-col gap-6">
 			<div>
 				<h2 className="font-heading text-2xl font-bold tracking-tight">
-					Progres per Bab
+					Progres Dokumen
 				</h2>
 				<p className="text-sm text-muted-foreground">
 					Ringkasan penyusunan {ledProject.judul}.
@@ -103,7 +103,15 @@ function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
 			</div>
 
 			<div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
-				<ChapterProgressTable chapters={chapters} />
+				{/*
+				 * Tabelnya diberi judul sendiri karena judul halaman sudah bicara di
+				 * level dokumen — tanpa ini ia jadi satu-satunya bagian tanpa label
+				 * di antara kartu-kartu di sampingnya.
+				 */}
+				<section className="flex min-w-0 flex-col gap-2">
+					<h3 className="font-heading text-base font-medium">Progres per Bab</h3>
+					<ChapterProgressTable chapters={chapters} />
+				</section>
 				<ProjectAttentionPanel project={ledProject} attention={attention} />
 			</div>
 		</div>

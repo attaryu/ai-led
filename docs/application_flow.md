@@ -61,7 +61,7 @@ Tiap lapis berdiri sebagai **root URL sendiri**, bukan bersarang di bawah URL la
       ▼                                                                        ▼
 /led-projects/:projectId .................. ← level DOKUMEN_LED, sidebar terpisah total
  ├─ tombol "← Kembali" (ke Dashboard Prodi pemilik dokumen)
- ├─ Ringkasan/Progres per bab
+ ├─ Progres Dokumen (ringkasan + progres per bab)
  └─ Navigasi ke Editor per Bab
       │ klik salah satu Bab
       ▼
@@ -191,7 +191,9 @@ Berlaku sama di lapis tenant maupun prodi:
 
 **Diakses oleh**: seluruh role yang berhak atas dokumen tersebut (`PIMPINAN`, `PENJAMIN_MUTU` lintas prodi; `PENYUSUN` hanya untuk prodinya).
 
-### 6.1 Ringkasan/Progres
+### 6.1 Progres Dokumen
+
+Judulnya sengaja di level **dokumen**, bukan "per bab": baris ringkasan dan panel Status Dokumen mengukur dokumen secara keseluruhan, sedangkan tabel bab hanyalah salah satu bagiannya. Konteks satu dokumen sudah dipastikan breadcrumb dan sidebar, jadi tidak perlu diulang di judul.
 
 Halaman tersusun dari tiga bagian, dari atas ke bawah:
 
@@ -204,7 +206,7 @@ Halaman tersusun dari tiga bagian, dari atas ke bawah:
 | **Bukti Dukung Dipakai** | jumlah bukti dukung **unik** yang dirujuk seluruh bab, dari N yang tersedia | `BUKTI_DUKUNG_BAB`; pembanding = bukti level tenant + prodi (§5.2) |
 | **Aktivitas Terakhir**   | waktu relatif simpan terakhir + judul bab yang tersentuh terakhir           | `terakhir_disimpan` terbesar lintas bab                           |
 
-**b. Tabel progres bab** — seluruh `BAB_DOKUMEN` milik dokumen ini, diurutkan `urutan_bab`. Kolomnya: nomor, `judul_bab`, badge status (lihat §6.1a), jumlah bukti dukung terpakai, dan `terakhir_disimpan` sebagai waktu relatif. Tabel ini sengaja **tanpa pencarian, pengurutan, dan paginasi**: jumlah babnya tetap dan urutannya adalah urutan dokumen akreditasi itu sendiri, jadi mengacaknya justru merusak cara halaman ini dibaca.
+**b. Tabel progres bab** (berjudul "Progres per Bab") — seluruh `BAB_DOKUMEN` milik dokumen ini, diurutkan `urutan_bab`. Kolomnya: nomor, `judul_bab`, badge status (lihat §6.1a), jumlah bukti dukung terpakai, dan `terakhir_disimpan` sebagai waktu relatif. Tabel ini sengaja **tanpa pencarian, pengurutan, dan paginasi**: jumlah babnya tetap dan urutannya adalah urutan dokumen akreditasi itu sendiri, jadi mengacaknya justru merusak cara halaman ini dibaca.
 
 **c. Panel samping** — dua kartu: **Perlu Perhatian** (bab yang menunggu ditindaklanjuti, maksimal 5 baris lalu diringkas) dan **Status Dokumen** (`status_keseluruhan` + tautan ke Perpustakaan Bukti Dukung prodi). Di layar sempit panel ini turun ke bawah tabel.
 
@@ -235,7 +237,7 @@ Struktur bab standar dibuat saat `DOKUMEN_LED` baru dibuat (§7.3), lewat satu-s
 - `PIMPINAN`: seluruhnya **read-only** — bisa melihat progres dan membuka Editor Bab, tapi begitu masuk Editor Bab semua tombol aksi (generate, simulasi, buat draft, kunci) disembunyikan.
 - `PENJAMIN_MUTU`, `PENYUSUN`: bisa masuk Editor Bab dengan hak edit penuh sesuai matriks di [bagian 15](#15-matriks-hak-akses-ringkas).
 
-Halaman Ringkasan/Progres sendiri **tidak punya satu pun aksi ubah data**, jadi tidak ada tombol yang perlu disembunyikan per role (§1) — penjagaannya sudah selesai di lapis rutenya. Pembedaan read-vs-write baru muncul begitu masuk Editor Bab.
+Halaman Progres Dokumen sendiri **tidak punya satu pun aksi ubah data**, jadi tidak ada tombol yang perlu disembunyikan per role (§1) — penjagaannya sudah selesai di lapis rutenya. Pembedaan read-vs-write baru muncul begitu masuk Editor Bab.
 
 ### 6.3 Kasus Uji — Dashboard Project LED
 

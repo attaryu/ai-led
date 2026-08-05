@@ -92,7 +92,7 @@ export function LedProjectWorkspaceLayout() {
 				brand: ledProject.judul,
 				items: [
 					{
-						name: 'Progres per Bab',
+						name: 'Progres Dokumen',
 						path: `/led-projects/${projectId}`,
 						icon: ListChecksIcon,
 						end: true,
