@@ -1,8 +1,7 @@
 import { z } from 'zod';
-import { studyProgramSchema } from '../entities/study-program.entity';
+import { createStudyProgramSchema } from './create-study-program.dto';
 
-export const updateStudyProgramSchema = studyProgramSchema.pick({
-	studyProgramName: true,
-});
+/** Bentuknya sama dengan pembuatan — seluruh identitas prodi bisa dikoreksi. */
+export const updateStudyProgramSchema = createStudyProgramSchema;
 
 export type UpdateStudyProgramDto = z.infer<typeof updateStudyProgramSchema>;

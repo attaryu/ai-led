@@ -1,23 +1,92 @@
-import { type StudyProgramEntity } from '../../domain/entities/study-program.entity';
+import {
+	type PeringkatAkreditasi,
+	type StudyProgramEntity,
+} from '../../domain/entities/study-program.entity';
 import { studyProgramLocalSource } from '../sources/local/study-program-local.source';
+
+/** Tanggal ISO relatif terhadap hari ini, supaya data contoh tidak basi. */
+function inDays(days: number): string {
+	return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+}
 
 const initialStudyPrograms: StudyProgramEntity[] = [
 	{
 		id: '1',
 		studyProgramName: 'Teknik Informatika',
+		kode: '55201',
+		jenjang: 'S1',
+		fakultas: 'Fakultas Teknik',
+		ketuaProdi: 'Dr. Andi Nugroho, S.T., M.Kom.',
+		peringkatAkreditasi: 'BAIK_SEKALI',
+		nomorSkAkreditasi: '1234/SK/LAM-Teknik/AK/S/VIII/2022',
+		berlakuSampaiAkreditasi: inDays(740),
 		createdAt: '2026-07-29T10:00:00.000Z',
 	},
 	{
 		id: '2',
 		studyProgramName: 'Sistem Informasi',
+		kode: '57201',
+		jenjang: 'S1',
+		fakultas: 'Fakultas Teknik',
+		ketuaProdi: 'Rina Marlina, S.Kom., M.T.',
+		peringkatAkreditasi: 'BAIK',
+		nomorSkAkreditasi: '0871/SK/LAM-Teknik/AK/S/III/2022',
+		// Sengaja di bawah setahun supaya keadaan "MENDEKATI" ada wujudnya.
+		berlakuSampaiAkreditasi: inDays(228),
 		createdAt: '2026-07-29T10:15:00.000Z',
 	},
 	{
 		id: '3',
 		studyProgramName: 'Teknik Elektro',
+		kode: '20201',
+		jenjang: 'S1',
+		fakultas: 'Fakultas Teknik',
+		ketuaProdi: 'Ir. Slamet Haryanto, M.T.',
+		peringkatAkreditasi: 'UNGGUL',
+		nomorSkAkreditasi: '0456/SK/LAM-Teknik/AK/S/I/2024',
+		berlakuSampaiAkreditasi: inDays(1620),
 		createdAt: '2026-07-29T10:30:00.000Z',
 	},
+	{
+		id: '4',
+		studyProgramName: 'Teknik Mesin',
+		kode: '21201',
+		jenjang: 'D4',
+		fakultas: 'Fakultas Teknik',
+		ketuaProdi: 'Bagas Prakoso, S.T., M.Eng.',
+		// Prodi baru: belum terakreditasi, belum punya Dokumen LED, belum punya
+		// Penyusun. Dipakai untuk membuktikan keadaan kosong Dashboard Prodi.
+		peringkatAkreditasi: 'BELUM_TERAKREDITASI',
+		nomorSkAkreditasi: null,
+		berlakuSampaiAkreditasi: null,
+		createdAt: '2026-07-29T10:45:00.000Z',
+	},
 ];
+
+/**
+ * Mengisi field yang belum ada pada baris lama di localStorage.
+ *
+ * `findAll` mem-parse JSON tanpa memvalidasinya ke skema, jadi baris yang
+ * tersimpan sebelum identitas akreditasi ditambahkan akan lolos sebagai objek
+ * setengah jadi dan merender `undefined` di layar. Menormalkannya di sini lebih
+ * murah daripada memaksa pengguna mengosongkan penyimpanan peramban.
+ */
+function normalize(program: Partial<StudyProgramEntity>): StudyProgramEntity {
+	return {
+		id: program.id ?? '',
+		studyProgramName: program.studyProgramName ?? '',
+		kode: program.kode ?? '—',
+		jenjang: program.jenjang ?? 'S1',
+		fakultas: program.fakultas ?? 'Belum diisi',
+		ketuaProdi: program.ketuaProdi ?? 'Belum diisi',
+		peringkatAkreditasi:
+			(program.peringkatAkreditasi as PeringkatAkreditasi | undefined) ??
+			'BELUM_TERAKREDITASI',
+		nomorSkAkreditasi: program.nomorSkAkreditasi ?? null,
+		berlakuSampaiAkreditasi: program.berlakuSampaiAkreditasi ?? null,
+		createdAt: program.createdAt ?? new Date().toISOString(),
+	};
+}
 
 export const studyProgramRepository = {
 	findAll(): StudyProgramEntity[] {
@@ -27,7 +96,9 @@ export const studyProgramRepository = {
 			return initialStudyPrograms;
 		}
 		try {
-			return JSON.parse(stored);
+			return (JSON.parse(stored) as Partial<StudyProgramEntity>[]).map(
+				normalize,
+			);
 		} catch (e) {
 			this.save(initialStudyPrograms);
 			return initialStudyPrograms;
@@ -36,6 +107,16 @@ export const studyProgramRepository = {
 
 	save(programs: StudyProgramEntity[]): void {
 		studyProgramLocalSource.setAll(JSON.stringify(programs));
+	},
+
+	/**
+	 * Satu-satunya jalan menambah prodi. Sebelumnya halaman formulir menulis ke
+	 * localStorage sendiri; dengan identitas akreditasi ikut disimpan, jalan
+	 * pintas itu jadi tempat field baru gampang terlupakan.
+	 */
+	create(program: StudyProgramEntity): void {
+		this.save([...this.findAll(), program]);
+		window.dispatchEvent(new Event('storage-update'));
 	},
 
 	delete(id: string): void {

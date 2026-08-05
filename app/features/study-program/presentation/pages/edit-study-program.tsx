@@ -5,13 +5,6 @@ import { useNavigate, useParams } from 'react-router';
 import { ArrowLeftIcon } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
-import { Input } from '~/core/components/ui/input';
-import {
-	Field,
-	FieldError,
-	FieldGroup,
-	FieldLabel,
-} from '~/core/components/ui/field';
 import {
 	Card,
 	CardContent,
@@ -19,12 +12,14 @@ import {
 	CardTitle,
 	CardDescription,
 } from '~/core/components/ui/card';
+import { fromDateInputValue, toDateInputValue } from '~/core/lib/format-time';
 import {
 	updateStudyProgramSchema,
 	type UpdateStudyProgramDto,
 } from '../../domain/dtos/update-study-program.dto';
 import { type StudyProgramEntity } from '../../domain/entities/study-program.entity';
 import { studyProgramRepository } from '../../data/repositories/study-program.repository';
+import { StudyProgramFormFields } from '../components/study-program-form-fields';
 
 export function EditStudyProgram() {
 	const navigate = useNavigate();
@@ -52,6 +47,13 @@ export function EditStudyProgram() {
 		resolver: zodResolver(updateStudyProgramSchema),
 		defaultValues: {
 			studyProgramName: '',
+			kode: '',
+			jenjang: 'S1',
+			fakultas: '',
+			ketuaProdi: '',
+			peringkatAkreditasi: 'BELUM_TERAKREDITASI',
+			nomorSkAkreditasi: '',
+			berlakuSampaiAkreditasi: '',
 		},
 	});
 
@@ -59,6 +61,15 @@ export function EditStudyProgram() {
 		if (program) {
 			reset({
 				studyProgramName: program.studyProgramName,
+				kode: program.kode,
+				jenjang: program.jenjang,
+				fakultas: program.fakultas,
+				ketuaProdi: program.ketuaProdi,
+				peringkatAkreditasi: program.peringkatAkreditasi,
+				nomorSkAkreditasi: program.nomorSkAkreditasi ?? '',
+				berlakuSampaiAkreditasi: toDateInputValue(
+					program.berlakuSampaiAkreditasi,
+				),
 			});
 		}
 	}, [program, reset]);
@@ -67,7 +78,11 @@ export function EditStudyProgram() {
 		if (!programId) return;
 
 		studyProgramRepository.update(programId, {
-			studyProgramName: data.studyProgramName,
+			...data,
+			nomorSkAkreditasi: data.nomorSkAkreditasi.trim() || null,
+			berlakuSampaiAkreditasi: fromDateInputValue(
+				data.berlakuSampaiAkreditasi,
+			),
 		});
 		navigate('/dashboard/study-programs');
 	};
@@ -92,7 +107,7 @@ export function EditStudyProgram() {
 						Edit Program Studi
 					</h2>
 					<p className="text-sm text-muted-foreground">
-						Ubah nama Program Studi di bawah ini.
+						Ubah identitas dan akreditasi Program Studi di bawah ini.
 					</p>
 				</div>
 			</div>
@@ -101,27 +116,17 @@ export function EditStudyProgram() {
 				<CardHeader>
 					<CardTitle>Formulir Program Studi</CardTitle>
 					<CardDescription>
-						Ubah nama Program Studi baru. Tekan simpan jika sudah selesai.
+						Nomor SK dan masa berlaku boleh dikosongkan bila prodi belum
+						terakreditasi. Tekan simpan jika sudah selesai.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
 					<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-						<FieldGroup>
-							<Field data-invalid={!!errors.studyProgramName}>
-								<FieldLabel htmlFor="studyProgramName">
-									Nama Program Studi
-								</FieldLabel>
-								<Input
-									id="studyProgramName"
-									placeholder="Contoh: Teknik Informatika"
-									disabled={isSubmitting}
-									{...register('studyProgramName')}
-								/>
-								{errors.studyProgramName && (
-									<FieldError>{errors.studyProgramName.message}</FieldError>
-								)}
-							</Field>
-						</FieldGroup>
+						<StudyProgramFormFields
+							register={register}
+							errors={errors}
+							disabled={isSubmitting}
+						/>
 
 						<div className="pt-4 border-t border-border flex justify-end gap-2">
 							<Button
