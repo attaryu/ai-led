@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { ArrowLeftIcon } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
@@ -21,6 +21,7 @@ import {
 	CardDescription,
 } from '~/core/components/ui/card';
 import { fromDateInputValue, toDateInputValue } from '~/core/lib/format-time';
+import { safeReturnTo } from '~/core/lib/utils';
 import {
 	updateLedProjectSchema,
 	type UpdateLedProjectDto,
@@ -33,7 +34,18 @@ import { studyProgramRepository } from '../../../study-program/data/repositories
 export function EditLedProject() {
 	const navigate = useNavigate();
 	const { projectId } = useParams<{ projectId: string }>();
+	const [searchParams] = useSearchParams();
 	const [project, setProject] = React.useState<LedProjectEntity | null>(null);
+
+	/*
+	 * Formulir ini bisa dibuka dari daftar lintas prodi maupun dari daftar milik
+	 * satu prodi (§5.3); yang kedua menitipkan tujuan pulangnya lewat query
+	 * string supaya Penjamin Mutu tidak terlempar ke lapis tenant.
+	 */
+	const returnTo = safeReturnTo(
+		searchParams.get('returnTo'),
+		'/dashboard/led-projects',
+	);
 	const [studyPrograms, setStudyPrograms] = React.useState<StudyProgramEntity[]>([]);
 
 	React.useEffect(() => {
@@ -44,10 +56,10 @@ export function EditLedProject() {
 				setProject(found);
 			} else {
 				alert('Proyek LED tidak ditemukan!');
-				navigate('/dashboard/led-projects');
+				navigate(returnTo);
 			}
 		}
-	}, [projectId, navigate]);
+	}, [projectId, navigate, returnTo]);
 
 	const {
 		register,
@@ -96,7 +108,7 @@ export function EditLedProject() {
 		});
 
 		window.dispatchEvent(new Event('storage-update'));
-		navigate('/dashboard/led-projects');
+		navigate(returnTo);
 	};
 
 	if (!project) {
@@ -109,7 +121,7 @@ export function EditLedProject() {
 				<Button
 					variant="outline"
 					size="icon"
-					onClick={() => navigate('/dashboard/led-projects')}
+					onClick={() => navigate(returnTo)}
 					className="cursor-pointer"
 				>
 					<ArrowLeftIcon className="size-4" />
@@ -222,7 +234,7 @@ export function EditLedProject() {
 							<Button
 								type="button"
 								variant="outline"
-								onClick={() => navigate('/dashboard/led-projects')}
+								onClick={() => navigate(returnTo)}
 							>
 								Batal
 							</Button>

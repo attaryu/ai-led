@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { ArrowLeftIcon } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
@@ -21,6 +21,7 @@ import {
 	CardDescription,
 } from '~/core/components/ui/card';
 import { fromDateInputValue } from '~/core/lib/format-time';
+import { safeReturnTo } from '~/core/lib/utils';
 import {
 	createLedProjectSchema,
 	type CreateLedProjectDto,
@@ -32,7 +33,20 @@ import { studyProgramRepository } from '../../../study-program/data/repositories
 
 export function CreateLedProject() {
 	const navigate = useNavigate();
+	const [searchParams] = useSearchParams();
 	const [studyPrograms, setStudyPrograms] = React.useState<StudyProgramEntity[]>([]);
+
+	/*
+	 * Formulir ini bisa dibuka dari dua tempat: daftar lintas prodi di lapis
+	 * tenant, dan daftar milik satu prodi di lapis prodi (§5.3). Yang kedua sudah
+	 * tahu prodinya dan berhak kembali ke tempatnya semula, jadi keduanya
+	 * dititipkan lewat query string alih-alih membuat rute pembuatan kedua.
+	 */
+	const prodiTerpilih = searchParams.get('studyProgramId');
+	const returnTo = safeReturnTo(
+		searchParams.get('returnTo'),
+		'/dashboard/led-projects',
+	);
 
 	React.useEffect(() => {
 		setStudyPrograms(studyProgramRepository.findAll());
@@ -54,10 +68,16 @@ export function CreateLedProject() {
 	});
 
 	React.useEffect(() => {
-		if (studyPrograms.length > 0) {
-			setValue('studyProgramId', studyPrograms[0].id);
-		}
-	}, [studyPrograms, setValue]);
+		if (studyPrograms.length === 0) return;
+
+		// Prodi dari URL menang selama ia benar-benar ada; kalau tautannya
+		// menyebut prodi yang sudah dihapus, jatuh ke pilihan pertama seperti biasa.
+		const adaDiDaftar = studyPrograms.some((p) => p.id === prodiTerpilih);
+		setValue(
+			'studyProgramId',
+			adaDiDaftar ? prodiTerpilih! : studyPrograms[0].id,
+		);
+	}, [studyPrograms, prodiTerpilih, setValue]);
 
 	const onSubmit = (data: CreateLedProjectDto) => {
 		const prodi = studyPrograms.find((p) => p.id === data.studyProgramId);
@@ -80,7 +100,7 @@ export function CreateLedProject() {
 		// Lewat repository, bukan localStorage langsung: di sanalah struktur bab
 		// standar ikut dibuat untuk dokumen baru ini (§7.3).
 		ledProjectRepository.create(newProject);
-		navigate('/dashboard/led-projects');
+		navigate(returnTo);
 	};
 
 	return (
@@ -89,7 +109,7 @@ export function CreateLedProject() {
 				<Button
 					variant="outline"
 					size="icon"
-					onClick={() => navigate('/dashboard/led-projects')}
+					onClick={() => navigate(returnTo)}
 					className="cursor-pointer"
 				>
 					<ArrowLeftIcon className="size-4" />
@@ -190,7 +210,7 @@ export function CreateLedProject() {
 							<Button
 								type="button"
 								variant="outline"
-								onClick={() => navigate('/dashboard/led-projects')}
+								onClick={() => navigate(returnTo)}
 							>
 								Batal
 							</Button>
