@@ -1,3 +1,4 @@
+import { chapterRepository } from '~/features/chapter/data/repositories/chapter.repository';
 import { type LedProjectEntity } from '../../domain/entities/led-project.entity';
 import { ledProjectLocalSource } from '../sources/local/led-project-local.source';
 
@@ -50,10 +51,24 @@ export const ledProjectRepository = {
 		ledProjectLocalSource.setAll(JSON.stringify(projects));
 	},
 
+	/**
+	 * Satu-satunya jalan membuat Dokumen LED, supaya tidak ada dokumen yang lolos
+	 * tanpa baris `BAB_DOKUMEN` — struktur bab standar memang dibuat otomatis
+	 * bersamaan (docs/application_flow.md §7.3).
+	 */
+	create(project: LedProjectEntity): void {
+		this.save([...this.findAll(), project]);
+		chapterRepository.createForProject(project.id);
+		window.dispatchEvent(new Event('storage-update'));
+	},
+
 	delete(id: string): void {
 		const projects = this.findAll();
 		const updated = projects.filter((p) => p.id !== id);
 		this.save(updated);
+		// Bab tidak punya arti tanpa dokumen induknya; dibiarkan hanya akan jadi
+		// sampah yang ikut terhitung saat id dokumen kebetulan dipakai ulang.
+		chapterRepository.deleteByProjectId(id);
 	},
 
 	findById(id: string): LedProjectEntity | undefined {

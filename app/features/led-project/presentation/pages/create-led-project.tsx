@@ -25,6 +25,7 @@ import {
 	type CreateLedProjectDto,
 } from '../../domain/dtos/create-led-project.dto';
 import { type LedProjectEntity } from '../../domain/entities/led-project.entity';
+import { ledProjectRepository } from '../../data/repositories/led-project.repository';
 import { type StudyProgramEntity } from '../../../study-program/domain/entities/study-program.entity';
 import { studyProgramRepository } from '../../../study-program/data/repositories/study-program.repository';
 
@@ -73,19 +74,9 @@ export function CreateLedProject() {
 			createdAt: new Date().toISOString(),
 		};
 
-		const storedProjects = localStorage.getItem('led_project_data');
-		let projectsList: LedProjectEntity[] = [];
-		if (storedProjects) {
-			try {
-				projectsList = JSON.parse(storedProjects);
-			} catch (e) {
-				console.error(e);
-			}
-		}
-
-		projectsList.push(newProject);
-		localStorage.setItem('led_project_data', JSON.stringify(projectsList));
-		window.dispatchEvent(new Event('storage-update'));
+		// Lewat repository, bukan localStorage langsung: di sanalah struktur bab
+		// standar ikut dibuat untuk dokumen baru ini (§7.3).
+		ledProjectRepository.create(newProject);
 		navigate('/dashboard/led-projects');
 	};
 
