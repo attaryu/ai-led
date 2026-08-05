@@ -426,6 +426,23 @@ export const evidenceRepository = {
 		);
 	},
 
+	/**
+	 * Bukti dukung **milik** satu prodi saja, tanpa berkas level tenant.
+	 *
+	 * Sengaja dipisah dari {@link findAvailableForStudyProgram}: yang ini
+	 * menjawab "apa isi perpustakaan prodi ini" sehingga angkanya cocok dengan
+	 * daftar di `/study-programs/:id/evidence` (§5.2), sedangkan yang satunya
+	 * menjawab "apa yang boleh dipakai babnya" dan wajar ikut menghitung berkas
+	 * universitas.
+	 */
+	findOwnedByStudyProgram(studyProgramId: string): EvidenceEntity[] {
+		return this.findAll().filter(
+			(evidence) =>
+				evidence.ownerTipe === 'PROGRAM_STUDI' &&
+				evidence.studyProgramId === studyProgramId,
+		);
+	},
+
 	create(evidence: EvidenceEntity): void {
 		this.save([evidence, ...this.findAll()]);
 		this.notify();

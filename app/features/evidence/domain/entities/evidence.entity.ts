@@ -54,6 +54,77 @@ export const evidenceSchema = z.object({
 
 export type EvidenceEntity = z.infer<typeof evidenceSchema>;
 
+export type EvidenceSummary = {
+	total: number;
+	menunggu: number;
+	diproses: number;
+	siap: number;
+	gagal: number;
+	/** 0–100, dibulatkan. 0 bila belum ada berkas sama sekali. */
+	persenSiap: number;
+	/** ISO unggahan terbaru; `null` bila belum ada berkas. */
+	terakhirDiunggah: string | null;
+	/** Nama berkas pemilik `terakhirDiunggah`. */
+	berkasTerakhir: string | null;
+};
+
+/**
+ * Satu kali lintasan untuk seluruh angka kesiapan bukti dukung. Ditaruh di
+ * domain (bukan di komponen) dengan alasan yang sama seperti `summarizeChapters`
+ * di fitur chapter: Dashboard Prodi dan dashboard agregat institusi nanti
+ * memakainya ulang tanpa menyalin aturan hitungnya.
+ *
+ * "Siap" adalah ukuran yang berarti di sini karena hanya berkas `SIAP` yang
+ * isinya bisa dipakai sebagai konteks AI (PRD §3.3) — sisanya baru berupa
+ * berkas yang tersimpan.
+ */
+export function summarizeEvidence(evidences: EvidenceEntity[]): EvidenceSummary {
+	let menunggu = 0;
+	let diproses = 0;
+	let siap = 0;
+	let gagal = 0;
+	let terakhirDiunggah: string | null = null;
+	let berkasTerakhir: string | null = null;
+
+	for (const evidence of evidences) {
+		switch (evidence.status) {
+			case 'MENUNGGU':
+				menunggu += 1;
+				break;
+			case 'DIPROSES':
+				diproses += 1;
+				break;
+			case 'SIAP':
+				siap += 1;
+				break;
+			case 'GAGAL':
+				gagal += 1;
+				break;
+		}
+
+		if (
+			terakhirDiunggah === null ||
+			evidence.waktuDiunggah > terakhirDiunggah
+		) {
+			terakhirDiunggah = evidence.waktuDiunggah;
+			berkasTerakhir = evidence.namaDokumen;
+		}
+	}
+
+	const total = evidences.length;
+
+	return {
+		total,
+		menunggu,
+		diproses,
+		siap,
+		gagal,
+		persenSiap: total === 0 ? 0 : Math.round((siap / total) * 100),
+		terakhirDiunggah,
+		berkasTerakhir,
+	};
+}
+
 /**
  * Tipe berkas yang diterima (PRD §3.2): PDF, Word, Excel, dan hasil scan.
  * Dicocokkan lewat ekstensi karena `File.type` tidak konsisten antar sistem
