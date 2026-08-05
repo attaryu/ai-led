@@ -38,6 +38,7 @@ export default [
   // LAPIS 2 — prodi: Pimpinan, Penjamin Mutu (lintas prodi), Penyusun (prodinya)
   route("study-programs/:programId", "routes/study-program-workspace-layout.tsx", [
     index("routes/study-program-workspace-home.tsx"),
+    route("led-projects", "routes/study-program-workspace-led-projects.tsx"),
     route("evidence", "routes/study-program-workspace-evidence.tsx"),
   ]),
 

@@ -4,7 +4,12 @@ import { TrashIcon, PencilSimpleIcon } from '@phosphor-icons/react';
 import { Link } from 'react-router';
 
 import { Button } from '~/core/components/ui/button';
-import { type LedProjectEntity } from '../../domain/entities/led-project.entity';
+import { formatDate } from '~/core/lib/format-time';
+import { cn } from '~/core/lib/utils';
+import {
+	deriveDeadline,
+	type LedProjectEntity,
+} from '../../domain/entities/led-project.entity';
 import { LedProjectStatusBadge } from './led-project-status-badge';
 
 const columnHelper = createColumnHelper<LedProjectEntity>();
@@ -13,10 +18,21 @@ const columnHelper = createColumnHelper<LedProjectEntity>();
  * `withActions` disembunyikan untuk role selain Penjamin Mutu — siklus dokumen
  * (buat, ubah status, kunci bab) sepenuhnya wewenang Penjamin Mutu, sedangkan
  * Pimpinan read-only di level ini (§6.2).
+ *
+ * `withStudyProgram` dimatikan oleh daftar level prodi (§5.3): di sana seluruh
+ * baris milik prodi yang sama, jadi kolomnya hanya mengulang judul halaman.
+ * `withTenggat` sebaliknya hanya dinyalakan di sana, karena tenggat adalah cara
+ * membaca "mana yang tersendat" tanpa membuka dokumennya satu per satu.
  */
 export const getLedProjectColumns = ({
 	withActions = true,
-}: { withActions?: boolean } = {}): ColumnDef<LedProjectEntity, any>[] => [
+	withStudyProgram = true,
+	withTenggat = false,
+}: {
+	withActions?: boolean;
+	withStudyProgram?: boolean;
+	withTenggat?: boolean;
+} = {}): ColumnDef<LedProjectEntity, any>[] => [
 	columnHelper.accessor('judul', {
 		header: 'Judul Proyek',
 		// Pintasan langsung ke Lapis 3, tanpa lewat Dashboard Prodi.
@@ -30,19 +46,23 @@ export const getLedProjectColumns = ({
 		),
 		enableSorting: true,
 	}),
-	columnHelper.accessor('studyProgramName', {
-		header: 'Program Studi',
-		// Jalan masuk ke Lapis 2 milik prodi dokumen ini.
-		cell: (info) => (
-			<Link
-				to={`/study-programs/${info.row.original.studyProgramId}`}
-				className="underline-offset-4 hover:underline"
-			>
-				{info.getValue()}
-			</Link>
-		),
-		enableSorting: true,
-	}),
+	...(withStudyProgram
+		? [
+				columnHelper.accessor('studyProgramName', {
+					header: 'Program Studi',
+					// Jalan masuk ke Lapis 2 milik prodi dokumen ini.
+					cell: (info) => (
+						<Link
+							to={`/study-programs/${info.row.original.studyProgramId}`}
+							className="underline-offset-4 hover:underline"
+						>
+							{info.getValue()}
+						</Link>
+					),
+					enableSorting: true,
+				}),
+			]
+		: []),
 	columnHelper.accessor('tahunAkademik', {
 		header: 'Tahun Akademik',
 		cell: (info) => <span>{info.getValue()}</span>,
@@ -53,6 +73,40 @@ export const getLedProjectColumns = ({
 		cell: (info) => <LedProjectStatusBadge status={info.getValue()} />,
 		enableSorting: true,
 	}),
+	...(withTenggat
+		? [
+				columnHelper.accessor('tenggat', {
+					header: 'Tenggat',
+					/*
+					 * Berbeda dari kartu ringkasan yang berbunyi "Tidak dipatok", di
+					 * dalam tabel "—" memang bacaan yang benar untuk sel kosong: kolomnya
+					 * sudah menyebut artinya lewat judul, dan kalimat penuh di setiap
+					 * baris justru meramaikan tabel.
+					 */
+					cell: (info) => {
+						const tenggat = info.getValue<string | null>();
+						if (!tenggat) {
+							return <span className="text-muted-foreground">—</span>;
+						}
+
+						const deadline = deriveDeadline(tenggat);
+						return (
+							<span
+								className={cn(
+									'whitespace-nowrap',
+									deadline?.urgensi === 'LEWAT' && 'font-medium text-destructive',
+									deadline?.urgensi === 'DEKAT' &&
+										'font-medium text-amber-700 dark:text-amber-400',
+								)}
+							>
+								{formatDate(tenggat)}
+							</span>
+						);
+					},
+					enableSorting: true,
+				}),
+			]
+		: []),
 	columnHelper.accessor('createdAt', {
 		header: 'Tanggal Dibuat',
 		cell: (info) =>

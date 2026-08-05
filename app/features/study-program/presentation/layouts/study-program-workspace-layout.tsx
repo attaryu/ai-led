@@ -1,4 +1,8 @@
-import { ArchiveIcon, IdentificationCardIcon } from '@phosphor-icons/react';
+import {
+	ArchiveIcon,
+	FileIcon,
+	IdentificationCardIcon,
+} from '@phosphor-icons/react';
 import { Navigate, Outlet, useLocation, useParams } from 'react-router';
 
 import {
@@ -94,6 +98,11 @@ export function StudyProgramWorkspaceLayout() {
 						end: true,
 					},
 					{
+						name: 'Dokumen LED',
+						path: `/study-programs/${programId}/led-projects`,
+						icon: FileIcon,
+					},
+					{
 						name: 'Bukti Dukung',
 						path: `/study-programs/${programId}/evidence`,
 						icon: ArchiveIcon,
@@ -108,6 +117,9 @@ export function StudyProgramWorkspaceLayout() {
 				},
 				// Sub-halaman prodi ikut muncul; halaman index sudah diwakili nama
 				// prodi di atas, jadi ia tidak menambah entri.
+				...(location.pathname.endsWith('/led-projects')
+					? [{ label: 'Dokumen LED' }]
+					: []),
 				...(location.pathname.endsWith('/evidence')
 					? [{ label: 'Bukti Dukung' }]
 					: []),
