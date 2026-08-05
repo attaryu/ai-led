@@ -1,6 +1,43 @@
 import { chapterRepository } from '~/features/chapter/data/repositories/chapter.repository';
+import {
+	type LedProjectPage,
+	type LedProjectQueryDto,
+} from '../../domain/dtos/led-project-query.dto';
 import { type LedProjectEntity } from '../../domain/entities/led-project.entity';
 import { ledProjectLocalSource } from '../sources/local/led-project-local.source';
+
+/** Nilai urut yang dipakai kolom `status` supaya urutannya bermakna, bukan A-Z. */
+const statusOrder: Record<LedProjectEntity['statusKeseluruhan'], number> = {
+	DRAFT: 0,
+	REVIEW: 1,
+	SELESAI: 2,
+};
+
+function compare(
+	a: LedProjectEntity,
+	b: LedProjectEntity,
+	sort: string,
+): number {
+	switch (sort) {
+		case 'statusKeseluruhan':
+			return statusOrder[a.statusKeseluruhan] - statusOrder[b.statusKeseluruhan];
+		case 'tahunAkademik':
+			return a.tahunAkademik.localeCompare(b.tahunAkademik);
+		case 'studyProgramName':
+			return a.studyProgramName.localeCompare(b.studyProgramName, 'id');
+		case 'createdAt':
+			return a.createdAt.localeCompare(b.createdAt);
+		case 'tenggat':
+			// Dokumen tanpa tenggat selalu di ujung: ia tidak punya posisi alami di
+			// antara tanggal, dan menaruhnya di awal akan mengubur yang mendesak.
+			if (a.tenggat === b.tenggat) return 0;
+			if (a.tenggat === null) return 1;
+			if (b.tenggat === null) return -1;
+			return a.tenggat.localeCompare(b.tenggat);
+		default:
+			return a.judul.localeCompare(b.judul, 'id');
+	}
+}
 
 /** Tanggal ISO relatif terhadap hari ini, supaya data contoh tidak basi. */
 function inDays(days: number): string {
@@ -113,6 +150,44 @@ export const ledProjectRepository = {
 	 */
 	findByStudyProgramId(studyProgramId: string): LedProjectEntity[] {
 		return this.findAll().filter((p) => p.studyProgramId === studyProgramId);
+	},
+
+	/**
+	 * Daftar berhalaman untuk `DataTable`, yang berjalan dalam mode manual —
+	 * pencarian, pengurutan, dan pemotongan halaman memang dianggap pekerjaan
+	 * sisi sumber data (docs/application_flow.md §4.6), bukan sisi tampilan.
+	 * Tanpa ini kotak pencarian tampil tapi tidak menyaring apa pun.
+	 */
+	findPaged(query: LedProjectQueryDto): LedProjectPage {
+		const scoped = query.studyProgramId
+			? this.findByStudyProgramId(query.studyProgramId)
+			: this.findAll();
+
+		const keyword = query.q?.trim().toLowerCase() ?? '';
+		const filtered = keyword
+			? scoped.filter(
+					(project) =>
+						project.judul.toLowerCase().includes(keyword) ||
+						project.studyProgramName.toLowerCase().includes(keyword) ||
+						project.tahunAkademik.toLowerCase().includes(keyword) ||
+						project.statusKeseluruhan.toLowerCase().includes(keyword),
+				)
+			: scoped;
+
+		// Tanpa pilihan urutan, yang terbaru di atas — siklus yang sedang berjalan
+		// hampir selalu yang dicari, dan ia selalu yang termuda.
+		const sortKey = query.sort ?? 'createdAt';
+		const descending = query.sort ? query.dir === 'desc' : true;
+		const sorted = [...filtered].sort((a, b) => {
+			const result = compare(a, b, sortKey);
+			return descending ? -result : result;
+		});
+
+		const start = (query.page - 1) * query.limit;
+		return {
+			items: sorted.slice(start, start + query.limit),
+			total: sorted.length,
+		};
 	},
 
 	update(id: string, data: Partial<LedProjectEntity>): void {
