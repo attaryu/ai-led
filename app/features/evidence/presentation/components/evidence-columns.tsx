@@ -8,11 +8,8 @@ import {
 import { Button } from '~/core/components/ui/button';
 import { cn } from '~/core/lib/utils';
 import { type EvidenceEntity } from '../../domain/entities/evidence.entity';
-import {
-	formatBytes,
-	formatRelativeTime,
-	getFileVisual,
-} from '../utils/evidence-format';
+import { formatRelativeTime } from '~/core/lib/format-time';
+import { formatBytes, getFileVisual } from '../utils/evidence-format';
 import { EvidenceStatusBadge } from './evidence-status-badge';
 
 const columnHelper = createColumnHelper<EvidenceEntity>();

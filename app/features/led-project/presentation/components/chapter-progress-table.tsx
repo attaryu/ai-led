@@ -12,7 +12,7 @@ import {
 	deriveChapterProgress,
 	type ChapterEntity,
 } from '~/features/chapter/domain/entities/chapter.entity';
-import { formatRelativeTime } from '~/features/evidence/presentation/utils/evidence-format';
+import { formatRelativeTime } from '~/core/lib/format-time';
 import { ChapterStatusBadge } from './chapter-status-badge';
 
 /**

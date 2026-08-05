@@ -14,11 +14,8 @@ import {
 	type EvidenceEntity,
 	type EvidenceStatus,
 } from '../../domain/entities/evidence.entity';
-import {
-	formatBytes,
-	formatDateTime,
-	getFileVisual,
-} from '../utils/evidence-format';
+import { formatDateTime } from '~/core/lib/format-time';
+import { formatBytes, getFileVisual } from '../utils/evidence-format';
 import { EvidenceStatusBadge } from './evidence-status-badge';
 
 /**

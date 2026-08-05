@@ -7,6 +7,12 @@ import {
 	type Icon,
 } from '@phosphor-icons/react';
 
+/**
+ * Pemformat khusus berkas. Pemformat waktu (`formatDate`, `formatDateTime`,
+ * `formatRelativeTime`) sudah pindah ke `~/core/lib/format-time` karena dipakai
+ * lintas fitur; yang tersisa di sini benar-benar hanya soal berkas.
+ */
+
 /** Ukuran berkas dalam satuan yang enak dibaca manusia. */
 export function formatBytes(bytes: number): string {
 	if (bytes < 1024) return `${bytes} B`;
@@ -18,40 +24,6 @@ export function formatBytes(bytes: number): string {
 		unitIndex += 1;
 	}
 	return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
-}
-
-export function formatDateTime(iso: string): string {
-	return new Date(iso).toLocaleString('id-ID', {
-		day: 'numeric',
-		month: 'long',
-		year: 'numeric',
-		hour: '2-digit',
-		minute: '2-digit',
-	});
-}
-
-/**
- * Waktu relatif ("2 jam lalu"). Murni pemanis tampilan, jadi tinggal di layer
- * presentasi sesuai catatan fleksibilitas struktur di docs/ARCHITECTURE.md.
- */
-export function formatRelativeTime(iso: string): string {
-	const diffMs = Date.now() - new Date(iso).getTime();
-	const diffMinutes = Math.round(diffMs / 60000);
-
-	if (diffMinutes < 1) return 'baru saja';
-	if (diffMinutes < 60) return `${diffMinutes} menit lalu`;
-
-	const diffHours = Math.round(diffMinutes / 60);
-	if (diffHours < 24) return `${diffHours} jam lalu`;
-
-	const diffDays = Math.round(diffHours / 24);
-	if (diffDays < 30) return `${diffDays} hari lalu`;
-
-	return new Date(iso).toLocaleDateString('id-ID', {
-		day: 'numeric',
-		month: 'short',
-		year: 'numeric',
-	});
 }
 
 type FileVisual = { Icon: Icon; className: string };

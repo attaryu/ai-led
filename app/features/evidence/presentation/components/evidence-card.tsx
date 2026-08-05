@@ -15,11 +15,8 @@ import {
 	DropdownMenuSeparator,
 } from '~/core/components/ui/dropdown-menu';
 import { type EvidenceEntity } from '../../domain/entities/evidence.entity';
-import {
-	formatBytes,
-	formatRelativeTime,
-	getFileVisual,
-} from '../utils/evidence-format';
+import { formatRelativeTime } from '~/core/lib/format-time';
+import { formatBytes, getFileVisual } from '../utils/evidence-format';
 import { EvidenceStatusBadge } from './evidence-status-badge';
 
 /**

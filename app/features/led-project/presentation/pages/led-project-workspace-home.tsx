@@ -8,7 +8,7 @@ import { useParams } from 'react-router';
 
 import { PlaceholderPage } from '~/core/components/placeholder-page';
 import { StatCard } from '~/core/components/ui/stat-card';
-import { formatRelativeTime } from '~/features/evidence/presentation/utils/evidence-format';
+import { formatRelativeTime } from '~/core/lib/format-time';
 import { ledProjectRepository } from '../../data/repositories/led-project.repository';
 import { ChapterProgressTable } from '../components/chapter-progress-table';
 import { ProjectAttentionPanel } from '../components/project-attention-panel';
