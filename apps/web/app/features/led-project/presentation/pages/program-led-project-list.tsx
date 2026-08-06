@@ -1,0 +1,175 @@
+import * as React from 'react';
+import { useNavigate, useParams } from 'react-router';
+import { PlusIcon } from '@phosphor-icons/react';
+
+import { Button } from '~/core/components/ui/button';
+import { DataTable } from '~/core/components/ui/data-table';
+import { useDataTableState } from '~/core/hooks/use-data-table-state';
+import { useSession } from '~/features/auth/presentation/hooks/use-session';
+import { studyProgramRepository } from '~/features/study-program/data/repositories/study-program.repository';
+import { ledProjectRepository } from '../../data/repositories/led-project.repository';
+import { getLedProjectColumns } from '../components/led-project-columns';
+import { type LedProjectPage } from '../../domain/dtos/led-project-query.dto';
+
+/**
+ * Daftar Dokumen LED milik satu prodi (docs/application_flow.md §5.3).
+ *
+ * Kembaran dari daftar lintas prodi di lapis tenant, dipersempit ke
+ * `:programId` di URL. Dua kolomnya berbeda karena konteksnya berbeda: nama
+ * prodi dibuang (seluruh baris memuat nilai yang sama), tenggat ditambahkan
+ * supaya dokumen yang tersendat terbaca tanpa dibuka satu per satu.
+ *
+ * Dashboard Prodi (§5.1) sengaja tidak lagi memuat daftar serupa — halaman
+ * inilah tempat riwayat siklus prodi, lengkap dengan pencarian dan paginasi.
+ */
+export function ProgramLedProjectList() {
+	const navigate = useNavigate();
+	const session = useSession();
+	const { programId } = useParams<{ programId: string }>();
+
+	// Siklus Dokumen LED sepenuhnya wewenang Penjamin Mutu; Pimpinan read-only
+	// di level ini (§6.2) dan Penyusun tidak pernah punya aksi di sini (§15).
+	const canManage = session?.role === 'Penjamin Mutu';
+
+	const studyProgram = programId
+		? studyProgramRepository.findById(programId)
+		: undefined;
+
+	const {
+		sorting,
+		setSorting,
+		globalFilter,
+		setGlobalFilter,
+		pagination,
+		setPagination,
+		columnVisibility,
+		setColumnVisibility,
+		clearAll,
+	} = useDataTableState('program-led-projects');
+
+	const [page, setPage] = React.useState<LedProjectPage>({
+		items: [],
+		total: 0,
+	});
+
+	/*
+	 * Dijabarkan jadi nilai sederhana lebih dulu: `useDataTableState` membangun
+	 * `sorting` dan `pagination` dari query string setiap render, sehingga
+	 * memakainya langsung sebagai dependensi berarti efek di bawah berjalan tiap
+	 * render dan halaman terjebak memuat ulang tanpa henti.
+	 */
+	const sortId = sorting[0]?.id;
+	const sortDir = sorting[0] ? (sorting[0].desc ? 'desc' : 'asc') : undefined;
+	const { pageIndex, pageSize } = pagination;
+
+	/*
+	 * `DataTable` berjalan dalam mode manual, jadi penyaringan sampai pemotongan
+	 * halaman dikerjakan repository (§4.6) — halaman hanya menerima satu halaman
+	 * data beserta jumlah totalnya.
+	 */
+	const loadData = React.useCallback(() => {
+		if (!programId) return;
+		setPage(
+			ledProjectRepository.findPaged({
+				studyProgramId: programId,
+				q: globalFilter || undefined,
+				sort: sortId,
+				dir: sortDir,
+				page: pageIndex + 1,
+				limit: pageSize,
+			}),
+		);
+	}, [programId, globalFilter, sortId, sortDir, pageIndex, pageSize]);
+
+	React.useEffect(() => {
+		loadData();
+		window.addEventListener('storage-update', loadData);
+		return () => {
+			window.removeEventListener('storage-update', loadData);
+		};
+	}, [loadData]);
+
+	/** Dibawa formulir supaya Batal dan simpan memulangkan ke daftar ini. */
+	const returnTo = `/study-programs/${programId}/led-projects`;
+
+	const handleDelete = React.useCallback(
+		(id: string) => {
+			if (confirm('Apakah Anda yakin ingin menghapus Dokumen LED ini?')) {
+				ledProjectRepository.delete(id);
+				loadData();
+				window.dispatchEvent(new Event('storage-update'));
+			}
+		},
+		[loadData],
+	);
+
+	const handleEdit = React.useCallback(
+		(id: string) => {
+			navigate(
+				`/dashboard/led-projects/${id}/edit?returnTo=${encodeURIComponent(returnTo)}`,
+			);
+		},
+		[navigate, returnTo],
+	);
+
+	const tableMeta = React.useMemo(
+		() => ({ onDelete: handleDelete, onEdit: handleEdit }),
+		[handleDelete, handleEdit],
+	);
+
+	const columns = React.useMemo(
+		() =>
+			getLedProjectColumns({
+				withActions: canManage,
+				withStudyProgram: false,
+				withTenggat: true,
+			}),
+		[canManage],
+	);
+
+	return (
+		<div className="flex flex-col gap-6">
+			<div className="flex items-center justify-between">
+				<div>
+					<h2 className="font-heading text-2xl font-bold tracking-tight">
+						Dokumen LED
+					</h2>
+					<p className="text-sm text-muted-foreground">
+						Seluruh siklus akreditasi
+						{studyProgram ? ` ${studyProgram.studyProgramName}` : ' prodi ini'}.
+						Klik judul untuk membuka dokumennya.
+					</p>
+				</div>
+				{canManage && (
+					<Button
+						onClick={() =>
+							navigate(
+								`/dashboard/led-projects/create?studyProgramId=${programId}&returnTo=${encodeURIComponent(returnTo)}`,
+							)
+						}
+						className="gap-2 cursor-pointer"
+					>
+						<PlusIcon className="size-4" />
+						Tambah Dokumen LED
+					</Button>
+				)}
+			</div>
+
+			<DataTable
+				columns={columns}
+				data={page.items}
+				rowCount={page.total}
+				meta={tableMeta}
+				sorting={sorting}
+				onSortingChange={setSorting}
+				globalFilter={globalFilter}
+				onGlobalFilterChange={setGlobalFilter}
+				columnVisibility={columnVisibility}
+				onColumnVisibilityChange={setColumnVisibility}
+				pagination={pagination}
+				onPaginationChange={setPagination}
+				onClearAll={clearAll}
+			/>
+		</div>
+	);
+}
