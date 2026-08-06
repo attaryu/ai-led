@@ -619,6 +619,16 @@ Tampilan mengikuti konsep dua-sidebar ala Figma:
 - `PENJAMIN_MUTU`, `PENYUSUN` — bisa klik "Jalankan Simulasi".
 - `PIMPINAN` — hanya melihat hasil yang sudah ada (read-only), tombol simulasi disembunyikan.
 
+> **Catatan — yang berbeda saat tab ini dibangun.** Bagian §9.1–§9.3 di atas ditulis sebelum implementasinya ada; berikut yang menyusul, dan tidak menggantikannya.
+>
+> - **Skor checkpoint dilihat lewat dropdown lingkup**, bukan deretan card di kaki tab yang membuka modal (§9.2). Pertanyaan yang dijawabnya sama persis dengan yang sudah dijawab dropdown di tab Rujukan sebelahnya — dua kontrol berbeda untuk hal yang sama hanya menambah yang harus dipelajari, dan modal belum dipakai satu pun panel sidebar.
+> - **Tombol simulasi berlaku untuk lingkup yang sedang dipilih**, termasuk checkpoint. Docs memang mengizinkan checkpoint di-run ulang (§9.2, database.md §12); tanpa ini, checkpoint yang belum pernah dinilai tidak akan pernah bisa dinilai sama sekali.
+> - **Hak menjalankan tidak diperiksa sendiri**, melainkan memakai `useChapterPermission().canEdit` yang sudah ada. Ia sekaligus merangkum §9.3 (Pimpinan hanya melihat) dan §12.2 (bab terkunci memblokir semua orang, termasuk Penjamin Mutu). Aturan kedua yang ditulis terpisah cepat atau lambat akan menyimpang dari yang pertama.
+> - **Penyebut total skor adalah kriteria yang sudah dinilai**, bukan seluruh kriteria bab. Bedanya terasa saat rubrik bertambah setelah simulasi terakhir: memakai seluruh kriteria membuat persentase turun sendiri padahal isi babnya tidak berubah.
+> - **"Lihat skor" di menu tab Draft (§8.1) akhirnya dipasang**, tapi **berpindah ke tab Rubrik dengan checkpoint itu terpilih**, bukan membuka modal. Hasil akhirnya sama — breakdown yang sama, tanpa mengubah apa pun — dan skornya mendarat di tempat yang memang menjelaskan kriterianya.
+> - **Bab tanpa kriteria menyatakan dirinya begitu.** database.md §10 memang menyebut bab tanpa baris `RUBRIK_KRITERIA_BAB` otomatis tidak punya hasil skor; tampilannya harus membedakan itu dari kegagalan memuat data.
+> - **Penilaiannya masih tiruan** di `features/chapter/data/sources/remote/chapter-scoring.mock.ts`, dan **deterministik** — skor diturunkan dari isi konten, bukan diacak. Penilai acak akan membuat janji "skor checkpoint tidak berubah kecuali di-run ulang" jadi bohong, karena menjalankan ulang pada `konten_snapshot` yang sama persis akan memberi angka berbeda.
+
 ---
 
 ## 10. Mekanisme Skor RAGAS

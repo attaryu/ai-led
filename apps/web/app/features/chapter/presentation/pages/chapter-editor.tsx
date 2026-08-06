@@ -200,6 +200,18 @@ function ChapterEditorWorkspace({
 	 */
 	const [babTerkini, setBabTerkini] = React.useState(chapter);
 
+	/**
+	 * Lingkup tab Rubrik, dipegang di sini alih-alih di dalam panelnya: menu
+	 * "Lihat skor" di tab Draft harus bisa mengatur keduanya sekaligus — tab mana
+	 * yang terbuka dan checkpoint mana yang ditampilkan (§8.1).
+	 */
+	const [lingkupSkor, setLingkupSkor] = React.useState('aktif');
+
+	const lihatSkorCheckpoint = React.useCallback((draftId: string) => {
+		setLingkupSkor(draftId);
+		setTabAktif('rubrik');
+	}, []);
+
 	const panel = usePanelResize();
 	const izin = useChapterPermission(chapter, studyProgramId);
 	const autosave = useChapterAutosave({
@@ -363,6 +375,9 @@ function ChapterEditorWorkspace({
 						onGenerated={adopsiIsiBaru}
 						ambilSnapshot={ambilSnapshot}
 						onRestored={adopsiIsiBaru}
+						onLihatSkor={lihatSkorCheckpoint}
+						lingkupSkor={lingkupSkor}
+						setLingkupSkor={setLingkupSkor}
 						lebar={panel.lebar}
 						handleProps={panel.handleProps}
 					/>

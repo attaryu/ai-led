@@ -396,6 +396,16 @@ User (Penjamin Mutu atau Penyusun) tidak mengelola tabel ini langsung — mereka
 | `deskripsi` | string | Bunyi kriteria/pertanyaan penilaian |
 | `skor_maksimal` | int | Skor tertinggi yang mungkin didapat untuk kriteria ini (bisa berbeda tiap kriteria) |
 
+> **Celah yang ditemukan saat tab Rubrik dibangun — `level_skor` belum ada.**
+>
+> `docs/application_flow.md §9.1` menuntut tab Rubrik menampilkan tiap kriteria "**dengan deskripsi tiap level skor**", tapi tabel di atas tidak punya tempat untuk menyimpannya: yang ada hanya bunyi kriteria dan angka tertingginya. Tanpa data itu, penyusun cuma melihat "3 dari 4" tanpa tahu apa yang membedakan skor 3 dari skor 4 — padahal justru itu gunanya rubrik.
+>
+> Implementasinya menambahkan **`level_skor`**, satu baris per level: `{ skor: int, deskripsi: text }`. Di kode ia jadi larik pada `RubricCriterion` (`features/chapter/domain/entities/rubric-criterion.entity.ts`); saat pindah ke basis data ia wajar jadi tabel `RUBRIK_LEVEL` tersendiri (`kriteria_id`, `skor`, `deskripsi`), sejajar dengan pemecahan `PANDUAN_REFERENSI` → `PANDUAN_DETAIL`.
+>
+> **`skor_maksimal` sebaiknya ikut dibuang saat itu.** Ia bisa diturunkan dari `level_skor` (nilai `skor` tertinggi), dan menyimpannya terpisah membuka kemungkinan `skor_maksimal = 5` pada kriteria yang cuma punya empat level — kesalahan yang tidak akan pernah tertangkap siapa pun. Alasan yang sama sudah dipakai `BAB_DOKUMEN` untuk tidak menyimpan kolom status. Di kode ia sudah diturunkan lewat `skorMaksimal(kriteria)`.
+>
+> Skala 1–4 yang dipakai seluruh kriteria contoh **bukan** aturan sistem: bentuknya tetap mengizinkan kriteria dengan jumlah level berbeda, sesuai kalimat "bisa berbeda tiap kriteria" di baris `skor_maksimal`.
+
 ### Relasi
 - Satu kriteria dapat berlaku untuk banyak nomor bab lewat `RUBRIK_KRITERIA_BAB`.
 - Satu kriteria dapat memiliki banyak `HASIL_SKOR_KRITERIA` (satu per setiap kali bab/checkpoint disimulasikan).

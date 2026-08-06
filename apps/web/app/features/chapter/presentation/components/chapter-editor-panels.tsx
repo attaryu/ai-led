@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { GaugeIcon, ListChecksIcon, type Icon } from '@phosphor-icons/react';
+import { GaugeIcon, type Icon } from '@phosphor-icons/react';
 
 import { TabsContent } from '~/core/components/ui/tabs';
 import {
@@ -12,6 +12,7 @@ import { type ChapterPermission } from '../hooks/use-chapter-permission';
 import { ChapterDraftPanel } from './chapter-draft-panel';
 import { ChapterGenerationPanel } from './chapter-generation-panel';
 import { ChapterReferencePanel } from './chapter-reference-panel';
+import { ChapterRubricPanel } from './chapter-rubric-panel';
 
 /**
  * Tab sidebar kanan Editor Bab.
@@ -35,7 +36,7 @@ export const PANEL_TABS = [
 export type PanelTabValue = (typeof PANEL_TABS)[number]['value'];
 
 /** Tab yang punya panel sungguhan; sisanya masih keadaan kosong. */
-const TAB_TERBANGUN = ['draft', 'generasi', 'rujukan'] as const;
+const TAB_TERBANGUN = ['draft', 'generasi', 'rujukan', 'rubrik'] as const;
 
 /**
  * Tab yang isinya belum dibangun.
@@ -52,12 +53,6 @@ const PANEL_COPY: Record<
 	Exclude<PanelTabValue, (typeof TAB_TERBANGUN)[number]>,
 	{ icon: Icon; title: string; kosong: string; terisi: string }
 > = {
-	rubrik: {
-		icon: ListChecksIcon,
-		title: 'Rubrik',
-		kosong: 'Kriteria rubrik LAM Teknik akan tampil setelah bab ini punya isi.',
-		terisi: 'Kriteria rubrik untuk bab ini belum dimuat.',
-	},
 	skor: {
 		icon: GaugeIcon,
 		title: 'Skor',
@@ -73,6 +68,9 @@ export function ChapterEditorPanels({
 	onGenerated,
 	ambilSnapshot,
 	onRestored,
+	onLihatSkor,
+	lingkupSkor,
+	setLingkupSkor,
 	lebar,
 	handleProps,
 }: {
@@ -82,6 +80,13 @@ export function ChapterEditorPanels({
 	onGenerated: (hasil: HasilGenerate) => void;
 	ambilSnapshot: () => ChapterEntity | undefined;
 	onRestored: (hasil: HasilPulih) => void;
+	onLihatSkor: (draftId: string) => void;
+	/**
+	 * Lingkup tab Rubrik, dipegang halaman editor supaya menu "Lihat skor" di tab
+	 * Draft bisa mengarahkannya sekaligus berpindah tab (§8.1).
+	 */
+	lingkupSkor: string;
+	setLingkupSkor: (lingkup: string) => void;
 	/** Lebar hasil seretan; menggantikan `w-80` yang dulu tetap. */
 	lebar: number;
 	handleProps: React.ComponentProps<'div'>;
@@ -110,6 +115,7 @@ export function ChapterEditorPanels({
 					izin={izin}
 					ambilSnapshot={ambilSnapshot}
 					onRestored={onRestored}
+					onLihatSkor={onLihatSkor}
 				/>
 			</TabsContent>
 
@@ -132,6 +138,18 @@ export function ChapterEditorPanels({
 				<ChapterReferencePanel
 					chapter={chapter}
 					studyProgramId={studyProgramId}
+				/>
+			</TabsContent>
+
+			<TabsContent
+				value="rubrik"
+				className="flex min-h-0 flex-1 flex-col overflow-hidden"
+			>
+				<ChapterRubricPanel
+					chapter={chapter}
+					izin={izin}
+					lingkup={lingkupSkor}
+					setLingkup={setLingkupSkor}
 				/>
 			</TabsContent>
 
