@@ -31,25 +31,63 @@ export function formatDateTime(iso: string): string {
 	});
 }
 
-/** Waktu relatif ke masa lalu ("2 jam lalu"). Murni pemanis tampilan. */
-export function formatRelativeTime(iso: string): string {
+/**
+ * Jarak waktu ke masa lalu, belum berimbuhan.
+ *
+ * Tangga satuannya dipisah dari pemformatnya supaya dua ejaan yang dipakai
+ * aplikasi ini — "2 jam lalu" di kolom tabel dan "2 jam yang lalu" di kalimat
+ * berjalan — tidak bisa menyimpang satu sama lain.
+ */
+type Elapsed =
+	/** Terlalu baru untuk punya satuan; kalimatnya berdiri sendiri. */
+	| { kind: 'baru-saja' }
+	/** Berimbuhan, mis. "3 menit". */
+	| { kind: 'relatif'; teks: string }
+	/** Sudah terlalu jauh untuk dihitung mundur; tanggal apa adanya. */
+	| { kind: 'tanggal'; teks: string };
+
+function describeElapsed(iso: string): Elapsed {
 	const diffMs = Date.now() - new Date(iso).getTime();
 	const diffMinutes = Math.round(diffMs / 60000);
 
-	if (diffMinutes < 1) return 'baru saja';
-	if (diffMinutes < 60) return `${diffMinutes} menit lalu`;
+	if (diffMinutes < 1) return { kind: 'baru-saja' };
+	if (diffMinutes < 60) return { kind: 'relatif', teks: `${diffMinutes} menit` };
 
 	const diffHours = Math.round(diffMinutes / 60);
-	if (diffHours < 24) return `${diffHours} jam lalu`;
+	if (diffHours < 24) return { kind: 'relatif', teks: `${diffHours} jam` };
 
 	const diffDays = Math.round(diffHours / 24);
-	if (diffDays < 30) return `${diffDays} hari lalu`;
+	if (diffDays < 30) return { kind: 'relatif', teks: `${diffDays} hari` };
 
-	return new Date(iso).toLocaleDateString('id-ID', {
-		day: 'numeric',
-		month: 'short',
-		year: 'numeric',
-	});
+	return {
+		kind: 'tanggal',
+		teks: new Date(iso).toLocaleDateString('id-ID', {
+			day: 'numeric',
+			month: 'short',
+			year: 'numeric',
+		}),
+	};
+}
+
+/** Waktu relatif ke masa lalu ("2 jam lalu"). Murni pemanis tampilan. */
+export function formatRelativeTime(iso: string): string {
+	const elapsed = describeElapsed(iso);
+	if (elapsed.kind === 'baru-saja') return 'baru saja';
+	if (elapsed.kind === 'tanggal') return elapsed.teks;
+	return `${elapsed.teks} lalu`;
+}
+
+/**
+ * Varian kalimat berjalan: "Tersimpan 3 menit yang lalu"
+ * (docs/application_flow.md §7.2). Bedanya dengan {@link formatRelativeTime}
+ * hanya imbuhan — untuk tanggal yang sudah jauh, keduanya sama-sama menyebut
+ * tanggalnya tanpa imbuhan apa pun ("Tersimpan 12 Agu 2027").
+ */
+export function formatRelativeTimeLong(iso: string): string {
+	const elapsed = describeElapsed(iso);
+	if (elapsed.kind === 'baru-saja') return 'baru saja';
+	if (elapsed.kind === 'tanggal') return elapsed.teks;
+	return `${elapsed.teks} yang lalu`;
 }
 
 /**
