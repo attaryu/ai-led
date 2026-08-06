@@ -143,3 +143,68 @@ body {
     @apply font-sans;
   }
 }
+
+@layer components {
+  /*
+   * Kanvas Editor Bab (docs/application_flow.md §7.2).
+   *
+   * Preflight Tailwind mematikan penanda daftar, ukuran heading, dan margin
+   * paragraf, jadi tanpa blok ini tombol daftar di toolbar akan tampak tidak
+   * berfungsi. Ditulis tangan alih-alih memasang @tailwindcss/typography:
+   * skala prose plugin itu opinionated dan bertengkar dengan rancangan
+   * "kertas" bab. Lingkupnya sengaja hanya elemen di dalam editor.
+   *
+   * `font-size` di sini harus sama dengan UKURAN_FONT_DEFAULT di
+   * features/chapter/presentation/components/chapter-font-size-control.tsx —
+   * angka "14" di toolbar baru jujur kalau keduanya sepakat.
+   */
+  .tiptap {
+    font-size: 14px;
+    line-height: 1.7;
+  }
+  .tiptap:focus {
+    outline: none;
+  }
+  .tiptap p {
+    margin-block: 0.5rem;
+  }
+  .tiptap ul {
+    list-style: disc;
+    padding-inline-start: 1.5rem;
+  }
+  .tiptap ol {
+    list-style: decimal;
+    padding-inline-start: 1.5rem;
+  }
+  .tiptap li p {
+    margin-block: 0.15rem;
+  }
+  .tiptap h1 {
+    font-size: 1.75em;
+    font-weight: 700;
+    margin-block: 1rem 0.5rem;
+  }
+  .tiptap h2 {
+    font-size: 1.4em;
+    font-weight: 700;
+    margin-block: 0.9rem 0.5rem;
+  }
+  .tiptap h3 {
+    font-size: 1.15em;
+    font-weight: 600;
+    margin-block: 0.8rem 0.4rem;
+  }
+  .tiptap blockquote {
+    border-inline-start: 3px solid var(--border);
+    padding-inline-start: 0.75rem;
+    color: var(--muted-foreground);
+  }
+  /* Penanda bab kosong: tanpa ini kanvas kosong tidak memberi petunjuk apa pun. */
+  .tiptap p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
+    color: var(--muted-foreground);
+  }
+}
