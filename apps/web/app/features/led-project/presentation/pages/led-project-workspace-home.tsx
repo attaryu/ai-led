@@ -20,8 +20,8 @@ import { type LedProjectEntity } from '../../domain/entities/led-project.entity'
  *
  * Halaman ini murni baca: tidak ada aksi ubah data di sini, jadi tidak ada yang
  * perlu disembunyikan per role (§1) — penjagaannya sudah selesai di layout
- * lapis ini. Baris tabel belum bisa diklik selama Editor Bab (Lapis 4) belum
- * ada, supaya tidak ada tautan yang berujung ke halaman kosong.
+ * lapis ini. Judul bab di tabel menautkan ke Editor Bab (§7), yang berdiri
+ * sebagai root URL sendiri di `/editor/:projectId/:chapterId`.
  */
 export function LedProjectWorkspaceHome() {
 	const { projectId } = useParams<{ projectId: string }>();
@@ -110,7 +110,7 @@ function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
 				 */}
 				<section className="flex min-w-0 flex-col gap-2">
 					<h3 className="font-heading text-base font-medium">Progres per Bab</h3>
-					<ChapterProgressTable chapters={chapters} />
+					<ChapterProgressTable projectId={ledProject.id} chapters={chapters} />
 				</section>
 				<ProjectAttentionPanel project={ledProject} attention={attention} />
 			</div>

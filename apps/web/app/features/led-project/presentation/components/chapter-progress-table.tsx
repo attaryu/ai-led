@@ -1,4 +1,5 @@
 import { PaperclipIcon } from '@phosphor-icons/react';
+import { Link } from 'react-router';
 
 import {
 	Table,
@@ -23,11 +24,17 @@ import { ChapterStatusBadge } from './chapter-status-badge';
  * urutan dokumen akreditasi itu sendiri, jadi pengurutan ulang, pencarian, dan
  * paginasi justru menghalangi cara halaman ini dibaca.
  *
- * Baris belum bisa diklik selama Editor Bab (Lapis 4) belum ada.
+ * Judul bab jadi tautan ke Editor Bab (§7). Yang ditautkan judulnya, bukan
+ * seluruh baris: baris ber-`onClick` tidak bisa dicapai keyboard dan tidak punya
+ * href untuk dibuka di tab baru, sementara `TableRow` sudah memberi sorotan
+ * barisnya secara cuma-cuma. Bab terkunci tetap ditautkan — §12.2 memblokir aksi
+ * ubah, bukan membaca.
  */
 export function ChapterProgressTable({
+	projectId,
 	chapters,
 }: {
+	projectId: string;
 	chapters: ChapterEntity[];
 }) {
 	return (
@@ -58,7 +65,12 @@ export function ChapterProgressTable({
 								{chapter.urutanBab}
 							</TableCell>
 							<TableCell className="py-2.5 font-medium">
-								{chapter.judulBab}
+								<Link
+									to={`/editor/${projectId}/${chapter.id}`}
+									className="hover:text-sidebar-primary hover:underline"
+								>
+									{chapter.judulBab}
+								</Link>
 							</TableCell>
 							<TableCell className="py-2.5">
 								<ChapterStatusBadge progress={deriveChapterProgress(chapter)} />

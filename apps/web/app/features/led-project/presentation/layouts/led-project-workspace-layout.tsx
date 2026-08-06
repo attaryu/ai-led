@@ -1,4 +1,4 @@
-import { ListChecksIcon } from '@phosphor-icons/react';
+import { ListChecksIcon, NotePencilIcon } from '@phosphor-icons/react';
 import { Navigate, Outlet, useParams } from 'react-router';
 
 import { AppShell, type AppShellBreadcrumb } from '~/core/components/app-shell';
@@ -96,6 +96,20 @@ export function LedProjectWorkspaceLayout() {
 						path: `/led-projects/${projectId}`,
 						icon: ListChecksIcon,
 						end: true,
+					},
+					{
+						// Menuju bab default (§7.1) lewat `/editor/:projectId` alih-alih
+						// menyusun id babnya di sini: aturan "bab mana" hidup di
+						// `pickDefaultChapter`, dan tautan tanpa id bab tidak bisa jadi
+						// basi saat bab dimaterialisasi ulang di localStorage.
+						//
+						// NavLink ini tidak akan pernah tampil aktif — Editor Bab root URL
+						// sendiri, jadi begitu dibuka, layout ini sudah tidak terpasang.
+						// Disengaja: sama seperti tombol kembali di atas, ini berpindah
+						// lapis, bukan berpindah menu.
+						name: 'Editor Dokumen',
+						path: `/editor/${projectId}`,
+						icon: NotePencilIcon,
 					},
 				],
 			}}
