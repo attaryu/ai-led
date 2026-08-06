@@ -6,7 +6,15 @@ import { useSession } from './use-session';
  *
  * - `tenant`  → /dashboard
  * - `program` → /study-programs/:programId
- * - `project` → /led-projects/:projectId
+ * - `project` → /led-projects/:projectId dan /editor/:projectId/:chapterId
+ *
+ * Editor Bab memakai lapis `project`, bukan lapis sendiri: siapa yang boleh
+ * masuk ditentukan sepenuhnya oleh prodi pemilik dokumennya — fakta yang sama
+ * persis dengan dashboard dokumen, jadi cabang `chapter` isinya akan identik dan
+ * hanya menunggu waktu untuk menyimpang karena kecelakaan. Yang memang berbeda
+ * di level bab (Pimpinan hanya baca §15, `terkunci` memblokir semua role §12.2)
+ * adalah izin **per-aksi**, bukan izin masuk, dan tinggal di
+ * `features/chapter/presentation/hooks/use-chapter-permission.ts`.
  */
 export type GuardLayer = 'tenant' | 'program' | 'project';
 

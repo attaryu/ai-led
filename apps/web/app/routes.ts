@@ -1,12 +1,13 @@
 import { type RouteConfig, route, index } from "@react-router/dev/routes";
 
 /**
- * Tiga lapis ruang kerja (docs/application_flow.md §3), masing-masing berdiri
+ * Empat lapis ruang kerja (docs/application_flow.md §3), masing-masing berdiri
  * sebagai root URL sendiri dengan layout dan navigasi yang berbeda total:
  *
- *   /dashboard              → level TENANT (semua isinya lintas prodi)
- *   /study-programs/:id     → level PROGRAM_STUDI
- *   /led-projects/:id       → level DOKUMEN_LED
+ *   /dashboard                     → level TENANT (semua isinya lintas prodi)
+ *   /study-programs/:id            → level PROGRAM_STUDI
+ *   /led-projects/:id              → level DOKUMEN_LED
+ *   /editor/:projectId/:chapterId  → level BAB_DOKUMEN (Editor Bab)
  *
  * Konteks prodi sengaja hidup di URL, bukan di session: Pimpinan/Penjamin Mutu
  * memilih prodi lewat navigasi (§5), sehingga tidak bisa diturunkan dari
@@ -15,6 +16,15 @@ import { type RouteConfig, route, index } from "@react-router/dev/routes";
  * `/dashboard/study-programs/:programId/edit` (manajemen) dan
  * `/study-programs/:programId` (ruang kerja) tidak bertabrakan karena berada di
  * root yang berbeda.
+ *
+ * Catatan desain — Editor Bab menyimpang dari sketsa §3, yang menggambarkannya
+ * sebagai `/led-projects/:projectId/chapters/:babId`, yaitu anak lapis 3. Di
+ * sini ia jadi root keempat dengan alasan yang sama seperti tiga lapis pertama
+ * berdiri sendiri: tampilannya nol chrome, tiga kolom penuh layar, tanpa satu
+ * pun bagian `AppShell` lapis 3 — sehingga bersarang hanya menyisakan induk yang
+ * merender `<Outlet/>` telanjang plus sidebar yang harus disembunyikan sendiri.
+ * Diagram §3 sudah ikut diperbarui; kalau salah satunya berubah lagi, keduanya
+ * harus ikut.
  */
 export default [
   route("login", "routes/login.tsx"),
@@ -42,8 +52,15 @@ export default [
     route("evidence", "routes/study-program-workspace-evidence.tsx"),
   ]),
 
-  // LAPIS 3 — dokumen LED; Editor Bab (Lapis 4) menyusul sebagai anak di sini
+  // LAPIS 3 — dokumen LED
   route("led-projects/:projectId", "routes/led-project-workspace-layout.tsx", [
     index("routes/led-project-workspace-home.tsx"),
   ]),
+
+  // LAPIS 4 — Editor Bab. Dua rute sejajar, bukan induk + index(): keduanya
+  // tidak berbagi chrome apa pun, jadi layout tanpa path hanya akan jadi berkas
+  // berisi <Outlet/>. `/editor/:projectId` tanpa bab adalah jalan masuk resmi
+  // yang dipakai sidebar lapis 3, dan langsung meneruskan ke bab default.
+  route("editor/:projectId", "routes/editor-default-chapter.tsx"),
+  route("editor/:projectId/:chapterId", "routes/editor-chapter.tsx"),
 ] satisfies RouteConfig;
