@@ -1,6 +1,7 @@
 import { CaretRightIcon } from '@phosphor-icons/react';
 import { Link } from 'react-router';
 
+import { ScrollArea } from '~/core/components/ui/scroll-area';
 import { cn } from '~/core/lib/utils';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import {
@@ -50,7 +51,18 @@ export function ChapterEditorToc({
 	);
 
 	return (
-		<aside className="w-72 shrink-0 overflow-y-auto border-r border-border bg-background">
+		// `ScrollArea`, bukan `overflow-y-auto`: kolomnya 288 px, dan scrollbar
+		// bawaan Windows selebar ~17 px di situ setara satu tingkat indentasi pohon.
+		// Alasan lengkapnya di `chapter-generation-panel.tsx`. Kanvas editor sengaja
+		// tetap memakai gulungan native — ProseMirror mengurus penggulungan kursornya
+		// sendiri, dan di kolom selebar itu scrollbar tebal tidak merugikan apa pun.
+		// `render` dipakai supaya elemennya tetap `<aside>`: ini landmark navigasi
+		// dokumen, dan menurunkannya jadi `div` menghilangkan satu titik lompat bagi
+		// pengguna pembaca layar demi perkara kosmetik.
+		<ScrollArea
+			render={<aside />}
+			className="w-72 shrink-0 border-r border-border bg-background"
+		>
 			<div className="px-5 py-4">
 				<h2 className="font-heading text-sm font-bold tracking-tight">
 					Daftar Isi
@@ -72,7 +84,7 @@ export function ChapterEditorToc({
 					/>
 				))}
 			</nav>
-		</aside>
+		</ScrollArea>
 	);
 }
 

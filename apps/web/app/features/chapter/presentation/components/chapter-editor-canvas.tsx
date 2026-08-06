@@ -20,7 +20,16 @@ export function ChapterEditorCanvas({
 	blockedReason: ChapterPermission['blockedReason'];
 }) {
 	return (
-		<main className="min-w-0 flex-1 overflow-y-auto bg-muted/40 p-8">
+		// Gulungan sengaja tetap native, bukan `ScrollArea` seperti dua sidebar:
+		// ProseMirror mengurus sendiri pengejaran kursor lewat `scrollIntoView` yang
+		// menelusuri ancestor pertama yang bisa digulung, dan menyisipkan lapis
+		// pembungkus di jalur itu menambah titik gagal untuk imbalan yang tidak ada —
+		// kolomnya lebar, jadi tebal scrollbar tidak memakan ruang yang berarti.
+		// Yang disamakan hanya rupanya, lewat `data-slot` ini di app.css.
+		<main
+			data-slot="chapter-editor-canvas"
+			className="min-w-0 flex-1 overflow-y-auto bg-muted/40 p-8"
+		>
 			<div className="mx-auto max-w-3xl space-y-3">
 				{blockedReason && (
 					<div className="flex items-center gap-2 rounded-md border border-border bg-card px-4 py-2.5 text-sm text-muted-foreground">

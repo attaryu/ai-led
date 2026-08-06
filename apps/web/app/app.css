@@ -146,6 +146,25 @@ body {
 
 @layer components {
   /*
+   * Scrollbar kanvas Editor Bab.
+   *
+   * Kedua sidebar editor memakai `ScrollArea` Base UI dengan scrollbar 10 px yang
+   * menumpang di atas isinya; kanvas tidak, karena ProseMirror mengurus sendiri
+   * pengejaran kursornya dan lapis pembungkus di jalur itu hanya menambah risiko
+   * (alasan lengkapnya di `chapter-editor-canvas.tsx`). Yang tersisa cuma soal
+   * rupa: tanpa aturan ini, scrollbar Windows lengkap dengan tombol panahnya
+   * berdiri persis di sebelah scrollbar ramping sidebar.
+   *
+   * Dua properti standar, bukan `::-webkit-scrollbar`: keduanya sudah didukung
+   * Firefox dan Chromium, dan gulungannya tetap gulungan native — yang berubah
+   * hanya ukuran dan warnanya.
+   */
+  [data-slot='chapter-editor-canvas'] {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  /*
    * Kanvas Editor Bab (docs/application_flow.md §7.2).
    *
    * Preflight Tailwind mematikan penanda daftar, ukuran heading, dan margin

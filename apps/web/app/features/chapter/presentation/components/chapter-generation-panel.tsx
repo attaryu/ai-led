@@ -10,6 +10,7 @@ import {
 import { Button } from '~/core/components/ui/button';
 import { Checkbox } from '~/core/components/ui/checkbox';
 import { Input } from '~/core/components/ui/input';
+import { ScrollArea } from '~/core/components/ui/scroll-area';
 import { Textarea } from '~/core/components/ui/textarea';
 import { formatRelativeTimeLong } from '~/core/lib/format-time';
 import { EvidenceStatusBadge } from '~/features/evidence/presentation/components/evidence-status-badge';
@@ -137,28 +138,36 @@ export function ChapterGenerationPanel({
 			 * di bawah tetap terlihat berapa pun panjang pustakanya — daftar yang
 			 * mendorong tombolnya keluar layar akan membuat penyusun menggulung balik
 			 * hanya untuk menekan Generate.
+			 *
+			 * `ScrollArea`, bukan `overflow-y-auto`, karena kolomnya sempit: scrollbar
+			 * bawaan Windows selebar ~17 px memakan ruang yang di sini justru paling
+			 * mahal, sementara yang ini 10 px dan menumpang di atas isinya. Dasarnya
+			 * tetap gulungan native, jadi roda tetikus, drag thumb, dan pencarian
+			 * bawaan peramban berperilaku seperti biasa.
 			 */}
-			<div className="min-h-0 flex-1 overflow-y-auto px-5">
-				{daftar.length === 0 ? (
-					<p className="py-8 text-center text-xs leading-relaxed text-muted-foreground">
-						{totalPustaka === 0
-							? 'Belum ada bukti dukung yang bisa dipakai bab ini. Unggah dari Perpustakaan Bukti Dukung lebih dulu.'
-							: 'Tidak ada berkas yang cocok dengan pencarian.'}
-					</p>
-				) : (
-					<ul className="space-y-0.5 pb-2">
-						{daftar.map((bukti) => (
-							<BarisBukti
-								key={bukti.id}
-								bukti={bukti}
-								terpilih={terpilih.has(bukti.id)}
-								dimatikan={sedangBerjalan}
-								onToggle={() => toggle(bukti)}
-							/>
-						))}
-					</ul>
-				)}
-			</div>
+			<ScrollArea className="min-h-0 flex-1">
+				<div className="px-5">
+					{daftar.length === 0 ? (
+						<p className="py-8 text-center text-xs leading-relaxed text-muted-foreground">
+							{totalPustaka === 0
+								? 'Belum ada bukti dukung yang bisa dipakai bab ini. Unggah dari Perpustakaan Bukti Dukung lebih dulu.'
+								: 'Tidak ada berkas yang cocok dengan pencarian.'}
+						</p>
+					) : (
+						<ul className="space-y-0.5 pb-2">
+							{daftar.map((bukti) => (
+								<BarisBukti
+									key={bukti.id}
+									bukti={bukti}
+									terpilih={terpilih.has(bukti.id)}
+									dimatikan={sedangBerjalan}
+									onToggle={() => toggle(bukti)}
+								/>
+							))}
+						</ul>
+					)}
+				</div>
+			</ScrollArea>
 
 			<div className="shrink-0 space-y-2 border-t border-border px-5 py-3">
 				{jumlahGugur > 0 && (
