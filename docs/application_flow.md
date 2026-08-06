@@ -84,6 +84,126 @@ Setiap lapis punya sidebar/navigasi yang **berbeda total** dari lapis sebelumnya
 
 **Diakses oleh**: `ADMIN`, `PIMPINAN`, `PENJAMIN_MUTU`. (`PENYUSUN` tidak pernah melihat halaman ini.)
 
+### 4.0 Ringkasan Kesiapan Institusi
+
+Halaman index lapis ini (`/dashboard`) menjawab satu pertanyaan: **seberapa siap universitas ini menghadapi akreditasi, dan prodi mana yang tertinggal.** Subjeknya universitas, bukan daftar menunya.
+
+> **Catatan desain — kartu penaut dibuang.** Versi awal halaman ini berisi empat kartu penaut (Program Studi, Dokumen LED, User, Bukti Dukung) yang isinya persis menu sidebar, difilter per role dengan aturan yang sama. Itu salinan kedua tanpa nilai tambah, sementara satu-satunya halaman yang bisa menjawab pertanyaan pimpinan justru dibiarkan kosong. Alasannya sama dengan yang membuang daftar riwayat siklus dari Dashboard Prodi (§5.1c): kalau sidebar sudah jadi jalan masuk yang jelas, mendaftarnya ulang di badan halaman hanya meramaikan.
+
+**Aturan utama halaman ini: satu blok, satu kerangka waktu** — aturan yang sama dengan §5.1, dan yang secara khusus diperingatkan PRD §3.8 untuk level institusi. Halaman disusun jadi empat blok yang masing-masing menyebut kerangkanya sendiri:
+
+| Blok | Kerangka waktu | Sumber |
+| --- | --- | --- |
+| **Posisi Akreditasi** (§4.0a) | Masa lalu — capaian yang sudah disahkan | `PROGRAM_STUDI` |
+| **Siklus Berjalan Se-Universitas** (§4.0b) | Sekarang — usaha seluruh prodi | `DOKUMEN_LED` aktif beserta `BAB_DOKUMEN`-nya |
+| **Kesiapan per Prodi** (§4.0c) | Sekarang, per prodi — inti halaman | gabungan keduanya, satu baris per prodi |
+| **Sumber Daya Institusi** (§4.0d) | Lintas siklus — bekal universitas | `BUKTI_DUKUNG` tenant, `USER` |
+
+**Tidak ada aturan hitung baru di halaman ini.** Seluruh angkanya memanggil ulang fungsi domain yang sudah dipakai Dashboard Prodi dan Dashboard Project LED — `summarizeChapters`, `summarizeEvidence`, `pickSiklusAktif`, `buildProgramAttention`, `deriveDeadline`, `deriveAccreditationValidity`. Yang benar-benar baru hanya cara mengagregasi dan cara mengurutkan baris. Konsekuensi yang disengaja: angka satu baris di §4.0c **wajib** sama persis dengan Dashboard Prodi yang dituju barisnya; kalau berbeda, berarti ada aturan yang tersalin, bukan dipakai ulang.
+
+**Tidak ada satu pun aksi ubah data di halaman ini**, jadi satu-satunya yang disembunyikan per role (§1) adalah tautan Manajemen User di §4.0d — penjagaan selebihnya sudah selesai di lapis rutenya.
+
+#### 4.0a Blok Posisi Akreditasi
+
+Satu kartu berisi **distribusi** peringkat: `UNGGUL`, `BAIK_SEKALI`, `BAIK`, `BELUM_TERAKREDITASI`, masing-masing jumlah prodi. Di bawahnya dua angka urgensi bila memang ada isinya: jumlah prodi yang masa berlakunya sudah habis, dan jumlah yang tersisa ≤ 365 hari.
+
+Disajikan sebagai distribusi, **bukan rata-rata**: peringkat itu ordinal, dan "rata-rata Unggul dan Baik" bukan besaran yang punya arti.
+
+Prodi `BELUM_TERAKREDITASI` masuk komposisi sebagai kategorinya sendiri dan **tidak** ikut dihitung kedaluwarsa — `berlaku_sampai_akreditasi` kosong berarti "tidak ada", bukan "sudah lewat" (§5.1e).
+
+Baris urgensi tidak dirender bila nol. Baris "0 prodi kedaluwarsa" yang selalu ada justru melatih pembaca mengabaikan tempat itu.
+
+#### 4.0b Blok Siklus Berjalan Se-Universitas
+
+Empat kartu angka yang **seluruhnya bercakupan siklus berjalan** — tidak ada peringkat akreditasi maupun akumulasi lintas siklus di baris ini:
+
+| Kartu | Isi | Dihitung dari |
+| --- | --- | --- |
+| **Prodi Bersiklus** | `n/total` prodi yang punya siklus berjalan, bar persentase | `pickSiklusAktif().aktif != null` per prodi |
+| **Kelengkapan Bab** | `n/total` bab terisi **agregat lintas prodi**, bar persentase | jumlah `konten_kerja` tidak kosong pada seluruh siklus aktif |
+| **Kesiapan Review** | `n/total` bab terkunci agregat, bar persentase | `terkunci = true` |
+| **Tenggat Berisiko** | jumlah siklus dengan tenggat `LEWAT` atau `DEKAT`, diwarnai urgensi | `DOKUMEN_LED.tenggat` |
+
+Agregasi memakai **jumlah bab lintas prodi**, bukan rata-rata persen antar prodi. Pertanyaannya "berapa banyak pekerjaan yang sudah jadi", sehingga prodi dengan bab lebih banyak memang harus berbobot lebih; rata-rata persen memberi bobot sama ke tiap prodi sehingga satu prodi kecil yang tuntas bisa menutupi prodi besar yang mandek.
+
+Prodi tanpa siklus berjalan menyumbang nol ke pembilang **dan** penyebut kartu bab. Ia sudah terhitung di kartu Prodi Bersiklus, dan menghitungnya lagi sebagai bab kosong berarti satu keadaan yang sama dihukum dua kali.
+
+Siklus tanpa `tenggat` tidak ikut dihitung berisiko: tidak dipatok adalah pilihan yang sah (§14), bukan keterlambatan.
+
+#### 4.0c Blok Kesiapan per Prodi
+
+Tabel, satu baris per prodi, seluruh prodi tenant. Inilah yang menjawab "prodi mana yang tertinggal".
+
+| Kolom | Isi | Keadaan kosong |
+| --- | --- | --- |
+| **Program Studi** | nama, `jenjang`, `fakultas`; tautan ke Dashboard Prodi | — |
+| **Akreditasi** | badge `peringkat_akreditasi` + sisa masa berlaku, diwarnai urgensi | `Belum pernah terakreditasi` |
+| **Siklus Berjalan** | badge `status_keseluruhan` + `tahun_akademik` | `Belum ada` |
+| **Kelengkapan Bab** | `n/total` + bar persentase | `—` bila tanpa siklus |
+| **Kesiapan Review** | `n/total` | `—` bila tanpa siklus |
+| **Sisa Tenggat** | sisa waktu ke `tenggat`, diwarnai urgensi | `Tidak dipatok` (ada siklus) / `—` (tanpa siklus) |
+| **Perlu Perhatian** | jumlah item + jumlah yang mendesak, diwarnai severitas tertinggi | `Tidak ada` |
+
+**Urutan default: paling perlu ditindak di atas**, bukan alfabet. Halaman ini dibaca dari atas, jadi hal pertama yang terlihat harus hal yang perlu ditindak; mengurutkan menurut nama memindahkan pekerjaan mencari "siapa yang tertinggal" kembali ke pembacanya. Urutannya deterministik:
+
+| Urutan | Pembanding |
+| --- | --- |
+| 1 | jumlah item `MENDESAK` (terbanyak dulu) |
+| 2 | jumlah item `PERLU_DITINDAK` (terbanyak dulu) |
+| 3 | persentase kelengkapan bab siklus berjalan (terkecil dulu; prodi tanpa siklus dianggap 0) |
+| 4 | nama prodi, sebagai pemutus agar urutannya tidak berubah antar render |
+
+Kolom Perlu Perhatian memadatkan panel senama di §5.1c — aturan pemicunya sama persis, rinciannya memang tempatnya di prodi masing-masing.
+
+Tabel ini sengaja **tanpa pencarian, pengurutan, dan paginasi**, dengan alasan yang sama seperti tabel bab di §6.1: jumlah prodi tetap dan urutan risikonya adalah cara tabel ini dibaca, jadi mengacaknya justru merusaknya. Ini memang berbeda dari §4.6/§5.3 yang daftarnya untuk dijelajahi.
+
+#### 4.0d Blok Sumber Daya Institusi
+
+Dua kartu, diberi label kerangka waktunya sendiri supaya tidak terbaca sebagai ukuran siklus berjalan:
+
+- **Bukti Dukung Universitas** — `n/total` berkas `SIAP`, jumlah yang masih diproses, jumlah `GAGAL`, waktu unggah terakhir, dan tombol ke Perpustakaan Bukti Dukung tenant. Angkanya **hanya berkas `owner_tipe = TENANT`** supaya cocok dengan daftar di halaman yang dituju (§4.4) — aturan yang sama dengan panel Bukti Dukung Prodi di §5.1c.
+- **Tim Penyusun** — jumlah prodi yang belum punya `USER` berrole `PENYUSUN`. Prodi tanpa Penyusun bukan angka biasa: dokumennya tidak akan pernah bergerak, jadi keadaan itu ditampilkan sebagai peringatan. Tautan ke Manajemen User **hanya dirender untuk `PIMPINAN`** (§1) — `PENJAMIN_MUTU` tidak punya menu itu sama sekali (§4.2), jadi menyodorkan tautannya hanya berujung pengalihan.
+
+#### 4.0e Hak akses di level ini
+
+- `PIMPINAN` dan `PENJAMIN_MUTU` melihat isi yang sama (§4.0a–d). Bedanya cuma tautan Manajemen User di §4.0d.
+- `ADMIN` **tidak** melihat satu pun angka progres LED. Ia murni back office dan sudah ditolak di seluruh lapis prodi/dokumen (§6.2) serta di perpustakaan bukti dukung (§4.4); menampilkan agregat kesiapan kepadanya berarti membocorkan lewat ringkasan apa yang sudah ditutup lewat rute. Gantinya ia melihat **ringkasan organisasi** yang memang wewenangnya: jumlah prodi, jumlah akun per role, dan jumlah prodi yang belum punya Penyusun, beserta tautan ke §4.1 dan §4.2.
+- Datanya pun tidak dibaca untuk `ADMIN`, bukan sekadar tidak dirender. Selama session belum terbaca, tidak ada cabang yang dirender lebih dulu — agar Admin tidak sempat melihat angka yang bukan haknya.
+- `PENYUSUN` tidak pernah sampai ke sini (§2).
+
+#### 4.0f Yang sengaja belum ditampilkan
+
+Mengikuti alasan yang sama dengan §5.1f dan §6.1 — kolom yang selalu berisi "—" hanya menambah derau:
+
+- **Ringkasan skor rubrik per prodi** — diminta PRD §3.8 ("skor rata-rata per prodi"), tapi `RUBRIK_KRITERIA`/`HASIL_SKOR_KRITERIA` belum ada. Masuk bersama Simulasi Skor (§9).
+- **Grafik tren antar siklus** — baru bermakna setelah ada beberapa siklus dengan skor.
+- **Siapa sedang menyunting** — datanya hidup di Redis (§13), bukan di basis data.
+
+Satu hal lagi yang sengaja **tidak** dilakukan: halaman ini tidak memanggil pembuatan bab otomatis (§6.1b). Ia murni baca, dan memicu penulisan dari halaman ringkasan berarti membuka dashboard diam-diam mengubah penyimpanan. Dokumen yang belum punya baris `BAB_DOKUMEN` terbaca `0/0` sampai dashboard dokumennya dibuka — itu memang keadaan sebenarnya.
+
+#### 4.0g Kasus Uji — Ringkasan Kesiapan Institusi
+
+| #   | Kondisi                                                        | Aksi                                             | Hasil yang diharapkan                                                                                                              |
+| --- | -------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Pimpinan atau Penjamin Mutu                                     | Buka `/dashboard`                                | Keempat blok tampil; baris kartu Siklus Berjalan **tidak** memuat peringkat akreditasi maupun akumulasi bukti dukung lintas siklus   |
+| 2   | Prodi mana pun di tabel                                         | Bandingkan barisnya dengan `/study-programs/:id`  | Kelengkapan Bab, Kesiapan Review, Sisa Tenggat, dan jumlah Perlu Perhatian **sama persis** dengan Dashboard Prodi                    |
+| 3   | Satu prodi punya tenggat yang sudah lewat                       | Buka `/dashboard`                                | Prodi itu berada di **puncak** tabel, kolom Perlu Perhatian merah dan menyebut jumlah yang mendesak                                  |
+| 4   | Lanjutan #3                                                     | Ubah tenggatnya ke masa depan lewat Edit Dokumen LED | Urutan tabel dan kartu Tenggat Berisiko ikut berubah tanpa muat ulang manual                                                     |
+| 5   | Prodi belum punya `DOKUMEN_LED` sama sekali                     | Lihat barisnya                                    | Kolom Siklus berbunyi `Belum ada`; kolom bab, review, dan tenggat berisi `—`, bukan `0/0` atau `0 hari`                              |
+| 6   | Prodi `BELUM_TERAKREDITASI`                                     | Lihat barisnya dan blok Posisi Akreditasi        | Baris berbunyi "Belum pernah terakreditasi"; prodi itu masuk komposisi tapi **tidak** ikut hitungan kedaluwarsa                      |
+| 7   | Siklus berjalan tanpa `tenggat`                                 | Lihat barisnya dan kartu Tenggat Berisiko        | Baris berbunyi `Tidak dipatok` tanpa warna urgensi; siklus itu tidak ikut dihitung berisiko                                         |
+| 8   | Ada prodi yang seluruh dokumennya `SELESAI`                     | Lihat kartu Kelengkapan Bab                      | Bab prodi itu tidak ikut penyebut; angkanya hanya menghitung prodi yang bersiklus                                                   |
+| 9   | Tidak ada prodi yang kedaluwarsa maupun mendekati               | Lihat blok Posisi Akreditasi                     | Baris urgensi tidak dirender sama sekali, bukan "0 prodi kedaluwarsa"                                                              |
+| 10  | Pimpinan                                                        | Lihat kartu Tim Penyusun                         | Tombol "Kelola penugasan" dirender                                                                                                 |
+| 11  | Penjamin Mutu                                                   | Lihat kartu yang sama                            | Angkanya identik, tombol "Kelola penugasan" **tidak** dirender                                                                     |
+| 12  | Admin                                                           | Buka `/dashboard`                                | Hanya ringkasan organisasi; tidak ada satu pun angka kelengkapan bab, kesiapan review, tenggat, atau tabel prodi yang pernah dirender |
+| 13  | Bukti dukung level **prodi** yang `GAGAL`, tenant tidak punya   | Lihat kartu Bukti Dukung Universitas             | Kartunya tidak menyebut kegagalan itu — cakupannya hanya `owner_tipe = TENANT`                                                     |
+| 14  | Unggah bukti dukung tenant dari `/dashboard/evidence`           | Kembali ke `/dashboard`                          | Kartu Bukti Dukung Universitas ikut berubah tanpa muat ulang                                                                       |
+| 15  | Tenant belum punya `PROGRAM_STUDI` sama sekali                  | Buka `/dashboard`                                | Tabel diganti kalimat "Belum ada program studi", bukan tabel kosong tanpa konteks                                                  |
+| 16  | Dokumen LED yang belum punya baris `BAB_DOKUMEN`                | Lihat barisnya, lalu buka dashboard dokumennya   | Terbaca `0/0` di tabel institusi; babnya baru dibuat saat dashboard dokumen dibuka (§6.1b), bukan saat `/dashboard` dibuka          |
+| 17  | Layar sempit (< 1280px)                                         | Buka `/dashboard`                                | Tabel bergulir horizontal di dalam wadahnya sendiri; halaman tidak ikut menggulir ke samping                                       |
+| 18  | Penyusun                                                        | Ketik `/dashboard` di address bar                | Dialihkan ke Dashboard Prodi-nya; isi halaman tidak pernah dirender                                                                |
+
 ### 4.1 Manajemen Program Studi
 
 - **Akses**: `ADMIN`, `PIMPINAN`.
