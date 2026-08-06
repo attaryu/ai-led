@@ -90,7 +90,7 @@ export function useChapterDraft({
 			label: label.trim() === '' ? null : label.trim(),
 			kontenSnapshot: bab.kontenKerja ?? '',
 			sumber: 'MANUAL',
-			buktiDukungIds: bab.buktiDukungIds,
+			buktiDukung: bab.buktiDukung,
 			// Checkpoint manual tidak lahir dari retrieval, jadi tidak punya rujukan
 			// chunk. Yang mengisinya hanya jalur generate di tab Generasi.
 			referensiChunkIds: [],
@@ -125,7 +125,7 @@ export function useChapterDraft({
 			const diperbarui = chapterRepository.restoreFromDraft(chapter.id, {
 				id: draft.id,
 				kontenSnapshot: draft.kontenSnapshot,
-				buktiDukungIds: draft.buktiDukungIds,
+				buktiDukung: draft.buktiDukung,
 			});
 
 			setStatus('diam');

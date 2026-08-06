@@ -8,6 +8,7 @@ import {
 import { chapterDraftRepository } from '../../data/repositories/chapter-draft.repository';
 import { chapterRepository } from '../../data/repositories/chapter.repository';
 import { generateChapterContent } from '../../data/sources/remote/chapter-generation.mock';
+import { type BuktiDukungRef } from '../../domain/entities/bukti-dukung-ref.entity';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import { type ChapterPermission } from './use-chapter-permission';
 
@@ -87,7 +88,7 @@ export function useChapterGeneration({
 	 * hilang bersama hasil lamanya, dan memang seharusnya begitu.
 	 */
 	const [hasilTerakhir, setHasilTerakhir] = React.useState<{
-		buktiDukungIds: string[];
+		buktiDukung: BuktiDukungRef[];
 		referensiChunkIds: string[];
 	} | null>(null);
 	/** Versi checkpoint yang lahir dari hasil terakhir; `null` selama belum disimpan. */
@@ -124,15 +125,15 @@ export function useChapterGeneration({
 				.filter((bukti) => bukti.status === STATUS_TERPAKAI)
 				.map((bukti) => bukti.id),
 		);
-		const dipulihkan = chapter.buktiDukungIds.filter((id) =>
-			masihBisaDipakai.has(id),
-		);
+		const dipulihkan = chapter.buktiDukung
+			.map((ref) => ref.id)
+			.filter((id) => masihBisaDipakai.has(id));
 
 		setTerpilih(new Set(dipulihkan));
 		setDasar(new Set(dipulihkan));
 		// Berkas bisa dihapus, atau statusnya mundur karena ingestion diulang.
 		// Selisihnya ditampilkan, tidak dibuang diam-diam.
-		setJumlahGugur(chapter.buktiDukungIds.length - dipulihkan.length);
+		setJumlahGugur(chapter.buktiDukung.length - dipulihkan.length);
 	}
 
 	/**
@@ -201,21 +202,25 @@ export function useChapterGeneration({
 			setPesanGagal(null);
 
 			const buktiTerpilih = pustaka.filter((bukti) => terpilih.has(bukti.id));
+			// Nama dan tipe dibekukan di sini, saat berkasnya masih ada — itulah yang
+			// membuat tab Rujukan tetap bisa menyebutnya kalau kelak dihapus.
+			const rujukan: BuktiDukungRef[] = buktiTerpilih.map((bukti) => ({
+				id: bukti.id,
+				namaDokumen: bukti.namaDokumen,
+				tipeFile: bukti.tipeFile,
+			}));
 
 			try {
 				const { html, referensiChunkIds } = await generateChapterContent({
 					judulBab: chapter.judulBab,
 					urutanBab: chapter.urutanBab,
-					buktiDukung: buktiTerpilih.map((bukti) => ({
-						id: bukti.id,
-						namaDokumen: bukti.namaDokumen,
-					})),
+					buktiDukung: rujukan,
 					prompt,
 				});
 
 				const diperbarui = chapterRepository.applyGenerate(chapter.id, {
 					kontenKerja: html,
-					buktiDukungIds: buktiTerpilih.map((bukti) => bukti.id),
+					buktiDukung: rujukan,
 				});
 
 				// Satu-satunya alasan repository menolak: bab dikunci dari tempat lain
@@ -232,12 +237,12 @@ export function useChapterGeneration({
 				setDigenerateAt(diperbarui.terakhirDisimpan);
 				// Pilihan ini kini yang tercatat di babnya, jadi ia jadi titik nol
 				// baru — pencentangan sesudah ini yang terhitung "baru".
-				setDasar(new Set(diperbarui.buktiDukungIds));
+				setDasar(new Set(diperbarui.buktiDukung.map((ref) => ref.id)));
 				// Catatan bukti yang gugur milik pemulihan pilihan lama; sesudah
 				// generate baru ia tidak lagi menjelaskan apa pun.
 				setJumlahGugur(0);
 				setHasilTerakhir({
-					buktiDukungIds: diperbarui.buktiDukungIds,
+					buktiDukung: diperbarui.buktiDukung,
 					referensiChunkIds,
 				});
 				// Hasil ini belum diamankan; tawarannya muncul lagi.
@@ -275,7 +280,7 @@ export function useChapterGeneration({
 			label: null,
 			kontenSnapshot: bab.kontenKerja,
 			sumber: 'AI',
-			buktiDukungIds: hasilTerakhir.buktiDukungIds,
+			buktiDukung: hasilTerakhir.buktiDukung,
 			referensiChunkIds: hasilTerakhir.referensiChunkIds,
 			dibuatOlehUserId: izin.session.userId,
 			dibuatOlehNama: izin.session.namaLengkap,

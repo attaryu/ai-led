@@ -76,13 +76,13 @@ export function ChapterProgressTable({
 								<ChapterStatusBadge progress={deriveChapterProgress(chapter)} />
 							</TableCell>
 							<TableCell className="py-2.5">
-								{chapter.buktiDukungIds.length === 0 ? (
+								{chapter.buktiDukung.length === 0 ? (
 									<span className="text-muted-foreground">—</span>
 								) : (
 									<span className="inline-flex items-center gap-1.5 text-muted-foreground">
 										<PaperclipIcon className="size-4" />
 										<span className="tabular-nums">
-											{chapter.buktiDukungIds.length}
+											{chapter.buktiDukung.length}
 										</span>
 									</span>
 								)}

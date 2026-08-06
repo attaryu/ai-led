@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { buktiDukungRefSchema } from './bukti-dukung-ref.entity';
+
 /**
  * Satu bab dalam Dokumen LED (docs/database.md → BAB_DOKUMEN).
  *
@@ -43,10 +45,14 @@ export const chapterSchema = z.object({
 	terakhirDisimpan: z.string().nullable(),
 	/**
 	 * Denormalisasi `BUKTI_DUKUNG_BAB` (kondisi aktif, ditimpa tiap generate
-	 * ulang). Disimpan sebagai daftar id di baris babnya karena sumber datanya
-	 * masih localStorage — saat pindah ke API ini kembali jadi tabel relasi.
+	 * ulang). Disimpan di baris babnya karena sumber datanya masih localStorage —
+	 * saat pindah ke API ini kembali jadi tabel relasi.
+	 *
+	 * Bentuknya {@link BuktiDukungRef}, bukan sekadar daftar id: alasan lengkapnya
+	 * ada di entitas itu — singkatnya, berkas yang dihapus dari Perpustakaan harus
+	 * tetap bisa disebutkan namanya di tab Rujukan.
 	 */
-	buktiDukungIds: z.array(z.string()),
+	buktiDukung: z.array(buktiDukungRefSchema),
 });
 
 export type ChapterEntity = z.infer<typeof chapterSchema>;
@@ -126,7 +132,7 @@ export function summarizeChapters(chapters: ChapterEntity[]): ChapterSummary {
 	for (const chapter of chapters) {
 		if (hasKonten(chapter)) terisi += 1;
 		if (chapter.terkunci) terkunci += 1;
-		for (const id of chapter.buktiDukungIds) buktiDukungUnik.add(id);
+		for (const ref of chapter.buktiDukung) buktiDukungUnik.add(ref.id);
 
 		if (
 			chapter.terakhirDisimpan !== null &&

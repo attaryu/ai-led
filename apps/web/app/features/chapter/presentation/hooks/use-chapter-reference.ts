@@ -1,0 +1,85 @@
+import * as React from 'react';
+
+import { evidenceRepository } from '~/features/evidence/data/repositories/evidence.repository';
+import { type EvidenceEntity } from '~/features/evidence/domain/entities/evidence.entity';
+import { chapterDraftRepository } from '../../data/repositories/chapter-draft.repository';
+import { type BuktiDukungRef } from '../../domain/entities/bukti-dukung-ref.entity';
+import { type ChapterDraftEntity } from '../../domain/entities/chapter-draft.entity';
+import { type ChapterEntity } from '../../domain/entities/chapter.entity';
+
+export type BarisRujukan = {
+	ref: BuktiDukungRef;
+	/**
+	 * Baris Perpustakaan yang masih hidup, atau `undefined` bila berkasnya sudah
+	 * dihapus. Yang `undefined` **tetap ditampilkan** — nama dan tipenya sudah
+	 * diarsipkan di `ref`, dan itulah gunanya.
+	 */
+	live: EvidenceEntity | undefined;
+};
+
+/**
+ * Isi tab Rujukan: bukti dukung yang tercatat dipakai bab ini
+ * (docs/application_flow.md §11.1).
+ *
+ * Yang membuat hook ini tidak sekadar membaca satu larik: ada **dua sumber yang
+ * sama-sama sah**. `ChapterEntity.buktiDukung` adalah kondisi aktif yang ditimpa
+ * tiap generate/restore, sedangkan tiap `ChapterDraftEntity.buktiDukung` adalah
+ * arsip permanen milik satu checkpoint. §11.1 hanya menyebut yang pertama, tapi
+ * membatasi diri ke situ berarti arsip per checkpoint tidak pernah terlihat di
+ * mana pun — padahal §8.1 sudah menunda penampilannya justru ke tab ini. Karena
+ * itu lingkupnya bisa dipilih.
+ */
+export function useChapterReference({ chapter }: { chapter: ChapterEntity }) {
+	const [daftarDraft, setDaftarDraft] = React.useState<ChapterDraftEntity[]>([]);
+	const [pustaka, setPustaka] = React.useState<EvidenceEntity[]>([]);
+	/**
+	 * `'aktif'` atau id salah satu checkpoint. Tidak perlu direset saat bab
+	 * berganti: ruang kerja editor di-`key` oleh `chapter.id`, jadi seluruh panel
+	 * memang terpasang ulang.
+	 */
+	const [lingkup, setLingkup] = React.useState<string>('aktif');
+
+	const muat = React.useCallback(() => {
+		setDaftarDraft(chapterDraftRepository.findByChapterId(chapter.id));
+		// Sekali `findAll`, bukan `findById` per baris: `findById` memanggil
+		// `findAll` di dalamnya, jadi sepuluh rujukan berarti sepuluh kali
+		// `JSON.parse` seluruh blob localStorage.
+		setPustaka(evidenceRepository.findAll());
+	}, [chapter.id]);
+
+	// Berkas bisa dihapus atau statusnya berubah dari tab lain, dan checkpoint
+	// bisa lahir dari tab Draft maupun Generasi — semuanya menyiarkan lewat event
+	// yang sama.
+	React.useEffect(() => {
+		muat();
+		window.addEventListener('storage-update', muat);
+		return () => window.removeEventListener('storage-update', muat);
+	}, [muat]);
+
+	const draftTerpilih = daftarDraft.find((draft) => draft.id === lingkup);
+	// Lingkup yang menunjuk checkpoint yang sudah tidak ada — hanya mungkin lewat
+	// keadaan aneh — jatuh kembali ke aktif alih-alih menampilkan daftar kosong
+	// tanpa penjelasan.
+	const lingkupEfektif = lingkup !== 'aktif' && !draftTerpilih ? 'aktif' : lingkup;
+
+	const rujukan = React.useMemo<BarisRujukan[]>(() => {
+		const sumber =
+			lingkupEfektif === 'aktif'
+				? chapter.buktiDukung
+				: (draftTerpilih?.buktiDukung ?? []);
+
+		const perId = new Map(pustaka.map((bukti) => [bukti.id, bukti]));
+		return sumber.map((ref) => ({ ref, live: perId.get(ref.id) }));
+	}, [lingkupEfektif, chapter.buktiDukung, draftTerpilih, pustaka]);
+
+	const jumlahHilang = rujukan.filter((baris) => !baris.live).length;
+
+	return {
+		daftarDraft,
+		lingkup: lingkupEfektif,
+		setLingkup,
+		draftTerpilih,
+		rujukan,
+		jumlahHilang,
+	};
+}

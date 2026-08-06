@@ -267,7 +267,7 @@ export function ChapterGenerationPanel({
 						{status === 'diam' && digenerateAt && (
 							<p className="text-xs leading-relaxed text-muted-foreground">
 								Digenerate {formatRelativeTimeLong(digenerateAt)} dari{' '}
-								{chapter.buktiDukungIds.length} bukti dukung.{' '}
+								{chapter.buktiDukung.length} bukti dukung.{' '}
 								{/*
 								 * §8.2: checkpoint tidak pernah dibuat sistem sendiri, bahkan
 								 * sesudah generate. Tawarannya diletakkan di sini — tepat di

@@ -641,6 +641,15 @@ Tampilan mengikuti konsep dua-sidebar ala Figma:
 - Isi tab ini **otomatis terisi** berdasarkan bukti dukung yang dipilih user saat generate, **maupun** yang diambil otomatis oleh AI di luar pilihan eksplisit user (jika sistem RAG menentukan ada bukti dukung lain yang relevan).
 - Tab ini hanya menampilkan **daftar**, tanpa detail isi/preview di dalamnya — untuk melihat detail, user membuka bukti dukung tersebut lewat Perpustakaan Bukti Dukung terkait.
 
+> **Catatan — yang berbeda saat tab ini dibangun.** Bagian di atas ditulis sebelum implementasinya ada; berikut yang menyusul, dan tidak menggantikannya.
+>
+> - **Lingkupnya bisa dipilih: kondisi aktif atau salah satu checkpoint.** Pasal ini hanya menyebut `BUKTI_DUKUNG_BAB`, tapi tiap `BAB_DRAFT` menyimpan `BUKTI_DUKUNG_DRAFT`-nya sendiri yang permanen dan **berbeda-beda antar versi** — dan §8.1 sudah menunda penampilannya justru ke tab ini. Kalau tab ini berhenti di kondisi aktif, arsip per checkpoint tidak akan pernah terlihat di mana pun. Pemilihnya hanya muncul untuk bab yang memang punya riwayat checkpoint.
+> - **Bagian "Panduan" belum dibangun.** Ia menuntut `PANDUAN_REFERENSI`/`PANDUAN_DETAIL`/`PANDUAN_DETAIL_BAB` yang belum ada sama sekali di kode, dan `referensi_chunk_ids` yang tersimpan sekarang masih string tiruan tanpa entitas di baliknya — menyeed panduan lebih dulu berarti mengarang keterkaitan yang belum ada. Ketiadaannya **dinyatakan di kaki panel**, bukan didiamkan, supaya tidak terbaca sebagai fitur yang terlupa.
+> - **Rujukan menyimpan nama dan tipe berkas, bukan hanya id.** Bukti dukung bisa dihapus dari Perpustakaan; kalau yang tersimpan cuma id, rujukan yang berkasnya hilang berhenti bisa dibaca sama sekali — tidak ada tempat lain di sistem yang masih tahu namanya. Karena itu `BUKTI_DUKUNG_BAB` maupun `BUKTI_DUKUNG_DRAFT` di sini berbentuk `{ id, nama_dokumen, tipe_file }`, dengan preseden yang sama seperti `BAB_DRAFT.dibuat_oleh_user_id` yang juga menyimpan namanya. `ukuran_bytes` dan `status` sengaja **tidak** ikut: keduanya berubah sepanjang umur berkas, jadi menyalinnya berarti mengarsipkan keadaan yang langsung basi — keduanya dibaca langsung dari Perpustakaan saat ditampilkan.
+> - **Berkas yang sudah dihapus tetap ditampilkan**, memakai nama arsipnya, dengan badge "Sudah dihapus" dan barisnya diredupkan. Menghilangkannya akan membuat riwayat berbohong: bab itu memang pernah disusun dari berkas tersebut, dan justru itu yang perlu diketahui saat dokumennya diperiksa asesor.
+> - **Tidak ada tautan langsung ke satu bukti dukung.** Seleksi berkas di Perpustakaan masih state lokal komponennya, jadi yang ditawarkan hanya tombol membuka pustakanya. Jangan berpura-pura lebih dari itu sampai deep-link-nya benar-benar ada.
+> - **Kalimat "bukti dukung yang diambil otomatis oleh AI di luar pilihan eksplisit user"** belum punya data di baliknya: jalur generate yang ada sekarang hanya mencatat berkas yang dicentang user. Baris itu menunggu retrieval sungguhan.
+
 ---
 
 ## 12. Kunci Review oleh Penjamin Mutu
@@ -757,6 +766,8 @@ Bagian ini mencatat hal-hal yang belum diputuskan/dibahas tuntas, untuk didiskus
 6. **Validasi perubahan status dokumen** — saat ini murni manual tanpa syarat. Apakah ke depannya perlu ditambah validasi (misal tidak bisa set `SELESAI` jika masih ada bab yang belum `terkunci`)?
 
 7. **Menghapus bukti dukung yang sedang dipakai suatu bab** — bukti dukung bisa sedang tercatat di `BUKTI_DUKUNG_BAB` (kondisi aktif) maupun `BUKTI_DUKUNG_DRAFT` (checkpoint permanen, jejak audit akreditasi). Apakah penghapusan diblokir selama masih dirujuk, atau tetap diizinkan dengan rujukan yang jadi menggantung? Untuk sekarang UI hanya memperingatkan lewat dialog konfirmasi.
+
+   > **Terjawab sebagian saat tab Rujukan dibangun (§11.1).** Penghapusan **tetap diizinkan**, tapi rujukannya tidak lagi menggantung: `BUKTI_DUKUNG_BAB` dan `BUKTI_DUKUNG_DRAFT` sekarang ikut menyimpan `nama_dokumen` + `tipe_file`, sehingga berkas yang sudah dihapus tetap bisa disebut namanya di tab Rujukan, ditandai badge "Sudah dihapus". Jejak auditnya terselamatkan tanpa memblokir penghapusan. Yang **masih terbuka**: apakah berkas yang dirujuk checkpoint sebaiknya tetap tidak boleh dihapus sama sekali demi kelengkapan arsip akreditasi — pertanyaan kebijakan, bukan lagi pertanyaan data.
 
 8. **Batas ukuran dan kuota penyimpanan** — batas 25 MB per berkas dipakai sebagai angka awal yang belum divalidasi ke kebutuhan nyata (LKPS hasil pindai bisa jauh lebih besar). Apakah perlu kuota total per tenant/prodi, dan apa yang terjadi saat kuota habis?
 

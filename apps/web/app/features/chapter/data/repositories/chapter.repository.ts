@@ -1,4 +1,10 @@
-import { type ChapterEntity } from '../../domain/entities/chapter.entity';
+import { z } from 'zod';
+
+import { type BuktiDukungRef } from '../../domain/entities/bukti-dukung-ref.entity';
+import {
+	chapterSchema,
+	type ChapterEntity,
+} from '../../domain/entities/chapter.entity';
 import { chapterLocalSource } from '../sources/local/chapter-local.source';
 import { chapterDraftRepository } from './chapter-draft.repository';
 
@@ -44,9 +50,67 @@ function buildEmptyChapters(ledProjectId: string): ChapterEntity[] {
 		terkunci: false,
 		catatanPenjaminMutu: null,
 		terakhirDisimpan: null,
-		buktiDukungIds: [],
+		buktiDukung: [],
 	}));
 }
+
+/**
+ * Cuplikan seed `evidence.repository.ts`, hanya berkas yang dipakai seed bab di
+ * bawah.
+ *
+ * Ditulis ulang di sini alih-alih mengimpor repository bukti dukung: seed ini
+ * berjalan saat modul dimuat, dan menyeret repository fitur lain ke dalam jalur
+ * itu membuat urutan inisialisasi keduanya saling bergantung. Kalau nama berkas
+ * di sana berubah, yang di sini ikut disesuaikan — tapi itu data contoh yang
+ * memang jarang bergerak.
+ */
+const BUKTI: Record<string, BuktiDukungRef> = {
+	'ev-01': {
+		id: 'ev-01',
+		namaDokumen: 'Statuta_Universitas_2024.pdf',
+		tipeFile: 'pdf',
+	},
+	'ev-02': {
+		id: 'ev-02',
+		namaDokumen: 'Renstra_Universitas_2025_2030.pdf',
+		tipeFile: 'pdf',
+	},
+	'ev-04': {
+		id: 'ev-04',
+		namaDokumen: 'Pedoman_Akademik_Universitas.docx',
+		tipeFile: 'docx',
+	},
+	'ev-12': {
+		id: 'ev-12',
+		namaDokumen: 'LKPS_Teknik_Informatika_2026.xlsx',
+		tipeFile: 'xlsx',
+	},
+	'ev-13': {
+		id: 'ev-13',
+		namaDokumen: 'SK_Kurikulum_Prodi_TI.pdf',
+		tipeFile: 'pdf',
+	},
+	'ev-14': {
+		id: 'ev-14',
+		namaDokumen: 'Daftar_Publikasi_Dosen_TI.xlsx',
+		tipeFile: 'xlsx',
+	},
+	'ev-16': {
+		id: 'ev-16',
+		namaDokumen: 'LKPS_Sistem_Informasi_2026.xlsx',
+		tipeFile: 'xlsx',
+	},
+	'ev-17': {
+		id: 'ev-17',
+		namaDokumen: 'Laporan_Kegiatan_Himpunan_SI.docx',
+		tipeFile: 'docx',
+	},
+	'ev-18': {
+		id: 'ev-18',
+		namaDokumen: 'SK_Dosen_Pembimbing_TA_Elektro.pdf',
+		tipeFile: 'pdf',
+	},
+};
 
 function daysAgo(days: number): string {
 	return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
@@ -68,7 +132,7 @@ const SEED_STATE: Record<
 		babTerkunci: number;
 		catatan?: Record<number, string>;
 		terbengkalai?: number[];
-		buktiDukung?: Record<number, string[]>;
+		buktiDukung?: Record<number, BuktiDukungRef[]>;
 	}
 > = {
 	'1': {
@@ -79,31 +143,31 @@ const SEED_STATE: Record<
 		},
 		terbengkalai: [2],
 		buktiDukung: {
-			1: ['ev-01', 'ev-02'],
-			2: ['ev-02'],
-			4: ['ev-01', 'ev-12'],
-			5: ['ev-13', 'ev-14'],
+			1: [BUKTI['ev-01'], BUKTI['ev-02']],
+			2: [BUKTI['ev-02']],
+			4: [BUKTI['ev-01'], BUKTI['ev-12']],
+			5: [BUKTI['ev-13'], BUKTI['ev-14']],
 		},
 	},
 	'2': {
 		babTerisi: 12,
 		babTerkunci: 4,
 		buktiDukung: {
-			1: ['ev-01'],
-			3: ['ev-16'],
-			4: ['ev-01', 'ev-02'],
-			6: ['ev-17'],
-			9: ['ev-04'],
-			12: ['ev-16', 'ev-17'],
+			1: [BUKTI['ev-01']],
+			3: [BUKTI['ev-16']],
+			4: [BUKTI['ev-01'], BUKTI['ev-02']],
+			6: [BUKTI['ev-17']],
+			9: [BUKTI['ev-04']],
+			12: [BUKTI['ev-16'], BUKTI['ev-17']],
 		},
 	},
 	'3': {
 		babTerisi: CHAPTER_TEMPLATE.length,
 		babTerkunci: CHAPTER_TEMPLATE.length,
 		buktiDukung: {
-			1: ['ev-01', 'ev-02'],
-			5: ['ev-18'],
-			10: ['ev-18', 'ev-04'],
+			1: [BUKTI['ev-01'], BUKTI['ev-02']],
+			5: [BUKTI['ev-18']],
+			10: [BUKTI['ev-18'], BUKTI['ev-04']],
 		},
 	},
 	// Siklus lama Teknik Informatika, sudah tuntas — isi arsip di Dashboard Prodi.
@@ -111,8 +175,8 @@ const SEED_STATE: Record<
 		babTerisi: CHAPTER_TEMPLATE.length,
 		babTerkunci: CHAPTER_TEMPLATE.length,
 		buktiDukung: {
-			1: ['ev-01'],
-			3: ['ev-13'],
+			1: [BUKTI['ev-01']],
+			3: [BUKTI['ev-13']],
 		},
 	},
 };
@@ -136,7 +200,7 @@ function buildSeededChapters(ledProjectId: string): ChapterEntity[] {
 					? daysAgo(31)
 					: daysAgo(chapter.urutanBab * 0.35)
 				: null,
-			buktiDukungIds: state.buktiDukung?.[chapter.urutanBab] ?? [],
+			buktiDukung: state.buktiDukung?.[chapter.urutanBab] ?? [],
 		};
 	});
 }
@@ -146,18 +210,40 @@ const initialChapters: ChapterEntity[] = Object.keys(SEED_STATE).flatMap(
 );
 
 export const chapterRepository = {
+	/**
+	 * Isi yang tersimpan **divalidasi**, bukan sekadar di-`JSON.parse` lalu
+	 * dianggap `ChapterEntity[]`.
+	 *
+	 * Bukan kehati-hatian berlebih: bentuk barisnya sudah pernah berubah sekali
+	 * (`buktiDukungIds: string[]` jadi `buktiDukung: BuktiDukungRef[]`), dan data
+	 * bentuk lama **lolos `JSON.parse` tanpa melempar apa pun**. Yang terjadi
+	 * kemudian bukan pesan galat yang jelas, melainkan `chapter.buktiDukung is not
+	 * iterable` di kedalaman `summarizeChapters` — jauh dari penyebabnya, dan
+	 * cukup untuk menjatuhkan seluruh halaman Dashboard.
+	 *
+	 * Menaikkan nomor key penyimpanan saja tidak cukup: itu hanya menolong halaman
+	 * yang dimuat ulang seutuhnya, sedangkan pemuatan ulang sebagian — modul
+	 * sumber lokal masih versi lama sementara entitasnya sudah baru — tetap
+	 * membaca bentuk lama. Pemeriksaan di sini berlaku untuk semuanya, dan
+	 * sekaligus membuat perubahan bentuk berikutnya tidak perlu mengarang nama key
+	 * lagi.
+	 */
 	findAll(): ChapterEntity[] {
 		const stored = chapterLocalSource.getAll();
 		if (!stored) {
 			this.save(initialChapters);
 			return initialChapters;
 		}
+
 		try {
-			return JSON.parse(stored);
+			const parsed = z.array(chapterSchema).safeParse(JSON.parse(stored));
+			if (parsed.success) return parsed.data;
 		} catch {
-			this.save(initialChapters);
-			return initialChapters;
+			// JSON-nya sendiri rusak; ditangani sama dengan bentuk yang tidak cocok.
 		}
+
+		this.save(initialChapters);
+		return initialChapters;
 	},
 
 	save(chapters: ChapterEntity[]): void {
@@ -272,7 +358,7 @@ export const chapterRepository = {
 	 */
 	applyGenerate(
 		chapterId: string,
-		input: { kontenKerja: string; buktiDukungIds: string[] },
+		input: { kontenKerja: string; buktiDukung: BuktiDukungRef[] },
 	): ChapterEntity | undefined {
 		const all = this.findAll();
 		const target = all.find((chapter) => chapter.id === chapterId);
@@ -281,7 +367,7 @@ export const chapterRepository = {
 		const updated: ChapterEntity = {
 			...target,
 			kontenKerja: input.kontenKerja,
-			buktiDukungIds: input.buktiDukungIds,
+			buktiDukung: input.buktiDukung,
 			// Generate menulis isi yang sama sekali baru, jadi tidak ada lagi
 			// checkpoint yang jadi basisnya. Tanpa pembersihan ini, checkpoint yang
 			// terakhir dipulihkan akan terus mengaku sebagai basis isi bab padahal
@@ -303,7 +389,7 @@ export const chapterRepository = {
 	 * menimpa kondisi aktif dari luar editor, jadi keduanya menolak bab terkunci
 	 * (§12.2) dan keduanya menyiarkan.
 	 *
-	 * `buktiDukungIds` **ikut dipulihkan**, dan ini melampaui docs: pasal
+	 * `buktiDukung` **ikut dipulihkan**, dan ini melampaui docs: pasal
 	 * "Restore ke checkpoint lama" di docs/database.md hanya menyebut
 	 * `konten_kerja` + `checkpoint_aktif_id`. Alasannya, kalau bukti dukungnya
 	 * ditinggal apa adanya, `BUKTI_DUKUNG_BAB` akan menyatakan konten aktif
@@ -314,7 +400,7 @@ export const chapterRepository = {
 	 */
 	restoreFromDraft(
 		chapterId: string,
-		draft: { id: string; kontenSnapshot: string; buktiDukungIds: string[] },
+		draft: { id: string; kontenSnapshot: string; buktiDukung: BuktiDukungRef[] },
 	): ChapterEntity | undefined {
 		const all = this.findAll();
 		const target = all.find((chapter) => chapter.id === chapterId);
@@ -323,7 +409,7 @@ export const chapterRepository = {
 		const updated: ChapterEntity = {
 			...target,
 			kontenKerja: draft.kontenSnapshot,
-			buktiDukungIds: draft.buktiDukungIds,
+			buktiDukung: draft.buktiDukung,
 			checkpointAktifId: draft.id,
 			terakhirDisimpan: new Date().toISOString(),
 		};

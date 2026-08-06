@@ -1,10 +1,5 @@
 import * as React from 'react';
-import {
-	BookOpenIcon,
-	GaugeIcon,
-	ListChecksIcon,
-	type Icon,
-} from '@phosphor-icons/react';
+import { GaugeIcon, ListChecksIcon, type Icon } from '@phosphor-icons/react';
 
 import { TabsContent } from '~/core/components/ui/tabs';
 import {
@@ -16,6 +11,7 @@ import { type HasilGenerate } from '../hooks/use-chapter-generation';
 import { type ChapterPermission } from '../hooks/use-chapter-permission';
 import { ChapterDraftPanel } from './chapter-draft-panel';
 import { ChapterGenerationPanel } from './chapter-generation-panel';
+import { ChapterReferencePanel } from './chapter-reference-panel';
 
 /**
  * Tab sidebar kanan Editor Bab.
@@ -39,11 +35,10 @@ export const PANEL_TABS = [
 export type PanelTabValue = (typeof PANEL_TABS)[number]['value'];
 
 /** Tab yang punya panel sungguhan; sisanya masih keadaan kosong. */
-const TAB_TERBANGUN = ['draft', 'generasi'] as const;
+const TAB_TERBANGUN = ['draft', 'generasi', 'rujukan'] as const;
 
 /**
- * Tab yang isinya belum dibangun — `draft` dan `generasi` sudah punya panelnya
- * sendiri.
+ * Tab yang isinya belum dibangun.
  *
  * Teksnya bercabang pada apakah babnya sudah punya isi, mengikuti §7.3 yang
  * menyatakan tab kanan tampil kosong sampai ada generate atau tulisan pertama.
@@ -57,13 +52,6 @@ const PANEL_COPY: Record<
 	Exclude<PanelTabValue, (typeof TAB_TERBANGUN)[number]>,
 	{ icon: Icon; title: string; kosong: string; terisi: string }
 > = {
-	rujukan: {
-		icon: BookOpenIcon,
-		title: 'Rujukan',
-		kosong:
-			'Panduan dan bukti dukung yang dipakai akan muncul di sini setelah bab ini digenerate atau ditulis.',
-		terisi: 'Belum ada panduan atau bukti dukung yang dirujuk bab ini.',
-	},
 	rubrik: {
 		icon: ListChecksIcon,
 		title: 'Rubrik',
@@ -134,6 +122,16 @@ export function ChapterEditorPanels({
 					studyProgramId={studyProgramId}
 					izin={izin}
 					onGenerated={onGenerated}
+				/>
+			</TabsContent>
+
+			<TabsContent
+				value="rujukan"
+				className="flex min-h-0 flex-1 flex-col overflow-hidden"
+			>
+				<ChapterReferencePanel
+					chapter={chapter}
+					studyProgramId={studyProgramId}
 				/>
 			</TabsContent>
 

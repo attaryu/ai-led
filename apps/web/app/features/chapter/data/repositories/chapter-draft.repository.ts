@@ -1,4 +1,8 @@
+import { z } from 'zod';
+
+import { type BuktiDukungRef } from '../../domain/entities/bukti-dukung-ref.entity';
 import {
+	chapterDraftSchema,
 	type ChapterDraftEntity,
 	type ChapterDraftSumber,
 } from '../../domain/entities/chapter-draft.entity';
@@ -8,6 +12,40 @@ function daysAgo(days: number): string {
 	return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
+/** Cuplikan seed bukti dukung; alasan penyalinannya sama dengan di `chapter.repository.ts`. */
+const BUKTI: Record<string, BuktiDukungRef> = {
+	'ev-01': {
+		id: 'ev-01',
+		namaDokumen: 'Statuta_Universitas_2024.pdf',
+		tipeFile: 'pdf',
+	},
+	'ev-02': {
+		id: 'ev-02',
+		namaDokumen: 'Renstra_Universitas_2025_2030.pdf',
+		tipeFile: 'pdf',
+	},
+	'ev-12': {
+		id: 'ev-12',
+		namaDokumen: 'LKPS_Teknik_Informatika_2026.xlsx',
+		tipeFile: 'xlsx',
+	},
+	'ev-16': {
+		id: 'ev-16',
+		namaDokumen: 'LKPS_Sistem_Informasi_2026.xlsx',
+		tipeFile: 'xlsx',
+	},
+	/**
+	 * Sengaja **tidak ada** di seed `evidence.repository.ts` — berkas yang dulu
+	 * dipakai lalu dihapus dari Perpustakaan. Ia yang membuat keadaan "sudah
+	 * dihapus" di tab Rujukan bisa dilihat tanpa perlu menghapus apa pun dulu.
+	 */
+	'ev-99': {
+		id: 'ev-99',
+		namaDokumen: 'Draf_Renstra_2024_versi_lama.pdf',
+		tipeFile: 'pdf',
+	},
+};
+
 /**
  * Checkpoint contoh untuk bab-bab yang di `SEED_STATE` (chapter.repository.ts)
  * sudah terisi.
@@ -16,7 +54,8 @@ function daysAgo(days: number): string {
  * tidak selalu tampak kosong saat aplikasi baru dijalankan. Sengaja dibuat
  * beragam: berlabel dan tanpa label, `MANUAL` dan `AI`, dibuat oleh dua orang
  * berbeda, supaya tiap cabang tampilannya terlihat tanpa perlu menyiapkan data
- * sendiri. `buktiDukungIds`-nya mengikuti seed bab masing-masing.
+ * sendiri. `buktiDukung`-nya mengikuti seed bab masing-masing, kecuali satu
+ * checkpoint yang sengaja merujuk berkas yang sudah tidak ada lagi.
  */
 const initialDrafts: ChapterDraftEntity[] = [
 	{
@@ -27,7 +66,9 @@ const initialDrafts: ChapterDraftEntity[] = [
 		kontenSnapshot:
 			'<p>Kerangka Pendahuluan yang disusun sebelum data LKPS tersedia.</p>',
 		sumber: 'MANUAL',
-		buktiDukungIds: ['ev-01'],
+		// `ev-99` sudah tidak ada di Perpustakaan — memperlihatkan bahwa arsip
+		// checkpoint tetap bisa menyebut nama berkas yang sudah dihapus.
+		buktiDukung: [BUKTI['ev-01'], BUKTI['ev-99']],
 		referensiChunkIds: [],
 		dibuatOlehUserId: '2',
 		dibuatOlehNama: 'Siti Rahmawati',
@@ -41,7 +82,7 @@ const initialDrafts: ChapterDraftEntity[] = [
 		kontenSnapshot:
 			'<p>Pendahuluan hasil generate pertama, disusun dari dua bukti dukung tingkat universitas.</p>',
 		sumber: 'AI',
-		buktiDukungIds: ['ev-01', 'ev-02'],
+		buktiDukung: [BUKTI['ev-01'], BUKTI['ev-02']],
 		referensiChunkIds: ['chunk-panduan-1-02', 'chunk-bukti-ev-01-07'],
 		dibuatOlehUserId: '2',
 		dibuatOlehNama: 'Siti Rahmawati',
@@ -55,7 +96,7 @@ const initialDrafts: ChapterDraftEntity[] = [
 		kontenSnapshot:
 			'<p>Pendahuluan sesudah disunting tangan, diamankan sebelum masuk review.</p>',
 		sumber: 'MANUAL',
-		buktiDukungIds: ['ev-01', 'ev-02'],
+		buktiDukung: [BUKTI['ev-01'], BUKTI['ev-02']],
 		referensiChunkIds: [],
 		dibuatOlehUserId: '1',
 		dibuatOlehNama: 'Ahmad Fauzi',
@@ -69,7 +110,7 @@ const initialDrafts: ChapterDraftEntity[] = [
 		kontenSnapshot:
 			'<p>Draf awal bagian ini, dihasilkan dari bukti dukung universitas dan prodi.</p>',
 		sumber: 'AI',
-		buktiDukungIds: ['ev-01', 'ev-12'],
+		buktiDukung: [BUKTI['ev-01'], BUKTI['ev-12']],
 		referensiChunkIds: ['chunk-panduan-4-01'],
 		dibuatOlehUserId: '2',
 		dibuatOlehNama: 'Siti Rahmawati',
@@ -82,7 +123,7 @@ const initialDrafts: ChapterDraftEntity[] = [
 		label: 'Versi yang disetujui rapat prodi',
 		kontenSnapshot: '<p>Bagian ini sudah dibahas dan disetujui di rapat prodi.</p>',
 		sumber: 'MANUAL',
-		buktiDukungIds: ['ev-16'],
+		buktiDukung: [BUKTI['ev-16']],
 		referensiChunkIds: [],
 		dibuatOlehUserId: '1',
 		dibuatOlehNama: 'Ahmad Fauzi',
@@ -91,18 +132,23 @@ const initialDrafts: ChapterDraftEntity[] = [
 ];
 
 export const chapterDraftRepository = {
+	/** Divalidasi saat dibaca, dengan alasan yang sama seperti `chapterRepository.findAll`. */
 	findAll(): ChapterDraftEntity[] {
 		const stored = chapterDraftLocalSource.getAll();
 		if (!stored) {
 			this.save(initialDrafts);
 			return initialDrafts;
 		}
+
 		try {
-			return JSON.parse(stored);
+			const parsed = z.array(chapterDraftSchema).safeParse(JSON.parse(stored));
+			if (parsed.success) return parsed.data;
 		} catch {
-			this.save(initialDrafts);
-			return initialDrafts;
+			// JSON-nya sendiri rusak; ditangani sama dengan bentuk yang tidak cocok.
 		}
+
+		this.save(initialDrafts);
+		return initialDrafts;
 	},
 
 	save(drafts: ChapterDraftEntity[]): void {
@@ -140,7 +186,7 @@ export const chapterDraftRepository = {
 		label: string | null;
 		kontenSnapshot: string;
 		sumber: ChapterDraftSumber;
-		buktiDukungIds: string[];
+		buktiDukung: BuktiDukungRef[];
 		referensiChunkIds: string[];
 		dibuatOlehUserId: string;
 		dibuatOlehNama: string;

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { buktiDukungRefSchema } from './bukti-dukung-ref.entity';
+
 /**
  * Satu checkpoint bab (docs/database.md → BAB_DRAFT, docs/application_flow.md §8).
  *
@@ -45,13 +47,15 @@ export const chapterDraftSchema = z.object({
 	sumber: chapterDraftSumberEnum,
 	/**
 	 * Denormalisasi `BUKTI_DUKUNG_DRAFT`, dengan alasan yang sama seperti
-	 * `ChapterEntity.buktiDukungIds`: sumber datanya masih localStorage, dan saat
+	 * `ChapterEntity.buktiDukung`: sumber datanya masih localStorage, dan saat
 	 * pindah ke API ini kembali jadi tabel relasi. Bedanya dari yang di bab —
 	 * daftar ini **permanen**, tidak ikut berubah saat pilihan bukti dukung aktif
 	 * diganti. Itulah yang membuat checkpoint jadi arsip: bertahun kemudian masih
-	 * bisa dijawab "versi ini dulu disusun dari berkas apa".
+	 * bisa dijawab "versi ini dulu disusun dari berkas apa" — dan karena
+	 * {@link BuktiDukungRef} ikut menyimpan namanya, jawaban itu tetap terbaca
+	 * walau berkasnya sendiri sudah dihapus.
 	 */
-	buktiDukungIds: z.array(z.string()),
+	buktiDukung: z.array(buktiDukungRefSchema),
 	/**
 	 * Id chunk vector database yang jadi rujukan saat AI menyusun isinya. Kosong
 	 * untuk checkpoint `MANUAL`. Belum ditampilkan di mana pun — tab Rujukan
