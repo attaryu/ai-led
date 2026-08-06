@@ -28,8 +28,8 @@ import { ChapterGenerationPanel } from './chapter-generation-panel';
  * toolbar dan panel-panel di sidebar kanan.
  */
 export const PANEL_TABS = [
-	{ value: 'generasi', label: 'Generasi' },
 	{ value: 'draft', label: 'Draft' },
+	{ value: 'generasi', label: 'Generasi' },
 	{ value: 'rujukan', label: 'Rujukan' },
 	{ value: 'rubrik', label: 'Rubrik' },
 	{ value: 'skor', label: 'Skor' },
