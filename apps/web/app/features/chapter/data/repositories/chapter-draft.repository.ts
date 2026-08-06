@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { type BuktiDukungRef } from '../../domain/entities/bukti-dukung-ref.entity';
+import { type RagasScore } from '../../domain/entities/ragas-score.entity';
 import {
 	chapterDraftSchema,
 	type ChapterDraftEntity,
@@ -70,6 +71,7 @@ const initialDrafts: ChapterDraftEntity[] = [
 		// checkpoint tetap bisa menyebut nama berkas yang sudah dihapus.
 		buktiDukung: [BUKTI['ev-01'], BUKTI['ev-99']],
 		referensiChunkIds: [],
+		ragas: null,
 		dibuatOlehUserId: '2',
 		dibuatOlehNama: 'Siti Rahmawati',
 		dibuatPada: daysAgo(9),
@@ -84,6 +86,30 @@ const initialDrafts: ChapterDraftEntity[] = [
 		sumber: 'AI',
 		buktiDukung: [BUKTI['ev-01'], BUKTI['ev-02']],
 		referensiChunkIds: ['chunk-panduan-1-02', 'chunk-bukti-ev-01-07'],
+		ragas: {
+			jumlahChunk: 2,
+			dihitungPada: daysAgo(4),
+			metrik: [
+				{
+					metrik: 'faithfulness',
+					nilai: 0.79,
+					alasan:
+						'Seluruh pernyataan hasil generate ditelusuri ke 2 potongan sumber; yang menyebut nama berkas secara langsung ada 2.',
+				},
+				{
+					metrik: 'response_relevancy',
+					nilai: 0.9,
+					alasan:
+						'Hasilnya menjawab bab yang diminta sekaligus arahan tambahan yang diisi penyusun.',
+				},
+				{
+					metrik: 'context_precision',
+					nilai: 0.84,
+					alasan:
+						'Dari 2 potongan yang diambil, sebagian besar terpakai di tulisan akhir — sisanya ikut terambil karena berada di dokumen yang sama.',
+				},
+			],
+		},
 		dibuatOlehUserId: '2',
 		dibuatOlehNama: 'Siti Rahmawati',
 		dibuatPada: daysAgo(4),
@@ -98,6 +124,9 @@ const initialDrafts: ChapterDraftEntity[] = [
 		sumber: 'MANUAL',
 		buktiDukung: [BUKTI['ev-01'], BUKTI['ev-02']],
 		referensiChunkIds: [],
+		// Disunting tangan sesudah digenerate, jadi penilaian mutu AI yang lama
+		// tidak lagi menggambarkan isinya.
+		ragas: null,
 		dibuatOlehUserId: '1',
 		dibuatOlehNama: 'Ahmad Fauzi',
 		dibuatPada: daysAgo(1),
@@ -112,6 +141,30 @@ const initialDrafts: ChapterDraftEntity[] = [
 		sumber: 'AI',
 		buktiDukung: [BUKTI['ev-01'], BUKTI['ev-12']],
 		referensiChunkIds: ['chunk-panduan-4-01'],
+		ragas: {
+			jumlahChunk: 3,
+			dihitungPada: daysAgo(6),
+			metrik: [
+				{
+					metrik: 'faithfulness',
+					nilai: 0.88,
+					alasan:
+						'Seluruh pernyataan hasil generate ditelusuri ke 3 potongan sumber; yang menyebut nama berkas secara langsung ada 2.',
+				},
+				{
+					metrik: 'response_relevancy',
+					nilai: 0.81,
+					alasan:
+						'Hasilnya menjawab bab yang diminta; tidak ada arahan tambahan yang perlu ikut dipenuhi.',
+				},
+				{
+					metrik: 'context_precision',
+					nilai: 0.76,
+					alasan:
+						'Dari 3 potongan yang diambil, sebagian besar terpakai di tulisan akhir — sisanya ikut terambil karena berada di dokumen yang sama.',
+				},
+			],
+		},
 		dibuatOlehUserId: '2',
 		dibuatOlehNama: 'Siti Rahmawati',
 		dibuatPada: daysAgo(6),
@@ -125,6 +178,7 @@ const initialDrafts: ChapterDraftEntity[] = [
 		sumber: 'MANUAL',
 		buktiDukung: [BUKTI['ev-16']],
 		referensiChunkIds: [],
+		ragas: null,
 		dibuatOlehUserId: '1',
 		dibuatOlehNama: 'Ahmad Fauzi',
 		dibuatPada: daysAgo(12),
@@ -187,6 +241,7 @@ export const chapterDraftRepository = {
 		kontenSnapshot: string;
 		sumber: ChapterDraftSumber;
 		buktiDukung: BuktiDukungRef[];
+		ragas: RagasScore | null;
 		referensiChunkIds: string[];
 		dibuatOlehUserId: string;
 		dibuatOlehNama: string;

@@ -536,7 +536,7 @@ Tampilan mengikuti konsep dua-sidebar ala Figma:
 └────────────┴─────────────────────────────┴──────────────────────┘
 ```
 
-> **Catatan — penamaan dan urutan tab.** Bagian ini semula menulis "Generate | Rujukan | Rubrik | Skor | Draft". Yang dipakai sekarang: **"Generate" jadi "Generasi"** supaya seluruh label berbahasa Indonesia, dan **Draft naik ke urutan kedua** karena ia pasangan langsung dari hasil generate. Isi pasal 8–12 di bawah tidak berubah, hanya label dan urutannya. Satu-satunya sumber urutan di kode ada di `PANEL_TABS` (`features/chapter/presentation/components/chapter-editor-panels.tsx`).
+> **Catatan — penamaan dan urutan tab.** Bagian ini semula menulis "Generate | Rujukan | Rubrik | Skor | Draft". Yang dipakai sekarang: **"Generate" jadi "Generasi"** supaya seluruh label berbahasa Indonesia, **Draft naik ke urutan kedua** karena ia pasangan langsung dari hasil generate, dan **"Skor" jadi "Kualitas AI"** karena nama lamanya tertukar rasanya dengan "Rubrik" — justru tab itu yang menampilkan skor 1–4 beserta totalnya, sedangkan yang ini mengukur mutu kerja AI-nya (§10.1). Urutan tampilnya kini **Draft | Generasi | Rujukan | Rubrik | Kualitas AI**. Isi pasal 8–12 di bawah tidak berubah, hanya label dan urutannya. Satu-satunya sumber urutan dan label di kode ada di `PANEL_TABS` (`features/chapter/presentation/components/chapter-editor-panels.tsx`); `value` tiap tab tetap memakai nama lamanya karena ia kunci internal.
 >
 > **Catatan — serialisasi `konten_kerja`.** Editor menulis **string HTML**, bukan JSON ProseMirror, walau docs/database.md menyebut kolomnya `jsonb` (kolom JSON nanti tinggal memuat `{ format: 'html', body: '<p>…</p>' }`). Alasannya bab yang lahir sebelum editor ada — termasuk seluruh data contoh — berisi kalimat biasa: sebagai HTML ia dibungkus jadi paragraf tanpa kode migrasi apa pun, sedangkan `JSON.parse` akan melempar dan memaksa cabang penyelamat permanen di tiap tempat baca.
 
@@ -638,6 +638,16 @@ Tampilan mengikuti konsep dua-sidebar ala Figma:
 - Berbeda dari tab Rubrik (yang menilai **kelayakan konten** terhadap kriteria akreditasi LAM Teknik), tab ini menampilkan metrik **kualitas jawaban AI** itu sendiri (relevansi, faithfulness, dsb — gaya evaluasi RAGAS untuk sistem RAG).
 - **Dihitung otomatis** setiap kali proses Generate selesai — tidak ada tombol trigger manual terpisah.
 - Bersifat informatif, kemungkinan lebih relevan untuk tim pengembang memantau kualitas RAG dibanding untuk pengambilan keputusan akreditasi oleh user akhir. Belum final apakah tab ini akan dipertahankan di rilis produksi.
+
+> **Catatan — yang berbeda saat tab ini dibangun.**
+>
+> - **Tabnya tampil sebagai "Kualitas AI", bukan "Skor".** Nama lamanya tertukar rasanya dengan "Rubrik" — justru tab itu yang menampilkan skor 1–4 beserta totalnya, sedangkan tab ini mengukur mutu kerja AI-nya. `value`-nya tetap `'skor'` di `PANEL_TABS` karena ia kunci internal yang tidak pernah dilihat pengguna.
+> - **Tiga metrik, bukan empat.** Yang ditampilkan: **Kesetiaan pada sumber** (faithfulness), **Relevansi jawaban** (response relevancy), dan **Ketepatan konteks** (context precision). `context_recall` **sengaja tidak ada**: metrik itu menuntut `reference` — jawaban acuan yang dianggap benar untuk dibandingkan — dan LED tidak punya itu, justru dokumen inilah yang sedang disusun. Menampilkannya berarti menyediakan tempat yang tidak akan pernah terisi jujur.
+> - **Tiap metrik disertai dua penjelasan**: apa yang diukur, dan kenapa angkanya segitu **pada generate ini**. Angka 0–1 tanpa keduanya tidak berarti apa pun bagi siapa pun di luar tim RAG, dan alasan yang cuma mengulang definisi metriknya sama saja dengan tidak ada. Definisinya disembunyikan di balik **ikon info bertooltip** — ia hanya perlu dibaca sekali, dan menampilkannya permanen di tiap kartu mendorong temuan yang sebenarnya keluar layar. Ikonnya tombol sungguhan, jadi tooltipnya juga terbuka lewat Tab, bukan hover saja.
+> - **Skornya menempel ke kondisi aktif dan ikut ke checkpoint**, pola yang sama dengan `konten_kerja`, `BUKTI_DUKUNG_BAB`, dan skor rubrik. Tab punya pemilih lingkup seperti Rubrik dan Rujukan. Ia ikut ke checkpoint **bukan** karena `sumber = AI`, melainkan karena isi yang di-snapshot memang pernah dinilai — checkpoint manual dari tulisan yang tadinya digenerate mewarisinya secara sah, dan yang ditulis tangan otomatis kosong.
+> - **Ada penanda "isi sudah disunting sejak penilaian ini".** Skor menggambarkan tulisan saat ia dinilai; begitu babnya disunting, angkanya berhenti menggambarkan isi yang sekarang. Skornya **tidak dihapus** — ia tetap fakta tentang generate yang pernah terjadi — hanya ditandai. Lingkup checkpoint tidak pernah basi karena `konten_snapshot` memang tidak bisa berubah.
+> - **Tab ini nol tombol**, sesuai kalimat "dihitung otomatis" di atas. Yang mengisinya tab Generasi.
+> - **Penilaiannya masih tiruan** di `chapter-generation.mock.ts`, dan **deterministik** dari isi — skor yang ikut disalin ke checkpoint permanen tidak boleh dibaca berbeda tiap kali.
 
 ---
 

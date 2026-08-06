@@ -8,6 +8,7 @@ import {
 } from "react-router";
 
 import "./app.css";
+import { TooltipProvider } from "~/core/components/ui/tooltip";
 import { EvidenceUploadPanel } from "~/features/evidence/presentation/components/evidence-upload-panel";
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -30,7 +31,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <>
+    /*
+      `TooltipProvider` di akar supaya seluruh tooltip berbagi satu pengatur
+      jeda: begitu satu tooltip terbuka, tetangganya muncul seketika alih-alih
+      menunggu jedanya sendiri-sendiri. Tanpa provider tooltipnya tetap jalan,
+      tapi tiap satu berperilaku seolah yang pertama dibuka.
+    */
+    <TooltipProvider>
       <Outlet />
       {/*
         Panel progres unggahan bukti dukung dipasang di akar aplikasi, bukan di
@@ -39,7 +46,7 @@ export default function App() {
         kerja. Ia merender dirinya hanya ketika ada antrean unggahan.
       */}
       <EvidenceUploadPanel />
-    </>
+    </TooltipProvider>
   );
 }
 

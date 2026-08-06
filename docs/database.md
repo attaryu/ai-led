@@ -19,6 +19,7 @@
    - [RUBRIK_KRITERIA](#10-rubrik_kriteria)
    - [RUBRIK_KRITERIA_BAB](#11-rubrik_kriteria_bab)
    - [HASIL_SKOR_KRITERIA](#12-hasil_skor_kriteria)
+   - [Skor RAGAS — belum punya tempat di skema ini](#12a-skor-ragas--belum-punya-tempat-di-skema-ini)
 6. [Kelompok: Panduan Referensi (Master Data RAG)](#kelompok-panduan-referensi-master-data-rag)
    - [PANDUAN_REFERENSI](#13-panduan_referensi)
    - [PANDUAN_DETAIL](#14-panduan_detail)
@@ -472,6 +473,30 @@ Inilah yang benar-benar ditampilkan ke user di halaman editor bab: breakdown sko
 - **Simulasi untuk bab aktif**: setiap kali dijalankan ulang pada `konten_kerja` yang sama atau sudah berubah, seluruh baris lama untuk `bab_id` tersebut **dihapus lalu diganti** baris baru — mengikuti pola "ditimpa" seperti `konten_kerja` dan `BUKTI_DUKUNG_BAB`.
 - **Simulasi untuk checkpoint**: dibuat sekali saat checkpoint pertama kali disimulasikan. Karena `konten_snapshot` checkpoint tidak berubah, hasil skor idealnya juga tidak perlu di-*run* ulang — tapi jika user tetap menjalankannya lagi (misal karena `RUBRIK_KRITERIA` sendiri diperbarui), baris lama untuk `bab_draft_id` tersebut **ditimpa** dengan hasil baru (bukan disimpan sebagai riwayat berlapis).
 - **Total skor per bab**: dihitung on-the-fly di aplikasi dengan menjumlah/merata-rata seluruh `skor_didapat` untuk `bab_id`/`bab_draft_id` yang sama — tidak disimpan sebagai kolom terpisah agar skema tetap sederhana.
+
+---
+
+## 12a. Skor RAGAS — belum punya tempat di skema ini
+
+> **Celah yang ditemukan saat tab "Kualitas AI" dibangun.**
+>
+> Dokumen ini memuat lima belas tabel, dan **tidak satu pun menyimpan skor RAGAS** — padahal `docs/architecture.md §5.2` langkah 5 menuliskan hasilnya ditulis ke PostgreSQL bersama `konten_kerja` dan `BUKTI_DUKUNG_BAB`, dan `§5.4` menegaskan ia dihitung FastAPI di dalam siklus job Content Generation yang sama. Jadi datanya memang ada di alur, tapi belum pernah dirancang tempatnya.
+>
+> Berbeda dari `HASIL_SKOR_KRITERIA` yang menilai kelayakan bab terhadap rubrik akreditasi, metrik ini menilai **mutu kerja AI-nya sendiri**. Keduanya bisa berlawanan: jawaban yang sangat setia pada sumber tetap bisa berskor rubrik rendah kalau sumbernya memang belum memadai.
+>
+> **Bentuk yang dipakai implementasi** — satu objek per target, bukan satu baris per metrik:
+>
+> | Field | Tipe | Keterangan |
+> |---|---|---|
+> | `metrik` | jsonb | Larik `{ metrik, nilai, alasan }`. `metrik` salah satu dari `faithfulness` \| `response_relevancy` \| `context_precision`; `nilai` 0–1 sesuai rentang bawaan Ragas; `alasan` adalah `reason` dari penilainya |
+> | `jumlah_chunk` | int | Berapa potongan konteks yang ikut dinilai |
+> | `dihitung_pada` | datetime | Distempel **sama persis** dengan `terakhir_disimpan` saat generate, supaya penanda "isi sudah berubah sejak dinilai" tidak menyala palsu |
+>
+> **`context_recall` sengaja tidak ada.** Metrik itu menuntut `reference` — jawaban acuan yang dianggap benar — dan LED tidak punya itu: justru dokumen inilah yang sedang disusun, tidak ada versi "yang benar" untuk diperbandingkan.
+>
+> **Di mana ia menempel.** Mengikuti pola "kondisi aktif vs checkpoint" yang berlaku di seluruh dokumen ini: kolom `ragas` pada **`BAB_DOKUMEN`** (ditimpa tiap generate, `null` bila isinya tidak lahir dari generate) dan kolom `ragas` pada **`BAB_DRAFT`** (salinan permanen, tidak pernah basi). Kalau kelak metriknya bertambah atau perlu di-query lintas bab, bentuk ini wajar dipecah jadi tabel `HASIL_RAGAS` dengan `target_tipe`/`bab_id`/`bab_draft_id` — persis seperti `HASIL_SKOR_KRITERIA`.
+>
+> Salinan ke checkpoint **tidak** ditentukan oleh `BAB_DRAFT.sumber`, melainkan oleh apakah isi yang di-snapshot memang pernah dinilai: checkpoint `MANUAL` dari tulisan yang tadinya digenerate mewarisi skornya secara sah, dan yang ditulis tangan otomatis `null` tanpa perlu aturan tambahan.
 
 ---
 

@@ -1,16 +1,13 @@
 import * as React from 'react';
-import { GaugeIcon, type Icon } from '@phosphor-icons/react';
 
 import { TabsContent } from '~/core/components/ui/tabs';
-import {
-	hasKonten,
-	type ChapterEntity,
-} from '../../domain/entities/chapter.entity';
+import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import { type HasilPulih } from '../hooks/use-chapter-draft';
 import { type HasilGenerate } from '../hooks/use-chapter-generation';
 import { type ChapterPermission } from '../hooks/use-chapter-permission';
 import { ChapterDraftPanel } from './chapter-draft-panel';
 import { ChapterGenerationPanel } from './chapter-generation-panel';
+import { ChapterQualityPanel } from './chapter-quality-panel';
 import { ChapterReferencePanel } from './chapter-reference-panel';
 import { ChapterRubricPanel } from './chapter-rubric-panel';
 
@@ -22,6 +19,11 @@ import { ChapterRubricPanel } from './chapter-rubric-panel';
  * supaya seluruh label berbahasa Indonesia, dan "Draft" naik ke urutan kedua
  * karena ia pasangan langsung dari hasil generate.
  *
+ * **"Skor" tampil sebagai "Kualitas AI".** Nama lamanya tertukar rasanya dengan
+ * "Rubrik" — justru tab itu yang menampilkan skor 1–4 beserta totalnya, sedangkan
+ * tab ini mengukur mutu kerja AI-nya (§10.1). `value`-nya tetap `'skor'` karena ia
+ * dipakai sebagai kunci di beberapa tempat dan tidak pernah dilihat pengguna.
+ *
  * Satu-satunya sumber urutan dan label, dipakai bersama oleh daftar tab di baris
  * toolbar dan panel-panel di sidebar kanan.
  */
@@ -30,36 +32,10 @@ export const PANEL_TABS = [
 	{ value: 'generasi', label: 'Generasi' },
 	{ value: 'rujukan', label: 'Rujukan' },
 	{ value: 'rubrik', label: 'Rubrik' },
-	{ value: 'skor', label: 'Skor' },
+	{ value: 'skor', label: 'Kualitas AI' },
 ] as const;
 
 export type PanelTabValue = (typeof PANEL_TABS)[number]['value'];
-
-/** Tab yang punya panel sungguhan; sisanya masih keadaan kosong. */
-const TAB_TERBANGUN = ['draft', 'generasi', 'rujukan', 'rubrik'] as const;
-
-/**
- * Tab yang isinya belum dibangun.
- *
- * Teksnya bercabang pada apakah babnya sudah punya isi, mengikuti §7.3 yang
- * menyatakan tab kanan tampil kosong sampai ada generate atau tulisan pertama.
- * Yang **tidak** dilakukan: menonaktifkan tombol tabnya. Base UI melewati tab
- * disabled saat navigasi panah, sehingga pengguna di bab baru — kondisi paling
- * umum saat dokumen baru dibuat — akan menemukan seluruh sidebar kanan tidak
- * terjangkau dan tidak bisa tahu isinya apa. §12.2 juga menuntut semua tab tetap
- * bisa dibuka saat bab dikunci.
- */
-const PANEL_COPY: Record<
-	Exclude<PanelTabValue, (typeof TAB_TERBANGUN)[number]>,
-	{ icon: Icon; title: string; kosong: string; terisi: string }
-> = {
-	skor: {
-		icon: GaugeIcon,
-		title: 'Skor',
-		kosong: 'Skor bisa dihitung setelah bab ini punya isi.',
-		terisi: 'Belum ada hasil penilaian untuk bab ini.',
-	},
-};
 
 export function ChapterEditorPanels({
 	chapter,
@@ -71,6 +47,7 @@ export function ChapterEditorPanels({
 	onLihatSkor,
 	lingkupSkor,
 	setLingkupSkor,
+	savedAt,
 	lebar,
 	handleProps,
 }: {
@@ -87,16 +64,15 @@ export function ChapterEditorPanels({
 	 */
 	lingkupSkor: string;
 	setLingkupSkor: (lingkup: string) => void;
+	/** Stempel simpan terakhir dari autosave; dipakai tab Kualitas AI. */
+	savedAt: string | null;
 	/** Lebar hasil seretan; menggantikan `w-80` yang dulu tetap. */
 	lebar: number;
 	handleProps: React.ComponentProps<'div'>;
 }) {
-	const terisi = hasKonten(chapter);
-
 	return (
-		// `overflow-hidden`, bukan `overflow-y-auto`: tab Generasi mengatur
-		// gulungannya sendiri supaya pencarian dan tombol generate tetap terlihat.
-		// Tab lain isinya sependek satu keadaan kosong, jadi tidak ada yang hilang.
+		// `overflow-hidden`, bukan `overflow-y-auto`: tiap panel mengatur gulungannya
+		// sendiri supaya kepala dan kakinya tetap terlihat berapa pun panjang isinya.
 		<aside
 			style={{ width: lebar }}
 			className="relative flex shrink-0 flex-col overflow-hidden border-l border-border bg-background"
@@ -153,52 +129,12 @@ export function ChapterEditorPanels({
 				/>
 			</TabsContent>
 
-			{PANEL_TABS.filter(
-				(tab) => !TAB_TERBANGUN.includes(tab.value as never),
-			).map((tab) => {
-				const copy = PANEL_COPY[tab.value as keyof typeof PANEL_COPY];
-				return (
-					<TabsContent
-						key={tab.value}
-						value={tab.value}
-						className="overflow-y-auto p-5"
-					>
-						<ChapterPanelEmpty
-							icon={copy.icon}
-							title={copy.title}
-							description={terisi ? copy.terisi : copy.kosong}
-						/>
-					</TabsContent>
-				);
-			})}
+			<TabsContent
+				value="skor"
+				className="flex min-h-0 flex-1 flex-col overflow-hidden"
+			>
+				<ChapterQualityPanel chapter={chapter} savedAt={savedAt} />
+			</TabsContent>
 		</aside>
-	);
-}
-
-/**
- * Keadaan kosong panel sidebar kanan.
- *
- * Sengaja lokal, bukan `PlaceholderPage` dari core: yang itu kartu selebar badan
- * halaman lengkap dengan tautan rute, sedangkan ini harus muat di kolom 320 px.
- * Kalau nanti panel serupa muncul di fitur lain, barulah ia naik ke `core/`
- * seperti yang sudah terjadi pada `StatCard` dan `format-time`.
- */
-function ChapterPanelEmpty({
-	icon: IconGlyph,
-	title,
-	description,
-}: {
-	icon: Icon;
-	title: string;
-	description: string;
-}) {
-	return (
-		<div className="flex flex-col items-center gap-2 px-2 py-10 text-center">
-			<IconGlyph className="size-7 text-muted-foreground/50" />
-			<p className="text-sm font-medium">{title}</p>
-			<p className="text-xs leading-relaxed text-muted-foreground">
-				{description}
-			</p>
-		</div>
 	);
 }

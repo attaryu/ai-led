@@ -9,6 +9,7 @@ import { chapterDraftRepository } from '../../data/repositories/chapter-draft.re
 import { chapterRepository } from '../../data/repositories/chapter.repository';
 import { generateChapterContent } from '../../data/sources/remote/chapter-generation.mock';
 import { type BuktiDukungRef } from '../../domain/entities/bukti-dukung-ref.entity';
+import { type RagasScore } from '../../domain/entities/ragas-score.entity';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import { type ChapterPermission } from './use-chapter-permission';
 
@@ -90,6 +91,7 @@ export function useChapterGeneration({
 	const [hasilTerakhir, setHasilTerakhir] = React.useState<{
 		buktiDukung: BuktiDukungRef[];
 		referensiChunkIds: string[];
+		ragas: RagasScore | null;
 	} | null>(null);
 	/** Versi checkpoint yang lahir dari hasil terakhir; `null` selama belum disimpan. */
 	const [versiTersimpan, setVersiTersimpan] = React.useState<number | null>(null);
@@ -211,7 +213,7 @@ export function useChapterGeneration({
 			}));
 
 			try {
-				const { html, referensiChunkIds } = await generateChapterContent({
+				const { html, referensiChunkIds, ragas } = await generateChapterContent({
 					judulBab: chapter.judulBab,
 					urutanBab: chapter.urutanBab,
 					buktiDukung: rujukan,
@@ -221,6 +223,7 @@ export function useChapterGeneration({
 				const diperbarui = chapterRepository.applyGenerate(chapter.id, {
 					kontenKerja: html,
 					buktiDukung: rujukan,
+					ragas,
 				});
 
 				// Satu-satunya alasan repository menolak: bab dikunci dari tempat lain
@@ -244,6 +247,9 @@ export function useChapterGeneration({
 				setHasilTerakhir({
 					buktiDukung: diperbarui.buktiDukung,
 					referensiChunkIds,
+					// Dibaca balik dari baris yang tersimpan, bukan dari `ragas` di atas:
+					// yang di sana belum punya `dihitungPada`, yang distempel repository.
+					ragas: diperbarui.ragas,
 				});
 				// Hasil ini belum diamankan; tawarannya muncul lagi.
 				setVersiTersimpan(null);
@@ -282,6 +288,7 @@ export function useChapterGeneration({
 			sumber: 'AI',
 			buktiDukung: hasilTerakhir.buktiDukung,
 			referensiChunkIds: hasilTerakhir.referensiChunkIds,
+			ragas: hasilTerakhir.ragas,
 			dibuatOlehUserId: izin.session.userId,
 			dibuatOlehNama: izin.session.namaLengkap,
 		});

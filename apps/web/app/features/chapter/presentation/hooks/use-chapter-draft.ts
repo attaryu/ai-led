@@ -91,6 +91,11 @@ export function useChapterDraft({
 			kontenSnapshot: bab.kontenKerja ?? '',
 			sumber: 'MANUAL',
 			buktiDukung: bab.buktiDukung,
+			// Ikut disalin bukan karena `sumber`-nya, melainkan karena isi yang
+			// di-snapshot memang pernah dinilai: checkpoint manual dari tulisan yang
+			// tadinya digenerate mewarisi skornya secara sah, dan yang ditulis tangan
+			// otomatis `null` tanpa perlu aturan tambahan.
+			ragas: bab.ragas,
 			// Checkpoint manual tidak lahir dari retrieval, jadi tidak punya rujukan
 			// chunk. Yang mengisinya hanya jalur generate di tab Generasi.
 			referensiChunkIds: [],
@@ -126,6 +131,7 @@ export function useChapterDraft({
 				id: draft.id,
 				kontenSnapshot: draft.kontenSnapshot,
 				buktiDukung: draft.buktiDukung,
+				ragas: draft.ragas,
 			});
 
 			setStatus('diam');

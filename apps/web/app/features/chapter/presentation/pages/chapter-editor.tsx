@@ -378,6 +378,7 @@ function ChapterEditorWorkspace({
 						onLihatSkor={lihatSkorCheckpoint}
 						lingkupSkor={lingkupSkor}
 						setLingkupSkor={setLingkupSkor}
+						savedAt={autosave.savedAt}
 						lebar={panel.lebar}
 						handleProps={panel.handleProps}
 					/>

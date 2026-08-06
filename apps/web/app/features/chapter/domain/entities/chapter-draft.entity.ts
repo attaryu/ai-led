@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { buktiDukungRefSchema } from './bukti-dukung-ref.entity';
+import { ragasScoreSchema } from './ragas-score.entity';
 
 /**
  * Satu checkpoint bab (docs/database.md → BAB_DRAFT, docs/application_flow.md §8).
@@ -62,6 +63,19 @@ export const chapterDraftSchema = z.object({
 	 * (§11.1) yang akan membacanya.
 	 */
 	referensiChunkIds: z.array(z.string()),
+	/**
+	 * Salinan permanen mutu jawaban AI milik isi yang di-snapshot. `null` bila isi
+	 * itu tidak lahir dari generate.
+	 *
+	 * Ikut ke sini **bukan** karena `sumber === 'AI'`, melainkan karena isinya
+	 * memang pernah dinilai: checkpoint manual dari tulisan yang tadinya digenerate
+	 * mewarisi skor itu secara sah, dan checkpoint dari tulisan tangan otomatis
+	 * `null` tanpa perlu aturan tambahan.
+	 *
+	 * Berbeda dari yang di bab, salinan ini **tidak pernah basi** — `kontenSnapshot`
+	 * memang tidak bisa berubah.
+	 */
+	ragas: ragasScoreSchema.nullable().default(null),
 	dibuatOlehUserId: z.string(),
 	/**
 	 * Nama pembuat ikut disimpan, bukan di-lookup ke `userRepository` saat render.

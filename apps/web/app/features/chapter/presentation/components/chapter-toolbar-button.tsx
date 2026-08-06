@@ -9,8 +9,11 @@ import { cn } from '~/core/lib/utils';
  * Ditulis di atas `Button` yang sudah ada alih-alih memasang primitif `toggle`
  * atau `toggle-group`, mengikuti preseden pemilih tampilan di
  * `core/components/ui/collection-toolbar.tsx` yang juga memakai `aria-pressed`
- * plus warna primary. Proyek ini belum punya primitif tooltip, jadi `title`
- * (kursor) dan `aria-label` (pembaca layar) yang memberi nama tombolnya.
+ * plus warna primary. Namanya diberi `title` (kursor) dan `aria-label` (pembaca
+ * layar), bukan primitif `tooltip` yang kini sudah ada: bilah alat ini berisi
+ * belasan tombol berdempetan, dan tooltip yang menyusul kursor di sepanjang
+ * barisnya justru menutupi tombol tetangganya. `title` sudah cukup untuk label
+ * satu-dua kata seperti "Tebal" atau "Rata tengah".
  */
 export function ChapterToolbarButton({
 	label,

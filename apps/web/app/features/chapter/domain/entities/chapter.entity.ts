@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { buktiDukungRefSchema } from './bukti-dukung-ref.entity';
+import { ragasScoreSchema } from './ragas-score.entity';
 
 /**
  * Satu bab dalam Dokumen LED (docs/database.md → BAB_DOKUMEN).
@@ -53,6 +54,17 @@ export const chapterSchema = z.object({
 	 * tetap bisa disebutkan namanya di tab Rujukan.
 	 */
 	buktiDukung: z.array(buktiDukungRefSchema),
+	/**
+	 * Mutu jawaban AI untuk isi bab ini (docs/application_flow.md §10), ditimpa
+	 * tiap generate. `null` berarti isinya tidak lahir dari generate — bab yang
+	 * ditulis tangan memang tidak punya skor RAGAS, dan itu keadaan yang sah.
+	 *
+	 * `.default(null)`, bukan sekadar `.nullable()`: dengan begitu baris lama yang
+	 * tersimpan sebelum kolom ini ada tetap lolos validasi `findAll` dan cuma
+	 * terisi `null`, alih-alih dianggap rusak lalu menghapus pekerjaan lokal
+	 * penggunanya.
+	 */
+	ragas: ragasScoreSchema.nullable().default(null),
 });
 
 export type ChapterEntity = z.infer<typeof chapterSchema>;

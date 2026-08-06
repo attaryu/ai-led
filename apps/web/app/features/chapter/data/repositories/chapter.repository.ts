@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { type BuktiDukungRef } from '../../domain/entities/bukti-dukung-ref.entity';
+import { type RagasScore } from '../../domain/entities/ragas-score.entity';
 import {
 	chapterSchema,
 	type ChapterEntity,
@@ -52,6 +53,9 @@ function buildEmptyChapters(ledProjectId: string): ChapterEntity[] {
 		catatanPenjaminMutu: null,
 		terakhirDisimpan: null,
 		buktiDukung: [],
+		// Bab kosong belum pernah digenerate, jadi belum ada mutu jawaban AI yang
+		// bisa dinilai. Sama untuk bab contoh yang isinya ditulis tangan di seed.
+		ragas: null,
 	}));
 }
 
@@ -359,22 +363,33 @@ export const chapterRepository = {
 	 */
 	applyGenerate(
 		chapterId: string,
-		input: { kontenKerja: string; buktiDukung: BuktiDukungRef[] },
+		input: {
+			kontenKerja: string;
+			buktiDukung: BuktiDukungRef[];
+			/** Tanpa `dihitungPada`: distempel di sini, lihat alasannya di bawah. */
+			ragas: Omit<RagasScore, 'dihitungPada'>;
+		},
 	): ChapterEntity | undefined {
 		const all = this.findAll();
 		const target = all.find((chapter) => chapter.id === chapterId);
 		if (!target || target.terkunci) return undefined;
 
+		// Satu stempel dipakai keduanya. Kalau `dihitungPada` diambil dari `new Date()`
+		// yang berbeda, ia bisa berselisih beberapa milidetik dari `terakhirDisimpan`
+		// dan penanda "isi sudah berubah sejak dinilai" menyala palsu sejak awal.
+		const sekarang = new Date().toISOString();
+
 		const updated: ChapterEntity = {
 			...target,
 			kontenKerja: input.kontenKerja,
 			buktiDukung: input.buktiDukung,
+			ragas: { ...input.ragas, dihitungPada: sekarang },
 			// Generate menulis isi yang sama sekali baru, jadi tidak ada lagi
 			// checkpoint yang jadi basisnya. Tanpa pembersihan ini, checkpoint yang
 			// terakhir dipulihkan akan terus mengaku sebagai basis isi bab padahal
 			// tulisannya sudah diganti seluruhnya.
 			checkpointAktifId: null,
-			terakhirDisimpan: new Date().toISOString(),
+			terakhirDisimpan: sekarang,
 		};
 		this.save(
 			all.map((chapter) => (chapter.id === chapterId ? updated : chapter)),
@@ -401,7 +416,12 @@ export const chapterRepository = {
 	 */
 	restoreFromDraft(
 		chapterId: string,
-		draft: { id: string; kontenSnapshot: string; buktiDukung: BuktiDukungRef[] },
+		draft: {
+			id: string;
+			kontenSnapshot: string;
+			buktiDukung: BuktiDukungRef[];
+			ragas: RagasScore | null;
+		},
 	): ChapterEntity | undefined {
 		const all = this.findAll();
 		const target = all.find((chapter) => chapter.id === chapterId);
@@ -411,6 +431,9 @@ export const chapterRepository = {
 			...target,
 			kontenKerja: draft.kontenSnapshot,
 			buktiDukung: draft.buktiDukung,
+			// Ikut dipulihkan dengan alasan yang sama seperti bukti dukungnya: isi
+			// aktif kini isi checkpoint itu, jadi penilaian mutunya memang miliknya.
+			ragas: draft.ragas,
 			checkpointAktifId: draft.id,
 			terakhirDisimpan: new Date().toISOString(),
 		};
