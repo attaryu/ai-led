@@ -14,7 +14,8 @@ export const chapterSchema = z.object({
 	/**
 	 * Urutan tampil sekaligus kunci pencocokan ke rubrik/panduan. Sengaja satu
 	 * level: penjenjangan Daftar Isi masih Pertanyaan Terbuka #2 di
-	 * docs/application_flow.md §16.
+	 * docs/application_flow.md §16. Daftar Isi berjenjang yang dipakai Editor Bab
+	 * memetakan dirinya ke kolom ini — lihat `chapter-toc.entity.ts`.
 	 */
 	urutanBab: z.number().int().positive(),
 	judulBab: z.string().min(1),
@@ -23,6 +24,14 @@ export const chapterSchema = z.object({
 	 * dibedakan dari string kosong yang bisa muncul karena user menghapus semua
 	 * tulisannya. Keduanya sama-sama dihitung "belum diisi" oleh
 	 * {@link deriveChapterProgress}.
+	 *
+	 * **Formatnya string HTML**, bukan JSON ProseMirror. docs/database.md menyebut
+	 * kolomnya `jsonb`; keduanya tidak bertabrakan karena kolom JSON nanti tinggal
+	 * memuat `{ format: 'html', body: '<p>…</p>' }`. Alasan memilih HTML: data
+	 * contoh (dan bab mana pun yang lahir sebelum editor ada) berisi kalimat biasa
+	 * — `content` HTML melewatkannya ke DOMParser yang membungkusnya jadi paragraf
+	 * tanpa satu baris kode migrasi, sedangkan `JSON.parse` akan melempar dan
+	 * memaksa cabang penyelamat permanen di tiap tempat baca.
 	 */
 	kontenKerja: z.string().nullable(),
 	/** Menunjuk `BAB_DRAFT` yang jadi basis `kontenKerja`; belum dipakai. */
@@ -55,8 +64,26 @@ export const chapterProgressEnum = z.enum([
 ]);
 export type ChapterProgress = z.infer<typeof chapterProgressEnum>;
 
+/**
+ * Bungkus paragraf kosong yang tetap ditinggalkan editor sesudah seluruh
+ * tulisannya dihapus (`<p></p>`, kadang berisi `<br>` atau `&nbsp;`).
+ */
+const HTML_KOSONG = /^(?:<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>\s*)+$/i;
+
+/**
+ * Bab dianggap terisi bila `kontenKerja` punya tulisan sungguhan.
+ *
+ * Cek `trim()` saja tidak cukup sejak isinya jadi HTML: bab yang dikosongkan
+ * user menyisakan `<p></p>` yang lolos begitu saja, sehingga bab itu akan terus
+ * terhitung "terisi" di seluruh KPI dashboard prodi dan institusi. Editor sudah
+ * menulis string kosong untuk kasus itu ({@link ChapterEntity.kontenKerja}),
+ * tapi penjagaannya diulang di sini karena aksi Generate nanti juga menulis HTML
+ * dan tidak boleh ikut mewarisi jebakannya.
+ */
 export function hasKonten(chapter: ChapterEntity): boolean {
-	return chapter.kontenKerja !== null && chapter.kontenKerja.trim() !== '';
+	if (chapter.kontenKerja === null) return false;
+	const isi = chapter.kontenKerja.trim();
+	return isi !== '' && !HTML_KOSONG.test(isi);
 }
 
 /**
@@ -142,6 +169,25 @@ export function pickRecentChapterSaves(
 		.filter((chapter) => chapter.terakhirDisimpan !== null)
 		.sort((a, b) => b.terakhirDisimpan!.localeCompare(a.terakhirDisimpan!))
 		.slice(0, limit);
+}
+
+/**
+ * Bab yang dibuka saat Editor Bab dimasuki tanpa menyebut babnya
+ * (docs/application_flow.md §7.1).
+ *
+ * Bab yang paling baru disimpan menang: masuk lewat menu sidebar selalu berarti
+ * "lanjutkan", bukan "mulai dari awal". Dokumen yang belum pernah disentuh jatuh
+ * ke bab pertama. Diletakkan di domain, bukan di komponen pengalih, supaya
+ * tautan di sidebar Dashboard Project LED memakai aturan yang persis sama —
+ * dua tempat dengan aturan sendiri-sendiri pasti akan berbeda pendapat.
+ */
+export function pickDefaultChapter(
+	chapters: ChapterEntity[],
+): ChapterEntity | undefined {
+	return (
+		pickRecentChapterSaves(chapters, 1)[0] ??
+		[...chapters].sort((a, b) => a.urutanBab - b.urutanBab)[0]
+	);
 }
 
 /** Ambang "terbengkalai" untuk bab yang sedang disusun tapi lama tak disentuh. */
