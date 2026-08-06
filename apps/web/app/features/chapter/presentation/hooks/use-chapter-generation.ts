@@ -5,9 +5,11 @@ import {
 	type EvidenceEntity,
 	type EvidenceStatus,
 } from '~/features/evidence/domain/entities/evidence.entity';
+import { chapterDraftRepository } from '../../data/repositories/chapter-draft.repository';
 import { chapterRepository } from '../../data/repositories/chapter.repository';
 import { generateChapterContent } from '../../data/sources/remote/chapter-generation.mock';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
+import { type ChapterPermission } from './use-chapter-permission';
 
 /**
  * Hanya bukti dukung yang isinya sudah terekstraksi boleh jadi konteks AI
@@ -52,14 +54,15 @@ export type HasilGenerate = {
 export function useChapterGeneration({
 	chapter,
 	studyProgramId,
-	enabled,
+	izin,
 }: {
 	chapter: ChapterEntity;
 	/** `studyProgramId` milik dokumennya — menentukan pustaka mana yang terbaca. */
 	studyProgramId: string;
-	/** `false` saat bab terkunci atau role hanya baca; generate ikut mati. */
-	enabled: boolean;
+	/** Hak akses bab; `canEdit` mematikan generate, `session` mengisi pembuat draft. */
+	izin: ChapterPermission;
 }) {
+	const enabled = izin.canEdit;
 	const [pustaka, setPustaka] = React.useState<EvidenceEntity[]>([]);
 	const [kataKunci, setKataKunci] = React.useState('');
 	const [prompt, setPrompt] = React.useState('');
@@ -75,6 +78,20 @@ export function useChapterGeneration({
 	const [status, setStatus] = React.useState<StatusGenerate>('diam');
 	const [pesanGagal, setPesanGagal] = React.useState<string | null>(null);
 	const [digenerateAt, setDigenerateAt] = React.useState<string | null>(null);
+	/**
+	 * Bahan generate terakhir, disimpan supaya hasilnya bisa diamankan jadi
+	 * checkpoint bersumber `AI` (§8.2 — tetap satu klik user, bukan otomatis).
+	 *
+	 * Hidup di sini, bukan di `useChapterDraft`, karena inilah satu-satunya tempat
+	 * `referensiChunkIds` pernah ada: begitu tab berganti atau generate diulang, ia
+	 * hilang bersama hasil lamanya, dan memang seharusnya begitu.
+	 */
+	const [hasilTerakhir, setHasilTerakhir] = React.useState<{
+		buktiDukungIds: string[];
+		referensiChunkIds: string[];
+	} | null>(null);
+	/** Versi checkpoint yang lahir dari hasil terakhir; `null` selama belum disimpan. */
+	const [versiTersimpan, setVersiTersimpan] = React.useState<number | null>(null);
 
 	const muat = React.useCallback(() => {
 		setPustaka(evidenceRepository.findAvailableForStudyProgram(studyProgramId));
@@ -186,10 +203,11 @@ export function useChapterGeneration({
 			const buktiTerpilih = pustaka.filter((bukti) => terpilih.has(bukti.id));
 
 			try {
-				const { html } = await generateChapterContent({
+				const { html, referensiChunkIds } = await generateChapterContent({
 					judulBab: chapter.judulBab,
 					urutanBab: chapter.urutanBab,
 					buktiDukung: buktiTerpilih.map((bukti) => ({
+						id: bukti.id,
 						namaDokumen: bukti.namaDokumen,
 					})),
 					prompt,
@@ -218,6 +236,12 @@ export function useChapterGeneration({
 				// Catatan bukti yang gugur milik pemulihan pilihan lama; sesudah
 				// generate baru ia tidak lagi menjelaskan apa pun.
 				setJumlahGugur(0);
+				setHasilTerakhir({
+					buktiDukungIds: diperbarui.buktiDukungIds,
+					referensiChunkIds,
+				});
+				// Hasil ini belum diamankan; tawarannya muncul lagi.
+				setVersiTersimpan(null);
 				return { html, chapter: diperbarui };
 			} catch {
 				setStatus('gagal');
@@ -227,6 +251,38 @@ export function useChapterGeneration({
 				return null;
 			}
 		}, [enabled, status, terpilih, pustaka, chapter, prompt]);
+
+	/**
+	 * Mengamankan hasil generate terakhir jadi checkpoint bersumber `AI`
+	 * (docs/application_flow.md §8.2).
+	 *
+	 * Tetap satu klik user, bukan otomatis tiap generate selesai — §8.2 melarang
+	 * yang kedua, dan riwayat akan cepat penuh oleh percobaan generate kalau
+	 * dibiarkan berjalan sendiri. Yang di-snapshot adalah `kontenKerja` bab, bukan
+	 * HTML yang beredar di memori: `applyGenerate` sudah menuliskannya, jadi
+	 * membacanya kembali menjamin arsipnya sama persis dengan yang tersimpan.
+	 */
+	const simpanSebagaiDraft = React.useCallback(() => {
+		if (!enabled || !izin.session || !hasilTerakhir || versiTersimpan !== null) {
+			return;
+		}
+
+		const bab = chapterRepository.findById(chapter.id);
+		if (!bab?.kontenKerja) return;
+
+		const dibuat = chapterDraftRepository.create({
+			chapterId: bab.id,
+			label: null,
+			kontenSnapshot: bab.kontenKerja,
+			sumber: 'AI',
+			buktiDukungIds: hasilTerakhir.buktiDukungIds,
+			referensiChunkIds: hasilTerakhir.referensiChunkIds,
+			dibuatOlehUserId: izin.session.userId,
+			dibuatOlehNama: izin.session.namaLengkap,
+		});
+
+		setVersiTersimpan(dibuat.versi);
+	}, [enabled, izin.session, hasilTerakhir, versiTersimpan, chapter.id]);
 
 	return {
 		daftar,
@@ -248,5 +304,9 @@ export function useChapterGeneration({
 		pesanGagal,
 		digenerateAt,
 		jalankanGenerate,
+		/** `true` bila ada hasil generate yang belum diamankan jadi checkpoint. */
+		bisaSimpanDraft: hasilTerakhir !== null && versiTersimpan === null,
+		versiTersimpan,
+		simpanSebagaiDraft,
 	};
 }

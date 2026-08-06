@@ -1,5 +1,6 @@
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import { chapterLocalSource } from '../sources/local/chapter-local.source';
+import { chapterDraftRepository } from './chapter-draft.repository';
 
 /**
  * Struktur bab standar LED LAM-Teknik, dipakai sebagai cetakan setiap kali
@@ -202,6 +203,18 @@ export const chapterRepository = {
 	},
 
 	/**
+	 * Satu bab, dibaca ulang dari penyimpanan.
+	 *
+	 * Dipakai saat isi bab yang **paling mutakhir** dibutuhkan di luar alur render
+	 * — misal tepat sebelum checkpoint diambil, sesudah autosave disiram. Prop
+	 * `chapter` yang beredar di komponen dibaca sekali saat render dan bisa
+	 * tertinggal dari ketikan terakhir.
+	 */
+	findById(chapterId: string): ChapterEntity | undefined {
+		return this.findAll().find((chapter) => chapter.id === chapterId);
+	},
+
+	/**
 	 * Autosave Editor Bab: menimpa `kontenKerja` sekaligus mencap
 	 * `terakhirDisimpan` (§7.2). Keduanya satu operasi karena stempel waktu tidak
 	 * punya arti lepas dari isi yang menyebabkannya — pemanggil tidak boleh bisa
@@ -269,6 +282,49 @@ export const chapterRepository = {
 			...target,
 			kontenKerja: input.kontenKerja,
 			buktiDukungIds: input.buktiDukungIds,
+			// Generate menulis isi yang sama sekali baru, jadi tidak ada lagi
+			// checkpoint yang jadi basisnya. Tanpa pembersihan ini, checkpoint yang
+			// terakhir dipulihkan akan terus mengaku sebagai basis isi bab padahal
+			// tulisannya sudah diganti seluruhnya.
+			checkpointAktifId: null,
+			terakhirDisimpan: new Date().toISOString(),
+		};
+		this.save(
+			all.map((chapter) => (chapter.id === chapterId ? updated : chapter)),
+		);
+		this.notify();
+		return updated;
+	},
+
+	/**
+	 * Memulihkan bab ke salah satu checkpoint (docs/application_flow.md §8.1).
+	 *
+	 * Bentuknya sengaja sama persis dengan {@link applyGenerate} — keduanya
+	 * menimpa kondisi aktif dari luar editor, jadi keduanya menolak bab terkunci
+	 * (§12.2) dan keduanya menyiarkan.
+	 *
+	 * `buktiDukungIds` **ikut dipulihkan**, dan ini melampaui docs: pasal
+	 * "Restore ke checkpoint lama" di docs/database.md hanya menyebut
+	 * `konten_kerja` + `checkpoint_aktif_id`. Alasannya, kalau bukti dukungnya
+	 * ditinggal apa adanya, `BUKTI_DUKUNG_BAB` akan menyatakan konten aktif
+	 * disusun dari berkas yang sudah tidak ada hubungannya dengan tulisan yang
+	 * barusan dipulihkan — tab Rujukan (§11.1) akan salah sejak hari pertama ia
+	 * dibangun. Arsip checkpointnya sendiri tidak tersentuh: yang dibaca di sini
+	 * salinan, bukan sumbernya.
+	 */
+	restoreFromDraft(
+		chapterId: string,
+		draft: { id: string; kontenSnapshot: string; buktiDukungIds: string[] },
+	): ChapterEntity | undefined {
+		const all = this.findAll();
+		const target = all.find((chapter) => chapter.id === chapterId);
+		if (!target || target.terkunci) return undefined;
+
+		const updated: ChapterEntity = {
+			...target,
+			kontenKerja: draft.kontenSnapshot,
+			buktiDukungIds: draft.buktiDukungIds,
+			checkpointAktifId: draft.id,
 			terakhirDisimpan: new Date().toISOString(),
 		};
 		this.save(
@@ -281,6 +337,16 @@ export const chapterRepository = {
 	/** Dipanggil saat Dokumen LED dihapus supaya babnya tidak jadi sampah. */
 	deleteByProjectId(ledProjectId: string): void {
 		const all = this.findAll();
+		const dibuang = all.filter(
+			(chapter) => chapter.ledProjectId === ledProjectId,
+		);
+
+		// Checkpoint menempel ke bab, bukan ke dokumen, jadi ia tidak ikut terbawa
+		// oleh penyaringan di bawah dan harus dibersihkan sendiri.
+		chapterDraftRepository.deleteByChapterIds(
+			dibuang.map((chapter) => chapter.id),
+		);
+
 		this.save(all.filter((chapter) => chapter.ledProjectId !== ledProjectId));
 	},
 };

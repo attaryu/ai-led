@@ -1,7 +1,6 @@
 import * as React from 'react';
 import {
 	BookOpenIcon,
-	ClockCounterClockwiseIcon,
 	GaugeIcon,
 	ListChecksIcon,
 	type Icon,
@@ -12,8 +11,10 @@ import {
 	hasKonten,
 	type ChapterEntity,
 } from '../../domain/entities/chapter.entity';
+import { type HasilPulih } from '../hooks/use-chapter-draft';
 import { type HasilGenerate } from '../hooks/use-chapter-generation';
 import { type ChapterPermission } from '../hooks/use-chapter-permission';
+import { ChapterDraftPanel } from './chapter-draft-panel';
 import { ChapterGenerationPanel } from './chapter-generation-panel';
 
 /**
@@ -37,8 +38,12 @@ export const PANEL_TABS = [
 
 export type PanelTabValue = (typeof PANEL_TABS)[number]['value'];
 
+/** Tab yang punya panel sungguhan; sisanya masih keadaan kosong. */
+const TAB_TERBANGUN = ['draft', 'generasi'] as const;
+
 /**
- * Tab yang isinya belum dibangun — `generasi` sudah punya panelnya sendiri.
+ * Tab yang isinya belum dibangun — `draft` dan `generasi` sudah punya panelnya
+ * sendiri.
  *
  * Teksnya bercabang pada apakah babnya sudah punya isi, mengikuti §7.3 yang
  * menyatakan tab kanan tampil kosong sampai ada generate atau tulisan pertama.
@@ -49,15 +54,9 @@ export type PanelTabValue = (typeof PANEL_TABS)[number]['value'];
  * bisa dibuka saat bab dikunci.
  */
 const PANEL_COPY: Record<
-	Exclude<PanelTabValue, 'generasi'>,
+	Exclude<PanelTabValue, (typeof TAB_TERBANGUN)[number]>,
 	{ icon: Icon; title: string; kosong: string; terisi: string }
 > = {
-	draft: {
-		icon: ClockCounterClockwiseIcon,
-		title: 'Draft',
-		kosong: 'Checkpoint pertama bisa dibuat setelah bab ini punya isi.',
-		terisi: 'Belum ada checkpoint tersimpan untuk bab ini.',
-	},
 	rujukan: {
 		icon: BookOpenIcon,
 		title: 'Rujukan',
@@ -84,6 +83,8 @@ export function ChapterEditorPanels({
 	studyProgramId,
 	izin,
 	onGenerated,
+	ambilSnapshot,
+	onRestored,
 	lebar,
 	handleProps,
 }: {
@@ -91,6 +92,8 @@ export function ChapterEditorPanels({
 	studyProgramId: string;
 	izin: ChapterPermission;
 	onGenerated: (hasil: HasilGenerate) => void;
+	ambilSnapshot: () => ChapterEntity | undefined;
+	onRestored: (hasil: HasilPulih) => void;
 	/** Lebar hasil seretan; menggantikan `w-80` yang dulu tetap. */
 	lebar: number;
 	handleProps: React.ComponentProps<'div'>;
@@ -111,6 +114,18 @@ export function ChapterEditorPanels({
 			/>
 
 			<TabsContent
+				value="draft"
+				className="flex min-h-0 flex-1 flex-col overflow-hidden"
+			>
+				<ChapterDraftPanel
+					chapter={chapter}
+					izin={izin}
+					ambilSnapshot={ambilSnapshot}
+					onRestored={onRestored}
+				/>
+			</TabsContent>
+
+			<TabsContent
 				value="generasi"
 				className="flex min-h-0 flex-1 flex-col overflow-hidden"
 			>
@@ -122,7 +137,9 @@ export function ChapterEditorPanels({
 				/>
 			</TabsContent>
 
-			{PANEL_TABS.filter((tab) => tab.value !== 'generasi').map((tab) => {
+			{PANEL_TABS.filter(
+				(tab) => !TAB_TERBANGUN.includes(tab.value as never),
+			).map((tab) => {
 				const copy = PANEL_COPY[tab.value as keyof typeof PANEL_COPY];
 				return (
 					<TabsContent

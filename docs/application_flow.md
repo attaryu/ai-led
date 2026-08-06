@@ -569,9 +569,26 @@ Tampilan mengikuti konsep dua-sidebar ala Figma:
   - **"Lihat skor"** — membuka **modal** yang menampilkan breakdown `HASIL_SKOR_KRITERIA` (`target_tipe = BAB_DRAFT`, `bab_draft_id` = draft ini), murni tampilan baca, **tidak** memicu restore konten maupun re-run simulasi.
 - **Draft tidak bisa dihapus** — karena selama masih dirujuk oleh dokumen (jejak audit akreditasi), penghapusan tidak diizinkan.
 
+> **Catatan — yang berbeda saat tab ini dibangun.** Bagian di atas ditulis sebelum implementasinya ada; berikut yang menyusul, dan tidak menggantikannya.
+>
+> - **Tombol tambah bukan ikon "+"**, melainkan tombol **"Simpan Draft"** di kaki panel, sebaris dengan isian `label` yang terlipat — bentuk yang sama persis dengan blok prompt di tab Generasi (§12.1), supaya kedua tab tidak memakai dua pola berbeda untuk hal yang sama: satu isian opsional plus satu tombol utama.
+> - **"Lihat skor" belum ada di menu "..."**. Ia menuntut `HASIL_SKOR_KRITERIA` beserta tab Rubrik/Skor, yang belum dibangun; slotnya ditandai komentar di `chapter-draft-panel.tsx`, bukan dipasang sebagai item mati. Sampai itu masuk, menunya berisi satu item saja.
+> - **"Gunakan draft ini" ikut memulihkan bukti dukung aktif** (`BUKTI_DUKUNG_BAB` diisi ulang dari `BUKTI_DUKUNG_DRAFT` checkpoint terpilih), di luar `konten_kerja` + `checkpoint_aktif_id` yang disebut docs/database.md. Alasannya: tanpa itu, bukti dukung aktif akan menyatakan tulisan yang barusan dipulihkan disusun dari berkas yang sama sekali tidak berhubungan — tab Rujukan (§11.1) akan salah sejak hari pertama ia dibangun. Arsip checkpointnya sendiri tidak tersentuh.
+> - **Memulihkan lalu menyunting tidak menyentuh checkpointnya.** Suntingan sesudah "Gunakan draft ini" selalu jatuh ke `konten_kerja` bab aktif; `konten_snapshot` checkpoint tidak pernah ikut berubah, dan tidak ada checkpoint baru yang lahir sendiri. Penegakannya di lapis data, bukan di UI: `chapterDraftRepository` tidak punya method `update` sama sekali, dan autosave hanya memanggil `chapterRepository.updateKonten` yang cuma menyentuh baris bab.
+> - **Generate mengosongkan `checkpoint_aktif_id`.** Kolom itu mencatat checkpoint mana yang **terakhir dipulihkan** ke bab ini, dan generate menulis isi yang sama sekali baru — membiarkannya menunjuk checkpoint lama membuat riwayat mengaku sesuatu yang tidak lagi benar. Menyunting tangan **tidak** mengosongkannya: peristiwa pemulihannya memang tetap terjadi. Karena itu penandanya di UI berbunyi "Terakhir dipulihkan ke bab ini" — kalimat peristiwa, bukan pernyataan bahwa checkpoint itu sama dengan isi bab sekarang.
+> - **Daftar bukti dukung tiap checkpoint tidak ditampilkan** di tab ini — kolomnya terlalu sempit untuk riwayat sekaligus rinciannya. Datanya tetap disimpan penuh; tab Rujukan/Generasi yang akan membacanya.
+> - **`referensi_chunk_ids` hanya terisi lewat jalur generate** (lihat §8.2 di bawah); checkpoint manual selalu mengosongkannya.
+
 ### 8.2 Kapan checkpoint dibuat
 
 - **Selalu manual**, lewat tombol "Simpan sebagai Draft" (bukan otomatis oleh sistem, dan bukan otomatis setiap kali generate AI selesai — meskipun hasil generate AI _bisa_ langsung disimpan sebagai draft jika user memilih demikian, sesuai alur generate di bawah).
+
+> **Catatan — bagaimana `sumber = AI` didapat.** Ada dua jalur, dan keduanya tetap satu klik user sesuai pasal ini:
+>
+> - Tombol **"Simpan Draft"** di tab Draft → `sumber = MANUAL`, `referensi_chunk_ids` kosong.
+> - Tautan **"Simpan sebagai draft"** yang muncul di tab Generasi tepat setelah generate selesai, di baris "Digenerate … dari _n_ bukti dukung" → `sumber = AI`, `referensi_chunk_ids` terisi dari retrieval-nya. Tautannya hilang begitu diklik (berganti "Tersimpan sebagai Versi _n_") dan muncul lagi setiap generate berikutnya.
+>
+> Perlu disadari, `sumber` dengan begitu merekam **tombol mana yang ditekan**, bukan jaminan asal isi: generate lalu langsung menekan "Simpan Draft" di tab Draft tetap tercatat `MANUAL`. Diterima karena jalur bersumber `AI` diletakkan tepat di tempat hasil generate muncul, sehingga jalur yang benar adalah jalur yang paling dekat. Yang **tidak** boleh tertukar: `sumber` menjawab dari mana isinya berasal, `dibuat_oleh_user_id` menjawab siapa yang membuatnya — dan yang kedua selalu terisi, termasuk untuk checkpoint bersumber `AI`.
 
 ### 8.3 Perbandingan antar checkpoint
 

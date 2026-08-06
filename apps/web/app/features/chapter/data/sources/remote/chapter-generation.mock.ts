@@ -23,7 +23,7 @@ export type GenerateChapterInput = {
 	judulBab: string;
 	urutanBab: number;
 	/** Bukti dukung terpilih; hanya yang berstatus `SIAP` yang sampai ke sini. */
-	buktiDukung: { namaDokumen: string }[];
+	buktiDukung: { id: string; namaDokumen: string }[];
 	/** Arahan bebas dari penyusun; string kosong bila tidak diisi. */
 	prompt: string;
 };
@@ -31,6 +31,15 @@ export type GenerateChapterInput = {
 export type GenerateChapterResult = {
 	/** HTML, sesuai format `kontenKerja` (lihat `chapter.entity.ts`). */
 	html: string;
+	/**
+	 * Id chunk vector database yang jadi rujukan (`BAB_DRAFT.referensi_chunk_ids`).
+	 *
+	 * Ditiru, tapi bentuknya dijaga menyerupai yang sebenarnya: satu chunk panduan
+	 * yang dicocokkan lewat nomor bab, plus satu chunk per bukti dukung yang
+	 * dipakai. Inilah yang membuat jejak "versi ini dulu disusun dari apa" bisa
+	 * dilacak sampai ke potongan sumbernya, bukan cuma sampai ke nama berkas.
+	 */
+	referensiChunkIds: string[];
 };
 
 function delay(ms: number): Promise<void> {
@@ -76,5 +85,10 @@ export async function generateChapterContent(
 		]
 			.filter(Boolean)
 			.join(''),
+
+		referensiChunkIds: [
+			`chunk-panduan-${input.urutanBab}-01`,
+			...input.buktiDukung.map((bukti) => `chunk-bukti-${bukti.id}-01`),
+		],
 	};
 }

@@ -23,6 +23,7 @@ import {
 import { ChapterEditorToc } from '../components/chapter-editor-toc';
 import { ChapterEditorToolbar } from '../components/chapter-editor-toolbar';
 import { useChapterAutosave } from '../hooks/use-chapter-autosave';
+import { type HasilPulih } from '../hooks/use-chapter-draft';
 import { type HasilGenerate } from '../hooks/use-chapter-generation';
 import { useChapterPermission } from '../hooks/use-chapter-permission';
 import { usePanelResize } from '../hooks/use-panel-resize';
@@ -251,8 +252,13 @@ function ChapterEditorWorkspace({
 	}, [editor, izin.canEdit]);
 
 	/**
-	 * Hasil generate sudah tersimpan oleh `applyGenerate`; yang tersisa adalah
-	 * membawanya ke layar dan merapikan autosave.
+	 * Membawa isi bab yang ditulis **dari luar editor** ke layar.
+	 *
+	 * Dipakai dua jalur yang bentuknya sama persis: hasil generate (§12.1) dan
+	 * pemulihan checkpoint (§8.1). Keduanya sudah menulis sendiri ke repository —
+	 * `applyGenerate` dan `restoreFromDraft` — jadi yang tersisa cuma menyusulkan
+	 * kanvas dan merapikan autosave. Sengaja satu fungsi: dua salinan dari urutan
+	 * di bawah pasti akan menyimpang, dan menyimpangnya senyap.
 	 *
 	 * `emitUpdate: false` bukan pilihan gaya. Sejak Tiptap v3, `setContent`
 	 * memancarkan update secara bawaan — tanpa mematikannya, `onUpdate` di atas
@@ -260,17 +266,34 @@ function ChapterEditorWorkspace({
 	 * dan indikator berkedip menyimpan tanpa ada yang berubah.
 	 *
 	 * `adopt` menyusul **sinkron**: kalau pengguna sempat mengetik lalu menekan
-	 * Generate, ada simpanan tertunda yang memegang tulisan sebelum generate dan
-	 * akan menimpanya balik beberapa ratus milidetik kemudian.
+	 * Generate atau memulihkan checkpoint, ada simpanan tertunda yang memegang
+	 * tulisan lama dan akan menimpanya balik beberapa ratus milidetik kemudian.
 	 */
-	const onGenerated = React.useCallback(
-		({ html, chapter: diperbarui }: HasilGenerate) => {
+	const adopsiIsiBaru = React.useCallback(
+		({ html, chapter: diperbarui }: HasilGenerate | HasilPulih) => {
 			editor?.commands.setContent(html, { emitUpdate: false });
 			if (diperbarui.terakhirDisimpan) autosave.adopt(diperbarui.terakhirDisimpan);
 			setBabTerkini(diperbarui);
 		},
 		[editor, autosave],
 	);
+
+	/**
+	 * Isi bab yang **benar-benar terkini**, untuk checkpoint di tab Draft.
+	 *
+	 * `flush()` lebih dulu, dan urutannya mengikat: ia menulis simpanan tertunda ke
+	 * localStorage secara sinkron, jadi pembacaan sesudahnya pasti memuat ketikan
+	 * terakhir. Tanpa itu, checkpoint yang dibuat sedetik sesudah mengetik akan
+	 * mengarsipkan isi sebelum ketikan tersebut.
+	 *
+	 * Dibaca ulang dari repository, bukan dari `babTerkini`: state itu hanya
+	 * bergerak saat generate atau restore, sedangkan autosave menulis langsung ke
+	 * penyimpanan tanpa melewatinya.
+	 */
+	const ambilSnapshot = React.useCallback(() => {
+		autosave.flush();
+		return chapterRepository.findById(chapter.id);
+	}, [autosave, chapter.id]);
 
 	return (
 		<div className="flex h-screen flex-col overflow-hidden bg-background">
@@ -337,7 +360,9 @@ function ChapterEditorWorkspace({
 						chapter={babTerkini}
 						studyProgramId={studyProgramId}
 						izin={izin}
-						onGenerated={onGenerated}
+						onGenerated={adopsiIsiBaru}
+						ambilSnapshot={ambilSnapshot}
+						onRestored={adopsiIsiBaru}
 						lebar={panel.lebar}
 						handleProps={panel.handleProps}
 					/>

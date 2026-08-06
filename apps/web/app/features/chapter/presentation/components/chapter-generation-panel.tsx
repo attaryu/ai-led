@@ -46,11 +46,7 @@ export function ChapterGenerationPanel({
 	/** Dipanggil setelah hasilnya tersimpan; halaman editor yang mendorongnya ke Tiptap. */
 	onGenerated: (hasil: HasilGenerate) => void;
 }) {
-	const generasi = useChapterGeneration({
-		chapter,
-		studyProgramId,
-		enabled: izin.canEdit,
-	});
+	const generasi = useChapterGeneration({ chapter, studyProgramId, izin });
 
 	const {
 		daftar,
@@ -70,6 +66,9 @@ export function ChapterGenerationPanel({
 		pesanGagal,
 		digenerateAt,
 		jalankanGenerate,
+		bisaSimpanDraft,
+		versiTersimpan,
+		simpanSebagaiDraft,
 	} = generasi;
 
 	const sedangBerjalan = status === 'berjalan';
@@ -266,9 +265,30 @@ export function ChapterGenerationPanel({
 						)}
 
 						{status === 'diam' && digenerateAt && (
-							<p className="text-xs text-muted-foreground">
+							<p className="text-xs leading-relaxed text-muted-foreground">
 								Digenerate {formatRelativeTimeLong(digenerateAt)} dari{' '}
-								{chapter.buktiDukungIds.length} bukti dukung.
+								{chapter.buktiDukungIds.length} bukti dukung.{' '}
+								{/*
+								 * §8.2: checkpoint tidak pernah dibuat sistem sendiri, bahkan
+								 * sesudah generate. Tawarannya diletakkan di sini — tepat di
+								 * tempat hasilnya muncul — supaya jalur yang menandai
+								 * checkpoint bersumber `AI` adalah jalur yang paling dekat.
+								 */}
+								{bisaSimpanDraft ? (
+									<button
+										type="button"
+										onClick={simpanSebagaiDraft}
+										className="underline underline-offset-4 hover:text-foreground"
+									>
+										Simpan sebagai draft
+									</button>
+								) : (
+									versiTersimpan !== null && (
+										<span className="text-foreground">
+											Tersimpan sebagai Versi {versiTersimpan}.
+										</span>
+									)
+								)}
 							</p>
 						)}
 					</>
