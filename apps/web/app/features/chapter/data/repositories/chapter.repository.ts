@@ -201,6 +201,45 @@ export const chapterRepository = {
 		return [...chapters].sort((a, b) => a.urutanBab - b.urutanBab);
 	},
 
+	/**
+	 * Autosave Editor Bab: menimpa `kontenKerja` sekaligus mencap
+	 * `terakhirDisimpan` (§7.2). Keduanya satu operasi karena stempel waktu tidak
+	 * punya arti lepas dari isi yang menyebabkannya — pemanggil tidak boleh bisa
+	 * memperbarui yang satu tanpa yang lain.
+	 *
+	 * Sengaja **tidak** memanggil `notify()`. Fungsi ini dipanggil berkali-kali
+	 * per menit selama pengguna mengetik, sedangkan penyiarannya hanya berguna
+	 * saat status bab berubah; menyiarkan tiap simpanan akan memaksa seluruh
+	 * pelanggan `storage-update` membaca ulang localStorage tiap beberapa
+	 * ketikan. `useChapterAutosave` yang memutuskan kapan menyiarkan.
+	 *
+	 * Bab `terkunci` ditolak diam-diam sebagai jaring pengaman terakhir §12.2:
+	 * UI sudah mematikan editornya, tapi aturan itu tidak boleh hanya hidup di
+	 * lapis tampilan — simpanan yang telanjur terjadwal saat bab dikunci dari tab
+	 * lain harus ikut tertahan di sini.
+	 *
+	 * Mengembalikan barisnya yang terbaru (bukan `void`) supaya pemanggil dapat
+	 * stempel waktu persisnya tanpa membaca ulang penyimpanan.
+	 */
+	updateKonten(
+		chapterId: string,
+		kontenKerja: string,
+	): ChapterEntity | undefined {
+		const all = this.findAll();
+		const target = all.find((chapter) => chapter.id === chapterId);
+		if (!target || target.terkunci) return undefined;
+
+		const updated: ChapterEntity = {
+			...target,
+			kontenKerja,
+			terakhirDisimpan: new Date().toISOString(),
+		};
+		this.save(
+			all.map((chapter) => (chapter.id === chapterId ? updated : chapter)),
+		);
+		return updated;
+	},
+
 	/** Dipanggil saat Dokumen LED dihapus supaya babnya tidak jadi sampah. */
 	deleteByProjectId(ledProjectId: string): void {
 		const all = this.findAll();
