@@ -66,11 +66,15 @@ Tiap lapis berdiri sebagai **root URL sendiri**, bukan bersarang di bawah URL la
  └─ Navigasi ke Editor per Bab
       │ klik salah satu Bab
       ▼
-/led-projects/:projectId/chapters/:babId .. ← level BAB_DOKUMEN, dua sidebar ala Figma
+/editor/:projectId/:chapterId ............. ← level BAB_DOKUMEN, dua sidebar ala Figma
  ├─ Sidebar kiri: Daftar Isi / navigasi antar bab
  ├─ Kanvas tengah: rich text editor
- └─ Sidebar kanan: tab Generate, Rujukan, Rubrik, Skor, Draft
+ └─ Sidebar kanan: tab Generasi, Draft, Rujukan, Rubrik, Skor
 ```
+
+> **Catatan desain — kenapa Editor Bab akar sendiri, bukan anak `/led-projects/:projectId`.** Rancangan awal menuliskannya `/led-projects/:projectId/chapters/:babId`, bersarang di bawah lapis 3. Yang dipakai justru akar keempat, dengan alasan yang sama seperti tiga lapis sebelumnya berdiri sendiri: tampilan Editor Bab nol chrome — tiga kolom penuh layar tanpa satu pun bagian `AppShell` lapis 3 — sehingga bersarang hanya menyisakan induk yang merender `<Outlet/>` telanjang plus sidebar yang harus disembunyikan sendiri.
+>
+> Ada satu jalan masuk tambahan: `/editor/:projectId` tanpa menyebut bab meneruskan ke bab yang paling baru disimpan (bab pertama untuk dokumen yang belum pernah disentuh). Itulah yang dipakai menu **Editor Dokumen** di sidebar lapis 3, supaya aturan "bab mana yang dibuka" cuma hidup di satu tempat.
 
 Setiap lapis punya sidebar/navigasi yang **berbeda total** dari lapis sebelumnya (bukan sub-tab di halaman yang sama) — perpindahan antar lapis selalu lewat aksi klik eksplisit (klik nama prodi, klik card dokumen, klik nama bab), dan selalu ada tombol kembali ke satu level di atasnya.
 
@@ -471,7 +475,7 @@ Halaman tersusun dari tiga bagian, dari atas ke bawah:
 
 **c. Panel samping** — dua kartu: **Perlu Perhatian** (bab yang menunggu ditindaklanjuti, maksimal 5 baris lalu diringkas) dan **Status Dokumen** (`status_keseluruhan` + tautan ke Perpustakaan Bukti Dukung prodi). Di layar sempit panel ini turun ke bawah tabel.
 
-Klik salah satu bab → masuk ke **Editor Bab**. **Belum berlaku**: selama Editor Bab (Lapis 4) belum ada, baris tabel sengaja tidak dibuat dapat diklik agar tidak ada tautan yang berujung ke halaman kosong.
+Klik judul bab → masuk ke **Editor Bab** di `/editor/:projectId/:chapterId` (§7). Yang ditautkan judulnya, bukan seluruh baris: baris yang hanya bereaksi pada klik tidak bisa dicapai lewat keyboard dan tidak punya alamat untuk dibuka di tab baru. Bab yang terkunci tetap ditautkan — §12.2 memblokir aksi ubah, bukan membaca.
 
 **Menyusul**: ringkasan skor rubrik per bab belum ditampilkan karena `RUBRIK_KRITERIA`/`HASIL_SKOR_KRITERIA` belum ada — kolom yang selalu berisi "—" hanya menambah derau. Masuk bersamaan dengan fitur Simulasi Skor (§9). Begitu pula indikator "siapa sedang menyunting": datanya hidup di Redis (§13), bukan di basis data, jadi menunggu backend.
 
@@ -525,12 +529,16 @@ Tampilan mengikuti konsep dua-sidebar ala Figma:
 ```
 ┌────────────┬─────────────────────────────┬──────────────────────┐
 │ Sidebar    │        Kanvas Editor         │   Sidebar Kanan       │
-│ Kiri       │   (rich text, satu bab =     │   Tab: Generate |     │
-│ (Daftar    │    satu ruang kerja/         │   Rujukan | Rubrik |  │
-│  Isi/nav   │    "kertas" sendiri)         │   Skor | Draft        │
+│ Kiri       │   (rich text, satu bab =     │   Tab: Generasi |     │
+│ (Daftar    │    satu ruang kerja/         │   Draft | Rujukan |   │
+│  Isi/nav   │    "kertas" sendiri)         │   Rubrik | Skor       │
 │  antar bab)│                               │                       │
 └────────────┴─────────────────────────────┴──────────────────────┘
 ```
+
+> **Catatan — penamaan dan urutan tab.** Bagian ini semula menulis "Generate | Rujukan | Rubrik | Skor | Draft". Yang dipakai sekarang: **"Generate" jadi "Generasi"** supaya seluruh label berbahasa Indonesia, dan **Draft naik ke urutan kedua** karena ia pasangan langsung dari hasil generate. Isi pasal 8–12 di bawah tidak berubah, hanya label dan urutannya. Satu-satunya sumber urutan di kode ada di `PANEL_TABS` (`features/chapter/presentation/components/chapter-editor-panels.tsx`).
+>
+> **Catatan — serialisasi `konten_kerja`.** Editor menulis **string HTML**, bukan JSON ProseMirror, walau docs/database.md menyebut kolomnya `jsonb` (kolom JSON nanti tinggal memuat `{ format: 'html', body: '<p>…</p>' }`). Alasannya bab yang lahir sebelum editor ada — termasuk seluruh data contoh — berisi kalimat biasa: sebagai HTML ia dibungkus jadi paragraf tanpa kode migrasi apa pun, sedangkan `JSON.parse` akan melempar dan memaksa cabang penyelamat permanen di tiap tempat baca.
 
 ### 7.1 Sidebar Kiri — Navigasi antar bab
 
