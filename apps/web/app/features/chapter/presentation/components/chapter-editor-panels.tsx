@@ -1,9 +1,9 @@
+import * as React from 'react';
 import {
 	BookOpenIcon,
 	ClockCounterClockwiseIcon,
 	GaugeIcon,
 	ListChecksIcon,
-	SparkleIcon,
 	type Icon,
 } from '@phosphor-icons/react';
 
@@ -12,6 +12,9 @@ import {
 	hasKonten,
 	type ChapterEntity,
 } from '../../domain/entities/chapter.entity';
+import { type HasilGenerate } from '../hooks/use-chapter-generation';
+import { type ChapterPermission } from '../hooks/use-chapter-permission';
+import { ChapterGenerationPanel } from './chapter-generation-panel';
 
 /**
  * Tab sidebar kanan Editor Bab.
@@ -35,7 +38,7 @@ export const PANEL_TABS = [
 export type PanelTabValue = (typeof PANEL_TABS)[number]['value'];
 
 /**
- * Isi tiap tab masih kosong di iterasi ini — yang dibangun baru kerangkanya.
+ * Tab yang isinya belum dibangun — `generasi` sudah punya panelnya sendiri.
  *
  * Teksnya bercabang pada apakah babnya sudah punya isi, mengikuti §7.3 yang
  * menyatakan tab kanan tampil kosong sampai ada generate atau tulisan pertama.
@@ -46,16 +49,9 @@ export type PanelTabValue = (typeof PANEL_TABS)[number]['value'];
  * bisa dibuka saat bab dikunci.
  */
 const PANEL_COPY: Record<
-	PanelTabValue,
+	Exclude<PanelTabValue, 'generasi'>,
 	{ icon: Icon; title: string; kosong: string; terisi: string }
 > = {
-	generasi: {
-		icon: SparkleIcon,
-		title: 'Generasi',
-		kosong:
-			'Bab ini belum punya tulisan. Mulai mengetik, atau jalankan generate untuk menyusun draf awal dari bukti dukung.',
-		terisi: 'Belum ada riwayat generate untuk bab ini.',
-	},
 	draft: {
 		icon: ClockCounterClockwiseIcon,
 		title: 'Draft',
@@ -83,15 +79,57 @@ const PANEL_COPY: Record<
 	},
 };
 
-export function ChapterEditorPanels({ chapter }: { chapter: ChapterEntity }) {
+export function ChapterEditorPanels({
+	chapter,
+	studyProgramId,
+	izin,
+	onGenerated,
+	lebar,
+	handleProps,
+}: {
+	chapter: ChapterEntity;
+	studyProgramId: string;
+	izin: ChapterPermission;
+	onGenerated: (hasil: HasilGenerate) => void;
+	/** Lebar hasil seretan; menggantikan `w-80` yang dulu tetap. */
+	lebar: number;
+	handleProps: React.ComponentProps<'div'>;
+}) {
 	const terisi = hasKonten(chapter);
 
 	return (
-		<aside className="w-80 shrink-0 overflow-y-auto border-l border-border bg-background">
-			{PANEL_TABS.map((tab) => {
-				const copy = PANEL_COPY[tab.value];
+		// `overflow-hidden`, bukan `overflow-y-auto`: tab Generasi mengatur
+		// gulungannya sendiri supaya pencarian dan tombol generate tetap terlihat.
+		// Tab lain isinya sependek satu keadaan kosong, jadi tidak ada yang hilang.
+		<aside
+			style={{ width: lebar }}
+			className="relative flex shrink-0 flex-col overflow-hidden border-l border-border bg-background"
+		>
+			<div
+				{...handleProps}
+				className="absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize touch-none bg-transparent transition-colors outline-none hover:bg-primary/20 focus-visible:bg-primary/40"
+			/>
+
+			<TabsContent
+				value="generasi"
+				className="flex min-h-0 flex-1 flex-col overflow-hidden"
+			>
+				<ChapterGenerationPanel
+					chapter={chapter}
+					studyProgramId={studyProgramId}
+					izin={izin}
+					onGenerated={onGenerated}
+				/>
+			</TabsContent>
+
+			{PANEL_TABS.filter((tab) => tab.value !== 'generasi').map((tab) => {
+				const copy = PANEL_COPY[tab.value as keyof typeof PANEL_COPY];
 				return (
-					<TabsContent key={tab.value} value={tab.value} className="p-5">
+					<TabsContent
+						key={tab.value}
+						value={tab.value}
+						className="overflow-y-auto p-5"
+					>
 						<ChapterPanelEmpty
 							icon={copy.icon}
 							title={copy.title}

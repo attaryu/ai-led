@@ -22,6 +22,18 @@ export type ChapterAutosave = {
 	markDirty: (konten: string) => void;
 	/** Menulis sekarang juga bila masih ada perubahan tertunda. */
 	flush: () => void;
+	/**
+	 * Mengakui tulisan yang sudah tersimpan **dari luar editor** — sejauh ini
+	 * hanya hasil Generate (§12.1), yang menulis sendiri ke repository lalu
+	 * mendorong isinya ke Tiptap.
+	 *
+	 * Wajib dipanggil, bukan pemanis. Saat pengguna mengetik lalu menekan
+	 * Generate, ada simpanan tertunda yang memegang tulisan **sebelum** generate;
+	 * kalau ia menyala setelah generate menulis, hasil generate tertimpa balik
+	 * tanpa jejak. Ini membuang jadwal dan penyangga itu, lalu memindahkan
+	 * indikator ke stempel waktu milik generate.
+	 */
+	adopt: (savedAtBaru: string) => void;
 };
 
 /**
@@ -143,6 +155,24 @@ export function useChapterAutosave({
 		[chapterId],
 	);
 
+	// Harus dipanggil **sinkron** tepat sesudah penulisan generate: tidak ada
+	// await di antaranya, sehingga tidak tersisa celah bagi jadwal lama untuk
+	// menyala. `terisiRef` dipasang `true` karena generate selalu menulis isi —
+	// tanpa itu simpanan berikutnya akan mengira babnya baru saja berubah dari
+	// kosong dan menyiarkan ulang tanpa ada yang berubah.
+	const adopt = React.useCallback((savedAtBaru: string) => {
+		if (timerRef.current !== null) {
+			window.clearTimeout(timerRef.current);
+			timerRef.current = null;
+		}
+		kontenRef.current = null;
+		kotorSejakRef.current = null;
+		terisiRef.current = true;
+
+		setSavedAt(savedAtBaru);
+		setStatus('tersimpan');
+	}, []);
+
 	/**
 	 * Titik siram yang tersisa: pindah bab, halaman dilepas, dan tab ditutup.
 	 *
@@ -181,5 +211,5 @@ export function useChapterAutosave({
 		setStatus('diam');
 	}
 
-	return { status, savedAt, markDirty, flush };
+	return { status, savedAt, markDirty, flush, adopt };
 }

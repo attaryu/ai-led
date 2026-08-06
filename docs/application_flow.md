@@ -635,6 +635,14 @@ Tampilan mengikuti konsep dua-sidebar ala Figma:
 - Baris `BUKTI_DUKUNG_BAB` untuk bab ini diperbarui (hapus lama, insert sesuai pilihan bukti dukung yang dipakai generate ini).
 - Skor RAGAS (tab Skor) otomatis terhitung begitu proses ini selesai.
 
+> **Catatan — yang ditambahkan saat tab ini dibangun.** Bagian di atas ditulis sebelum implementasinya ada; tiga hal berikut menyusul dan tidak menggantikannya.
+>
+> - **Prompt tambahan (opsional).** Di bawah daftar bukti dukung ada satu textarea bebas, sebaris dengan tombol Generate. Isinya ikut dikirim sebagai arahan ke pipeline RAG; dikosongkan berarti generate berjalan hanya dari bukti dukung + panduan, persis seperti tulisan asli pasal ini.
+> - **Bukti dukung yang belum `SIAP`.** Sesuai §4.5 seluruh berkas tetap tampil, tapi yang statusnya bukan `SIAP` dinonaktifkan dengan badge statusnya ikut terlihat — badge itulah keterangan kenapa ia belum bisa dicentang. Berkas `GAGAL` menampilkan `catatan_gagal`-nya. Daftarnya punya pencarian sendiri (nama berkas, pengunggah, tipe) dan mengurutkan yang `SIAP` paling atas. Saat tab dibuka, pilihan generate terakhir (`BUKTI_DUKUNG_BAB`) tercentang kembali; id yang sudah hilang atau statusnya mundur dilaporkan sebagai catatan, bukan dibuang diam-diam.
+> - **Lebar sidebar kanan bisa diseret** (320–560 px, tersimpan per browser). Sketsa di §7 menggambarnya tetap; 320 px tidak cukup memuat daftar bukti dukung, pencarian, dan prompt sekaligus.
+>
+> **Status implementasi.** Yang sudah jalan: pemilihan bukti dukung, prompt, dan generate yang menimpa `konten_kerja` sekaligus memperbarui `BUKTI_DUKUNG_BAB` — mengikuti pasal ini, **bukan** `docs/database.md` §4 yang menyimpan hasilnya sebagai `BAB_DRAFT` baru untuk di-restore user. Keduanya berselisih dan yang dipakai kode adalah pasal ini; §4 di `database.md` menunggu iterasi checkpoint. Yang **belum**: skor RAGAS otomatis (butuh tab Skor) dan kunci `lock:bab:{bab_id}` di §13 (belum ada lapis Redis). Pemanggilan AI-nya sendiri masih tiruan di `features/chapter/data/sources/remote/chapter-generation.mock.ts`.
+
 ### 12.2 Penguncian bab (`terkunci`)
 
 - Hanya `PENJAMIN_MUTU` yang punya tombol **Kunci/Buka Kunci Bab**, biasanya disertai pengisian `catatan_penjamin_mutu`.

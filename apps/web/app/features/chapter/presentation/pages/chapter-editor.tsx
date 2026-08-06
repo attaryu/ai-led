@@ -23,7 +23,9 @@ import {
 import { ChapterEditorToc } from '../components/chapter-editor-toc';
 import { ChapterEditorToolbar } from '../components/chapter-editor-toolbar';
 import { useChapterAutosave } from '../hooks/use-chapter-autosave';
+import { type HasilGenerate } from '../hooks/use-chapter-generation';
 import { useChapterPermission } from '../hooks/use-chapter-permission';
+import { usePanelResize } from '../hooks/use-panel-resize';
 import { editorExtensions } from '../utils/editor-extensions';
 
 /**
@@ -185,6 +187,19 @@ function ChapterEditorWorkspace({
 		PANEL_TABS[0].value,
 	);
 
+	/**
+	 * Baris bab yang dilihat sidebar kanan.
+	 *
+	 * Perlu terpisah dari prop `chapter` karena halaman induk membaca repository
+	 * saat render tanpa berlangganan apa pun, sedangkan ruang kerja ini di-`key`
+	 * oleh `chapter.id` sehingga tidak ikut terpasang ulang. Tanpa state ini,
+	 * `buktiDukungIds` di tab Generasi akan tetap menunjukkan pilihan lama sesudah
+	 * generate. Kanvas dan editor sengaja **tidak** ikut membacanya: `content`
+	 * Tiptap memang hanya dibaca sekali saat editor dibuat.
+	 */
+	const [babTerkini, setBabTerkini] = React.useState(chapter);
+
+	const panel = usePanelResize();
 	const izin = useChapterPermission(chapter, studyProgramId);
 	const autosave = useChapterAutosave({
 		chapterId: chapter.id,
@@ -234,6 +249,28 @@ function ChapterEditorWorkspace({
 		if (!editor || editor.isEditable === izin.canEdit) return;
 		editor.setEditable(izin.canEdit, false);
 	}, [editor, izin.canEdit]);
+
+	/**
+	 * Hasil generate sudah tersimpan oleh `applyGenerate`; yang tersisa adalah
+	 * membawanya ke layar dan merapikan autosave.
+	 *
+	 * `emitUpdate: false` bukan pilihan gaya. Sejak Tiptap v3, `setContent`
+	 * memancarkan update secara bawaan — tanpa mematikannya, `onUpdate` di atas
+	 * menyala, `markDirty` menjadwalkan simpanan untuk isi yang barusan disimpan,
+	 * dan indikator berkedip menyimpan tanpa ada yang berubah.
+	 *
+	 * `adopt` menyusul **sinkron**: kalau pengguna sempat mengetik lalu menekan
+	 * Generate, ada simpanan tertunda yang memegang tulisan sebelum generate dan
+	 * akan menimpanya balik beberapa ratus milidetik kemudian.
+	 */
+	const onGenerated = React.useCallback(
+		({ html, chapter: diperbarui }: HasilGenerate) => {
+			editor?.commands.setContent(html, { emitUpdate: false });
+			if (diperbarui.terakhirDisimpan) autosave.adopt(diperbarui.terakhirDisimpan);
+			setBabTerkini(diperbarui);
+		},
+		[editor, autosave],
+	);
 
 	return (
 		<div className="flex h-screen flex-col overflow-hidden bg-background">
@@ -296,7 +333,14 @@ function ChapterEditorWorkspace({
 						<main className="min-w-0 flex-1 bg-muted/40 p-8" />
 					)}
 
-					<ChapterEditorPanels chapter={chapter} />
+					<ChapterEditorPanels
+						chapter={babTerkini}
+						studyProgramId={studyProgramId}
+						izin={izin}
+						onGenerated={onGenerated}
+						lebar={panel.lebar}
+						handleProps={panel.handleProps}
+					/>
 				</div>
 			</Tabs>
 		</div>

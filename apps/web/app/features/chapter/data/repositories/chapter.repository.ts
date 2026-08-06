@@ -240,6 +240,44 @@ export const chapterRepository = {
 		return updated;
 	},
 
+	/**
+	 * Hasil generate AI (docs/application_flow.md §12.1): menimpa `kontenKerja`
+	 * **sekaligus** mencatat ulang bukti dukung yang dipakai.
+	 *
+	 * Sengaja bukan perluasan {@link updateKonten}. Yang itu jalur autosave —
+	 * dipanggil puluhan kali per menit dan karena itu dengan sadar tidak
+	 * menyiarkan apa pun. Generate kebalikannya: jarang, dan sekali jalan ia
+	 * mengubah dua fakta yang dibaca tampilan di luar editor — jumlah bukti
+	 * dukung terpakai di KPI dashboard (`summarizeChapters`) dan status bab di
+	 * Daftar Isi. Keduanya harus segar begitu generate selesai, jadi di sini
+	 * `notify()` justru wajib.
+	 *
+	 * Isi dan daftar buktinya satu operasi karena §12.1 memang menuliskannya
+	 * begitu: baris `BUKTI_DUKUNG_BAB` diperbarui mengikuti pilihan yang dipakai
+	 * generate ini. Bab yang sudah lebih dulu terkunci ditolak diam-diam, sama
+	 * seperti {@link updateKonten}.
+	 */
+	applyGenerate(
+		chapterId: string,
+		input: { kontenKerja: string; buktiDukungIds: string[] },
+	): ChapterEntity | undefined {
+		const all = this.findAll();
+		const target = all.find((chapter) => chapter.id === chapterId);
+		if (!target || target.terkunci) return undefined;
+
+		const updated: ChapterEntity = {
+			...target,
+			kontenKerja: input.kontenKerja,
+			buktiDukungIds: input.buktiDukungIds,
+			terakhirDisimpan: new Date().toISOString(),
+		};
+		this.save(
+			all.map((chapter) => (chapter.id === chapterId ? updated : chapter)),
+		);
+		this.notify();
+		return updated;
+	},
+
 	/** Dipanggil saat Dokumen LED dihapus supaya babnya tidak jadi sampah. */
 	deleteByProjectId(ledProjectId: string): void {
 		const all = this.findAll();
