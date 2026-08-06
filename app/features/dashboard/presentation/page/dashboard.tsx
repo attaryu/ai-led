@@ -1,96 +1,92 @@
-import { Link } from "react-router"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "~/core/components/ui/card"
-import { useSession } from "~/features/auth/presentation/hooks/use-session"
-import type { UserRole } from "~/features/users/domain/entities/user.entity"
+import { useSession } from '~/features/auth/presentation/hooks/use-session';
+import { AdminOrganizationSummary } from '../components/admin-organization-summary';
+import { InstitutionAccreditationCard } from '../components/institution-accreditation-card';
+import { InstitutionCycleSummary } from '../components/institution-cycle-summary';
+import { InstitutionResourceStrip } from '../components/institution-resource-strip';
+import { ProgramReadinessTable } from '../components/program-readiness-table';
+import { useInstitutionReadiness } from '../hooks/use-institution-readiness';
 
 /**
- * Jalan masuk ke tiap bagian level tenant (docs/application_flow.md §4).
- * Isinya masih sebatas penaut; ringkasan progres lintas prodi menyusul.
+ * Dashboard Utama (docs/application_flow.md §4.0).
+ *
+ * Halaman ini menjawab satu pertanyaan: **seberapa siap universitas ini
+ * menghadapi akreditasi, dan prodi mana yang tertinggal.** Subjeknya universitas,
+ * bukan daftar menunya.
+ *
+ * **Aturan utama halaman ini: satu blok, satu kerangka waktu** — aturan yang sama
+ * yang berlaku di Dashboard Prodi (§5.1) dan yang secara khusus diperingatkan
+ * PRD §3.8 untuk level institusi: capaian akreditasi yang sudah disahkan dan
+ * usaha siklus yang sedang berjalan tidak boleh disandingkan sebagai angka
+ * sederajat.
+ *
+ *   Blok A — Posisi Akreditasi ......... masa lalu, dari `PROGRAM_STUDI`
+ *   Blok B — Siklus Berjalan ........... sekarang, dari `DOKUMEN_LED` aktif + babnya
+ *   Blok C — Kesiapan per Prodi ........ inti halaman, perbandingan antar prodi
+ *   Blok D — Sumber Daya Institusi ..... lintas siklus, bukti dukung & tim
+ *
+ * Versi sebelumnya halaman ini berisi empat kartu penaut yang isinya persis menu
+ * sidebar. Keduanya difilter per role dengan aturan yang sama, jadi kartu-kartu
+ * itu salinan kedua tanpa nilai tambah — alasan yang sama yang membuang daftar
+ * riwayat siklus dari Dashboard Prodi (§5.1c).
+ *
+ * Halaman ini murni baca: tidak ada satu pun aksi ubah data, jadi tidak ada
+ * tombol yang perlu disembunyikan per role selain tautan Manajemen User di Blok
+ * D — penjagaan selebihnya sudah selesai di layout lapis ini.
  */
-const sections: {
-  title: string
-  description: string
-  to: string
-  roles: UserRole[]
-}[] = [
-  {
-    title: "Program Studi",
-    description:
-      "Daftar seluruh prodi. Klik salah satu untuk masuk ke Dashboard Prodi-nya.",
-    to: "/dashboard/study-programs",
-    roles: ["Admin", "Pimpinan", "Penjamin Mutu"],
-  },
-  {
-    title: "Dokumen LED",
-    description:
-      "Seluruh Dokumen LED lintas prodi beserta statusnya, sebagai pintasan langsung ke dokumennya.",
-    to: "/dashboard/led-projects",
-    roles: ["Pimpinan", "Penjamin Mutu"],
-  },
-  {
-    title: "User",
-    description:
-      "Buat akun baru dan tempatkan Penyusun ke prodi tertentu (§4.2).",
-    to: "/dashboard/users",
-    roles: ["Admin", "Pimpinan"],
-  },
-  {
-    title: "Bukti Dukung Tenant",
-    description:
-      "Perpustakaan bukti dukung level universitas yang bisa dipakai seluruh prodi (§4.4).",
-    to: "/dashboard/evidence",
-    roles: ["Pimpinan", "Penjamin Mutu"],
-  },
-]
-
 export function Dashboard() {
-  const session = useSession()
+	const session = useSession();
 
-  const visibleSections = session
-    ? sections.filter((section) => section.roles.includes(session.role))
-    : []
+	return (
+		<div className="flex flex-col gap-6">
+			<div>
+				<h2 className="font-heading text-2xl font-bold tracking-tight">
+					Dashboard Utama
+				</h2>
+				<p className="text-sm text-muted-foreground">
+					{session?.role === 'Admin'
+						? 'Ringkasan organisasi level universitas (tenant).'
+						: 'Kesiapan akreditasi seluruh program studi di universitas ini.'}
+				</p>
+			</div>
 
-  return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h2 className="font-heading text-2xl font-bold tracking-tight">
-          Dashboard Utama
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Level universitas (tenant){session && ` · masuk sebagai ${session.role}`}
-        </p>
-      </div>
+			{/*
+			 * Session belum terbaca: jangan merender salah satu cabang lebih dulu.
+			 * Menampilkan agregat kesiapan sesaat lalu menggantinya dengan ringkasan
+			 * Admin berarti Admin sempat melihat angka yang tidak boleh ia lihat.
+			 */}
+			{!session ? null : session.role === 'Admin' ? (
+				<AdminOrganizationSummary />
+			) : (
+				<InstitutionReadinessView
+					dapatKelolaUser={session.role === 'Pimpinan'}
+				/>
+			)}
+		</div>
+	);
+}
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        {visibleSections.map((section) => (
-          <Link key={section.to} to={section.to} className="group">
-            <Card className="h-full transition-colors group-hover:border-primary">
-              <CardHeader>
-                <CardTitle className="text-base">{section.title}</CardTitle>
-                <CardDescription>{section.description}</CardDescription>
-              </CardHeader>
-            </Card>
-          </Link>
-        ))}
-      </div>
+/**
+ * Dipisah dari komponen di atas supaya hook kesiapan tidak berjalan (dan
+ * menyentuh penyimpanan) untuk Admin yang tidak akan merendernya — pemisahan
+ * yang sama seperti `ProgramReadinessView` di Dashboard Prodi.
+ */
+function InstitutionReadinessView({
+	dapatKelolaUser,
+}: {
+	dapatKelolaUser: boolean;
+}) {
+	const { rows, akreditasi, siklus, sumberDaya } = useInstitutionReadiness();
 
-      {visibleSections.length === 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Tidak ada menu yang tersedia</CardTitle>
-            <CardDescription>
-              Role ini tidak punya akses ke level tenant.
-            </CardDescription>
-          </CardHeader>
-          <CardContent />
-        </Card>
-      )}
-    </div>
-  )
+	return (
+		<>
+			<InstitutionAccreditationCard akreditasi={akreditasi} />
+			<InstitutionCycleSummary siklus={siklus} />
+			<ProgramReadinessTable rows={rows} />
+			<InstitutionResourceStrip
+				sumberDaya={sumberDaya}
+				totalProdi={akreditasi.totalProdi}
+				dapatKelolaUser={dapatKelolaUser}
+			/>
+		</>
+	);
 }
