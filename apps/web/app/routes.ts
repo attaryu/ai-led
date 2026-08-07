@@ -27,6 +27,10 @@ import { type RouteConfig, route, index } from "@react-router/dev/routes";
  * harus ikut.
  */
 export default [
+  // Landing page publik — satu-satunya halaman yang tidak mengandaikan pengguna
+  // sudah masuk, sekaligus jalan masuk resmi ke `/login` dan `/register`.
+  index("routes/home.tsx"),
+
   route("login", "routes/login.tsx"),
   route("register", "routes/register.tsx"),
 

@@ -34,6 +34,8 @@ Dua prinsip desain yang berlaku konsisten di seluruh aplikasi:
 
 ## 2. Autentikasi
 
+- Root URL `/` adalah **halaman muka publik** — satu-satunya halaman yang tidak mengandaikan pengguna sudah masuk, sekaligus jalan masuk resmi ke `/login` dan `/register`. Isinya perkenalan produk (hero, empat kemampuan utama, ajakan mendaftar), bukan bagian dari ruang kerja mana pun, jadi ia tidak memakai `AppShell` maupun sidebar lapis mana pun.
+  - Bila sudah ada sesi tersimpan, tombol **Masuk/Daftar** di navbar-nya diganti satu tombol **Buka Dashboard** yang menuju halaman pendaratan role bersangkutan (aturan yang sama persis di bawah ini). Pembedanya ada tidaknya sesi tersimpan, bukan `sessionRepository.get()` — yang terakhir selalu mengembalikan sesi contoh selama autentikasi masih mock.
 - Hanya **login** (email + password). **Tidak ada fitur lupa password** untuk versi pengembangan saat ini — dianggap out of scope demi kecepatan development.
 - Setelah login berhasil, sistem membaca `USER.role` dan `USER.program_studi_id` untuk menentukan halaman pendaratan (landing page):
   - `ADMIN`, `PIMPINAN`, `PENJAMIN_MUTU` → diarahkan ke **Dashboard Utama**.
