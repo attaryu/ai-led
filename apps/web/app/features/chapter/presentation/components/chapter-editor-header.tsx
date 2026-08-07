@@ -1,6 +1,8 @@
 import { ArrowLeftIcon } from '@phosphor-icons/react';
 import { Link } from 'react-router';
 
+import { initials } from '~/core/lib/initials';
+import { ProfileMenu } from '~/features/auth/presentation/components/profile-menu';
 import { RoleSwitcher } from '~/features/auth/presentation/components/role-switcher';
 import { useSession } from '~/features/auth/presentation/hooks/use-session';
 import { type AutosaveStatus } from '../hooks/use-chapter-autosave';
@@ -63,22 +65,19 @@ export function ChapterEditorHeader({
 							aria-hidden
 							className="flex size-8 items-center justify-center rounded-full bg-sidebar-primary text-xs font-semibold text-sidebar-primary-foreground"
 						>
-							{initial(session.namaLengkap)}
+							{initials(session.namaLengkap)}
 						</span>
 						<span className="text-sm font-medium">{session.namaLengkap}</span>
+
+						{/*
+						 * Menu yang sama dengan card profil sidebar. Editor Bab tidak
+						 * memakai `AppShell`, jadi tanpa ini ia jadi satu-satunya halaman
+						 * yang tidak punya jalan keluar.
+						 */}
+						<ProfileMenu />
 					</div>
 				)}
 			</div>
 		</header>
 	);
-}
-
-/** Maksimal dua huruf: "Sarah Floyd" → "SF", "Sarah" → "S". */
-function initial(nama: string): string {
-	return nama
-		.split(/\s+/)
-		.filter(Boolean)
-		.slice(0, 2)
-		.map((kata) => kata[0]?.toUpperCase() ?? '')
-		.join('');
 }

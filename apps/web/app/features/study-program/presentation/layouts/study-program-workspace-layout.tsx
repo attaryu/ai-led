@@ -15,6 +15,7 @@ import {
 	canAccessTenant,
 	useRoleGuard,
 } from '~/features/auth/presentation/hooks/use-role-guard';
+import { useActiveTenant } from '~/features/tenant/presentation/hooks/use-active-tenant';
 import { studyProgramRepository } from '../../data/repositories/study-program.repository';
 
 /**
@@ -28,6 +29,7 @@ import { studyProgramRepository } from '../../data/repositories/study-program.re
 export function StudyProgramWorkspaceLayout() {
 	const { programId } = useParams<{ programId: string }>();
 	const location = useLocation();
+	const tenant = useActiveTenant();
 	const guard = useRoleGuard('program', programId);
 
 	if (guard.status === 'denied') {
@@ -51,10 +53,10 @@ export function StudyProgramWorkspaceLayout() {
 		return (
 			<AppShell
 				sidebar={{
+					universityName: tenant.universityName,
 					backTo: showTenantLink ? '/dashboard' : null,
-					backLabel: 'Dashboard Utama',
 					eyebrow: 'Dashboard Prodi',
-					brand: 'Tidak ditemukan',
+					contextTitle: 'Tidak ditemukan',
 					items: [],
 				}}
 				breadcrumbs={[...tenantCrumb, { label: 'Prodi tidak ditemukan' }]}
@@ -83,10 +85,10 @@ export function StudyProgramWorkspaceLayout() {
 	return (
 		<AppShell
 			sidebar={{
+				universityName: tenant.universityName,
 				backTo: showTenantLink ? '/dashboard' : null,
-				backLabel: 'Dashboard Utama',
 				eyebrow: 'Dashboard Prodi',
-				brand: studyProgram.studyProgramName,
+				contextTitle: studyProgram.studyProgramName,
 				items: [
 					{
 						// Halamannya bukan daftar dokumen melainkan keadaan prodi itu

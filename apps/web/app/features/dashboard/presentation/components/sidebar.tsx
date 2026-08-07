@@ -1,8 +1,8 @@
-import { UsersIcon, GraduationCapIcon, HouseIcon, FileIcon, ArchiveIcon, SignOutIcon } from "@phosphor-icons/react"
-import { useNavigate } from "react-router"
+import { UsersIcon, GraduationCapIcon, HouseIcon, FileIcon, ArchiveIcon } from "@phosphor-icons/react"
 
 import type { AppShellSidebar, AppShellNavItem } from "~/core/components/app-shell"
 import { useSession } from "~/features/auth/presentation/hooks/use-session"
+import { useActiveTenant } from "~/features/tenant/presentation/hooks/use-active-tenant"
 import type { UserRole } from "~/features/users/domain/entities/user.entity"
 
 /**
@@ -67,24 +67,14 @@ const menuItems: (AppShellNavItem & { roles: UserRole[] })[] = [
  * `AppShell` supaya ketiga lapis memakai chrome yang sama persis.
  */
 export function useDashboardSidebar(): AppShellSidebar {
-  const navigate = useNavigate()
   const session = useSession()
+  const tenant = useActiveTenant()
 
   const items = session
     ? menuItems.filter((item) => item.roles.includes(session.role))
     : []
 
-  return {
-    brand: "LED AI Admin",
-    items,
-    footer: (
-      <button
-        onClick={() => navigate("/login")}
-        className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
-      >
-        <SignOutIcon className="size-5" />
-        Keluar (Logout)
-      </button>
-    ),
-  }
+  // Tanpa `contextTitle`: lapis tenant tidak punya subjek di bawah nama
+  // aplikasi, jadi sidebar-nya langsung dari brand ke daftar menu.
+  return { universityName: tenant.universityName, items }
 }

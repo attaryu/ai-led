@@ -9,6 +9,7 @@ import {
 	useRoleGuard,
 } from '~/features/auth/presentation/hooks/use-role-guard';
 import { useSession } from '~/features/auth/presentation/hooks/use-session';
+import { useActiveTenant } from '~/features/tenant/presentation/hooks/use-active-tenant';
 import { ledProjectRepository } from '../../data/repositories/led-project.repository';
 
 /**
@@ -21,6 +22,7 @@ import { ledProjectRepository } from '../../data/repositories/led-project.reposi
 export function LedProjectWorkspaceLayout() {
 	const { projectId } = useParams<{ projectId: string }>();
 	const session = useSession();
+	const tenant = useActiveTenant();
 	const ledProject = projectId
 		? ledProjectRepository.findById(projectId)
 		: undefined;
@@ -50,10 +52,10 @@ export function LedProjectWorkspaceLayout() {
 		return (
 			<AppShell
 				sidebar={{
+					universityName: tenant.universityName,
 					backTo: escapeTo,
-					backLabel: showTenantLink ? 'Daftar Dokumen LED' : 'Dashboard Prodi',
 					eyebrow: 'Dokumen LED',
-					brand: 'Tidak ditemukan',
+					contextTitle: 'Tidak ditemukan',
 					items: [],
 				}}
 				breadcrumbs={[...tenantCrumb, { label: 'Dokumen LED tidak ditemukan' }]}
@@ -84,12 +86,12 @@ export function LedProjectWorkspaceLayout() {
 	return (
 		<AppShell
 			sidebar={{
+				universityName: tenant.universityName,
 				// Tujuannya prodi milik dokumen ini — bukan lapis tenant — sehingga
 				// tombolnya tetap ada untuk Penyusun.
 				backTo: programPath,
-				backLabel: ledProject.studyProgramName,
 				eyebrow: 'Dokumen LED',
-				brand: ledProject.judul,
+				contextTitle: ledProject.judul,
 				items: [
 					{
 						name: 'Progres Dokumen',
