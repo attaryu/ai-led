@@ -77,7 +77,11 @@ export function InstitutionCycleSummary({
 					icon={LockSimpleIcon}
 					value={`${siklus.babTerkunci}/${siklus.babTotal}`}
 					progress={siklus.persenKesiapanReview}
-					hint="Bab yang sudah dikunci Penjamin Mutu"
+					hint={
+						siklus.babMenungguReview > 0
+							? `${siklus.babMenungguReview} bab menunggu review`
+							: 'Bab yang sudah dikunci Penjamin Mutu'
+					}
 				/>
 				{/*
 				 * Siklus tanpa tenggat tidak ikut dihitung: tidak dipatok adalah pilihan

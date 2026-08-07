@@ -486,12 +486,13 @@ Klik judul bab → masuk ke **Editor Bab** di `/editor/:projectId/:chapterId` (�
 | Status turunan   | Aturan                                | Arti bagi pembaca                   |
 | ---------------- | ------------------------------------- | ----------------------------------- |
 | `BELUM_DIISI`    | `konten_kerja` kosong/null            | Belum disentuh sama sekali          |
-| `SEDANG_DISUSUN` | ada `konten_kerja`, `terkunci = false` | Sedang dikerjakan, masih bisa diedit |
+| `SEDANG_DISUSUN` | ada `konten_kerja`, `terkunci = false`, `diajukan_review_pada = null` | Sedang dikerjakan, masih bisa diedit |
+| `MENUNGGU_REVIEW` | `diajukan_review_pada` terisi, `terkunci = false` | Penyusun menyatakan siap; giliran Penjamin Mutu |
 | `TERKUNCI`       | `terkunci = true`                     | Dikunci Penjamin Mutu untuk review  |
 
-`terkunci` **menang atas kondisi konten** — bab yang dikunci tetap tampil `TERKUNCI` walau isinya kosong, konsisten dengan §12.2 yang memblokir semua aksi ubah data apa pun isi babnya.
+Urutannya dari yang paling membatasi. `terkunci` **menang atas segalanya** — bab yang dikunci tetap tampil `TERKUNCI` walau isinya kosong atau pernah diajukan, konsisten dengan §12.2 yang memblokir semua aksi ubah data apa pun isi babnya. `MENUNGGU_REVIEW` menyusul di bawahnya karena ia hanya membekukan Penyusun; Penjamin Mutu masih bisa menyunting babnya (§12.3).
 
-> **Catatan desain — kenapa tidak jadi kolom.** Status ini murni kebutuhan tampilan dashboard. Menyimpannya sebagai kolom berarti ada dua sumber kebenaran yang harus dijaga tetap sinkron dengan `terkunci` dan `konten_kerja`; begitu ada satu jalur yang lupa memperbaruinya (mis. buka kunci lewat aksi lain), dashboard berbohong. Karena itu `docs/database.md` tidak berubah untuk fitur ini.
+> **Catatan desain — kenapa tidak jadi kolom.** Status ini murni kebutuhan tampilan dashboard. Menyimpannya sebagai kolom berarti ada dua sumber kebenaran yang harus dijaga tetap sinkron dengan `terkunci`, `diajukan_review_pada`, dan `konten_kerja`; begitu ada satu jalur yang lupa memperbaruinya (mis. buka kunci lewat aksi lain), dashboard berbohong. Yang bertambah di `docs/database.md` hanyalah **fakta** yang diturunkan (`diajukan_review_pada`), bukan statusnya.
 
 ### 6.1b Bab dibuat otomatis, termasuk untuk dokumen lama
 
@@ -695,6 +696,47 @@ Tampilan mengikuti konsep dua-sidebar ala Figma:
 - Saat `terkunci = true`: **tidak seorang pun** — termasuk Penjamin Mutu yang menguncinya sendiri — bisa mengedit `konten_kerja`, menjalankan generate, menjalankan simulasi skor, atau membuat checkpoint baru pada bab tersebut. Seluruh tab tetap bisa **dibuka untuk dibaca** (Rujukan, Draft lama, Rubrik lama, Skor lama), hanya aksi-aksi yang mengubah data yang diblokir.
 - Membuka kunci (`terkunci = false`) mengembalikan seluruh hak akses edit sesuai role masing-masing.
 
+> **Status implementasi.** Sudah jalan seluruhnya di frontend, tapi **kunci dan catatan dipisah jadi dua aksi**, bukan satu seperti bacaan harfiah pasal ini:
+>
+> - **Tombol Kunci/Buka Kunci Bab** berdiri di header Editor Bab, sekali klik tanpa dialog maupun konfirmasi (`chapterRepository.setTerkunci`). Hanya dirender untuk `PENJAMIN_MUTU` (§1: yang tidak boleh diakses disembunyikan, bukan dinonaktifkan). Tanpa perantara karena mengunci sepenuhnya reversibel dan akibatnya langsung terlihat di layar yang sama — toolbar editor hilang, spanduk muncul di kanvas, badge bab berganti.
+> - **Catatan** sepenuhnya tinggal di tab **Review** (sidebar kanan, `chapterRepository.setCatatanPenjaminMutu`). Penjamin Mutu menulisnya di textarea yang selalu aktif; role lain membacanya sebagai teks. Sebelum tab ini ada, `catatan_penjamin_mutu` cuma menyalakan penanda "Ada catatan Penjamin Mutu" di panel Perlu Perhatian tanpa badan catatannya pernah dirender.
+>
+> Alasan memisahkannya: yang dituntut pasal ini adalah kedua hal itu **tersedia**, bukan bahwa keduanya harus terjadi dalam satu klik. Praktiknya bab dikunci sekali sementara catatannya ditulis dan direvisi berkali-kali — termasuk saat babnya sedang terkunci, dan justru bab itulah yang sedang direview.
+>
+> Dua hal yang melampaui pasal ini, keduanya disengaja:
+>
+> - **Catatan punya penulis dan waktu** (`catatan_oleh_nama`, `catatan_pada` di `docs/database.md` §5). Tanpa keduanya, Penyusun membaca catatan tanpa tahu siapa yang menulisnya dan sejak kapan — dan pasal ini sendiri menjadikan catatan sebagai alasan babnya dikunci.
+> - **Catatan bisa ada tanpa kunci**, dan sesudah pemisahan di atas itu jadi bentuk bawaannya, bukan kasus khusus. Pasal ini menulis "biasanya disertai", bukan "harus"; data contoh pun punya bab bercatatan yang tidak terkunci.
+>
+> Yang **belum**:
+>
+> - **Penyiaran kunci antar tab peramban.** `chapterRepository.notify()` memakai `CustomEvent` yang tidak menyeberang tab, jadi "Penjamin Mutu mengunci dari tab lain" baru merambat setelah halaman dimuat ulang.
+> - **Auto-lock kolaborasi §13** di bawah, masih menunggu lapis Redis.
+
+### 12.3 Pengajuan review oleh Penyusun (`diajukan_review_pada`)
+
+Pasal tambahan, tidak ada di rancangan awal. Tanpa ini alur review buntu di tengah: Penjamin Mutu memberi catatan, Penyusun memperbaiki, lalu **tidak ada cara memberi tahu bahwa perbaikannya selesai** selain menunggu Penjamin Mutu kebetulan melihat lagi. Untuk review pertama pun sinyalnya cuma proksi — bab "terisi" bukan berarti bab "selesai".
+
+- Hanya `PENYUSUN` pemilik dokumen yang punya tombol **Ajukan Review** (dan **Batalkan Pengajuan**), di tab Review. Bab yang masih kosong tidak bisa diajukan.
+- Saat `diajukan_review_pada` terisi: **seluruh `PENYUSUN` tidak bisa mengubah `konten_kerja`, menjalankan generate/simulasi, atau membuat checkpoint** — termasuk yang mengajukan. `PENJAMIN_MUTU` **tidak** ikut terbekukan; merapikan bab justru bagian dari mereview. Seperti §12.2, yang diblokir hanya aksi ubah, bukan membaca.
+- Pengajuan **hangus otomatis begitu Penjamin Mutu merespons**: saat ia mengunci bab (review dimulai) atau menulis `catatan_penjamin_mutu` (umpan balik turun, bola kembali ke Penyusun). **Mencabut** catatan tidak menghanguskannya — itu bukan umpan balik.
+
+> **Dua lapis kunci, mekanisme sama, beda pemegang kunci.** Ini yang membuat pasal ini dan §12.2 tidak perlu diingat sebagai dua aturan terpisah:
+>
+> | | Penyusun | Penjamin Mutu | Pemegang kunci |
+> | --- | --- | --- | --- |
+> | Biasa | boleh edit | boleh edit | — |
+> | Diajukan (§12.3) | beku | boleh edit | Penyusun |
+> | Terkunci (§12.2) | beku | beku | Penjamin Mutu |
+>
+> Keduanya berbeda dari auto-lock kolaborasi §13, yang sementara, per-user, dan dipicu aktivitas mengetik alih-alih pernyataan manusia.
+
+> **Status implementasi.** Sudah jalan. Antreannya tampil sebagai badge `MENUNGGU_REVIEW` di tabel Progres per Bab (§6.1) dan sebagai `hint` kartu "Kesiapan Review" di ketiga dashboard — mis. "3 bab menunggu review" — plus penanda "· 3 antre" di kolom Kesiapan Review tabel Kesiapan per Prodi (§4.0c).
+>
+> **Sengaja tidak masuk panel Perlu Perhatian**, dan jangan "dilengkapi" nanti. Dua sebabnya: (1) isi panel itu dihitung jadi `perluDitindak` yang dipakai mengurutkan tabel risiko §4.0c, sehingga bab terajukan akan mendorong prodinya naik ke puncak daftar risiko — memperlakukan kemajuan sebagai masalah; (2) panel itu merender tiap baris dengan ikon peringatan tanpa konsep severity, jadi kabar baik akan tampil sebagai gangguan.
+>
+> Tidak ada kolom pengaju: pembekuannya berlaku untuk **peran** Penyusun, bukan satu user, jadi tidak ada `user_id` yang perlu dibandingkan.
+
 ---
 
 ## 13. Auto-Lock Kolaborasi (Redis)
@@ -750,6 +792,7 @@ Kedua lapis ini **independen** dan bisa aktif bersamaan (misal bab sedang di-loc
 | Edit konten bab / generate / buat draft        | ❌              | ❌ (read-only)  | ✅              | ✅                         |
 | Jalankan simulasi skor (Rubrik)                | ❌              | ❌ (read-only)  | ✅              | ✅                         |
 | Kunci/buka kunci bab                           | ❌              | ❌              | ✅              | ❌                         |
+| Ajukan/batalkan review bab (§12.3)             | ❌              | ❌              | ❌              | ✅ (prodinya)              |
 | Ubah status dokumen                            | ❌              | ❌              | ✅              | ❌                         |
 | Upload bukti dukung level Tenant               | ❌              | ✅              | ✅              | ❌                         |
 | Upload bukti dukung level Prodi                | ❌              | ✅              | ✅              | ✅ (prodinya)              |

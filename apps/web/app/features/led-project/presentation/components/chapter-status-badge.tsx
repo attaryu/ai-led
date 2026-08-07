@@ -1,5 +1,6 @@
 import {
 	CircleDashedIcon,
+	ClockIcon,
 	LockSimpleIcon,
 	PencilSimpleLineIcon,
 	type Icon,
@@ -23,6 +24,15 @@ const progressVisual: Record<
 		icon: PencilSimpleLineIcon,
 		className:
 			'bg-amber-100 text-amber-800 border-amber-200/50 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800/30',
+	},
+	// Ikon jam mengikuti `EvidenceStatusBadge.MENUNGGU` supaya "sedang mengantre"
+	// terbaca sama di kedua keluarga status. Warnanya biru, bukan amber, karena
+	// bab yang diajukan bukan pekerjaan tertunda melainkan giliran orang lain.
+	MENUNGGU_REVIEW: {
+		label: 'Menunggu review',
+		icon: ClockIcon,
+		className:
+			'bg-sky-100 text-sky-800 border-sky-200/50 dark:bg-sky-900/30 dark:text-sky-300 dark:border-sky-800/30',
 	},
 	TERKUNCI: {
 		label: 'Terkunci',

@@ -92,7 +92,11 @@ export function ActiveCycleSection({
 					progress={
 						summary.total === 0 ? 0 : (summary.terkunci / summary.total) * 100
 					}
-					hint="Bab yang sudah dikunci Penjamin Mutu"
+					hint={
+						summary.menungguReview > 0
+							? `${summary.menungguReview} bab menunggu review`
+							: 'Bab yang sudah dikunci Penjamin Mutu'
+					}
 				/>
 				<StatCard
 					label="Bukti Dukung Dipakai"

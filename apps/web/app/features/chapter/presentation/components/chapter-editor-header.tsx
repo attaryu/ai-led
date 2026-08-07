@@ -5,7 +5,10 @@ import { initials } from '~/core/lib/initials';
 import { ProfileMenu } from '~/features/auth/presentation/components/profile-menu';
 import { RoleSwitcher } from '~/features/auth/presentation/components/role-switcher';
 import { useSession } from '~/features/auth/presentation/hooks/use-session';
+import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import { type AutosaveStatus } from '../hooks/use-chapter-autosave';
+import { type ChapterPermission } from '../hooks/use-chapter-permission';
+import { ChapterLockButton } from './chapter-lock-button';
 import { ChapterSaveIndicator } from './chapter-save-indicator';
 
 /**
@@ -19,11 +22,18 @@ import { ChapterSaveIndicator } from './chapter-save-indicator';
 export function ChapterEditorHeader({
 	projectId,
 	judulDokumen,
+	chapter,
+	izin,
+	onReviewed,
 	status,
 	savedAt,
 }: {
 	projectId: string;
 	judulDokumen: string;
+	/** Bab yang sedang dibuka — dipakai tombol kunci review (§12.2). */
+	chapter: ChapterEntity;
+	izin: ChapterPermission;
+	onReviewed: (diperbarui: ChapterEntity) => void;
 	status: AutosaveStatus;
 	savedAt: string | null;
 }) {
@@ -52,6 +62,17 @@ export function ChapterEditorHeader({
 			<ChapterSaveIndicator status={status} savedAt={savedAt} />
 
 			<div className="ml-auto flex shrink-0 items-center gap-4">
+				{/*
+				 * Aksi utama Penjamin Mutu di halaman ini, jadi ia berdiri di header
+				 * alih-alih terkubur di balik tab yang harus diklik dulu. Catatannya
+				 * sendiri tinggal di tab Review. Merender `null` untuk role lain.
+				 */}
+				<ChapterLockButton
+					chapter={chapter}
+					izin={izin}
+					onReviewed={onReviewed}
+				/>
+
 				<RoleSwitcher />
 
 				{session && (

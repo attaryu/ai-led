@@ -1,7 +1,35 @@
-import { LockIcon, EyeIcon } from '@phosphor-icons/react';
+import { LockIcon, EyeIcon, ClockIcon, type Icon } from '@phosphor-icons/react';
 import { EditorContent, type Editor } from '@tiptap/react';
 
-import { type ChapterPermission } from '../hooks/use-chapter-permission';
+import {
+	frasaBlokir,
+	type AlasanBlokir,
+	type ChapterPermission,
+} from '../hooks/use-chapter-permission';
+
+/**
+ * Ikon dan kalimat lanjutan tiap alasan; frasa pembukanya dari `frasaBlokir`
+ * supaya spanduk ini dan kaki tab Draft/Generasi/Rubrik menyebut sebab yang sama
+ * persis. `Record` menjadikan alasan baru compile error, bukan kalimat keliru.
+ */
+const spandukBlokir: Record<AlasanBlokir, { icon: Icon; lanjutan: string }> = {
+	// §12.2: kunci memblokir aksi ubah, bukan membaca — semua tab di kanan tetap
+	// bisa dibuka.
+	terkunci: {
+		icon: LockIcon,
+		lanjutan: 'Isinya masih bisa dibaca, tapi tidak bisa diubah.',
+	},
+	diajukan: {
+		icon: ClockIcon,
+		lanjutan:
+			'Batalkan pengajuan di tab Review kalau isinya masih mau diubah.',
+	},
+	'hanya-baca': {
+		icon: EyeIcon,
+		lanjutan:
+			'Perubahan konten hanya bisa dilakukan Penyusun dan Penjamin Mutu.',
+	},
+};
 
 /**
  * Kanvas "kertas" Editor Bab (docs/application_flow.md §7.2).
@@ -31,29 +59,7 @@ export function ChapterEditorCanvas({
 			className="min-w-0 flex-1 overflow-y-auto bg-muted/40 p-8"
 		>
 			<div className="mx-auto max-w-3xl space-y-3">
-				{blockedReason && (
-					<div className="flex items-center gap-2 rounded-md border border-border bg-card px-4 py-2.5 text-sm text-muted-foreground">
-						{blockedReason === 'terkunci' ? (
-							<>
-								<LockIcon className="size-4 shrink-0" />
-								{/* §12.2: kunci memblokir aksi ubah, bukan membaca — semua
-								    tab di kanan tetap bisa dibuka. */}
-								<span>
-									Bab ini dikunci Penjamin Mutu. Isinya masih bisa dibaca, tapi
-									tidak bisa diubah.
-								</span>
-							</>
-						) : (
-							<>
-								<EyeIcon className="size-4 shrink-0" />
-								<span>
-									Anda membuka bab ini dalam mode baca. Perubahan konten hanya
-									bisa dilakukan Penyusun dan Penjamin Mutu.
-								</span>
-							</>
-						)}
-					</div>
-				)}
+				{blockedReason && <SpandukBlokir alasan={blockedReason} />}
 
 				<div className="rounded-md bg-card px-12 py-14 shadow-sm">
 					<h2 className="mb-6 font-heading text-xl font-bold tracking-tight">
@@ -63,5 +69,18 @@ export function ChapterEditorCanvas({
 				</div>
 			</div>
 		</main>
+	);
+}
+
+function SpandukBlokir({ alasan }: { alasan: AlasanBlokir }) {
+	const { icon: Ikon, lanjutan } = spandukBlokir[alasan];
+
+	return (
+		<div className="flex items-center gap-2 rounded-md border border-border bg-card px-4 py-2.5 text-sm text-muted-foreground">
+			<Ikon className="size-4 shrink-0" />
+			<span>
+				{frasaBlokir[alasan]}. {lanjutan}
+			</span>
+		</div>
 	);
 }

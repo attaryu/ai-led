@@ -51,6 +51,9 @@ function buildEmptyChapters(ledProjectId: string): ChapterEntity[] {
 		checkpointAktifId: null,
 		terkunci: false,
 		catatanPenjaminMutu: null,
+		catatanOlehNama: null,
+		catatanPada: null,
+		diajukanReviewPada: null,
 		terakhirDisimpan: null,
 		buktiDukung: [],
 		// Bab kosong belum pernah digenerate, jadi belum ada mutu jawaban AI yang
@@ -135,6 +138,8 @@ const SEED_STATE: Record<
 	{
 		babTerisi: number;
 		babTerkunci: number;
+		/** `urutanBab` yang sedang diantrekan Penyusun untuk direview (§12.2). */
+		diajukan?: number[];
 		catatan?: Record<number, string>;
 		terbengkalai?: number[];
 		buktiDukung?: Record<number, BuktiDukungRef[]>;
@@ -143,6 +148,9 @@ const SEED_STATE: Record<
 	'1': {
 		babTerisi: 5,
 		babTerkunci: 0,
+		// Satu bab sudah diantrekan supaya keadaan ini terlihat di dashboard tanpa
+		// perlu mengklik apa pun lebih dulu.
+		diajukan: [4],
 		catatan: {
 			3: 'Profil UPPS masih memakai data tahun lalu, mohon diperbarui.',
 		},
@@ -194,12 +202,20 @@ function buildSeededChapters(ledProjectId: string): ChapterEntity[] {
 	return chapters.map((chapter) => {
 		const terisi = chapter.urutanBab <= state.babTerisi;
 		const terbengkalai = state.terbengkalai?.includes(chapter.urutanBab) ?? false;
+		const catatan = state.catatan?.[chapter.urutanBab] ?? null;
 
 		return {
 			...chapter,
 			kontenKerja: terisi ? contohKonten(chapter.judulBab) : null,
 			terkunci: chapter.urutanBab <= state.babTerkunci,
-			catatanPenjaminMutu: state.catatan?.[chapter.urutanBab] ?? null,
+			catatanPenjaminMutu: catatan,
+			// Nama Penjamin Mutu di `session.repository.ts`, supaya atribusi di tab
+			// Review menyebut orang yang memang ada di daftar user contoh.
+			catatanOlehNama: catatan ? 'Ahmad Fauzi' : null,
+			catatanPada: catatan ? daysAgo(1) : null,
+			diajukanReviewPada: state.diajukan?.includes(chapter.urutanBab)
+				? daysAgo(0.1)
+				: null,
 			terakhirDisimpan: terisi
 				? terbengkalai
 					? daysAgo(31)
@@ -440,6 +456,119 @@ export const chapterRepository = {
 		this.save(
 			all.map((chapter) => (chapter.id === chapterId ? updated : chapter)),
 		);
+		this.notify();
+		return updated;
+	},
+
+	/**
+	 * Kunci review Penjamin Mutu (§12.2).
+	 *
+	 * **Sengaja tidak memeriksa `terkunci`**, berbeda dari `updateKonten`,
+	 * `applyGenerate`, dan `restoreFromDraft` di atas. Yang diblokir §12.2 adalah
+	 * perubahan isi bab, bukan perubahan kuncinya sendiri — kalau metode ini ikut
+	 * menolak, bab yang sudah terkunci tidak akan pernah bisa dibuka lagi.
+	 *
+	 * Haknya juga tidak diperiksa di sini melainkan di `useChapterPermission`,
+	 * mengikuti pola `canEdit` yang menjaga autosave: repository ini tidak tahu
+	 * apa-apa soal session.
+	 */
+	setTerkunci(chapterId: string, terkunci: boolean): ChapterEntity | undefined {
+		const all = this.findAll();
+		const target = all.find((chapter) => chapter.id === chapterId);
+		if (!target) return undefined;
+
+		const updated: ChapterEntity = {
+			...target,
+			terkunci,
+			// Mengunci berarti reviewnya dimulai, jadi antreannya selesai. Saat
+			// membuka kunci nilainya sudah `null` sejak dikunci, jadi baris ini aman
+			// untuk kedua arah.
+			diajukanReviewPada: terkunci ? null : target.diajukanReviewPada,
+		};
+		this.save(
+			all.map((chapter) => (chapter.id === chapterId ? updated : chapter)),
+		);
+		// Wajib disiarkan, tidak seperti `updateKonten` yang sengaja diam: kunci
+		// menggerakkan tiga kartu KPI "Kesiapan Review" sekaligus badge tabel bab.
+		this.notify();
+		return updated;
+	},
+
+	/**
+	 * Catatan review Penjamin Mutu (§12.2), terpisah dari kuncinya.
+	 *
+	 * Dipisah karena keduanya punya ritme yang berbeda: bab dikunci sekali,
+	 * sedangkan catatannya bisa ditulis dan direvisi berkali-kali — termasuk
+	 * sebelum kuncinya dipasang sama sekali.
+	 *
+	 * Sama seperti `setTerkunci`, **tidak memeriksa `terkunci`**: justru bab yang
+	 * sedang terkunci itulah yang sedang direview dan paling butuh catatan.
+	 */
+	setCatatanPenjaminMutu(
+		chapterId: string,
+		catatan: string | null,
+		oleh: { namaLengkap: string },
+	): ChapterEntity | undefined {
+		const all = this.findAll();
+		const target = all.find((chapter) => chapter.id === chapterId);
+		if (!target) return undefined;
+
+		// Catatan kosong berarti dicabut, bukan disimpan sebagai string kosong:
+		// `pickChaptersNeedingAttention` menandai bab bercatatan lewat kebenaran
+		// nilainya, jadi "" akan membuat bab itu menetap di Perlu Perhatian tanpa
+		// alasan yang bisa dibaca siapa pun.
+		const isi = catatan?.trim() ? catatan.trim() : null;
+
+		const updated: ChapterEntity = {
+			...target,
+			catatanPenjaminMutu: isi,
+			// Penulis dan waktunya ikut dicabut bersama catatannya — atribusi tanpa
+			// catatan tidak menerangkan apa pun.
+			catatanOlehNama: isi ? oleh.namaLengkap : null,
+			catatanPada: isi ? new Date().toISOString() : null,
+			// Memberi catatan berarti umpan balik sudah turun dan bolanya kembali ke
+			// Penyusun, jadi antreannya selesai. **Mencabut** catatan tidak: itu
+			// bukan umpan balik, dan bab yang sedang mengantre harus tetap mengantre.
+			diajukanReviewPada: isi ? null : target.diajukanReviewPada,
+		};
+
+		this.save(
+			all.map((chapter) => (chapter.id === chapterId ? updated : chapter)),
+		);
+		// Catatan menggerakkan panel Perlu Perhatian di tiga dashboard.
+		this.notify();
+		return updated;
+	},
+
+	/**
+	 * Pengajuan review oleh Penyusun.
+	 *
+	 * Kembarannya `setTerkunci`, dengan mekanisme sama dan pemegang kunci berbeda:
+	 * pengajuan membekukan seluruh **Penyusun** (termasuk yang mengajukan) dan
+	 * hanya Penyusun yang bisa mencabutnya, sedangkan `terkunci` membekukan semua
+	 * orang dan hanya Penjamin Mutu yang bisa membukanya.
+	 *
+	 * Pembersihannya tidak ada di sini melainkan di dua metode di atas: antrean
+	 * hangus begitu Penjamin Mutu merespons.
+	 */
+	setDiajukanReview(
+		chapterId: string,
+		diajukan: boolean,
+	): ChapterEntity | undefined {
+		const all = this.findAll();
+		const target = all.find((chapter) => chapter.id === chapterId);
+		if (!target) return undefined;
+
+		const updated: ChapterEntity = {
+			...target,
+			diajukanReviewPada: diajukan ? new Date().toISOString() : null,
+		};
+
+		this.save(
+			all.map((chapter) => (chapter.id === chapterId ? updated : chapter)),
+		);
+		// Pengajuan menggerakkan badge tabel Progres per Bab dan hint kartu
+		// "Kesiapan Review" di tiga dashboard.
 		this.notify();
 		return updated;
 	},

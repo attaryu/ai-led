@@ -213,7 +213,15 @@ function ChapterEditorWorkspace({
 	}, []);
 
 	const panel = usePanelResize();
-	const izin = useChapterPermission(chapter, studyProgramId);
+	// `babTerkini`, bukan prop `chapter`: halaman induk membaca repository saat
+	// render tanpa berlangganan apa pun, dan ruang kerja ini di-`key` oleh
+	// `chapter.id` sehingga tidak ikut terpasang ulang. Membaca prop berarti kunci
+	// review yang barusan ditulis tidak pernah sampai ke sini — kanvas tetap bisa
+	// diketik dan tombolnya tetap berbunyi "Kunci Bab" sampai halaman dimuat ulang.
+	//
+	// Hanya hak akses yang pindah ke state; `content` Tiptap tetap dibaca sekali
+	// dari prop, persis seperti yang dijaga catatan di atas.
+	const izin = useChapterPermission(babTerkini, studyProgramId);
 	const autosave = useChapterAutosave({
 		chapterId: chapter.id,
 		savedAtAwal: chapter.terakhirDisimpan,
@@ -312,6 +320,9 @@ function ChapterEditorWorkspace({
 			<ChapterEditorHeader
 				projectId={projectId}
 				judulDokumen={judulDokumen}
+				chapter={babTerkini}
+				izin={izin}
+				onReviewed={setBabTerkini}
 				status={autosave.status}
 				savedAt={autosave.savedAt}
 			/>
@@ -375,6 +386,10 @@ function ChapterEditorWorkspace({
 						onGenerated={adopsiIsiBaru}
 						ambilSnapshot={ambilSnapshot}
 						onRestored={adopsiIsiBaru}
+						// `setBabTerkini`, bukan `adopsiIsiBaru`: review tidak menyentuh
+						// `kontenKerja` sama sekali, dan mendorong isi ke kanvas hanya akan
+						// memicu autosave untuk tulisan yang tidak berubah.
+						onReviewed={setBabTerkini}
 						onLihatSkor={lihatSkorCheckpoint}
 						lingkupSkor={lingkupSkor}
 						setLingkupSkor={setLingkupSkor}

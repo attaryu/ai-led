@@ -227,7 +227,10 @@ Ini adalah **kondisi aktif/terkini** dari sebuah bab — semua yang sedang diker
 | `konten_kerja` | jsonb | Konten aktif yang sedang dikerjakan; **selalu ditimpa otomatis** setiap kali ada perubahan (autosave) |
 | `checkpoint_aktif_id` | string (FK, nullable) | Menunjuk ke `BAB_DRAFT` mana yang terakhir jadi acuan/basis `konten_kerja` (misal setelah melakukan restore) |
 | `terkunci` | boolean | `true` jika Penjamin Mutu sedang mengunci bab ini untuk direview — saat terkunci, **tidak seorang pun** (termasuk Penjamin Mutu yang menguncinya sendiri) bisa mengubah `konten_kerja`, bukti dukung terpakai, atau membuat checkpoint baru, sampai kunci dibuka kembali |
-| `catatan_penjamin_mutu` | string | Catatan/masukan dari Penjamin Mutu terhadap isi bab |
+| `catatan_penjamin_mutu` | string (nullable) | Catatan/masukan dari Penjamin Mutu terhadap isi bab; `null` berarti belum/tidak ada catatan |
+| `catatan_oleh_nama` | string (nullable) | Nama penulis catatan terakhir. **Denormalisasi**, bukan FK, dengan alasan yang sama seperti `BAB_DRAFT.dibuat_oleh_nama`: catatan harus tetap terbaca setelah usernya dihapus |
+| `catatan_pada` | datetime (nullable) | Waktu catatan terakhir ditulis. Bersama kolom di atas selalu bergerak mengikuti `catatan_penjamin_mutu` — ketiganya ikut dikosongkan saat catatan dicabut |
+| `diajukan_review_pada` | datetime (nullable) | Kapan Penyusun menyatakan bab ini siap direview (§12.3); `null` berarti tidak sedang diantrekan. Selama terisi, **seluruh** `PENYUSUN` tidak bisa mengubah isinya — termasuk yang mengajukan — sementara `PENJAMIN_MUTU` tetap bisa. Dikosongkan otomatis begitu Penjamin Mutu merespons: mengunci bab, atau menulis `catatan_penjamin_mutu`. **Tanpa kolom pengaju** — pembekuannya berlaku untuk peran, bukan satu user, jadi tidak ada `user_id` yang perlu dibandingkan |
 | `terakhir_disimpan` | datetime | Waktu autosave terakhir |
 
 ### Relasi
@@ -616,6 +619,7 @@ Sama seperti `RUBRIK_KRITERIA_BAB`, ini murni infrastruktur di balik layar untuk
 4. `PIMPINAN` bisa melihat hasil skor (read-only), tidak bisa menjalankan simulasi.
 
 ### 7. Review & penguncian oleh Penjamin Mutu
+0. `PENYUSUN` menandai babnya siap lewat `diajukan_review_pada` (§12.3). Bab itu membeku bagi seluruh `PENYUSUN` dan muncul sebagai antrean di dashboard, sehingga `PENJAMIN_MUTU` tidak perlu menebak bab mana yang menunggu. Langkah ini opsional — review tetap bisa dimulai kapan pun `PENJAMIN_MUTU` memutuskan melihat.
 1. `PENJAMIN_MUTU` memeriksa isi `konten_kerja` dan riwayat `BAB_DRAFT` suatu bab.
-2. `PENJAMIN_MUTU` memberi `catatan_penjamin_mutu` dan mengaktifkan `terkunci = true` — berlaku untuk semua role tanpa kecuali, termasuk dirinya sendiri.
+2. `PENJAMIN_MUTU` memberi `catatan_penjamin_mutu` dan/atau mengaktifkan `terkunci = true` — berlaku untuk semua role tanpa kecuali, termasuk dirinya sendiri. Keduanya aksi terpisah, dan keduanya menghanguskan antrean di langkah 0.
 3. Setelah review selesai, `PENJAMIN_MUTU` membuka kembali kunci (`terkunci = false`) agar pengerjaan bisa dilanjutkan.

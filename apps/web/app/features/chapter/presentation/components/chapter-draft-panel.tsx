@@ -26,7 +26,10 @@ import {
 } from '../../domain/entities/chapter-draft.entity';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import { useChapterDraft, type HasilPulih } from '../hooks/use-chapter-draft';
-import { type ChapterPermission } from '../hooks/use-chapter-permission';
+import {
+	frasaBlokir,
+	type ChapterPermission,
+} from '../hooks/use-chapter-permission';
 
 /**
  * Isi tab "Draft" — riwayat checkpoint bab (docs/application_flow.md §8).
@@ -191,8 +194,9 @@ export function ChapterDraftPanel({
 					</>
 				) : (
 					<p className="text-xs leading-relaxed text-muted-foreground">
-						{izin.blockedReason === 'terkunci'
-							? 'Bab ini dikunci Penjamin Mutu, jadi checkpoint tidak bisa dibuat atau dipulihkan.'
+						{izin.blockedReason === 'terkunci' ||
+						izin.blockedReason === 'diajukan'
+							? `${frasaBlokir[izin.blockedReason]}, jadi checkpoint tidak bisa dibuat atau dipulihkan.`
 							: 'Anda hanya bisa membaca riwayat bab ini.'}
 					</p>
 				)}

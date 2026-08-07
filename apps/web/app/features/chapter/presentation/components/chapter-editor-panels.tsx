@@ -9,6 +9,7 @@ import { ChapterDraftPanel } from './chapter-draft-panel';
 import { ChapterGenerationPanel } from './chapter-generation-panel';
 import { ChapterQualityPanel } from './chapter-quality-panel';
 import { ChapterReferencePanel } from './chapter-reference-panel';
+import { ChapterReviewPanel } from './chapter-review-panel';
 import { ChapterRubricPanel } from './chapter-rubric-panel';
 
 /**
@@ -33,6 +34,9 @@ export const PANEL_TABS = [
 	{ value: 'rujukan', label: 'Rujukan' },
 	{ value: 'rubrik', label: 'Rubrik' },
 	{ value: 'skor', label: 'Kualitas AI' },
+	// Ditaruh paling akhir: ia bukan alat menyusun melainkan keadaan bab, dan
+	// ditengok sesudah pekerjaannya — bukan sambil mengerjakan.
+	{ value: 'review', label: 'Review' },
 ] as const;
 
 export type PanelTabValue = (typeof PANEL_TABS)[number]['value'];
@@ -44,6 +48,7 @@ export function ChapterEditorPanels({
 	onGenerated,
 	ambilSnapshot,
 	onRestored,
+	onReviewed,
 	onLihatSkor,
 	lingkupSkor,
 	setLingkupSkor,
@@ -57,6 +62,8 @@ export function ChapterEditorPanels({
 	onGenerated: (hasil: HasilGenerate) => void;
 	ambilSnapshot: () => ChapterEntity | undefined;
 	onRestored: (hasil: HasilPulih) => void;
+	/** Bab sesudah kunci/catatan review ditulis; isinya tidak ikut berubah. */
+	onReviewed: (diperbarui: ChapterEntity) => void;
 	onLihatSkor: (draftId: string) => void;
 	/**
 	 * Lingkup tab Rubrik, dipegang halaman editor supaya menu "Lihat skor" di tab
@@ -134,6 +141,17 @@ export function ChapterEditorPanels({
 				className="flex min-h-0 flex-1 flex-col overflow-hidden"
 			>
 				<ChapterQualityPanel chapter={chapter} savedAt={savedAt} />
+			</TabsContent>
+
+			<TabsContent
+				value="review"
+				className="flex min-h-0 flex-1 flex-col overflow-hidden"
+			>
+				<ChapterReviewPanel
+					chapter={chapter}
+					izin={izin}
+					onReviewed={onReviewed}
+				/>
 			</TabsContent>
 		</aside>
 	);

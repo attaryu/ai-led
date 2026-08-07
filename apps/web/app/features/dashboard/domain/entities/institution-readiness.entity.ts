@@ -90,6 +90,8 @@ export type InstitutionCycles = {
 	babTotal: number;
 	babTerisi: number;
 	babTerkunci: number;
+	/** Bab yang diajukan Penyusun dan belum direspons Penjamin Mutu (§12.2). */
+	babMenungguReview: number;
 	persenKelengkapan: number;
 	persenKesiapanReview: number;
 	tenggatLewat: number;
@@ -265,6 +267,7 @@ export function summarizeInstitutionCycles(
 	let babTotal = 0;
 	let babTerisi = 0;
 	let babTerkunci = 0;
+	let babMenungguReview = 0;
 	let tenggatLewat = 0;
 	let tenggatDekat = 0;
 
@@ -275,6 +278,7 @@ export function summarizeInstitutionCycles(
 		babTotal += row.chapterSummary.total;
 		babTerisi += row.chapterSummary.terisi;
 		babTerkunci += row.chapterSummary.terkunci;
+		babMenungguReview += row.chapterSummary.menungguReview;
 
 		// Siklus tanpa tenggat tidak ikut dihitung berisiko: tidak dipatok adalah
 		// pilihan yang sah (§14), bukan keterlambatan.
@@ -289,6 +293,7 @@ export function summarizeInstitutionCycles(
 		babTotal,
 		babTerisi,
 		babTerkunci,
+		babMenungguReview,
 		persenKelengkapan: percent(babTerisi, babTotal),
 		persenKesiapanReview: percent(babTerkunci, babTotal),
 		tenggatLewat,

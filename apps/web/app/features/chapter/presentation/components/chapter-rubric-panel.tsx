@@ -23,7 +23,10 @@ import {
 	type RubricCriterion,
 } from '../../domain/entities/rubric-criterion.entity';
 import { useChapterScore } from '../hooks/use-chapter-score';
-import { type ChapterPermission } from '../hooks/use-chapter-permission';
+import {
+	frasaBlokir,
+	type ChapterPermission,
+} from '../hooks/use-chapter-permission';
 
 /**
  * Isi tab "Rubrik" — simulasi skor terhadap kriteria LAM Teknik
@@ -206,8 +209,9 @@ export function ChapterRubricPanel({
 
 					{!izin.canEdit && (
 						<p className="text-xs leading-relaxed text-muted-foreground">
-							{izin.blockedReason === 'terkunci'
-								? 'Bab ini dikunci Penjamin Mutu, jadi simulasi tidak bisa dijalankan.'
+							{izin.blockedReason === 'terkunci' ||
+							izin.blockedReason === 'diajukan'
+								? `${frasaBlokir[izin.blockedReason]}, jadi simulasi tidak bisa dijalankan.`
 								: 'Anda hanya bisa melihat hasil simulasi bab ini.'}
 						</p>
 					)}

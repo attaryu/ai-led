@@ -42,6 +42,26 @@ export const chapterSchema = z.object({
 	/** Kunci review Penjamin Mutu (docs/application_flow.md §12.2). */
 	terkunci: z.boolean(),
 	catatanPenjaminMutu: z.string().nullable(),
+	/**
+	 * Penulis dan waktu catatan terakhir. Namanya ikut disimpan — bukan hanya
+	 * `userId` — dengan alasan yang sama seperti `BAB_DRAFT.dibuatOlehNama`:
+	 * catatan harus tetap terbaca setelah usernya dihapus.
+	 *
+	 * Keduanya selalu bergerak bersama `catatanPenjaminMutu`, termasuk saat
+	 * catatannya dikosongkan. `.default(null)` seperti `ragas` di bawah supaya
+	 * baris yang tersimpan sebelum kedua kolom ini ada tetap lolos `findAll`.
+	 */
+	catatanOlehNama: z.string().nullable().default(null),
+	catatanPada: z.string().nullable().default(null),
+	/**
+	 * Kapan Penyusun menyatakan bab ini siap direview; `null` berarti tidak sedang
+	 * diantrekan.
+	 *
+	 * Tanpa kolom pengaju: pengajuan membekukan **peran** Penyusun — termasuk yang
+	 * mengajukan — bukan satu user tertentu, jadi tidak ada `userId` yang perlu
+	 * dibandingkan. Pengaju tetap memegang kuncinya lewat "Batalkan Pengajuan".
+	 */
+	diajukanReviewPada: z.string().nullable().default(null),
 	/** ISO; `null` bila belum pernah ada autosave. */
 	terakhirDisimpan: z.string().nullable(),
 	/**
@@ -70,14 +90,16 @@ export const chapterSchema = z.object({
 export type ChapterEntity = z.infer<typeof chapterSchema>;
 
 /**
- * Status bab **tidak disimpan** sebagai kolom, melainkan diturunkan dari tiga
- * fakta yang sudah ada (`kontenKerja`, `terkunci`). Alasannya: status hanya
- * kebutuhan tampilan dashboard, dan kolom tersendiri akan jadi state kedua yang
- * bisa tidak sinkron dengan `terkunci` (docs/application_flow.md §6.1a).
+ * Status bab **tidak disimpan** sebagai kolom, melainkan diturunkan dari fakta
+ * yang sudah ada (`kontenKerja`, `diajukanReviewPada`, `terkunci`). Alasannya:
+ * status hanya kebutuhan tampilan dashboard, dan kolom tersendiri akan jadi
+ * state kedua yang bisa tidak sinkron dengan ketiganya
+ * (docs/application_flow.md §6.1a).
  */
 export const chapterProgressEnum = z.enum([
 	'BELUM_DIISI',
 	'SEDANG_DISUSUN',
+	'MENUNGGU_REVIEW',
 	'TERKUNCI',
 ]);
 export type ChapterProgress = z.infer<typeof chapterProgressEnum>;
@@ -105,12 +127,14 @@ export function hasKonten(chapter: ChapterEntity): boolean {
 }
 
 /**
- * `terkunci` menang atas kondisi konten: saat bab dikunci, §12.2 memblokir semua
- * aksi ubah data apa pun isi kontennya, jadi itulah fakta paling relevan bagi
- * pembaca dashboard.
+ * Urutannya dari yang paling membatasi. `terkunci` menang atas segalanya: saat
+ * bab dikunci, §12.2 memblokir semua aksi ubah data apa pun isi kontennya, jadi
+ * itulah fakta paling relevan bagi pembaca dashboard. Pengajuan menyusul di
+ * bawahnya — ia hanya membekukan Penyusun, Penjamin Mutu masih bisa menyunting.
  */
 export function deriveChapterProgress(chapter: ChapterEntity): ChapterProgress {
 	if (chapter.terkunci) return 'TERKUNCI';
+	if (chapter.diajukanReviewPada) return 'MENUNGGU_REVIEW';
 	return hasKonten(chapter) ? 'SEDANG_DISUSUN' : 'BELUM_DIISI';
 }
 
@@ -119,6 +143,8 @@ export type ChapterSummary = {
 	terisi: number;
 	belumDiisi: number;
 	terkunci: number;
+	/** Bab yang diajukan Penyusun dan belum direspons Penjamin Mutu. */
+	menungguReview: number;
 	/** 0–100, dibulatkan. 0 bila dokumen belum punya bab sama sekali. */
 	persenKelengkapan: number;
 	/** Jumlah bukti dukung **unik** yang dirujuk seluruh bab. */
@@ -138,12 +164,16 @@ export function summarizeChapters(chapters: ChapterEntity[]): ChapterSummary {
 	const buktiDukungUnik = new Set<string>();
 	let terisi = 0;
 	let terkunci = 0;
+	let menungguReview = 0;
 	let terakhirDisimpan: string | null = null;
 	let babTerakhirDisentuh: string | null = null;
 
 	for (const chapter of chapters) {
 		if (hasKonten(chapter)) terisi += 1;
 		if (chapter.terkunci) terkunci += 1;
+		// Sejalan dengan `deriveChapterProgress`: bab yang sudah dikunci tidak lagi
+		// terhitung mengantre, karena reviewnya memang sudah berjalan.
+		if (!chapter.terkunci && chapter.diajukanReviewPada) menungguReview += 1;
 		for (const ref of chapter.buktiDukung) buktiDukungUnik.add(ref.id);
 
 		if (
@@ -163,6 +193,7 @@ export function summarizeChapters(chapters: ChapterEntity[]): ChapterSummary {
 		terisi,
 		belumDiisi: total - terisi,
 		terkunci,
+		menungguReview,
 		persenKelengkapan: total === 0 ? 0 : Math.round((terisi / total) * 100),
 		buktiDukungTerpakai: buktiDukungUnik.size,
 		terakhirDisimpan,
@@ -224,6 +255,19 @@ export type ChapterAttention = {
  * Bab terbengkalai sengaja di atas bab kosong: dokumen yang baru berjalan wajar
  * punya banyak bab kosong, jadi menaruhnya lebih dulu hanya akan mengubur satu
  * pekerjaan yang benar-benar tersendat di bawah tumpukan yang normal.
+ *
+ * **Bab yang diajukan untuk review sengaja tidak masuk sini** — jangan
+ * "melengkapinya" nanti. Dua sebabnya:
+ *
+ * 1. `institution-readiness.entity.ts` menghitung isi panel ini jadi
+ *    `perluDitindak`, dan `compareProgramRisk` memakainya untuk mengurutkan
+ *    tabel risiko Dashboard Utama. Bab terajukan akan mendorong prodinya naik ke
+ *    puncak daftar risiko — memperlakukan kemajuan sebagai masalah.
+ * 2. Panel ini merender tiap baris dengan ikon peringatan tanpa konsep severity,
+ *    jadi kabar baik akan tampil sebagai gangguan.
+ *
+ * Antrean review punya rumahnya sendiri: badge `MENUNGGU_REVIEW` di tabel
+ * Progres per Bab, plus hint kartu "Kesiapan Review".
  */
 export function pickChaptersNeedingAttention(
 	chapters: ChapterEntity[],

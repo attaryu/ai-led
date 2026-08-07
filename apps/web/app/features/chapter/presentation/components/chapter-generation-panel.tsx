@@ -17,7 +17,10 @@ import { EvidenceStatusBadge } from '~/features/evidence/presentation/components
 import { formatBytes } from '~/features/evidence/presentation/utils/evidence-format';
 import { type EvidenceEntity } from '~/features/evidence/domain/entities/evidence.entity';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
-import { type ChapterPermission } from '../hooks/use-chapter-permission';
+import {
+	frasaBlokir,
+	type ChapterPermission,
+} from '../hooks/use-chapter-permission';
 import {
 	useChapterGeneration,
 	type HasilGenerate,
@@ -294,8 +297,9 @@ export function ChapterGenerationPanel({
 					</>
 				) : (
 					<p className="text-xs leading-relaxed text-muted-foreground">
-						{izin.blockedReason === 'terkunci'
-							? 'Bab ini dikunci Penjamin Mutu, jadi generate tidak bisa dijalankan.'
+						{izin.blockedReason === 'terkunci' ||
+						izin.blockedReason === 'diajukan'
+							? `${frasaBlokir[izin.blockedReason]}, jadi generate tidak bisa dijalankan.`
 							: 'Anda hanya bisa membaca bab ini.'}
 					</p>
 				)}

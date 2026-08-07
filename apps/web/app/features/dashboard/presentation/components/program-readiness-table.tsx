@@ -187,7 +187,20 @@ function ProgramRow({ row }: { row: ProgramReadinessRow }) {
 
 			<TableCell className="tabular-nums">
 				{siklusAktif ? (
-					`${chapterSummary.terkunci}/${chapterSummary.total}`
+					<>
+						{chapterSummary.terkunci}/{chapterSummary.total}
+						{/*
+						 * Antrean review menumpang kolom ini, bukan kolom sendiri: dari
+						 * layar ini Penjamin Mutu cuma perlu tahu prodi mana yang
+						 * menunggunya, dan rinciannya ada di Progres Dokumen prodi itu.
+						 */}
+						{chapterSummary.menungguReview > 0 && (
+							<span className="text-sky-700 dark:text-sky-400">
+								{' · '}
+								{chapterSummary.menungguReview} antre
+							</span>
+						)}
+					</>
 				) : (
 					<Kosong />
 				)}
