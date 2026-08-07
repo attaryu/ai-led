@@ -58,8 +58,42 @@ export const sessionRepository = {
 		}
 	},
 
+	/**
+	 * Apakah pengguna benar-benar sudah masuk — bukan sekadar kejatuhan
+	 * `defaultSession`.
+	 *
+	 * `get()` sengaja selalu mengembalikan sesi supaya halaman di dalam aplikasi
+	 * tidak perlu menangani `null` selama autentikasi masih mock. Akibatnya ia
+	 * tidak bisa dipakai membedakan tamu dari pengguna yang sudah masuk — dan
+	 * landing page publik justru butuh perbedaan itu. Yang menentukan hanya ada
+	 * atau tidaknya sesi tersimpan.
+	 */
+	isAuthenticated(): boolean {
+		return sessionLocalSource.get() !== null;
+	},
+
 	setRole(role: UserRole): void {
 		sessionLocalSource.set(JSON.stringify(sessionPerRole[role]));
+		window.dispatchEvent(new Event(SESSION_UPDATE_EVENT));
+	},
+
+	/**
+	 * Menandai sesi sebagai aktif setelah form login/registrasi lolos validasi.
+	 *
+	 * Backend belum ada, jadi belum ada cara memetakan email ke user — yang
+	 * ditulis adalah `defaultSession` yang sama dengan yang dipakai aplikasi
+	 * selama ini. Yang penting di sini efeknya: sejak titik ini
+	 * `isAuthenticated()` bernilai benar, sehingga landing page berhenti
+	 * menawarkan "Masuk". Begitu autentikasi sungguhan jalan, fungsi ini yang
+	 * menerima user dari respons API.
+	 */
+	signIn(): void {
+		sessionLocalSource.set(JSON.stringify(defaultSession));
+		window.dispatchEvent(new Event(SESSION_UPDATE_EVENT));
+	},
+
+	clear(): void {
+		sessionLocalSource.remove();
 		window.dispatchEvent(new Event(SESSION_UPDATE_EVENT));
 	},
 };

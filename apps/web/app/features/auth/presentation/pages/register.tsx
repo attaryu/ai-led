@@ -17,6 +17,7 @@ import {
 	FieldGroup,
 	FieldLabel,
 } from '~/core/components/ui/field';
+import { sessionRepository } from '../../data/repositories/session.repository';
 import {
 	registerSchema,
 	type RegisterDto,
@@ -42,6 +43,9 @@ export function Register() {
 
 	const onSubmit = (data: RegisterDto) => {
 		console.log('Register Success:', data);
+		// Sama seperti login: registrasi berhasil berarti sesi aktif, kalau tidak
+		// landing page masih menganggap pengguna sebagai tamu.
+		sessionRepository.signIn();
 		navigate('/dashboard');
 	};
 

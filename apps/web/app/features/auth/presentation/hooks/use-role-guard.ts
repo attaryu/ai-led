@@ -45,7 +45,7 @@ export function canAccessTenant(session: SessionEntity): boolean {
  * Halaman pendaratan tiap role (§2). Penyusun tidak pernah punya lapis tenant,
  * jadi ia selalu dipulangkan ke prodinya sendiri.
  */
-function landingFor(session: SessionEntity): string {
+export function landingFor(session: SessionEntity): string {
 	if (session.role === 'Penyusun' && session.studyProgramId) {
 		return `/study-programs/${session.studyProgramId}`;
 	}

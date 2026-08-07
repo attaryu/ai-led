@@ -9,6 +9,7 @@ import {
 	DropdownMenuTrigger,
 } from '~/core/components/ui/dropdown-menu';
 import { cn } from '~/core/lib/utils';
+import { sessionRepository } from '../../data/repositories/session.repository';
 
 /**
  * Menu "aksi lain" milik identitas user, dipakai card profil sidebar maupun
@@ -50,10 +51,14 @@ export function ProfileMenu({
 			>
 				<DropdownMenuItem
 					className="cursor-pointer text-destructive"
-					// Session sungguhan belum ada yang perlu dibersihkan —
-					// `sessionRepository` masih mock tanpa `clear()`. Begitu autentikasi
-					// asli jalan, penghapusan token masuk di sini sebelum pindah rute.
-					onClick={() => navigate('/login')}
+					// Sesinya masih mock di localStorage, tapi tetap harus dihapus:
+					// landing page membedakan tamu dari pengguna yang sudah masuk lewat
+					// ada tidaknya sesi tersimpan. Begitu autentikasi asli jalan,
+					// penghapusan token masuk ke `clear()` yang sama.
+					onClick={() => {
+						sessionRepository.clear();
+						navigate('/login');
+					}}
 				>
 					<SignOutIcon className="size-4" />
 					Keluar

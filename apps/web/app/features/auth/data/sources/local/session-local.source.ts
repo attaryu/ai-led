@@ -7,4 +7,8 @@ export const sessionLocalSource = {
 		if (typeof window === 'undefined') return;
 		localStorage.setItem('session_data', data);
 	},
+	remove(): void {
+		if (typeof window === 'undefined') return;
+		localStorage.removeItem('session_data');
+	},
 };

@@ -17,6 +17,7 @@ import {
 	FieldGroup,
 	FieldLabel,
 } from '~/core/components/ui/field';
+import { sessionRepository } from '../../data/repositories/session.repository';
 import { loginSchema, type LoginDto } from '../../domain/dtos/login.dto';
 
 const formId = 'login-form';
@@ -37,6 +38,9 @@ export function Login() {
 
 	const onSubmit = (data: LoginDto) => {
 		console.log('Login Success:', data);
+		// Menandai sesi aktif sebelum pindah halaman: tanpa ini landing page tetap
+		// menganggap pengguna sebagai tamu dan menawarinya "Masuk" lagi.
+		sessionRepository.signIn();
 		navigate('/dashboard');
 	};
 
