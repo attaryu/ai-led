@@ -39,7 +39,7 @@ export function ProgramEvidencePanel({
 				<CardDescription>
 					{summary.total === 0
 						? 'Belum ada berkas milik prodi ini.'
-						: `${summary.siap} dari ${summary.total} berkas siap dipakai AI.`}
+						: `${summary.siap} dari ${summary.total} berkas siap dipakai AI (${summary.persenSiap}%).`}
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="flex flex-col gap-3">

@@ -70,6 +70,12 @@ export type ProgramReadinessRow = {
 export type InstitutionAccreditation = {
 	totalProdi: number;
 	komposisi: Record<PeringkatAkreditasi, number>;
+	/**
+	 * 0–100 per peringkat, penyebutnya `totalProdi`. **Pelengkap `komposisi`,
+	 * bukan penggantinya**: pembulatan bisa membuat jumlahnya tidak tepat 100
+	 * (tiga prodi → 33+33+33), jadi jumlah prodi tetap harus ikut ditampilkan.
+	 */
+	persenKomposisi: Record<PeringkatAkreditasi, number>;
 	/** Prodi yang `berlaku_sampai_akreditasi`-nya sudah lewat. */
 	kedaluwarsa: number;
 	/** Prodi yang masa berlakunya tersisa ≤ 365 hari. */
@@ -252,7 +258,20 @@ export function summarizeInstitutionAccreditation(
 		if (validity?.urgensi === 'MENDEKATI') mendekati += 1;
 	}
 
-	return { totalProdi: programs.length, komposisi, kedaluwarsa, mendekati };
+	const persenKomposisi = Object.fromEntries(
+		Object.entries(komposisi).map(([peringkat, jumlah]) => [
+			peringkat,
+			percent(jumlah, programs.length),
+		]),
+	) as Record<PeringkatAkreditasi, number>;
+
+	return {
+		totalProdi: programs.length,
+		komposisi,
+		persenKomposisi,
+		kedaluwarsa,
+		mendekati,
+	};
 }
 
 /**

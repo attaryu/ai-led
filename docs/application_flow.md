@@ -111,9 +111,13 @@ Halaman index lapis ini (`/dashboard`) menjawab satu pertanyaan: **seberapa siap
 
 #### 4.0a Blok Posisi Akreditasi
 
-Satu kartu berisi **distribusi** peringkat: `UNGGUL`, `BAIK_SEKALI`, `BAIK`, `BELUM_TERAKREDITASI`, masing-masing jumlah prodi. Di bawahnya dua angka urgensi bila memang ada isinya: jumlah prodi yang masa berlakunya sudah habis, dan jumlah yang tersisa ≤ 365 hari.
+Satu kartu berisi **distribusi** peringkat: `UNGGUL`, `BAIK_SEKALI`, `BAIK`, `BELUM_TERAKREDITASI`, masing-masing jumlah prodi **dan persentasenya terhadap total prodi**. Di bawahnya dua angka urgensi bila memang ada isinya: jumlah prodi yang masa berlakunya sudah habis, dan jumlah yang tersisa ≤ 365 hari.
 
 Disajikan sebagai distribusi, **bukan rata-rata**: peringkat itu ordinal, dan "rata-rata Unggul dan Baik" bukan besaran yang punya arti.
+
+Persen berdiri sebagai keterangan di belakang jumlah prodi, bukan menggantikannya. Angkanya dibulatkan sehingga keempatnya bisa tidak berjumlah tepat 100 (tiga prodi → 33+33+33), dan "25%" sendirian tidak memberi tahu apakah itu 1 dari 4 atau 50 dari 200.
+
+> **Aturan persentase di seluruh dashboard.** Persen hanya dipasang pada angka yang **penyebutnya jelas** dan pertanyaannya memang "berapa bagian dari keseluruhan". Praktisnya: kalau sebuah angka sudah punya bar persentase, angkanya ikut ditulis — menyembunyikannya memaksa pembaca menaksir dari panjang bar. Yang sengaja **tanpa** persen: Tenggat Berisiko (§4.0b, penyebutnya ambigu — dari total prodi? yang sedang menyusun? yang punya tenggat?), Sisa Tenggat (§4.0c/§5.1b, satuannya hari), dan Bukti Dukung Dipakai (§5.1b, penyebutnya "tersedia" bukan target — 20 dari 50 berkas dipakai tidak berarti 40% selesai).
 
 Prodi `BELUM_TERAKREDITASI` masuk komposisi sebagai kategorinya sendiri dan **tidak** ikut dihitung kedaluwarsa — `berlaku_sampai_akreditasi` kosong berarti "tidak ada", bukan "sudah lewat" (§5.1e).
 
@@ -125,10 +129,10 @@ Empat kartu angka yang **seluruhnya bercakupan dokumen yang sedang disusun** —
 
 | Kartu | Isi | Dihitung dari |
 | --- | --- | --- |
-| **Prodi Sedang Menyusun** | `n/total` prodi yang sedang menyusun dokumen, bar persentase | `pickPenyusunanAktif().aktif != null` per prodi |
-| **Kelengkapan Bab** | `n/total` bab terisi **agregat lintas prodi**, bar persentase | jumlah `konten_kerja` tidak kosong pada seluruh dokumen yang sedang disusun |
-| **Kesiapan Review** | `n/total` bab terkunci agregat, bar persentase | `terkunci = true` |
-| **Tenggat Berisiko** | jumlah penyusunan dengan tenggat `LEWAT` atau `DEKAT`, diwarnai urgensi | `DOKUMEN_LED.tenggat` |
+| **Prodi Sedang Menyusun** | `n/total` prodi yang sedang menyusun dokumen, bar + angka persentase | `pickPenyusunanAktif().aktif != null` per prodi |
+| **Kelengkapan Bab** | `n/total` bab terisi **agregat lintas prodi**, bar + angka persentase | jumlah `konten_kerja` tidak kosong pada seluruh dokumen yang sedang disusun |
+| **Kesiapan Review** | `n/total` bab terkunci agregat, bar + angka persentase | `terkunci = true` |
+| **Tenggat Berisiko** | jumlah penyusunan dengan tenggat `LEWAT` atau `DEKAT`, diwarnai urgensi; **tanpa persen** (§4.0a) | `DOKUMEN_LED.tenggat` |
 
 Agregasi memakai **jumlah bab lintas prodi**, bukan rata-rata persen antar prodi. Pertanyaannya "berapa banyak pekerjaan yang sudah jadi", sehingga prodi dengan bab lebih banyak memang harus berbobot lebih; rata-rata persen memberi bobot sama ke tiap prodi sehingga satu prodi kecil yang tuntas bisa menutupi prodi besar yang mandek.
 
@@ -167,8 +171,8 @@ Tabel ini sengaja **tanpa pencarian, pengurutan, dan paginasi**, dengan alasan y
 
 Dua kartu, diberi label kerangka waktunya sendiri supaya tidak terbaca sebagai ukuran pekerjaan yang sedang disusun:
 
-- **Bukti Dukung Universitas** — `n/total` berkas `SIAP`, jumlah yang masih diproses, jumlah `GAGAL`, waktu unggah terakhir, dan tombol ke Perpustakaan Bukti Dukung tenant. Angkanya **hanya berkas `owner_tipe = TENANT`** supaya cocok dengan daftar di halaman yang dituju (§4.4) — aturan yang sama dengan panel Bukti Dukung Prodi di §5.1c.
-- **Tim Penyusun** — jumlah prodi yang belum punya `USER` berrole `PENYUSUN`. Prodi tanpa Penyusun bukan angka biasa: dokumennya tidak akan pernah bergerak, jadi keadaan itu ditampilkan sebagai peringatan. Tautan ke Manajemen User **hanya dirender untuk `PIMPINAN`** (§1) — `PENJAMIN_MUTU` tidak punya menu itu sama sekali (§4.2), jadi menyodorkan tautannya hanya berujung pengalihan.
+- **Bukti Dukung Universitas** — `n/total` berkas `SIAP` **beserta persentasenya**, jumlah yang masih diproses, jumlah `GAGAL`, waktu unggah terakhir, dan tombol ke Perpustakaan Bukti Dukung tenant. Angkanya **hanya berkas `owner_tipe = TENANT`** supaya cocok dengan daftar di halaman yang dituju (§4.4) — aturan yang sama dengan panel Bukti Dukung Prodi di §5.1c.
+- **Tim Penyusun** — jumlah prodi yang belum punya `USER` berrole `PENYUSUN`, **beserta persentasenya terhadap total prodi** — penyebut yang sama dengan kartu Prodi Sedang Menyusun (§4.0b), supaya dua persen di halaman yang sama tidak diam-diam mengukur hal berbeda. Prodi tanpa Penyusun bukan angka biasa: dokumennya tidak akan pernah bergerak, jadi keadaan itu ditampilkan sebagai peringatan. Tautan ke Manajemen User **hanya dirender untuk `PIMPINAN`** (§1) — `PENJAMIN_MUTU` tidak punya menu itu sama sekali (§4.2), jadi menyodorkan tautannya hanya berujung pengalihan.
 
 #### 4.0e Hak akses di level ini
 
@@ -327,10 +331,10 @@ Kepala blok memuat judul dokumen, `tahun_akademik`, badge `status_keseluruhan`, 
 
 | Kartu | Isi | Dihitung dari |
 | --- | --- | --- |
-| **Bab Terisi** | `n/total` bab yang sudah ada isinya, beserta bar persentase | `konten_kerja` tidak kosong pada bab dokumen aktif |
-| **Kesiapan Review** | `n/total` bab yang sudah dikunci Penjamin Mutu | `terkunci = true` |
-| **Bukti Dukung Dipakai** | Jumlah berkas **unik** yang dirujuk seluruh bab penyusunan ini, dengan "dari N tersedia" sebagai keterangan | `BUKTI_DUKUNG_BAB`; pembanding = tenant + prodi, sama dengan §6.1 |
-| **Sisa Tenggat** | Sisa waktu ke `tenggat`, diwarnai sesuai urgensi; tanggalnya jadi keterangan | `DOKUMEN_LED.tenggat` |
+| **Bab Terisi** | `n/total` bab yang sudah ada isinya, beserta bar + angka persentase | `konten_kerja` tidak kosong pada bab dokumen aktif |
+| **Kesiapan Review** | `n/total` bab yang sudah dikunci Penjamin Mutu, beserta bar + angka persentase | `terkunci = true` |
+| **Bukti Dukung Dipakai** | Jumlah berkas **unik** yang dirujuk seluruh bab penyusunan ini, dengan "dari N tersedia" sebagai keterangan; **tanpa persen** (§4.0a) | `BUKTI_DUKUNG_BAB`; pembanding = tenant + prodi, sama dengan §6.1 |
+| **Sisa Tenggat** | Sisa waktu ke `tenggat`, diwarnai sesuai urgensi; tanggalnya jadi keterangan; **tanpa persen** (§4.0a) | `DOKUMEN_LED.tenggat` |
 
 Bab hanya dihitung dari dokumen yang sedang disusun. Mencampur dokumen lama yang sudah tuntas akan membuat angkanya selalu terlihat bagus dan justru menyembunyikan pekerjaan yang belum jalan.
 

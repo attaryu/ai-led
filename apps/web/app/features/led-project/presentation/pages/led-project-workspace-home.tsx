@@ -77,16 +77,14 @@ function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
 					label="Kesiapan Review"
 					icon={LockSimpleIcon}
 					value={`${summary.terkunci}/${summary.total}`}
-					progress={
-						summary.total === 0 ? 0 : (summary.terkunci / summary.total) * 100
-					}
+					progress={summary.persenKesiapanReview}
 					// Antrean menumpang hint kartu ini alih-alih jadi kartu kelima:
 					// grid-nya sudah penuh, dan pertanyaannya ("ada yang menunggu
 					// saya?") memang lanjutan langsung dari angka di atasnya.
 					hint={
 						summary.menungguReview > 0
-							? `${summary.menungguReview} bab menunggu review`
-							: 'Bab yang sudah dikunci Penjamin Mutu'
+							? `${summary.persenKesiapanReview}% terkunci · ${summary.menungguReview} bab menunggu review`
+							: `${summary.persenKesiapanReview}% bab sudah dikunci Penjamin Mutu`
 					}
 				/>
 				<StatCard

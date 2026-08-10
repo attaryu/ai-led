@@ -57,7 +57,7 @@ export function InstitutionDraftingSummary({
 					hint={
 						belumMenyusun === 0
 							? 'Seluruh prodi sedang menyusun dokumen'
-							: `${belumMenyusun} prodi belum mulai menyusun`
+							: `${penyusunan.persenProdiMenyusun}% prodi jalan · ${belumMenyusun} belum mulai`
 					}
 				/>
 				{/*
@@ -79,8 +79,8 @@ export function InstitutionDraftingSummary({
 					progress={penyusunan.persenKesiapanReview}
 					hint={
 						penyusunan.babMenungguReview > 0
-							? `${penyusunan.babMenungguReview} bab menunggu review`
-							: 'Bab yang sudah dikunci Penjamin Mutu'
+							? `${penyusunan.persenKesiapanReview}% terkunci · ${penyusunan.babMenungguReview} bab menunggu review`
+							: `${penyusunan.persenKesiapanReview}% bab sudah dikunci Penjamin Mutu`
 					}
 				/>
 				{/*

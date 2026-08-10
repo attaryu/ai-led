@@ -147,6 +147,8 @@ export type ChapterSummary = {
 	menungguReview: number;
 	/** 0–100, dibulatkan. 0 bila dokumen belum punya bab sama sekali. */
 	persenKelengkapan: number;
+	/** 0–100, dibulatkan. Penyebutnya `total`, sama dengan `persenKelengkapan`. */
+	persenKesiapanReview: number;
 	/** Jumlah bukti dukung **unik** yang dirujuk seluruh bab. */
 	buktiDukungTerpakai: number;
 	/** ISO simpan terakhir lintas bab; `null` bila belum ada satu pun. */
@@ -195,6 +197,7 @@ export function summarizeChapters(chapters: ChapterEntity[]): ChapterSummary {
 		terkunci,
 		menungguReview,
 		persenKelengkapan: total === 0 ? 0 : Math.round((terisi / total) * 100),
+		persenKesiapanReview: total === 0 ? 0 : Math.round((terkunci / total) * 100),
 		buktiDukungTerpakai: buktiDukungUnik.size,
 		terakhirDisimpan,
 		babTerakhirDisentuh,

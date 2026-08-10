@@ -32,7 +32,8 @@ export function InstitutionAccreditationCard({
 }: {
 	akreditasi: InstitutionAccreditation;
 }) {
-	const { totalProdi, komposisi, kedaluwarsa, mendekati } = akreditasi;
+	const { totalProdi, komposisi, persenKomposisi, kedaluwarsa, mendekati } =
+		akreditasi;
 
 	return (
 		<Card>
@@ -50,6 +51,12 @@ export function InstitutionAccreditationCard({
 					</p>
 				) : (
 					<>
+						{/*
+						 * Persen berdiri sebagai keterangan di belakang jumlah prodi, bukan
+						 * menggantikannya: angkanya dibulatkan sehingga keempatnya bisa
+						 * tidak berjumlah tepat 100, dan "25%" sendirian tidak memberi tahu
+						 * apakah itu 1 dari 4 atau 50 dari 200.
+						 */}
 						<ul className="flex flex-wrap gap-x-6 gap-y-3">
 							{peringkatAkreditasiEnum.options.map((peringkat) => (
 								<li key={peringkat} className="flex items-center gap-2">
@@ -57,7 +64,9 @@ export function InstitutionAccreditationCard({
 									<span className="font-heading text-lg font-bold tabular-nums">
 										{komposisi[peringkat]}
 									</span>
-									<span className="text-xs text-muted-foreground">prodi</span>
+									<span className="text-xs text-muted-foreground">
+										prodi · {persenKomposisi[peringkat]}%
+									</span>
 								</li>
 							))}
 						</ul>

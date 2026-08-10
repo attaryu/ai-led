@@ -39,6 +39,11 @@ export function InstitutionResourceStrip({
 	const { evidenceTenant, prodiTanpaPenyusun } = sumberDaya;
 	const belumSiap = evidenceTenant.menunggu + evidenceTenant.diproses;
 
+	// Penyebutnya total prodi, sama dengan kartu Prodi Sedang Menyusun di §4.0b,
+	// supaya dua persen di halaman yang sama tidak diam-diam mengukur hal berbeda.
+	const persenTanpaPenyusun =
+		totalProdi === 0 ? 0 : Math.round((prodiTanpaPenyusun / totalProdi) * 100);
+
 	return (
 		<section className="flex flex-col gap-3">
 			<div>
@@ -58,7 +63,7 @@ export function InstitutionResourceStrip({
 						<CardDescription>
 							{evidenceTenant.total === 0
 								? 'Belum ada berkas level universitas.'
-								: `${evidenceTenant.siap} dari ${evidenceTenant.total} berkas siap dipakai AI.`}
+								: `${evidenceTenant.siap} dari ${evidenceTenant.total} berkas siap dipakai AI (${evidenceTenant.persenSiap}%).`}
 						</CardDescription>
 					</CardHeader>
 					<CardContent className="flex flex-col gap-3">
@@ -131,7 +136,7 @@ export function InstitutionResourceStrip({
 						<CardDescription>
 							{prodiTanpaPenyusun === 0
 								? `Seluruh ${totalProdi} prodi sudah punya Penyusun.`
-								: `${prodiTanpaPenyusun} dari ${totalProdi} prodi belum punya Penyusun.`}
+								: `${prodiTanpaPenyusun} dari ${totalProdi} prodi belum punya Penyusun (${persenTanpaPenyusun}%).`}
 						</CardDescription>
 					</CardHeader>
 					<CardContent className="flex flex-col gap-3">
