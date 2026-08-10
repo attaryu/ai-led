@@ -13,7 +13,7 @@ import {
 } from '~/features/evidence/domain/entities/evidence.entity';
 import { ledProjectRepository } from '~/features/led-project/data/repositories/led-project.repository';
 import {
-	pickSiklusAktif,
+	pickPenyusunanAktif,
 	type LedProjectEntity,
 } from '~/features/led-project/domain/entities/led-project.entity';
 import { userRepository } from '~/features/users/data/repositories/user.repository';
@@ -26,9 +26,9 @@ import {
 } from '../../domain/entities/program-readiness.entity';
 
 export type ProgramReadiness = {
-	siklusAktif: LedProjectEntity | null;
+	penyusunanAktif: LedProjectEntity | null;
 	arsip: LedProjectEntity[];
-	/** Ringkasan bab **siklus berjalan**; nol semua bila tidak ada yang berjalan. */
+	/** Ringkasan bab **yang sedang disusun**; nol semua bila belum menyusun. */
 	chapterSummary: ChapterSummary;
 	/**
 	 * Bukti dukung milik prodi ini saja — angka yang sama dengan yang terlihat di
@@ -36,8 +36,8 @@ export type ProgramReadiness = {
 	 */
 	evidenceProdi: EvidenceSummary;
 	/**
-	 * Jumlah bukti dukung yang boleh dipakai bab siklus ini (prodi + tenant),
-	 * dipakai sebagai pembanding di baris ringkasan — sama dengan §6.1.
+	 * Jumlah bukti dukung yang boleh dipakai bab yang sedang disusun (prodi +
+	 * tenant), dipakai sebagai pembanding di baris ringkasan — sama dengan §6.1.
 	 */
 	buktiDukungTersedia: number;
 	penyusun: UserEntity[];
@@ -49,11 +49,11 @@ function read(
 	programId: string,
 	berlakuSampaiAkreditasi: string | null,
 ): ProgramReadiness {
-	const { aktif, arsip } = pickSiklusAktif(
+	const { aktif, arsip } = pickPenyusunanAktif(
 		ledProjectRepository.findByStudyProgramId(programId),
 	);
 
-	// Bab hanya dibaca untuk siklus yang berjalan: angka kelengkapan yang
+	// Bab hanya dibaca untuk dokumen yang sedang disusun: angka kelengkapan yang
 	// mencampur dokumen lama yang sudah tuntas akan selalu terlihat bagus dan
 	// menyembunyikan pekerjaan yang sebenarnya belum jalan.
 	const chapters = aktif ? chapterRepository.findByProjectId(aktif.id) : [];
@@ -66,7 +66,7 @@ function read(
 	const penyusun = userRepository.findPenyusunByStudyProgramId(programId);
 
 	return {
-		siklusAktif: aktif,
+		penyusunanAktif: aktif,
 		arsip,
 		chapterSummary,
 		evidenceProdi,
@@ -75,12 +75,12 @@ function read(
 		penyusun,
 		attention: buildProgramAttention({
 			berlakuSampaiAkreditasi,
-			siklusAktif: aktif,
+			penyusunanAktif: aktif,
 			chapterAttention: pickChaptersNeedingAttention(chapters),
 			evidenceProdi,
 			jumlahPenyusun: penyusun.length,
 		}),
-		aktivitas: buildProgramActivity({ siklusAktif: aktif, chapters }),
+		aktivitas: buildProgramActivity({ penyusunanAktif: aktif, chapters }),
 	};
 }
 

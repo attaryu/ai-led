@@ -11,7 +11,7 @@ import {
 } from '~/features/evidence/domain/entities/evidence.entity';
 import {
 	deriveDeadline,
-	pickSiklusAktif,
+	pickPenyusunanAktif,
 	type LedProjectEntity,
 	type ProjectDeadline,
 } from '~/features/led-project/domain/entities/led-project.entity';
@@ -33,8 +33,9 @@ import { type UserEntity } from '~/features/users/domain/entities/user.entity';
  *
  * Berkas ini **tidak menuliskan satu pun aturan hitung baru**. Seluruhnya
  * memanggil ulang fungsi domain yang sudah dipakai Dashboard Prodi dan Dashboard
- * Project LED — `summarizeChapters`, `summarizeEvidence`, `pickSiklusAktif`,
- * `buildProgramAttention`, `deriveDeadline`, `deriveAccreditationValidity` —
+ * Project LED — `summarizeChapters`, `summarizeEvidence`,
+ * `pickPenyusunanAktif`, `buildProgramAttention`, `deriveDeadline`,
+ * `deriveAccreditationValidity` —
  * persis seperti yang dijanjikan komentar masing-masing fungsi itu. Menyalin
  * aturannya ke sini akan membuat angka institusi perlahan menyimpang dari angka
  * prodi, dan dua dashboard yang menyebut hal sama dengan angka berbeda lebih
@@ -49,10 +50,10 @@ export type ProgramReadinessRow = {
 	program: StudyProgramEntity;
 	/** `null` bila prodi belum pernah terakreditasi — bukan berarti kedaluwarsa. */
 	akreditasi: AccreditationValidity | null;
-	siklusAktif: LedProjectEntity | null;
-	/** Ringkasan bab **siklus berjalan**; nol semua bila tidak ada yang berjalan. */
+	penyusunanAktif: LedProjectEntity | null;
+	/** Ringkasan bab **yang sedang disusun**; nol semua bila belum menyusun. */
 	chapterSummary: ChapterSummary;
-	/** `null` bila tidak ada siklus, atau siklusnya tidak dipatok tenggat. */
+	/** `null` bila belum menyusun, atau penyusunannya tidak dipatok tenggat. */
 	tenggat: ProjectDeadline | null;
 	attention: ProgramAttentionItem[];
 	mendesak: number;
@@ -78,15 +79,16 @@ export type InstitutionAccreditation = {
 /**
  * Blok B — usaha yang sedang berjalan (kerangka waktu: sekarang).
  *
- * Seluruh angka di sini **hanya milik siklus berjalan**. Peringkat akreditasi
- * dan akumulasi lintas siklus tidak boleh ikut: itu kesalahan yang sudah pernah
- * dibuat dan diperbaiki di Dashboard Prodi (§5.1, catatan di PRD §3.8).
+ * Seluruh angka di sini **hanya milik dokumen yang sedang disusun**. Peringkat
+ * akreditasi dan akumulasi lintas penyusunan tidak boleh ikut: itu kesalahan
+ * yang sudah pernah dibuat dan diperbaiki di Dashboard Prodi (§5.1, catatan di
+ * PRD §3.8).
  */
-export type InstitutionCycles = {
+export type InstitutionDrafting = {
 	totalProdi: number;
-	prodiBersiklus: number;
-	/** 0–100; berapa banyak prodi yang punya siklus berjalan. */
-	persenProdiBersiklus: number;
+	prodiMenyusun: number;
+	/** 0–100; berapa banyak prodi yang sedang menyusun dokumen. */
+	persenProdiMenyusun: number;
 	babTotal: number;
 	babTerisi: number;
 	babTerkunci: number;
@@ -98,7 +100,7 @@ export type InstitutionCycles = {
 	tenggatDekat: number;
 };
 
-/** Blok D — bekal prodi yang berlaku lintas siklus. */
+/** Blok D — bekal prodi yang berlaku lintas penyusunan. */
 export type InstitutionResources = {
 	/** Hanya `ownerTipe = TENANT`, supaya cocok dengan `/dashboard/evidence` (§4.4). */
 	evidenceTenant: EvidenceSummary;
@@ -109,7 +111,7 @@ export type InstitutionReadiness = {
 	/** Sudah terurut: yang paling perlu ditindak di atas. */
 	rows: ProgramReadinessRow[];
 	akreditasi: InstitutionAccreditation;
-	siklus: InstitutionCycles;
+	penyusunan: InstitutionDrafting;
 	sumberDaya: InstitutionResources;
 };
 
@@ -140,8 +142,8 @@ function percent(bagian: number, total: number): number {
 /**
  * Satu baris per prodi, memakai aturan yang sama persis dengan Dashboard Prodi.
  *
- * Bab hanya dibaca dari **siklus berjalan**, dengan alasan yang sama seperti
- * §5.1b: mencampur dokumen lama yang sudah tuntas membuat angkanya selalu
+ * Bab hanya dibaca dari **dokumen yang sedang disusun**, dengan alasan yang sama
+ * seperti §5.1b: mencampur dokumen lama yang sudah tuntas membuat angkanya selalu
  * terlihat bagus dan justru menyembunyikan pekerjaan yang belum jalan.
  */
 export function buildProgramReadinessRows({
@@ -153,7 +155,9 @@ export function buildProgramReadinessRows({
 	now = Date.now(),
 }: Omit<InstitutionReadinessInput, 'evidenceTenant'>): ProgramReadinessRow[] {
 	return programs.map((program) => {
-		const { aktif } = pickSiklusAktif(projectsByProgram.get(program.id) ?? []);
+		const { aktif } = pickPenyusunanAktif(
+			projectsByProgram.get(program.id) ?? [],
+		);
 
 		const chapters = aktif ? (chaptersByProject.get(aktif.id) ?? []) : [];
 		const evidenceProdi = summarizeEvidence(
@@ -163,7 +167,7 @@ export function buildProgramReadinessRows({
 
 		const attention = buildProgramAttention({
 			berlakuSampaiAkreditasi: program.berlakuSampaiAkreditasi,
-			siklusAktif: aktif,
+			penyusunanAktif: aktif,
 			chapterAttention: pickChaptersNeedingAttention(chapters, now),
 			evidenceProdi,
 			jumlahPenyusun: penyusun.length,
@@ -176,7 +180,7 @@ export function buildProgramReadinessRows({
 				program.berlakuSampaiAkreditasi,
 				now,
 			),
-			siklusAktif: aktif,
+			penyusunanAktif: aktif,
 			chapterSummary: summarizeChapters(chapters),
 			tenggat: aktif ? deriveDeadline(aktif.tenggat, now) : null,
 			attention,
@@ -209,8 +213,12 @@ export function compareProgramRisk(
 		return b.perluDitindak - a.perluDitindak;
 	}
 
-	const kelengkapanA = a.siklusAktif ? a.chapterSummary.persenKelengkapan : 0;
-	const kelengkapanB = b.siklusAktif ? b.chapterSummary.persenKelengkapan : 0;
+	const kelengkapanA = a.penyusunanAktif
+		? a.chapterSummary.persenKelengkapan
+		: 0;
+	const kelengkapanB = b.penyusunanAktif
+		? b.chapterSummary.persenKelengkapan
+		: 0;
 	if (kelengkapanA !== kelengkapanB) return kelengkapanA - kelengkapanB;
 
 	return a.program.studyProgramName.localeCompare(b.program.studyProgramName);
@@ -256,14 +264,14 @@ export function summarizeInstitutionAccreditation(
  * memberi bobot sama ke tiap prodi, sehingga satu prodi kecil yang tuntas bisa
  * menutupi prodi besar yang mandek.
  *
- * Prodi tanpa siklus berjalan menyumbang nol ke pembilang **dan** penyebut: ia
- * sudah terhitung di angka `prodiBersiklus`, dan menghitungnya lagi sebagai bab
+ * Prodi yang belum menyusun menyumbang nol ke pembilang **dan** penyebut: ia
+ * sudah terhitung di angka `prodiMenyusun`, dan menghitungnya lagi sebagai bab
  * kosong akan menghukum angka kelengkapan dua kali untuk satu keadaan yang sama.
  */
-export function summarizeInstitutionCycles(
+export function summarizeInstitutionDrafting(
 	rows: ProgramReadinessRow[],
-): InstitutionCycles {
-	let prodiBersiklus = 0;
+): InstitutionDrafting {
+	let prodiMenyusun = 0;
 	let babTotal = 0;
 	let babTerisi = 0;
 	let babTerkunci = 0;
@@ -272,24 +280,24 @@ export function summarizeInstitutionCycles(
 	let tenggatDekat = 0;
 
 	for (const row of rows) {
-		if (!row.siklusAktif) continue;
+		if (!row.penyusunanAktif) continue;
 
-		prodiBersiklus += 1;
+		prodiMenyusun += 1;
 		babTotal += row.chapterSummary.total;
 		babTerisi += row.chapterSummary.terisi;
 		babTerkunci += row.chapterSummary.terkunci;
 		babMenungguReview += row.chapterSummary.menungguReview;
 
-		// Siklus tanpa tenggat tidak ikut dihitung berisiko: tidak dipatok adalah
-		// pilihan yang sah (§14), bukan keterlambatan.
+		// Penyusunan tanpa tenggat tidak ikut dihitung berisiko: tidak dipatok
+		// adalah pilihan yang sah (§14), bukan keterlambatan.
 		if (row.tenggat?.urgensi === 'LEWAT') tenggatLewat += 1;
 		if (row.tenggat?.urgensi === 'DEKAT') tenggatDekat += 1;
 	}
 
 	return {
 		totalProdi: rows.length,
-		prodiBersiklus,
-		persenProdiBersiklus: percent(prodiBersiklus, rows.length),
+		prodiMenyusun,
+		persenProdiMenyusun: percent(prodiMenyusun, rows.length),
 		babTotal,
 		babTerisi,
 		babTerkunci,
@@ -326,7 +334,7 @@ export function buildInstitutionReadiness({
 	return {
 		rows,
 		akreditasi: summarizeInstitutionAccreditation(programs, now),
-		siklus: summarizeInstitutionCycles(rows),
+		penyusunan: summarizeInstitutionDrafting(rows),
 		sumberDaya: {
 			evidenceTenant: summarizeEvidence(evidenceTenant),
 			prodiTanpaPenyusun: programs.filter(

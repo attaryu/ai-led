@@ -77,8 +77,8 @@ const initialLedProjects: LedProjectEntity[] = [
 		createdAt: '2026-07-30T10:30:00.000Z',
 	},
 	{
-		// Siklus lama Teknik Informatika, supaya bentuk "satu siklus aktif +
-		// arsip" di Dashboard Prodi benar-benar terlihat.
+		// Penyusunan lama Teknik Informatika, supaya bentuk "satu dokumen sedang
+		// disusun + arsip" di Dashboard Prodi benar-benar terlihat.
 		id: '4',
 		studyProgramId: '1',
 		studyProgramName: 'Teknik Informatika',
@@ -174,7 +174,7 @@ export const ledProjectRepository = {
 				)
 			: scoped;
 
-		// Tanpa pilihan urutan, yang terbaru di atas — siklus yang sedang berjalan
+		// Tanpa pilihan urutan, yang terbaru di atas — dokumen yang sedang disusun
 		// hampir selalu yang dicari, dan ia selalu yang termuda.
 		const sortKey = query.sort ?? 'createdAt';
 		const descending = query.sort ? query.dir === 'desc' : true;

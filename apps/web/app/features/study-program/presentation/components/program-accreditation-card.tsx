@@ -25,10 +25,10 @@ const validityStyles: Record<AccreditationUrgency, string> = {
  * (docs/application_flow.md §5.1a).
  *
  * Blok ini berbicara tentang **masa lalu**: peringkat dan masa berlakunya
- * adalah hasil siklus sebelumnya yang sudah disahkan, bukan ukuran pekerjaan
- * yang sedang berjalan. Karena itu masa berlaku dirender di sini, bukan sebagai
- * salah satu kartu di baris ringkasan siklus — sebaris dengan kelengkapan bab,
- * angka ini terbaca seolah ikut mengukur usaha sekarang.
+ * adalah hasil penyusunan sebelumnya yang sudah disahkan, bukan ukuran
+ * pekerjaan yang sedang berjalan. Karena itu masa berlaku dirender di sini,
+ * bukan sebagai salah satu kartu di baris ringkasan penyusunan — sebaris dengan
+ * kelengkapan bab, angka ini terbaca seolah ikut mengukur usaha sekarang.
  */
 export function ProgramAccreditationCard({
 	program,
@@ -75,7 +75,7 @@ export function ProgramAccreditationCard({
 				<div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border pt-3 text-sm">
 					{validity === null ? (
 						<p className="text-muted-foreground">
-							Belum pernah terakreditasi — hasil siklus pertama akan mengisi
+							Belum pernah terakreditasi — hasil penyusunan pertama akan mengisi
 							bagian ini.
 						</p>
 					) : (

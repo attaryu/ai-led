@@ -18,10 +18,11 @@ import { type InstitutionAccreditation } from '../../domain/entities/institution
  * Blok A Dashboard Utama (docs/application_flow.md §4.0a) — **capaian yang
  * sudah disahkan**, kerangka waktunya masa lalu.
  *
- * Berdiri sebagai bloknya sendiri, bukan kartu kelima di baris ringkasan siklus.
- * Menyandingkannya dengan angka kelengkapan bab membuat peringkat hasil siklus
- * sebelumnya terbaca sebagai ukuran pekerjaan sekarang — kesalahan yang sudah
- * pernah dibuat dan diperbaiki di Dashboard Prodi (§5.1, PRD §3.8).
+ * Berdiri sebagai bloknya sendiri, bukan kartu kelima di baris ringkasan
+ * penyusunan. Menyandingkannya dengan angka kelengkapan bab membuat peringkat
+ * hasil penyusunan sebelumnya terbaca sebagai ukuran pekerjaan sekarang —
+ * kesalahan yang sudah pernah dibuat dan diperbaiki di Dashboard Prodi
+ * (§5.1, PRD §3.8).
  *
  * Disajikan sebagai distribusi, bukan rata-rata: peringkat itu ordinal, dan
  * "rata-rata Unggul dan Baik" bukan besaran yang punya arti.
@@ -38,7 +39,7 @@ export function InstitutionAccreditationCard({
 			<CardHeader>
 				<CardTitle>Posisi Akreditasi</CardTitle>
 				<CardDescription>
-					Capaian yang sudah disahkan dari siklus sebelumnya, bukan ukuran
+					Capaian yang sudah disahkan dari penyusunan sebelumnya, bukan ukuran
 					pekerjaan yang sedang berjalan.
 				</CardDescription>
 			</CardHeader>

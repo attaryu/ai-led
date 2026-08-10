@@ -78,7 +78,7 @@ export function ProgramReadinessTable({
 					<TableRow>
 						<TableHead>Program Studi</TableHead>
 						<TableHead>Akreditasi</TableHead>
-						<TableHead>Siklus Berjalan</TableHead>
+						<TableHead>Sedang Menyusun</TableHead>
 						<TableHead>Kelengkapan Bab</TableHead>
 						<TableHead>Kesiapan Review</TableHead>
 						<TableHead>Sisa Tenggat</TableHead>
@@ -110,7 +110,7 @@ function TableHeading() {
 }
 
 function ProgramRow({ row }: { row: ProgramReadinessRow }) {
-	const { program, akreditasi, siklusAktif, chapterSummary, tenggat } = row;
+	const { program, akreditasi, penyusunanAktif, chapterSummary, tenggat } = row;
 
 	return (
 		<TableRow>
@@ -148,11 +148,11 @@ function ProgramRow({ row }: { row: ProgramReadinessRow }) {
 			</TableCell>
 
 			<TableCell>
-				{siklusAktif ? (
+				{penyusunanAktif ? (
 					<>
-						<LedProjectStatusBadge status={siklusAktif.statusKeseluruhan} />
+						<LedProjectStatusBadge status={penyusunanAktif.statusKeseluruhan} />
 						<p className="mt-1 text-xs text-muted-foreground">
-							TA {siklusAktif.tahunAkademik}
+							TA {penyusunanAktif.tahunAkademik}
 						</p>
 					</>
 				) : (
@@ -161,7 +161,7 @@ function ProgramRow({ row }: { row: ProgramReadinessRow }) {
 			</TableCell>
 
 			<TableCell>
-				{siklusAktif ? (
+				{penyusunanAktif ? (
 					<div className="flex min-w-24 flex-col gap-1.5">
 						<span className="text-sm tabular-nums">
 							{chapterSummary.terisi}/{chapterSummary.total}
@@ -186,7 +186,7 @@ function ProgramRow({ row }: { row: ProgramReadinessRow }) {
 			</TableCell>
 
 			<TableCell className="tabular-nums">
-				{siklusAktif ? (
+				{penyusunanAktif ? (
 					<>
 						{chapterSummary.terkunci}/{chapterSummary.total}
 						{/*
@@ -207,7 +207,7 @@ function ProgramRow({ row }: { row: ProgramReadinessRow }) {
 			</TableCell>
 
 			<TableCell>
-				{!siklusAktif ? (
+				{!penyusunanAktif ? (
 					<Kosong />
 				) : tenggat ? (
 					<span

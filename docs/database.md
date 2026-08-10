@@ -196,14 +196,14 @@ Ini adalah "pintu masuk" ke ruang kerja khusus — begitu user mengklik salah sa
 >
 > Kosong berarti **tidak dipatok**, bukan "tenggatnya hari ini". Tampilan tidak boleh menghitungnya sebagai keterlambatan, dan barisnya tidak dirender sama sekali alih-alih diisi "—".
 
-> **Catatan desain — tidak ada kolom "siklus aktif".** Dashboard Prodi perlu tahu dokumen mana yang sedang dikerjakan, tapi itu diturunkan (`status_keseluruhan != SELESAI` dengan `tahun_akademik` terbesar), bukan disimpan. Kolom `is_aktif` akan jadi sumber kebenaran kedua yang bisa tidak sinkron dengan `status_keseluruhan` — dokumen bisa tertandai aktif padahal sudah `SELESAI`. Alasannya sama dengan status bab di §6.1a.
+> **Catatan desain — tidak ada kolom "penyusunan aktif".** Dashboard Prodi perlu tahu dokumen mana yang sedang dikerjakan, tapi itu diturunkan (`status_keseluruhan != SELESAI` dengan `tahun_akademik` terbesar), bukan disimpan. Kolom `is_aktif` akan jadi sumber kebenaran kedua yang bisa tidak sinkron dengan `status_keseluruhan` — dokumen bisa tertandai aktif padahal sudah `SELESAI`. Alasannya sama dengan status bab di §6.1a.
 
 ### Relasi
 - Satu dokumen LED dimiliki oleh satu `PROGRAM_STUDI`.
 - Satu dokumen LED terdiri dari banyak `BAB_DOKUMEN`.
 
 ### Fitur terkait
-- **Inisiasi dokumen baru**: memulai siklus penyusunan akreditasi, biasanya sekaligus membuat baris-baris `BAB_DOKUMEN` sesuai struktur bab standar LAM Teknik.
+- **Inisiasi dokumen baru**: memulai penyusunan dokumen akreditasi, biasanya sekaligus membuat baris-baris `BAB_DOKUMEN` sesuai struktur bab standar LAM Teknik.
 - **Dashboard progres**: `status_keseluruhan` dipakai untuk menampilkan ringkasan progres ke Pimpinan/Penjamin Mutu tanpa perlu membuka detail tiap bab.
 
 ---

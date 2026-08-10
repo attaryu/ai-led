@@ -183,7 +183,7 @@ const SEED_STATE: Record<
 			10: [BUKTI['ev-18'], BUKTI['ev-04']],
 		},
 	},
-	// Siklus lama Teknik Informatika, sudah tuntas — isi arsip di Dashboard Prodi.
+	// Penyusunan lama Teknik Informatika, sudah tuntas — isi arsip Dashboard Prodi.
 	'4': {
 		babTerisi: CHAPTER_TEMPLATE.length,
 		babTerkunci: CHAPTER_TEMPLATE.length,

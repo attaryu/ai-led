@@ -21,8 +21,8 @@ export const ledProjectSchema = z.object({
 	 * tampilan tidak boleh menghitungnya sebagai terlambat.
 	 *
 	 * Sengaja di dokumen, bukan di prodi: masa berlaku akreditasi prodi jaraknya
-	 * tahunan dan tidak berubah tiap siklus, sedangkan yang mendorong kerja
-	 * sehari-hari adalah target penyelesaian dokumen yang sedang berjalan.
+	 * tahunan dan tidak berubah tiap penyusunan, sedangkan yang mendorong kerja
+	 * sehari-hari adalah target penyelesaian dokumen yang sedang disusun.
 	 */
 	tenggat: z.string().nullable(),
 	createdAt: z.string(),
@@ -61,29 +61,32 @@ export function deriveDeadline(
 	};
 }
 
-export type ProgramCycles = {
+export type ProgramDrafting = {
 	/**
 	 * Dokumen yang sedang dikerjakan prodi ini. `null` bila prodi belum punya
 	 * dokumen sama sekali, atau bila seluruh dokumennya sudah `SELESAI`.
 	 */
 	aktif: LedProjectEntity | null;
-	/** Sisanya, terbaru di atas. Termasuk siklus yang sudah `SELESAI`. */
+	/** Sisanya, terbaru di atas. Termasuk dokumen yang sudah `SELESAI`. */
 	arsip: LedProjectEntity[];
 };
 
 /**
- * Memilah dokumen satu prodi jadi "yang sedang berjalan" dan "arsip".
+ * Memilah dokumen satu prodi jadi "yang sedang disusun" dan "arsip".
  *
- * Akreditasi LAM Teknik berjalan satu siklus pada satu waktu, jadi menampilkan
- * seluruh dokumen sebagai kartu sederajat memodelkan dunia yang salah. Siklus
- * aktif = dokumen belum `SELESAI` dengan tahun akademik terbesar.
+ * Akreditasi LAM Teknik berjalan per prodi, satu dokumen pada satu waktu, jadi
+ * menampilkan seluruh dokumen sebagai kartu sederajat memodelkan dunia yang
+ * salah. Yang sedang disusun = dokumen belum `SELESAI` dengan tahun akademik
+ * terbesar.
  *
  * Ini turunan, bukan kolom `is_aktif` (docs/application_flow.md §5.1e): kolom
  * tersendiri akan jadi sumber kebenaran kedua yang bisa tidak sinkron dengan
  * `status_keseluruhan` — dokumen bisa saja ditandai aktif padahal statusnya
  * sudah `SELESAI`.
  */
-export function pickSiklusAktif(projects: LedProjectEntity[]): ProgramCycles {
+export function pickPenyusunanAktif(
+	projects: LedProjectEntity[],
+): ProgramDrafting {
 	// Tahun akademik berformat "YYYY/YYYY" sehingga urutan leksikal sama dengan
 	// urutan kronologis; `createdAt` jadi pemutus untuk tahun yang sama.
 	const terbaruDiAtas = [...projects].sort((a, b) => {

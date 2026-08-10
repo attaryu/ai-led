@@ -58,14 +58,14 @@ export const MAX_PROGRAM_ACTIVITY_SHOWN = 4;
  */
 export function buildProgramAttention({
 	berlakuSampaiAkreditasi,
-	siklusAktif,
+	penyusunanAktif,
 	chapterAttention,
 	evidenceProdi,
 	jumlahPenyusun,
 	now = Date.now(),
 }: {
 	berlakuSampaiAkreditasi: string | null;
-	siklusAktif: LedProjectEntity | null;
+	penyusunanAktif: LedProjectEntity | null;
 	chapterAttention: ChapterAttention[];
 	/**
 	 * Ringkasan bukti dukung **milik prodi**, bukan seluruh yang tersedia:
@@ -79,8 +79,8 @@ export function buildProgramAttention({
 	const mendesak: ProgramAttentionItem[] = [];
 	const perluDitindak: ProgramAttentionItem[] = [];
 
-	const tenggat = siklusAktif
-		? deriveDeadline(siklusAktif.tenggat, now)
+	const tenggat = penyusunanAktif
+		? deriveDeadline(penyusunanAktif.tenggat, now)
 		: null;
 	const akreditasi = deriveAccreditationValidity(berlakuSampaiAkreditasi, now);
 
@@ -103,11 +103,13 @@ export function buildProgramAttention({
 	}
 
 	// Prodi tanpa dokumen memang wajar bila akreditasinya masih lama; ia baru
-	// jadi masalah ketika siklus berikutnya seharusnya sudah berjalan.
-	if (!siklusAktif && akreditasi && akreditasi.urgensi !== 'AMAN') {
+	// jadi masalah ketika penyusunan berikutnya seharusnya sudah dimulai.
+	if (!penyusunanAktif && akreditasi && akreditasi.urgensi !== 'AMAN') {
 		mendesak.push({
-			id: 'tanpa-siklus',
-			judul: 'Belum ada Dokumen LED yang berjalan',
+			// Bukan `tanpa-penyusunan`: terlalu mirip dengan `tanpa-penyusun` di
+			// bawah, yang bicara soal role pengguna, bukan pekerjaannya.
+			id: 'belum-menyusun',
+			judul: 'Belum ada Dokumen LED yang disusun',
 			alasan:
 				akreditasi.urgensi === 'KEDALUWARSA'
 					? 'Akreditasi sudah kedaluwarsa dan belum ada dokumen baru.'
@@ -167,25 +169,25 @@ export function buildProgramAttention({
 }
 
 /**
- * Jejak "siklus ini masih bergerak atau mandek": bab-bab yang terakhir disimpan,
- * ditutup penanda kapan siklusnya dimulai. Terbaru di atas.
+ * Jejak "penyusunan ini masih bergerak atau mandek": bab-bab yang terakhir
+ * disimpan, ditutup penanda kapan penyusunannya dimulai. Terbaru di atas.
  *
- * Cakupannya sengaja **hanya siklus berjalan**. Waktu unggah bukti dukung
- * dulunya ikut di sini, tapi bukti dukung tidak terikat ke satu Dokumen LED
- * (§5.2) sehingga entri lintas siklus itu membuat daftar ini seolah bicara
- * tentang pekerjaan sekarang padahal tidak — jejaknya kini tinggal di panel
- * Bukti Dukung Prodi.
+ * Cakupannya sengaja **hanya dokumen yang sedang disusun**. Waktu unggah bukti
+ * dukung dulunya ikut di sini, tapi bukti dukung tidak terikat ke satu Dokumen
+ * LED (§5.2) sehingga entri lintas penyusunan itu membuat daftar ini seolah
+ * bicara tentang pekerjaan sekarang padahal tidak — jejaknya kini tinggal di
+ * panel Bukti Dukung Prodi.
  */
 export function buildProgramActivity({
-	siklusAktif,
+	penyusunanAktif,
 	chapters,
 	maxBab = MAX_PROGRAM_ACTIVITY_SHOWN - 1,
 }: {
-	siklusAktif: LedProjectEntity | null;
+	penyusunanAktif: LedProjectEntity | null;
 	chapters: ChapterEntity[];
 	maxBab?: number;
 }): ProgramActivity[] {
-	if (!siklusAktif) return [];
+	if (!penyusunanAktif) return [];
 
 	const activities: ProgramActivity[] = pickRecentChapterSaves(
 		chapters,
@@ -199,9 +201,9 @@ export function buildProgramActivity({
 
 	activities.push({
 		kind: 'DOKUMEN',
-		waktu: siklusAktif.createdAt,
-		judul: siklusAktif.judul,
-		keterangan: 'Siklus dimulai',
+		waktu: penyusunanAktif.createdAt,
+		judul: penyusunanAktif.judul,
+		keterangan: 'Penyusunan dimulai',
 	});
 
 	return activities;

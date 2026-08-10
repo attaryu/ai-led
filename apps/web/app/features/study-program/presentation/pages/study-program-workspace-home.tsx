@@ -9,7 +9,7 @@ import {
 } from '~/core/components/ui/card';
 import { studyProgramRepository } from '../../data/repositories/study-program.repository';
 import { type StudyProgramEntity } from '../../domain/entities/study-program.entity';
-import { ActiveCycleSection } from '../components/active-cycle-section';
+import { ActiveDraftingSection } from '../components/active-drafting-section';
 import { ProgramAccreditationCard } from '../components/program-accreditation-card';
 import { ProgramActivityTimeline } from '../components/program-activity-timeline';
 import { ProgramAttentionPanel } from '../components/program-attention-panel';
@@ -21,12 +21,12 @@ import { useProgramReadiness } from '../hooks/use-program-readiness';
  * Dashboard Prodi (docs/application_flow.md §5.1).
  *
  * Subjek halaman ini adalah prodinya, bukan daftar dokumennya: akreditasi LAM
- * Teknik berjalan per prodi, satu siklus pada satu waktu.
+ * Teknik berjalan per prodi, satu dokumen pada satu waktu.
  *
  * Halaman disusun sebagai tiga blok dengan **kerangka waktu yang berbeda**, dan
  * tiap blok menyebut kerangkanya sendiri: akreditasi yang sudah disahkan (masa
- * lalu), siklus yang sedang disusun (sekarang), lalu sumber daya dan riwayat
- * prodi (lintas siklus). Pemisahan itu yang jadi aturan utama halaman ini —
+ * lalu), dokumen yang sedang disusun (sekarang), lalu sumber daya dan riwayat
+ * prodi (lintas penyusunan). Pemisahan itu jadi aturan utama halaman ini —
  * mencampurnya dalam satu deret kartu membuat capaian lama terbaca sebagai
  * ukuran pekerjaan yang sedang berjalan.
  *
@@ -62,7 +62,7 @@ export function StudyProgramWorkspaceHome() {
  */
 function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 	const {
-		siklusAktif,
+		penyusunanAktif,
 		arsip,
 		chapterSummary,
 		evidenceProdi,
@@ -85,16 +85,16 @@ function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 
 			<ProgramAccreditationCard program={program} />
 
-			{siklusAktif ? (
-				<ActiveCycleSection
-					project={siklusAktif}
+			{penyusunanAktif ? (
+				<ActiveDraftingSection
+					project={penyusunanAktif}
 					summary={chapterSummary}
 					buktiDukungTersedia={buktiDukungTersedia}
 				/>
 			) : (
 				/*
 				 * Dua keadaan berbeda, dua kalimat berbeda: prodi yang belum pernah
-				 * punya dokumen bukan hal yang sama dengan prodi yang siklusnya sudah
+				 * punya dokumen bukan hal yang sama dengan prodi yang dokumennya sudah
 				 * tuntas semua.
 				 */
 				<Card>
@@ -102,12 +102,12 @@ function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 						<CardTitle>
 							{arsip.length === 0
 								? 'Belum ada Dokumen LED'
-								: 'Tidak ada siklus yang berjalan'}
+								: 'Tidak ada yang sedang disusun'}
 						</CardTitle>
 						<CardDescription>
 							{arsip.length === 0
 								? 'Prodi ini belum punya Dokumen LED. Dokumen baru dibuat oleh Penjamin Mutu lewat Dashboard Utama.'
-								: 'Seluruh Dokumen LED prodi ini sudah berstatus SELESAI. Siklus berikutnya dimulai dengan membuat Dokumen LED baru.'}
+								: 'Seluruh Dokumen LED prodi ini sudah berstatus SELESAI. Penyusunan berikutnya dimulai dengan membuat Dokumen LED baru.'}
 						</CardDescription>
 					</CardHeader>
 				</Card>
@@ -115,7 +115,7 @@ function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 
 			<div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
 				{/*
-				 * Riwayat siklus tidak lagi didaftar di sini: tempatnya halaman Dokumen
+				 * Riwayat penyusunan tidak lagi didaftar di sini: tempatnya halaman Dokumen
 				 * LED prodi (§5.3) yang punya pencarian dan paginasi, dan menu sidebar
 				 * sudah jadi jalan masuknya. `arsip` tetap dibaca untuk membedakan dua
 				 * keadaan kosong di atas.

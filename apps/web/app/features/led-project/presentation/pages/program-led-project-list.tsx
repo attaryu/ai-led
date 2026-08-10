@@ -20,14 +20,14 @@ import { type LedProjectPage } from '../../domain/dtos/led-project-query.dto';
  * supaya dokumen yang tersendat terbaca tanpa dibuka satu per satu.
  *
  * Dashboard Prodi (§5.1) sengaja tidak lagi memuat daftar serupa — halaman
- * inilah tempat riwayat siklus prodi, lengkap dengan pencarian dan paginasi.
+ * inilah tempat riwayat penyusunan prodi, lengkap dengan pencarian & paginasi.
  */
 export function ProgramLedProjectList() {
 	const navigate = useNavigate();
 	const session = useSession();
 	const { programId } = useParams<{ programId: string }>();
 
-	// Siklus Dokumen LED sepenuhnya wewenang Penjamin Mutu; Pimpinan read-only
+	// Penyusunan Dokumen LED sepenuhnya wewenang Penjamin Mutu; Pimpinan read-only
 	// di level ini (§6.2) dan Penyusun tidak pernah punya aksi di sini (§15).
 	const canManage = session?.role === 'Penjamin Mutu';
 
@@ -135,7 +135,7 @@ export function ProgramLedProjectList() {
 						Dokumen LED
 					</h2>
 					<p className="text-sm text-muted-foreground">
-						Seluruh siklus akreditasi
+						Seluruh penyusunan Dokumen LED
 						{studyProgram ? ` ${studyProgram.studyProgramName}` : ' prodi ini'}.
 						Klik judul untuk membuka dokumennya.
 					</p>

@@ -15,9 +15,9 @@ import { LedProjectStatusBadge } from './led-project-status-badge';
 const columnHelper = createColumnHelper<LedProjectEntity>();
 
 /**
- * `withActions` disembunyikan untuk role selain Penjamin Mutu — siklus dokumen
- * (buat, ubah status, kunci bab) sepenuhnya wewenang Penjamin Mutu, sedangkan
- * Pimpinan read-only di level ini (§6.2).
+ * `withActions` disembunyikan untuk role selain Penjamin Mutu — penyusunan
+ * dokumen (buat, ubah status, kunci bab) sepenuhnya wewenang Penjamin Mutu,
+ * sedangkan Pimpinan read-only di level ini (§6.2).
  *
  * `withStudyProgram` dimatikan oleh daftar level prodi (§5.3): di sana seluruh
  * baris milik prodi yang sama, jadi kolomnya hanya mengulang judul halaman.

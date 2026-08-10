@@ -28,10 +28,10 @@ const deadlineTones: Record<DeadlineUrgency, StatCardTone> = {
 };
 
 /**
- * Siklus akreditasi yang sedang berjalan (docs/application_flow.md §5.1b).
+ * Dokumen LED yang sedang disusun prodi ini (docs/application_flow.md §5.1b).
  *
- * Seluruh angka di sini **hanya milik siklus ini** — tidak ada capaian
- * akreditasi lampau maupun akumulasi lintas siklus. Aturan itu yang membuat
+ * Seluruh angka di sini **hanya milik penyusunan ini** — tidak ada capaian
+ * akreditasi lampau maupun akumulasi lintas penyusunan. Aturan itu yang membuat
  * baris ringkasan bisa dibaca sebagai satu kesatuan.
  *
  * Kepala section sekaligus menggantikan kartu hero yang dulu ada di sini:
@@ -39,7 +39,7 @@ const deadlineTones: Record<DeadlineUrgency, StatCardTone> = {
  * sedangkan bar kelengkapan dan tenggat hidup di kartunya masing-masing alih-alih
  * muncul dua kali.
  */
-export function ActiveCycleSection({
+export function ActiveDraftingSection({
 	project,
 	summary,
 	buktiDukungTersedia,
@@ -55,7 +55,7 @@ export function ActiveCycleSection({
 			<div className="flex flex-wrap items-end justify-between gap-3">
 				<div className="min-w-0">
 					<p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-						Siklus Berjalan
+						Sedang Menyusun
 					</p>
 					<div className="mt-1 flex flex-wrap items-center gap-2">
 						<h3 className="truncate font-heading text-lg font-bold tracking-tight">

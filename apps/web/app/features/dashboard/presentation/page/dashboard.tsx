@@ -1,7 +1,7 @@
 import { useSession } from '~/features/auth/presentation/hooks/use-session';
 import { AdminOrganizationSummary } from '../components/admin-organization-summary';
 import { InstitutionAccreditationCard } from '../components/institution-accreditation-card';
-import { InstitutionCycleSummary } from '../components/institution-cycle-summary';
+import { InstitutionDraftingSummary } from '../components/institution-drafting-summary';
 import { InstitutionResourceStrip } from '../components/institution-resource-strip';
 import { ProgramReadinessTable } from '../components/program-readiness-table';
 import { useInstitutionReadiness } from '../hooks/use-institution-readiness';
@@ -16,18 +16,18 @@ import { useInstitutionReadiness } from '../hooks/use-institution-readiness';
  * **Aturan utama halaman ini: satu blok, satu kerangka waktu** — aturan yang sama
  * yang berlaku di Dashboard Prodi (§5.1) dan yang secara khusus diperingatkan
  * PRD §3.8 untuk level institusi: capaian akreditasi yang sudah disahkan dan
- * usaha siklus yang sedang berjalan tidak boleh disandingkan sebagai angka
+ * usaha penyusunan yang sedang berjalan tidak boleh disandingkan sebagai angka
  * sederajat.
  *
  *   Blok A — Posisi Akreditasi ......... masa lalu, dari `PROGRAM_STUDI`
- *   Blok B — Siklus Berjalan ........... sekarang, dari `DOKUMEN_LED` aktif + babnya
+ *   Blok B — Sedang Menyusun ........... sekarang, dari `DOKUMEN_LED` aktif + babnya
  *   Blok C — Kesiapan per Prodi ........ inti halaman, perbandingan antar prodi
- *   Blok D — Sumber Daya Institusi ..... lintas siklus, bukti dukung & tim
+ *   Blok D — Sumber Daya Institusi ..... lintas penyusunan, bukti dukung & tim
  *
  * Versi sebelumnya halaman ini berisi empat kartu penaut yang isinya persis menu
  * sidebar. Keduanya difilter per role dengan aturan yang sama, jadi kartu-kartu
  * itu salinan kedua tanpa nilai tambah — alasan yang sama yang membuang daftar
- * riwayat siklus dari Dashboard Prodi (§5.1c).
+ * riwayat penyusunan dari Dashboard Prodi (§5.1c).
  *
  * Halaman ini murni baca: tidak ada satu pun aksi ubah data, jadi tidak ada
  * tombol yang perlu disembunyikan per role selain tautan Manajemen User di Blok
@@ -75,12 +75,13 @@ function InstitutionReadinessView({
 }: {
 	dapatKelolaUser: boolean;
 }) {
-	const { rows, akreditasi, siklus, sumberDaya } = useInstitutionReadiness();
+	const { rows, akreditasi, penyusunan, sumberDaya } =
+		useInstitutionReadiness();
 
 	return (
 		<>
 			<InstitutionAccreditationCard akreditasi={akreditasi} />
-			<InstitutionCycleSummary siklus={siklus} />
+			<InstitutionDraftingSummary penyusunan={penyusunan} />
 			<ProgramReadinessTable rows={rows} />
 			<InstitutionResourceStrip
 				sumberDaya={sumberDaya}

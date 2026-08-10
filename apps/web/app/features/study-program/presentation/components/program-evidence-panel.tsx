@@ -20,8 +20,8 @@ import { type EvidenceSummary } from '~/features/evidence/domain/entities/eviden
  * sebelumnya ikut menghitung berkas level tenant, sehingga dashboard menyebut
  * belasan berkas sementara perpustakaannya hanya berisi beberapa.
  *
- * Ini sumber daya **lintas siklus**: bukti dukung tidak terikat ke satu Dokumen
- * LED (§5.2), jadi tempatnya di luar baris ringkasan siklus berjalan.
+ * Ini sumber daya **lintas penyusunan**: bukti dukung tidak terikat ke satu
+ * Dokumen LED (§5.2), jadi tempatnya di luar baris ringkasan penyusunan.
  */
 export function ProgramEvidencePanel({
 	summary,

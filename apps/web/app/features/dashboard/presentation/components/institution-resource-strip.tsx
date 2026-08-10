@@ -18,8 +18,8 @@ import { type InstitutionResources } from '../../domain/entities/institution-rea
 
 /**
  * Blok D Dashboard Utama (docs/application_flow.md §4.0d) — bekal yang berlaku
- * **lintas siklus**, karena itu berdiri di luar baris ringkasan siklus berjalan
- * dan menyebut kerangka waktunya sendiri.
+ * **lintas penyusunan**, karena itu berdiri di luar baris ringkasan dokumen
+ * yang sedang disusun dan menyebut kerangka waktunya sendiri.
  */
 export function InstitutionResourceStrip({
 	sumberDaya,
@@ -46,8 +46,8 @@ export function InstitutionResourceStrip({
 					Sumber Daya Institusi
 				</p>
 				<p className="mt-1 text-sm text-muted-foreground">
-					Bekal yang berlaku lintas siklus, bukan ukuran pekerjaan siklus
-					berjalan.
+					Bekal yang berlaku lintas penyusunan, bukan ukuran pekerjaan yang
+					sedang disusun.
 				</p>
 			</div>
 

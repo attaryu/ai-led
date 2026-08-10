@@ -13,7 +13,7 @@ import { type LedProjectEntity } from '../../domain/entities/led-project.entity'
 export function LedProjectManagement() {
 	const navigate = useNavigate();
 	const session = useSession();
-	// Siklus Dokumen LED sepenuhnya wewenang Penjamin Mutu; Pimpinan read-only
+	// Penyusunan Dokumen LED sepenuhnya wewenang Penjamin Mutu; Pimpinan read-only
 	// di level ini (§6.2).
 	const canManage = session?.role === 'Penjamin Mutu';
 	const [ledProjects, setLedProjects] = React.useState<LedProjectEntity[]>([]);

@@ -13,10 +13,10 @@ const activityIcons: Record<ProgramActivityKind, Icon> = {
 };
 
 /**
- * Jejak singkat bahwa siklus yang sedang berjalan masih bergerak (§5.1b).
+ * Jejak singkat bahwa penyusunan yang sedang berjalan masih bergerak (§5.1b).
  *
- * Cakupannya hanya siklus ini — unggahan bukti dukung tidak ikut karena
- * berlaku lintas siklus dan jejaknya ada di panel Bukti Dukung Prodi.
+ * Cakupannya hanya penyusunan ini — unggahan bukti dukung tidak ikut karena
+ * berlaku lintas penyusunan dan jejaknya ada di panel Bukti Dukung Prodi.
  *
  * Bukan riwayat lengkap: jejak audit permanen hidup di `BAB_DRAFT` dan belum
  * dibangun.
@@ -29,11 +29,11 @@ export function ProgramActivityTimeline({
 	return (
 		<section className="flex flex-col gap-2">
 			<h3 className="font-heading text-base font-medium">
-				Aktivitas Siklus Ini
+				Aktivitas Penyusunan Ini
 			</h3>
 			{activities.length === 0 ? (
 				<p className="rounded-lg px-4 py-3 text-sm text-muted-foreground ring-1 ring-foreground/10">
-					Belum ada siklus yang berjalan, jadi belum ada aktivitas tercatat.
+					Belum ada yang sedang disusun, jadi belum ada aktivitas tercatat.
 				</p>
 			) : (
 				<ul className="flex flex-col gap-3 rounded-lg px-4 py-3 ring-1 ring-foreground/10">

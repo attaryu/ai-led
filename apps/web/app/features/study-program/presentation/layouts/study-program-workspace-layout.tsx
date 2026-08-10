@@ -92,7 +92,7 @@ export function StudyProgramWorkspaceLayout() {
 				items: [
 					{
 						// Halamannya bukan daftar dokumen melainkan keadaan prodi itu
-						// sendiri — akreditasi berjalan, siklus yang disusun, dan timnya
+						// sendiri — akreditasi berjalan, dokumen yang disusun, dan timnya
 						// (§5.1), jadi namanya menyebut subjeknya.
 						name: 'Profil Prodi',
 						path: `/study-programs/${programId}`,

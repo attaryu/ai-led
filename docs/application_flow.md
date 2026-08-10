@@ -94,18 +94,18 @@ Setiap lapis punya sidebar/navigasi yang **berbeda total** dari lapis sebelumnya
 
 Halaman index lapis ini (`/dashboard`) menjawab satu pertanyaan: **seberapa siap universitas ini menghadapi akreditasi, dan prodi mana yang tertinggal.** Subjeknya universitas, bukan daftar menunya.
 
-> **Catatan desain — kartu penaut dibuang.** Versi awal halaman ini berisi empat kartu penaut (Program Studi, Dokumen LED, User, Bukti Dukung) yang isinya persis menu sidebar, difilter per role dengan aturan yang sama. Itu salinan kedua tanpa nilai tambah, sementara satu-satunya halaman yang bisa menjawab pertanyaan pimpinan justru dibiarkan kosong. Alasannya sama dengan yang membuang daftar riwayat siklus dari Dashboard Prodi (§5.1c): kalau sidebar sudah jadi jalan masuk yang jelas, mendaftarnya ulang di badan halaman hanya meramaikan.
+> **Catatan desain — kartu penaut dibuang.** Versi awal halaman ini berisi empat kartu penaut (Program Studi, Dokumen LED, User, Bukti Dukung) yang isinya persis menu sidebar, difilter per role dengan aturan yang sama. Itu salinan kedua tanpa nilai tambah, sementara satu-satunya halaman yang bisa menjawab pertanyaan pimpinan justru dibiarkan kosong. Alasannya sama dengan yang membuang daftar riwayat penyusunan dari Dashboard Prodi (§5.1c): kalau sidebar sudah jadi jalan masuk yang jelas, mendaftarnya ulang di badan halaman hanya meramaikan.
 
 **Aturan utama halaman ini: satu blok, satu kerangka waktu** — aturan yang sama dengan §5.1, dan yang secara khusus diperingatkan PRD §3.8 untuk level institusi. Halaman disusun jadi empat blok yang masing-masing menyebut kerangkanya sendiri:
 
 | Blok | Kerangka waktu | Sumber |
 | --- | --- | --- |
 | **Posisi Akreditasi** (§4.0a) | Masa lalu — capaian yang sudah disahkan | `PROGRAM_STUDI` |
-| **Siklus Berjalan Se-Universitas** (§4.0b) | Sekarang — usaha seluruh prodi | `DOKUMEN_LED` aktif beserta `BAB_DOKUMEN`-nya |
+| **Sedang Menyusun Se-Universitas** (§4.0b) | Sekarang — usaha seluruh prodi | `DOKUMEN_LED` aktif beserta `BAB_DOKUMEN`-nya |
 | **Kesiapan per Prodi** (§4.0c) | Sekarang, per prodi — inti halaman | gabungan keduanya, satu baris per prodi |
-| **Sumber Daya Institusi** (§4.0d) | Lintas siklus — bekal universitas | `BUKTI_DUKUNG` tenant, `USER` |
+| **Sumber Daya Institusi** (§4.0d) | Lintas penyusunan — bekal universitas | `BUKTI_DUKUNG` tenant, `USER` |
 
-**Tidak ada aturan hitung baru di halaman ini.** Seluruh angkanya memanggil ulang fungsi domain yang sudah dipakai Dashboard Prodi dan Dashboard Project LED — `summarizeChapters`, `summarizeEvidence`, `pickSiklusAktif`, `buildProgramAttention`, `deriveDeadline`, `deriveAccreditationValidity`. Yang benar-benar baru hanya cara mengagregasi dan cara mengurutkan baris. Konsekuensi yang disengaja: angka satu baris di §4.0c **wajib** sama persis dengan Dashboard Prodi yang dituju barisnya; kalau berbeda, berarti ada aturan yang tersalin, bukan dipakai ulang.
+**Tidak ada aturan hitung baru di halaman ini.** Seluruh angkanya memanggil ulang fungsi domain yang sudah dipakai Dashboard Prodi dan Dashboard Project LED — `summarizeChapters`, `summarizeEvidence`, `pickPenyusunanAktif`, `buildProgramAttention`, `deriveDeadline`, `deriveAccreditationValidity`. Yang benar-benar baru hanya cara mengagregasi dan cara mengurutkan baris. Konsekuensi yang disengaja: angka satu baris di §4.0c **wajib** sama persis dengan Dashboard Prodi yang dituju barisnya; kalau berbeda, berarti ada aturan yang tersalin, bukan dipakai ulang.
 
 **Tidak ada satu pun aksi ubah data di halaman ini**, jadi satu-satunya yang disembunyikan per role (§1) adalah tautan Manajemen User di §4.0d — penjagaan selebihnya sudah selesai di lapis rutenya.
 
@@ -119,22 +119,22 @@ Prodi `BELUM_TERAKREDITASI` masuk komposisi sebagai kategorinya sendiri dan **ti
 
 Baris urgensi tidak dirender bila nol. Baris "0 prodi kedaluwarsa" yang selalu ada justru melatih pembaca mengabaikan tempat itu.
 
-#### 4.0b Blok Siklus Berjalan Se-Universitas
+#### 4.0b Blok Sedang Menyusun Se-Universitas
 
-Empat kartu angka yang **seluruhnya bercakupan siklus berjalan** — tidak ada peringkat akreditasi maupun akumulasi lintas siklus di baris ini:
+Empat kartu angka yang **seluruhnya bercakupan dokumen yang sedang disusun** — tidak ada peringkat akreditasi maupun akumulasi lintas penyusunan di baris ini:
 
 | Kartu | Isi | Dihitung dari |
 | --- | --- | --- |
-| **Prodi Bersiklus** | `n/total` prodi yang punya siklus berjalan, bar persentase | `pickSiklusAktif().aktif != null` per prodi |
-| **Kelengkapan Bab** | `n/total` bab terisi **agregat lintas prodi**, bar persentase | jumlah `konten_kerja` tidak kosong pada seluruh siklus aktif |
+| **Prodi Sedang Menyusun** | `n/total` prodi yang sedang menyusun dokumen, bar persentase | `pickPenyusunanAktif().aktif != null` per prodi |
+| **Kelengkapan Bab** | `n/total` bab terisi **agregat lintas prodi**, bar persentase | jumlah `konten_kerja` tidak kosong pada seluruh dokumen yang sedang disusun |
 | **Kesiapan Review** | `n/total` bab terkunci agregat, bar persentase | `terkunci = true` |
-| **Tenggat Berisiko** | jumlah siklus dengan tenggat `LEWAT` atau `DEKAT`, diwarnai urgensi | `DOKUMEN_LED.tenggat` |
+| **Tenggat Berisiko** | jumlah penyusunan dengan tenggat `LEWAT` atau `DEKAT`, diwarnai urgensi | `DOKUMEN_LED.tenggat` |
 
 Agregasi memakai **jumlah bab lintas prodi**, bukan rata-rata persen antar prodi. Pertanyaannya "berapa banyak pekerjaan yang sudah jadi", sehingga prodi dengan bab lebih banyak memang harus berbobot lebih; rata-rata persen memberi bobot sama ke tiap prodi sehingga satu prodi kecil yang tuntas bisa menutupi prodi besar yang mandek.
 
-Prodi tanpa siklus berjalan menyumbang nol ke pembilang **dan** penyebut kartu bab. Ia sudah terhitung di kartu Prodi Bersiklus, dan menghitungnya lagi sebagai bab kosong berarti satu keadaan yang sama dihukum dua kali.
+Prodi yang tidak sedang menyusun menyumbang nol ke pembilang **dan** penyebut kartu bab. Ia sudah terhitung di kartu Prodi Sedang Menyusun, dan menghitungnya lagi sebagai bab kosong berarti satu keadaan yang sama dihukum dua kali.
 
-Siklus tanpa `tenggat` tidak ikut dihitung berisiko: tidak dipatok adalah pilihan yang sah (§14), bukan keterlambatan.
+Penyusunan tanpa `tenggat` tidak ikut dihitung berisiko: tidak dipatok adalah pilihan yang sah (§14), bukan keterlambatan.
 
 #### 4.0c Blok Kesiapan per Prodi
 
@@ -144,10 +144,10 @@ Tabel, satu baris per prodi, seluruh prodi tenant. Inilah yang menjawab "prodi m
 | --- | --- | --- |
 | **Program Studi** | nama, `jenjang`, `fakultas`; tautan ke Dashboard Prodi | — |
 | **Akreditasi** | badge `peringkat_akreditasi` + sisa masa berlaku, diwarnai urgensi | `Belum pernah terakreditasi` |
-| **Siklus Berjalan** | badge `status_keseluruhan` + `tahun_akademik` | `Belum ada` |
-| **Kelengkapan Bab** | `n/total` + bar persentase | `—` bila tanpa siklus |
-| **Kesiapan Review** | `n/total` | `—` bila tanpa siklus |
-| **Sisa Tenggat** | sisa waktu ke `tenggat`, diwarnai urgensi | `Tidak dipatok` (ada siklus) / `—` (tanpa siklus) |
+| **Sedang Menyusun** | badge `status_keseluruhan` + `tahun_akademik` | `Belum ada` |
+| **Kelengkapan Bab** | `n/total` + bar persentase | `—` bila belum menyusun |
+| **Kesiapan Review** | `n/total` | `—` bila belum menyusun |
+| **Sisa Tenggat** | sisa waktu ke `tenggat`, diwarnai urgensi | `Tidak dipatok` (sedang menyusun) / `—` (belum menyusun) |
 | **Perlu Perhatian** | jumlah item + jumlah yang mendesak, diwarnai severitas tertinggi | `Tidak ada` |
 
 **Urutan default: paling perlu ditindak di atas**, bukan alfabet. Halaman ini dibaca dari atas, jadi hal pertama yang terlihat harus hal yang perlu ditindak; mengurutkan menurut nama memindahkan pekerjaan mencari "siapa yang tertinggal" kembali ke pembacanya. Urutannya deterministik:
@@ -156,7 +156,7 @@ Tabel, satu baris per prodi, seluruh prodi tenant. Inilah yang menjawab "prodi m
 | --- | --- |
 | 1 | jumlah item `MENDESAK` (terbanyak dulu) |
 | 2 | jumlah item `PERLU_DITINDAK` (terbanyak dulu) |
-| 3 | persentase kelengkapan bab siklus berjalan (terkecil dulu; prodi tanpa siklus dianggap 0) |
+| 3 | persentase kelengkapan bab yang sedang disusun (terkecil dulu; prodi yang belum menyusun dianggap 0) |
 | 4 | nama prodi, sebagai pemutus agar urutannya tidak berubah antar render |
 
 Kolom Perlu Perhatian memadatkan panel senama di §5.1c — aturan pemicunya sama persis, rinciannya memang tempatnya di prodi masing-masing.
@@ -165,7 +165,7 @@ Tabel ini sengaja **tanpa pencarian, pengurutan, dan paginasi**, dengan alasan y
 
 #### 4.0d Blok Sumber Daya Institusi
 
-Dua kartu, diberi label kerangka waktunya sendiri supaya tidak terbaca sebagai ukuran siklus berjalan:
+Dua kartu, diberi label kerangka waktunya sendiri supaya tidak terbaca sebagai ukuran pekerjaan yang sedang disusun:
 
 - **Bukti Dukung Universitas** — `n/total` berkas `SIAP`, jumlah yang masih diproses, jumlah `GAGAL`, waktu unggah terakhir, dan tombol ke Perpustakaan Bukti Dukung tenant. Angkanya **hanya berkas `owner_tipe = TENANT`** supaya cocok dengan daftar di halaman yang dituju (§4.4) — aturan yang sama dengan panel Bukti Dukung Prodi di §5.1c.
 - **Tim Penyusun** — jumlah prodi yang belum punya `USER` berrole `PENYUSUN`. Prodi tanpa Penyusun bukan angka biasa: dokumennya tidak akan pernah bergerak, jadi keadaan itu ditampilkan sebagai peringatan. Tautan ke Manajemen User **hanya dirender untuk `PIMPINAN`** (§1) — `PENJAMIN_MUTU` tidak punya menu itu sama sekali (§4.2), jadi menyodorkan tautannya hanya berujung pengalihan.
@@ -182,7 +182,7 @@ Dua kartu, diberi label kerangka waktunya sendiri supaya tidak terbaca sebagai u
 Mengikuti alasan yang sama dengan §5.1f dan §6.1 — kolom yang selalu berisi "—" hanya menambah derau:
 
 - **Ringkasan skor rubrik per prodi** — diminta PRD §3.8 ("skor rata-rata per prodi"), tapi `RUBRIK_KRITERIA`/`HASIL_SKOR_KRITERIA` belum ada. Masuk bersama Simulasi Skor (§9).
-- **Grafik tren antar siklus** — baru bermakna setelah ada beberapa siklus dengan skor.
+- **Grafik tren antar penyusunan** — baru bermakna setelah ada beberapa penyusunan dengan skor.
 - **Siapa sedang menyunting** — datanya hidup di Redis (§13), bukan di basis data.
 
 Satu hal lagi yang sengaja **tidak** dilakukan: halaman ini tidak memanggil pembuatan bab otomatis (§6.1b). Ia murni baca, dan memicu penulisan dari halaman ringkasan berarti membuka dashboard diam-diam mengubah penyimpanan. Dokumen yang belum punya baris `BAB_DOKUMEN` terbaca `0/0` sampai dashboard dokumennya dibuka — itu memang keadaan sebenarnya.
@@ -191,14 +191,14 @@ Satu hal lagi yang sengaja **tidak** dilakukan: halaman ini tidak memanggil pemb
 
 | #   | Kondisi                                                        | Aksi                                             | Hasil yang diharapkan                                                                                                              |
 | --- | -------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Pimpinan atau Penjamin Mutu                                     | Buka `/dashboard`                                | Keempat blok tampil; baris kartu Siklus Berjalan **tidak** memuat peringkat akreditasi maupun akumulasi bukti dukung lintas siklus   |
+| 1   | Pimpinan atau Penjamin Mutu                                     | Buka `/dashboard`                                | Keempat blok tampil; baris kartu Sedang Menyusun **tidak** memuat peringkat akreditasi maupun akumulasi bukti dukung lintas penyusunan |
 | 2   | Prodi mana pun di tabel                                         | Bandingkan barisnya dengan `/study-programs/:id`  | Kelengkapan Bab, Kesiapan Review, Sisa Tenggat, dan jumlah Perlu Perhatian **sama persis** dengan Dashboard Prodi                    |
 | 3   | Satu prodi punya tenggat yang sudah lewat                       | Buka `/dashboard`                                | Prodi itu berada di **puncak** tabel, kolom Perlu Perhatian merah dan menyebut jumlah yang mendesak                                  |
 | 4   | Lanjutan #3                                                     | Ubah tenggatnya ke masa depan lewat Edit Dokumen LED | Urutan tabel dan kartu Tenggat Berisiko ikut berubah tanpa muat ulang manual                                                     |
-| 5   | Prodi belum punya `DOKUMEN_LED` sama sekali                     | Lihat barisnya                                    | Kolom Siklus berbunyi `Belum ada`; kolom bab, review, dan tenggat berisi `—`, bukan `0/0` atau `0 hari`                              |
+| 5   | Prodi belum punya `DOKUMEN_LED` sama sekali                     | Lihat barisnya                                    | Kolom Sedang Menyusun berbunyi `Belum ada`; kolom bab, review, dan tenggat berisi `—`, bukan `0/0` atau `0 hari`                     |
 | 6   | Prodi `BELUM_TERAKREDITASI`                                     | Lihat barisnya dan blok Posisi Akreditasi        | Baris berbunyi "Belum pernah terakreditasi"; prodi itu masuk komposisi tapi **tidak** ikut hitungan kedaluwarsa                      |
-| 7   | Siklus berjalan tanpa `tenggat`                                 | Lihat barisnya dan kartu Tenggat Berisiko        | Baris berbunyi `Tidak dipatok` tanpa warna urgensi; siklus itu tidak ikut dihitung berisiko                                         |
-| 8   | Ada prodi yang seluruh dokumennya `SELESAI`                     | Lihat kartu Kelengkapan Bab                      | Bab prodi itu tidak ikut penyebut; angkanya hanya menghitung prodi yang bersiklus                                                   |
+| 7   | Dokumen yang sedang disusun tanpa `tenggat`                     | Lihat barisnya dan kartu Tenggat Berisiko        | Baris berbunyi `Tidak dipatok` tanpa warna urgensi; penyusunan itu tidak ikut dihitung berisiko                                     |
+| 8   | Ada prodi yang seluruh dokumennya `SELESAI`                     | Lihat kartu Kelengkapan Bab                      | Bab prodi itu tidak ikut penyebut; angkanya hanya menghitung prodi yang sedang menyusun                                             |
 | 9   | Tidak ada prodi yang kedaluwarsa maupun mendekati               | Lihat blok Posisi Akreditasi                     | Baris urgensi tidak dirender sama sekali, bukan "0 prodi kedaluwarsa"                                                              |
 | 10  | Pimpinan                                                        | Lihat kartu Tim Penyusun                         | Tombol "Kelola penugasan" dirender                                                                                                 |
 | 11  | Penjamin Mutu                                                   | Lihat kartu yang sama                            | Angkanya identik, tombol "Kelola penugasan" **tidak** dirender                                                                     |
@@ -301,17 +301,17 @@ Berlaku sama di lapis tenant maupun prodi:
 
 Halaman index lapis ini menjawab satu pertanyaan: **seberapa siap prodi ini menghadapi akreditasi.** Subjeknya prodi, bukan daftar dokumennya.
 
-> **Catatan desain — kenapa bukan daftar kartu.** Versi awal §5.1 merender seluruh `DOKUMEN_LED` prodi sebagai kartu sederajat. Itu memodelkan dunia yang salah: akreditasi LAM Teknik dilakukan per prodi dan berjalan **satu siklus pada satu waktu**, sehingga grid sederajat memberi kesan beberapa dokumen sedang dikerjakan berdampingan. Sekarang siklus yang berjalan ditonjolkan, sisanya turun jadi riwayat ringkas — seluruh dokumen prodi tetap terlihat dan bisa dibuka, sesuai syarat awal.
+> **Catatan desain — kenapa bukan daftar kartu.** Versi awal §5.1 merender seluruh `DOKUMEN_LED` prodi sebagai kartu sederajat. Itu memodelkan dunia yang salah: akreditasi LAM Teknik dilakukan per prodi dan berjalan **satu dokumen pada satu waktu**, sehingga grid sederajat memberi kesan beberapa dokumen sedang dikerjakan berdampingan. Sekarang dokumen yang sedang disusun ditonjolkan, sisanya turun jadi riwayat ringkas — seluruh dokumen prodi tetap terlihat dan bisa dibuka, sesuai syarat awal.
 
 **Aturan utama halaman ini: satu blok, satu kerangka waktu.** Halaman disusun jadi tiga blok yang masing-masing menyebut kerangkanya sendiri:
 
 | Blok | Kerangka waktu | Sumber |
 | --- | --- | --- |
 | **Akreditasi Berjalan** (§5.1a) | Masa lalu — capaian yang sudah disahkan | `PROGRAM_STUDI` |
-| **Siklus Berjalan** (§5.1b) | Sekarang — usaha menuju akreditasi berikutnya | `DOKUMEN_LED` aktif beserta `BAB_DOKUMEN`-nya |
-| **Sumber daya & riwayat** (§5.1c) | Lintas siklus — bekal dan jejak prodi | `BUKTI_DUKUNG` prodi, `USER`, dokumen arsip |
+| **Sedang Menyusun** (§5.1b) | Sekarang — usaha menuju akreditasi berikutnya | `DOKUMEN_LED` aktif beserta `BAB_DOKUMEN`-nya |
+| **Sumber daya & riwayat** (§5.1c) | Lintas penyusunan — bekal dan jejak prodi | `BUKTI_DUKUNG` prodi, `USER`, dokumen arsip |
 
-> **Catatan desain — kenapa akreditasi tidak ikut baris ringkasan.** Versi sebelumnya menaruh "Masa Berlaku Akreditasi" sebagai kartu keempat, sebaris dengan kelengkapan bab dan kesiapan review. Empat kartu sederajat membuat pembaca menyimpulkan keempatnya mengukur hal yang sama, padahal peringkat "Baik Sekali" beserta masa berlakunya adalah **hasil siklus sebelumnya** — bukan ukuran pekerjaan yang sedang berjalan. Kartu ketiganya pun menghitung akumulasi bukti dukung lintas siklus, sehingga satu baris itu memuat tiga kerangka waktu sekaligus. Sejak itu baris ringkasan hanya boleh memuat angka siklus berjalan; capaian lampau naik ke blok akreditasi, sumber daya lintas siklus turun ke panel samping.
+> **Catatan desain — kenapa akreditasi tidak ikut baris ringkasan.** Versi sebelumnya menaruh "Masa Berlaku Akreditasi" sebagai kartu keempat, sebaris dengan kelengkapan bab dan kesiapan review. Empat kartu sederajat membuat pembaca menyimpulkan keempatnya mengukur hal yang sama, padahal peringkat "Baik Sekali" beserta masa berlakunya adalah **hasil penyusunan sebelumnya** — bukan ukuran pekerjaan yang sedang berjalan. Kartu ketiganya pun menghitung akumulasi bukti dukung lintas penyusunan, sehingga satu baris itu memuat tiga kerangka waktu sekaligus. Sejak itu baris ringkasan hanya boleh memuat angka dokumen yang sedang disusun; capaian lampau naik ke blok akreditasi, sumber daya lintas penyusunan turun ke panel samping.
 
 **Tidak ada satu pun aksi ubah data di halaman ini**, jadi tidak ada tombol yang perlu disembunyikan per role (§1) — penjagaannya sudah selesai di lapis rutenya, dan seluruh role yang berhak melihat isi yang sama.
 
@@ -321,30 +321,30 @@ Satu kartu berlabel "Akreditasi Berjalan": nama, `jenjang`, `fakultas`, `kode`, 
 
 Prodi `BELUM_TERAKREDITASI` menampilkan "Belum pernah terakreditasi" secara eksplisit, bukan baris kosong: tidak pernah punya peringkat berbeda dari peringkat yang masa berlakunya habis.
 
-#### 5.1b Blok Siklus Berjalan
+#### 5.1b Blok Sedang Menyusun
 
-Kepala blok memuat judul dokumen, `tahun_akademik`, badge `status_keseluruhan`, dan tombol **Buka Dokumen** menuju Dashboard Project LED. Di bawahnya empat kartu angka yang **seluruhnya bercakupan siklus ini**:
+Kepala blok memuat judul dokumen, `tahun_akademik`, badge `status_keseluruhan`, dan tombol **Buka Dokumen** menuju Dashboard Project LED. Di bawahnya empat kartu angka yang **seluruhnya bercakupan penyusunan ini**:
 
 | Kartu | Isi | Dihitung dari |
 | --- | --- | --- |
 | **Bab Terisi** | `n/total` bab yang sudah ada isinya, beserta bar persentase | `konten_kerja` tidak kosong pada bab dokumen aktif |
 | **Kesiapan Review** | `n/total` bab yang sudah dikunci Penjamin Mutu | `terkunci = true` |
-| **Bukti Dukung Dipakai** | Jumlah berkas **unik** yang dirujuk seluruh bab siklus ini, dengan "dari N tersedia" sebagai keterangan | `BUKTI_DUKUNG_BAB`; pembanding = tenant + prodi, sama dengan §6.1 |
+| **Bukti Dukung Dipakai** | Jumlah berkas **unik** yang dirujuk seluruh bab penyusunan ini, dengan "dari N tersedia" sebagai keterangan | `BUKTI_DUKUNG_BAB`; pembanding = tenant + prodi, sama dengan §6.1 |
 | **Sisa Tenggat** | Sisa waktu ke `tenggat`, diwarnai sesuai urgensi; tanggalnya jadi keterangan | `DOKUMEN_LED.tenggat` |
 
-Bab hanya dihitung dari siklus berjalan. Mencampur dokumen lama yang sudah tuntas akan membuat angkanya selalu terlihat bagus dan justru menyembunyikan pekerjaan yang belum jalan.
+Bab hanya dihitung dari dokumen yang sedang disusun. Mencampur dokumen lama yang sudah tuntas akan membuat angkanya selalu terlihat bagus dan justru menyembunyikan pekerjaan yang belum jalan.
 
 Dokumen tanpa `tenggat` menampilkan **"Tidak dipatok"**, bukan "—": tidak dipatok adalah pilihan yang sah (§14), sedangkan "—" terbaca sebagai data yang hilang.
 
-Seluruh blok ini diganti satu kartu keadaan kosong bila tidak ada siklus berjalan. Prodi yang belum punya dokumen sama sekali dan prodi yang seluruh dokumennya `SELESAI` adalah dua keadaan berbeda, dan kalimatnya pun berbeda.
+Seluruh blok ini diganti satu kartu keadaan kosong bila tidak ada yang sedang disusun. Prodi yang belum punya dokumen sama sekali dan prodi yang seluruh dokumennya `SELESAI` adalah dua keadaan berbeda, dan kalimatnya pun berbeda.
 
 #### 5.1c Blok sumber daya & riwayat
 
 Kolom utama:
 
-- **Aktivitas Siklus Ini** — bab-bab yang paling baru disimpan, ditutup penanda kapan siklusnya dimulai; dipotong empat baris. Cakupannya sengaja hanya siklus berjalan. Ini bukan jejak audit — jejak permanen hidup di `BAB_DRAFT` — melainkan penanda apakah proses ini masih bergerak.
+- **Aktivitas Penyusunan Ini** — bab-bab yang paling baru disimpan, ditutup penanda kapan penyusunannya dimulai; dipotong empat baris. Cakupannya sengaja hanya dokumen yang sedang disusun. Ini bukan jejak audit — jejak permanen hidup di `BAB_DRAFT` — melainkan penanda apakah proses ini masih bergerak.
 
-> **Catatan desain — riwayat siklus tidak didaftar di dashboard.** Versi awal blok ini memuat daftar dokumen lama yang bisa diklik. Setelah §5.3 berdiri, daftar itu jadi salinan kedua dengan isi yang sama tapi tanpa pencarian maupun paginasi, sementara menu sidebar sudah jadi jalan masuk yang jelas ke daftar penuhnya. Dashboard tetap **membaca** daftar dokumen prodi untuk membedakan dua keadaan kosong siklus berjalan, hanya tidak merendernya.
+> **Catatan desain — riwayat penyusunan tidak didaftar di dashboard.** Versi awal blok ini memuat daftar dokumen lama yang bisa diklik. Setelah §5.3 berdiri, daftar itu jadi salinan kedua dengan isi yang sama tapi tanpa pencarian maupun paginasi, sementara menu sidebar sudah jadi jalan masuk yang jelas ke daftar penuhnya. Dashboard tetap **membaca** daftar dokumen prodi untuk membedakan dua keadaan kosong blok Sedang Menyusun, hanya tidak merendernya.
 
 Panel samping:
 
@@ -352,9 +352,9 @@ Panel samping:
 
   | Urutan | Pemicu |
   | --- | --- |
-  | 1 | `tenggat` siklus berjalan sudah lewat |
+  | 1 | `tenggat` dokumen yang sedang disusun sudah lewat |
   | 2 | `berlaku_sampai_akreditasi` sudah lewat |
-  | 3 | Belum ada siklus berjalan padahal akreditasi tersisa ≤ 365 hari |
+  | 3 | Belum ada dokumen yang disusun padahal akreditasi tersisa ≤ 365 hari |
   | 4 | Prodi belum punya `PENYUSUN` |
   | 5 | `tenggat` tersisa ≤ 30 hari |
   | 6 | Masa berlaku akreditasi tersisa ≤ 365 hari |
@@ -373,13 +373,13 @@ Panel samping:
 - `PIMPINAN`/`PENJAMIN_MUTU` bisa membuka Dashboard Prodi mana pun (lintas prodi), karena mereka beroperasi di level tenant.
 - `ADMIN` ditolak di lapis ini dan dipulangkan ke Dashboard Utama.
 
-#### 5.1e Siklus berjalan dan sisa waktu adalah turunan, bukan kolom
+#### 5.1e Yang sedang disusun dan sisa waktu adalah turunan, bukan kolom
 
 Tiga nilai yang menggerakkan halaman ini semuanya dihitung saat render:
 
 | Nilai | Aturan |
 | --- | --- |
-| Siklus berjalan | `status_keseluruhan != SELESAI` dengan `tahun_akademik` terbesar; `createdAt` jadi pemutus untuk tahun yang sama |
+| Yang sedang disusun | `status_keseluruhan != SELESAI` dengan `tahun_akademik` terbesar; `createdAt` jadi pemutus untuk tahun yang sama |
 | Sisa masa berlaku | Selisih hari ke `berlaku_sampai_akreditasi`. `AMAN` > 365 hari, `MENDEKATI` ≤ 365, `KEDALUWARSA` < 0 |
 | Sisa tenggat | Selisih hari ke `tenggat`. `DEKAT` ≤ 30 hari, `LEWAT` < 0 |
 
@@ -393,19 +393,19 @@ Mengikuti alasan yang sama dengan §6.1 — kolom yang selalu berisi "—" hanya
 
 - **Ringkasan skor rubrik prodi** — `RUBRIK_KRITERIA`/`HASIL_SKOR_KRITERIA` belum ada. Masuk bersama Simulasi Skor (§9).
 - **Data kuantitatif LKPS** — model datanya masih Pertanyaan Terbuka #3.
-- **Grafik tren antar siklus** — baru bermakna setelah ada beberapa siklus dengan skor; sampai itu, bar persentase sudah cukup.
+- **Grafik tren antar penyusunan** — baru bermakna setelah ada beberapa penyusunan dengan skor; sampai itu, bar persentase sudah cukup.
 
 ### 5.2 Perpustakaan Bukti Dukung (level Prodi)
 
 - Menampilkan `BUKTI_DUKUNG` dengan `owner_tipe = PROGRAM_STUDI` dan `program_studi_id` sesuai prodi ini.
 - **Upload**: `PIMPINAN`, `PENJAMIN_MUTU`, dan `PENYUSUN` (untuk prodinya sendiri).
-- Karena `BUKTI_DUKUNG` tidak terikat ke `DOKUMEN_LED` tertentu, bukti dukung yang diunggah di sini otomatis tersedia untuk **semua** `DOKUMEN_LED` milik prodi tersebut (misalnya jika prodi punya beberapa siklus akreditasi/tahun akademik berbeda) — tidak perlu upload ulang.
+- Karena `BUKTI_DUKUNG` tidak terikat ke `DOKUMEN_LED` tertentu, bukti dukung yang diunggah di sini otomatis tersedia untuk **semua** `DOKUMEN_LED` milik prodi tersebut (misalnya jika prodi punya beberapa penyusunan/tahun akademik berbeda) — tidak perlu upload ulang.
 - **Target unggahan terkunci** ke prodi yang sedang dibuka (`:programId` di URL), jadi pemilih level tidak dirender sama sekali di sini. Mau mengunggah untuk prodi lain atau untuk universitas? Lewat perpustakaan level tenant (§4.4.1). Alur unggah, status ekstraksi, dan bentuk tampilannya sama persis dengan §4.5 dan §4.6.
 - **Hapus**: `PIMPINAN` dan `PENJAMIN_MUTU` boleh menghapus bukti dukung apa pun; `PENYUSUN` hanya berkas yang ia unggah sendiri. Sesuai §1, tombol hapus untuk berkas milik orang lain **tidak dirender** bagi Penyusun, bukan sekadar dinonaktifkan.
 
 ### 5.3 Daftar Dokumen LED (khusus prodi ini)
 
-`/study-programs/:programId/led-projects` — seluruh `DOKUMEN_LED` dengan `program_studi_id` sesuai prodi yang sedang dibuka, dalam bentuk tabel penuh. Inilah yang memenuhi syarat "seluruh Dokumen LED prodi terlihat"; Dashboard Prodi (§5.1) hanya menonjolkan siklus yang berjalan.
+`/study-programs/:programId/led-projects` — seluruh `DOKUMEN_LED` dengan `program_studi_id` sesuai prodi yang sedang dibuka, dalam bentuk tabel penuh. Inilah yang memenuhi syarat "seluruh Dokumen LED prodi terlihat"; Dashboard Prodi (§5.1) hanya menonjolkan dokumen yang sedang disusun.
 
 | Kolom | Isi |
 | --- | --- |
@@ -428,20 +428,20 @@ Mengikuti alasan yang sama dengan §6.1 — kolom yang selalu berisi "—" hanya
 
 | #   | Kondisi                                                              | Aksi                                          | Hasil yang diharapkan                                                                                                          |
 | --- | -------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | Prodi mana pun                                                        | Baca baris ringkasan Siklus Berjalan          | Keempat kartunya bercakupan siklus itu saja — tidak ada peringkat/masa berlaku akreditasi maupun akumulasi lintas siklus di sana |
-| 2   | Prodi punya satu dokumen `DRAFT` dan satu `SELESAI`                   | Buka `/study-programs/:id`                    | Yang `DRAFT` jadi blok Siklus Berjalan; yang `SELESAI` tidak dirender di dashboard sama sekali, hanya di §5.3                   |
-| 3   | Seluruh dokumen prodi berstatus `SELESAI`                            | Buka Dashboard Prodi                          | Blok Siklus Berjalan diganti "Tidak ada siklus yang berjalan"; seluruh dokumen tetap bisa dibuka lewat menu Dokumen LED         |
-| 4   | Prodi belum punya `DOKUMEN_LED` sama sekali                          | Buka Dashboard Prodi                          | Muncul "Belum ada Dokumen LED" (kalimat berbeda dari #3); Aktivitas Siklus Ini menyatakan belum ada siklus, bukan daftar kosong |
+| 1   | Prodi mana pun                                                        | Baca baris ringkasan Sedang Menyusun          | Keempat kartunya bercakupan penyusunan itu saja — tidak ada peringkat/masa berlaku akreditasi maupun akumulasi lintas penyusunan di sana |
+| 2   | Prodi punya satu dokumen `DRAFT` dan satu `SELESAI`                   | Buka `/study-programs/:id`                    | Yang `DRAFT` jadi blok Sedang Menyusun; yang `SELESAI` tidak dirender di dashboard sama sekali, hanya di §5.3                   |
+| 3   | Seluruh dokumen prodi berstatus `SELESAI`                            | Buka Dashboard Prodi                          | Blok Sedang Menyusun diganti "Tidak ada yang sedang disusun"; seluruh dokumen tetap bisa dibuka lewat menu Dokumen LED          |
+| 4   | Prodi belum punya `DOKUMEN_LED` sama sekali                          | Buka Dashboard Prodi                          | Muncul "Belum ada Dokumen LED" (kalimat berbeda dari #3); Aktivitas Penyusunan Ini menyatakan belum ada yang disusun, bukan daftar kosong |
 | 5   | Prodi `BELUM_TERAKREDITASI` (`berlaku_sampai_akreditasi` kosong)      | Buka Dashboard Prodi                          | Kartu akreditasi berbunyi "Belum pernah terakreditasi"; tidak ada item "kedaluwarsa" di Perlu Perhatian                         |
-| 6   | Siklus berjalan tanpa `tenggat`                                      | Buka Dashboard Prodi                          | Kartu Sisa Tenggat berbunyi "Tidak dipatok" tanpa warna urgensi, dan tidak ada item tenggat di Perlu Perhatian                  |
-| 7   | Siklus berjalan dengan `tenggat` di masa lalu                        | Buka Dashboard Prodi                          | Kartu Sisa Tenggat merah "terlambat N hari", dan item "Tenggat dokumen sudah lewat" berada di **puncak** Perlu Perhatian        |
+| 6   | Dokumen yang sedang disusun tanpa `tenggat`                          | Buka Dashboard Prodi                          | Kartu Sisa Tenggat berbunyi "Tidak dipatok" tanpa warna urgensi, dan tidak ada item tenggat di Perlu Perhatian                  |
+| 7   | Dokumen yang sedang disusun dengan `tenggat` di masa lalu            | Buka Dashboard Prodi                          | Kartu Sisa Tenggat merah "terlambat N hari", dan item "Tenggat dokumen sudah lewat" berada di **puncak** Perlu Perhatian        |
 | 8   | Lanjutan #6                                                          | Isi `tenggat` lewat Edit Dokumen LED          | Dashboard Prodi ikut berubah tanpa perlu muat ulang manual                                                                     |
 | 9   | Prodi tanpa `USER` berrole `PENYUSUN`                                | Buka Dashboard Prodi                          | Panel Tim Penyusun berisi peringatan beserta cara menugaskannya, dan muncul item "Prodi belum punya Penyusun" di Perlu Perhatian |
 | 10  | Prodi punya bukti dukung sendiri                                     | Bandingkan panel Bukti Dukung Prodi dengan `/study-programs/:id/evidence` | Total di panel **sama persis** dengan jumlah data di perpustakaan; berkas level tenant tidak ikut terhitung                     |
 | 11  | Hanya berkas level **tenant** yang `GAGAL`, prodi tidak punya berkas | Buka Dashboard Prodi                          | Perlu Perhatian **tidak** memuat item bukti dukung gagal — kegagalan itu bukan pekerjaan prodi ini                              |
 | 12  | Bukti dukung **milik prodi** ada yang `GAGAL`                        | Buka Dashboard Prodi                          | Panel Bukti Dukung Prodi menyebut jumlah yang gagal, dan Perlu Perhatian memuat satu baris ringkas — bukan satu baris per berkas |
 | 13  | Perlu Perhatian berisi lebih dari lima hal                           | Buka Dashboard Prodi                          | Hanya lima baris dirender, ditutup baris "…dan N hal lain" yang menunjuk ke Progres Dokumen                                     |
-| 14  | Siklus berjalan punya beberapa bab yang pernah disimpan              | Baca Aktivitas Siklus Ini                     | Berisi bab-bab terbaru + penanda siklus dimulai; **tidak** memuat unggahan bukti dukung yang berlaku lintas siklus              |
+| 14  | Dokumen yang sedang disusun punya beberapa bab yang pernah disimpan  | Baca Aktivitas Penyusunan Ini                 | Berisi bab-bab terbaru + penanda penyusunan dimulai; **tidak** memuat unggahan bukti dukung yang berlaku lintas penyusunan      |
 | 15  | Penyusun prodi tersebut                                              | Login                                         | Mendarat langsung di Dashboard Prodi-nya; tombol "← Dashboard Utama" dan breadcrumb "Dashboard" tidak dirender                  |
 | 16  | Admin                                                                | Ketik `/study-programs/1` di address bar      | Dialihkan ke `/dashboard`; isi Dashboard Prodi tidak pernah dirender                                                            |
 | 17  | Prodi tersimpan sebelum kolom identitas akreditasi ada               | Buka Dashboard Prodi                          | Field yang belum terisi tampil sebagai "Belum diisi", bukan `undefined`; halaman tetap merender penuh                            |
@@ -805,7 +805,7 @@ _\* Admin hanya bisa membuat user, belum tentu punya kemampuan assign ke prodi �
 
 > **Catatan desain — dua baris bukti dukung yang ditetapkan menyusul.** Baris "Hapus bukti dukung" dan "Ulangi ekstraksi" tidak ada di matriks awal. PRD hanya menyebut penghapusan dilakukan "pengguna berwenang" tanpa merinci siapa. Keputusannya: `PIMPINAN`/`PENJAMIN_MUTU` boleh menghapus apa pun di cakupannya karena keduanya memang beroperasi di level tenant, sedangkan `PENYUSUN` dibatasi pada unggahannya sendiri — cukup untuk membereskan salah unggah, tanpa memberinya kuasa menghapus bukti yang dipakai prodi secara keseluruhan. Mengulang ekstraksi tidak menghapus apa pun dan tidak mengubah isi berkas, jadi haknya disamakan dengan hak unggah di lapis bersangkutan.
 
-> **Catatan desain — siklus Dokumen LED milik Penjamin Mutu.** Baris "Buat Dokumen LED baru" ditetapkan menyusul karena matriks awal tidak memuatnya. Wewenangnya diberikan ke `PENJAMIN_MUTU` saja agar konsisten dengan dua baris di bawahnya (kunci bab dan ubah status dokumen): satu role memegang seluruh siklus hidup dokumen dari pembuatan sampai penyelesaian. `PIMPINAN` tetap read-only di level ini (§6.2), dan `PENYUSUN` tidak pernah masuk Dashboard Utama sehingga tidak punya jalan ke form pembuatan.
+> **Catatan desain — penyusunan Dokumen LED milik Penjamin Mutu.** Baris "Buat Dokumen LED baru" ditetapkan menyusul karena matriks awal tidak memuatnya. Wewenangnya diberikan ke `PENJAMIN_MUTU` saja agar konsisten dengan dua baris di bawahnya (kunci bab dan ubah status dokumen): satu role memegang seluruh daur hidup dokumen dari pembuatan sampai penyelesaian. `PIMPINAN` tetap read-only di level ini (§6.2), dan `PENYUSUN` tidak pernah masuk Dashboard Utama sehingga tidak punya jalan ke form pembuatan.
 
 ---
 
