@@ -233,9 +233,14 @@ function ProgramRow({ row }: { row: ProgramReadinessRow }) {
 }
 
 /**
- * Ringkasan panel Perlu Perhatian Dashboard Prodi (§5.1c) yang dipadatkan jadi
- * satu sel: jumlahnya, diwarnai menurut severitas tertinggi. Rinciannya memang
- * tempatnya di prodi masing-masing, bukan di tabel perbandingan.
+ * `buildProgramAttention` dipadatkan jadi satu sel: jumlahnya, diwarnai menurut
+ * severitas tertinggi (§4.0c).
+ *
+ * Inilah satu-satunya tempat aturan itu dirender. Dashboard Prodi pernah punya
+ * panel yang mendaftar tiap itemnya, tapi di sana kebanyakan pemicunya sudah
+ * terbaca langsung dari kartu dan panel di sekelilingnya; yang benar-benar butuh
+ * angka ringkasnya adalah tabel perbandingan ini — sel ini yang menjawab "prodi
+ * mana yang paling perlu ditindak" tanpa membuka satu per satu.
  */
 function ProgramAttentionCell({ row }: { row: ProgramReadinessRow }) {
 	if (row.attention.length === 0) {

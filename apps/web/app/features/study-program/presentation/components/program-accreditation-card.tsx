@@ -29,6 +29,11 @@ const validityStyles: Record<AccreditationUrgency, string> = {
  * pekerjaan yang sedang berjalan. Karena itu masa berlaku dirender di sini,
  * bukan sebagai salah satu kartu di baris ringkasan penyusunan — sebaris dengan
  * kelengkapan bab, angka ini terbaca seolah ikut mengukur usaha sekarang.
+ *
+ * Labelnya "Akreditasi Aktif", bukan "Akreditasi Berjalan" seperti sebelumnya:
+ * sejak kartu ini berdampingan dengan "Penyusunan Berjalan" (§5.1b), kata
+ * "berjalan" di dua kartu bersebelahan justru menyamakan dua kerangka waktu yang
+ * sengaja dipisahkan halaman ini.
  */
 export function ProgramAccreditationCard({
 	program,
@@ -45,7 +50,7 @@ export function ProgramAccreditationCard({
 				<div className="flex flex-wrap items-start justify-between gap-4">
 					<div className="min-w-0">
 						<p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-							Akreditasi Berjalan
+							Akreditasi Aktif
 						</p>
 						<div className="mt-1 flex items-center gap-2">
 							<span className="rounded-md border border-border bg-muted px-1.5 py-0.5 text-xs font-semibold">

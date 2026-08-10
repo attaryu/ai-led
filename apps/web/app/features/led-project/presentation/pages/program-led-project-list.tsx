@@ -19,8 +19,9 @@ import { type LedProjectPage } from '../../domain/dtos/led-project-query.dto';
  * prodi dibuang (seluruh baris memuat nilai yang sama), tenggat ditambahkan
  * supaya dokumen yang tersendat terbaca tanpa dibuka satu per satu.
  *
- * Dashboard Prodi (§5.1) sengaja tidak lagi memuat daftar serupa — halaman
- * inilah tempat riwayat penyusunan prodi, lengkap dengan pencarian & paginasi.
+ * Dashboard Prodi (§5.1c) memang sudah memuat riwayat, tapi ringkas: lima baris
+ * teratas, empat kolom, tanpa perkakas. Halaman inilah daftar penuhnya, dan
+ * tautan "Lihat semua" di dashboard bermuara ke sini.
  */
 export function ProgramLedProjectList() {
 	const navigate = useNavigate();

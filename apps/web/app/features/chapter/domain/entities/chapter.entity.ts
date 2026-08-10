@@ -105,6 +105,30 @@ export const chapterProgressEnum = z.enum([
 export type ChapterProgress = z.infer<typeof chapterProgressEnum>;
 
 /**
+ * Sebutan tiap status di layar. Ditaruh di domain karena dipakai lebih dari satu
+ * bentuk tampilan — badge per bab (§6.1a) dan bar bertumpuk di ringkasan (§5.1b)
+ * — dan dua daftar kata sendiri-sendiri pasti akan berbeda suatu saat.
+ */
+export const chapterProgressLabels: Record<ChapterProgress, string> = {
+	BELUM_DIISI: 'Belum diisi',
+	SEDANG_DISUSUN: 'Sedang disusun',
+	MENUNGGU_REVIEW: 'Menunggu review',
+	TERKUNCI: 'Terkunci',
+};
+
+/**
+ * Urutan baca ringkasan: dari yang paling tuntas ke yang belum tersentuh.
+ * Dipakai bar bertumpuk beserta legendanya supaya kemajuan terbaca bertambah
+ * dari kiri, bukan melompat-lompat mengikuti urutan enum.
+ */
+export const chapterProgressOrder: ChapterProgress[] = [
+	'TERKUNCI',
+	'MENUNGGU_REVIEW',
+	'SEDANG_DISUSUN',
+	'BELUM_DIISI',
+];
+
+/**
  * Bungkus paragraf kosong yang tetap ditinggalkan editor sesudah seluruh
  * tulisannya dihapus (`<p></p>`, kadang berisi `<br>` atau `&nbsp;`).
  */
@@ -145,6 +169,18 @@ export type ChapterSummary = {
 	terkunci: number;
 	/** Bab yang diajukan Penyusun dan belum direspons Penjamin Mutu. */
 	menungguReview: number;
+	/**
+	 * Jumlah bab per status turunan {@link deriveChapterProgress}. Berbeda dari
+	 * `terisi`/`terkunci`/`menungguReview` di atas yang masing-masing menjawab satu
+	 * pertanyaan sendiri dan **boleh tumpang tindih** (bab terkunci yang kontennya
+	 * kosong terhitung di dua tempat), keempat angka di sini saling lepas dan
+	 * totalnya persis `total`.
+	 *
+	 * Itulah syarat sebuah bar bertumpuk bisa dibaca sebagai pembagian satu
+	 * dokumen. Sumber aturannya sengaja `deriveChapterProgress` — sama dengan
+	 * `ChapterStatusBadge`, supaya bar dan badge tidak pernah berbeda pendapat.
+	 */
+	perStatus: Record<ChapterProgress, number>;
 	/** 0–100, dibulatkan. 0 bila dokumen belum punya bab sama sekali. */
 	persenKelengkapan: number;
 	/** 0–100, dibulatkan. Penyebutnya `total`, sama dengan `persenKelengkapan`. */
@@ -169,6 +205,12 @@ export function summarizeChapters(chapters: ChapterEntity[]): ChapterSummary {
 	let menungguReview = 0;
 	let terakhirDisimpan: string | null = null;
 	let babTerakhirDisentuh: string | null = null;
+	const perStatus: Record<ChapterProgress, number> = {
+		BELUM_DIISI: 0,
+		SEDANG_DISUSUN: 0,
+		MENUNGGU_REVIEW: 0,
+		TERKUNCI: 0,
+	};
 
 	for (const chapter of chapters) {
 		if (hasKonten(chapter)) terisi += 1;
@@ -176,6 +218,7 @@ export function summarizeChapters(chapters: ChapterEntity[]): ChapterSummary {
 		// Sejalan dengan `deriveChapterProgress`: bab yang sudah dikunci tidak lagi
 		// terhitung mengantre, karena reviewnya memang sudah berjalan.
 		if (!chapter.terkunci && chapter.diajukanReviewPada) menungguReview += 1;
+		perStatus[deriveChapterProgress(chapter)] += 1;
 		for (const ref of chapter.buktiDukung) buktiDukungUnik.add(ref.id);
 
 		if (
@@ -196,6 +239,7 @@ export function summarizeChapters(chapters: ChapterEntity[]): ChapterSummary {
 		belumDiisi: total - terisi,
 		terkunci,
 		menungguReview,
+		perStatus,
 		persenKelengkapan: total === 0 ? 0 : Math.round((terisi / total) * 100),
 		persenKesiapanReview: total === 0 ? 0 : Math.round((terkunci / total) * 100),
 		buktiDukungTerpakai: buktiDukungUnik.size,

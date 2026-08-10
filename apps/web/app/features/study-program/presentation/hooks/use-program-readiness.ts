@@ -2,7 +2,6 @@ import * as React from 'react';
 
 import { chapterRepository } from '~/features/chapter/data/repositories/chapter.repository';
 import {
-	pickChaptersNeedingAttention,
 	summarizeChapters,
 	type ChapterSummary,
 } from '~/features/chapter/domain/entities/chapter.entity';
@@ -18,12 +17,6 @@ import {
 } from '~/features/led-project/domain/entities/led-project.entity';
 import { userRepository } from '~/features/users/data/repositories/user.repository';
 import { type UserEntity } from '~/features/users/domain/entities/user.entity';
-import {
-	buildProgramActivity,
-	buildProgramAttention,
-	type ProgramActivity,
-	type ProgramAttentionItem,
-} from '../../domain/entities/program-readiness.entity';
 
 export type ProgramReadiness = {
 	penyusunanAktif: LedProjectEntity | null;
@@ -35,20 +28,10 @@ export type ProgramReadiness = {
 	 * Perpustakaan Bukti Dukung prodi (§5.2).
 	 */
 	evidenceProdi: EvidenceSummary;
-	/**
-	 * Jumlah bukti dukung yang boleh dipakai bab yang sedang disusun (prodi +
-	 * tenant), dipakai sebagai pembanding di baris ringkasan — sama dengan §6.1.
-	 */
-	buktiDukungTersedia: number;
 	penyusun: UserEntity[];
-	attention: ProgramAttentionItem[];
-	aktivitas: ProgramActivity[];
 };
 
-function read(
-	programId: string,
-	berlakuSampaiAkreditasi: string | null,
-): ProgramReadiness {
+function read(programId: string): ProgramReadiness {
 	const { aktif, arsip } = pickPenyusunanAktif(
 		ledProjectRepository.findByStudyProgramId(programId),
 	);
@@ -63,24 +46,12 @@ function read(
 		evidenceRepository.findOwnedByStudyProgram(programId),
 	);
 
-	const penyusun = userRepository.findPenyusunByStudyProgramId(programId);
-
 	return {
 		penyusunanAktif: aktif,
 		arsip,
 		chapterSummary,
 		evidenceProdi,
-		buktiDukungTersedia:
-			evidenceRepository.findAvailableForStudyProgram(programId).length,
-		penyusun,
-		attention: buildProgramAttention({
-			berlakuSampaiAkreditasi,
-			penyusunanAktif: aktif,
-			chapterAttention: pickChaptersNeedingAttention(chapters),
-			evidenceProdi,
-			jumlahPenyusun: penyusun.length,
-		}),
-		aktivitas: buildProgramActivity({ penyusunanAktif: aktif, chapters }),
+		penyusun: userRepository.findPenyusunByStudyProgramId(programId),
 	};
 }
 
@@ -91,27 +62,23 @@ function read(
  * baru dibuat Penjamin Mutu).
  *
  * Perhitungannya sendiri hidup di domain, bukan di sini, agar dashboard agregat
- * institusi nanti bisa memakainya ulang tanpa menyalin aturannya.
+ * institusi bisa memakainya ulang tanpa menyalin aturannya.
  *
- * Parameternya sengaja nilai sederhana, bukan objek prodi utuh: repository
+ * Parameternya sengaja `programId`, bukan objek prodi utuh: repository
  * mengembalikan objek baru tiap panggilan, sehingga memakainya sebagai
  * dependensi efek akan memicu pembacaan ulang tanpa henti.
  */
-export function useProgramReadiness(
-	programId: string,
-	berlakuSampaiAkreditasi: string | null,
-): ProgramReadiness {
+export function useProgramReadiness(programId: string): ProgramReadiness {
 	const [readiness, setReadiness] = React.useState<ProgramReadiness>(() =>
-		read(programId, berlakuSampaiAkreditasi),
+		read(programId),
 	);
 
 	React.useEffect(() => {
-		const load = () =>
-			setReadiness(read(programId, berlakuSampaiAkreditasi));
+		const load = () => setReadiness(read(programId));
 		load();
 		window.addEventListener('storage-update', load);
 		return () => window.removeEventListener('storage-update', load);
-	}, [programId, berlakuSampaiAkreditasi]);
+	}, [programId]);
 
 	return readiness;
 }

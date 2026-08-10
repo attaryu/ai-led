@@ -1,4 +1,5 @@
-import { useParams } from 'react-router';
+import * as React from 'react';
+import { useNavigate, useParams } from 'react-router';
 
 import { PlaceholderPage } from '~/core/components/placeholder-page';
 import {
@@ -7,13 +8,14 @@ import {
 	CardHeader,
 	CardTitle,
 } from '~/core/components/ui/card';
+import { useSession } from '~/features/auth/presentation/hooks/use-session';
+import { ledProjectRepository } from '~/features/led-project/data/repositories/led-project.repository';
 import { studyProgramRepository } from '../../data/repositories/study-program.repository';
 import { type StudyProgramEntity } from '../../domain/entities/study-program.entity';
-import { ActiveDraftingSection } from '../components/active-drafting-section';
+import { ActiveProjectCard } from '../components/active-project-card';
 import { ProgramAccreditationCard } from '../components/program-accreditation-card';
-import { ProgramActivityTimeline } from '../components/program-activity-timeline';
-import { ProgramAttentionPanel } from '../components/program-attention-panel';
 import { ProgramEvidencePanel } from '../components/program-evidence-panel';
+import { ProgramLedProjectHistory } from '../components/program-led-project-history';
 import { ProgramTeamPanel } from '../components/program-team-panel';
 import { useProgramReadiness } from '../hooks/use-program-readiness';
 
@@ -23,15 +25,25 @@ import { useProgramReadiness } from '../hooks/use-program-readiness';
  * Subjek halaman ini adalah prodinya, bukan daftar dokumennya: akreditasi LAM
  * Teknik berjalan per prodi, satu dokumen pada satu waktu.
  *
- * Halaman disusun sebagai tiga blok dengan **kerangka waktu yang berbeda**, dan
- * tiap blok menyebut kerangkanya sendiri: akreditasi yang sudah disahkan (masa
- * lalu), dokumen yang sedang disusun (sekarang), lalu sumber daya dan riwayat
- * prodi (lintas penyusunan). Pemisahan itu jadi aturan utama halaman ini —
- * mencampurnya dalam satu deret kartu membuat capaian lama terbaca sebagai
- * ukuran pekerjaan yang sedang berjalan.
+ * **Aturan utama halaman ini: satu blok, satu kerangka waktu.** Dua kartu
+ * teratas berdampingan justru karena kerangkanya berbeda dan perbedaan itu perlu
+ * terbaca sekali pandang — kiri capaian yang sudah disahkan (masa lalu), kanan
+ * usaha menuju akreditasi berikutnya (sekarang). Di bawahnya riwayat penyusunan
+ * dan sumber daya prodi, keduanya lintas penyusunan.
  *
- * Halaman ini murni baca: tidak ada aksi ubah data, jadi tidak ada yang perlu
- * disembunyikan per role (§1) — penjagaannya sudah selesai di layout lapis ini.
+ * **Rincian penyusunan sengaja tidak ada di sini.** Kelengkapan per bab,
+ * kesiapan review, bukti dukung terpakai, dan daftar hal yang perlu ditindak
+ * punya rumahnya di Dashboard Project LED (§6.1); mengulangnya di lapis prodi
+ * hanya membuat halaman ini jadi salinan lapis di bawahnya. Yang tersisa cuma
+ * satu bar: cukup untuk tahu dokumennya bergerak atau tidak.
+ *
+ * Aturan "prodi ini tersendat di mana" sendiri tetap hidup di
+ * `program-readiness.entity.ts` — pembacanya sekarang Dashboard Utama (§4.0c),
+ * yang memang bertugas membandingkan prodi satu sama lain.
+ *
+ * Berbeda dari versi sebelumnya, halaman ini **punya** aksi ubah data — ubah dan
+ * hapus Dokumen LED di tabel riwayat. Sesuai §1 keduanya tidak dirender sama
+ * sekali di luar Penjamin Mutu, bukan sekadar dinonaktifkan.
  */
 export function StudyProgramWorkspaceHome() {
 	const { programId } = useParams<{ programId: string }>();
@@ -61,16 +73,48 @@ export function StudyProgramWorkspaceHome() {
  * menyentuh penyimpanan) untuk prodi yang belum tentu ada.
  */
 function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
+	const navigate = useNavigate();
+	const session = useSession();
 	const {
 		penyusunanAktif,
 		arsip,
 		chapterSummary,
 		evidenceProdi,
-		buktiDukungTersedia,
 		penyusun,
-		attention,
-		aktivitas,
-	} = useProgramReadiness(program.id, program.berlakuSampaiAkreditasi);
+	} = useProgramReadiness(program.id);
+
+	// Penyusunan Dokumen LED sepenuhnya wewenang Penjamin Mutu; Pimpinan read-only
+	// di level ini (§6.2) dan Penyusun tidak pernah punya aksi di sini (§15).
+	const canManage = session?.role === 'Penjamin Mutu';
+
+	/** Dibawa formulir supaya Batal dan simpan memulangkan ke dashboard ini. */
+	const returnTo = `/study-programs/${program.id}`;
+
+	const handleDelete = React.useCallback((id: string) => {
+		if (confirm('Apakah Anda yakin ingin menghapus Dokumen LED ini?')) {
+			ledProjectRepository.delete(id);
+			// Hook kesiapan berlangganan event yang sama, jadi barisnya hilang tanpa
+			// halaman ini perlu memuat ulang sendiri.
+			window.dispatchEvent(new Event('storage-update'));
+		}
+	}, []);
+
+	const handleEdit = React.useCallback(
+		(id: string) => {
+			navigate(
+				`/dashboard/led-projects/${id}/edit?returnTo=${encodeURIComponent(returnTo)}`,
+			);
+		},
+		[navigate, returnTo],
+	);
+
+	/*
+	 * Yang sedang disusun ikut terdaftar di riwayat, di posisi paling atas:
+	 * `pickPenyusunanAktif` sudah memisahkannya dari arsip, dan menyatukannya
+	 * kembali di sini membuat tabelnya terbaca sebagai urutan penuh — kartu di
+	 * atas menonjolkan, tabel menempatkan.
+	 */
+	const riwayat = penyusunanAktif ? [penyusunanAktif, ...arsip] : arsip;
 
 	return (
 		<div className="flex flex-col gap-6">
@@ -83,49 +127,47 @@ function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 				</p>
 			</div>
 
-			<ProgramAccreditationCard program={program} />
+			<div className="grid items-start gap-4 lg:grid-cols-2">
+				<ProgramAccreditationCard program={program} />
 
-			{penyusunanAktif ? (
-				<ActiveDraftingSection
-					project={penyusunanAktif}
-					summary={chapterSummary}
-					buktiDukungTersedia={buktiDukungTersedia}
-				/>
-			) : (
-				/*
-				 * Dua keadaan berbeda, dua kalimat berbeda: prodi yang belum pernah
-				 * punya dokumen bukan hal yang sama dengan prodi yang dokumennya sudah
-				 * tuntas semua.
-				 */
-				<Card>
-					<CardHeader>
-						<CardTitle>
-							{arsip.length === 0
-								? 'Belum ada Dokumen LED'
-								: 'Tidak ada yang sedang disusun'}
-						</CardTitle>
-						<CardDescription>
-							{arsip.length === 0
-								? 'Prodi ini belum punya Dokumen LED. Dokumen baru dibuat oleh Penjamin Mutu lewat Dashboard Utama.'
-								: 'Seluruh Dokumen LED prodi ini sudah berstatus SELESAI. Penyusunan berikutnya dimulai dengan membuat Dokumen LED baru.'}
-						</CardDescription>
-					</CardHeader>
-				</Card>
-			)}
+				{penyusunanAktif ? (
+					<ActiveProjectCard
+						project={penyusunanAktif}
+						summary={chapterSummary}
+					/>
+				) : (
+					/*
+					 * Dua keadaan berbeda, dua kalimat berbeda: prodi yang belum pernah
+					 * punya dokumen bukan hal yang sama dengan prodi yang dokumennya sudah
+					 * tuntas semua.
+					 */
+					<Card size="sm">
+						<CardHeader>
+							<CardTitle>
+								{arsip.length === 0
+									? 'Belum ada Dokumen LED'
+									: 'Tidak ada yang sedang disusun'}
+							</CardTitle>
+							<CardDescription>
+								{arsip.length === 0
+									? 'Prodi ini belum punya Dokumen LED. Dokumen baru dibuat oleh Penjamin Mutu lewat Dashboard Utama.'
+									: 'Seluruh Dokumen LED prodi ini sudah berstatus SELESAI. Penyusunan berikutnya dimulai dengan membuat Dokumen LED baru.'}
+							</CardDescription>
+						</CardHeader>
+					</Card>
+				)}
+			</div>
 
 			<div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
-				{/*
-				 * Riwayat penyusunan tidak lagi didaftar di sini: tempatnya halaman Dokumen
-				 * LED prodi (§5.3) yang punya pencarian dan paginasi, dan menu sidebar
-				 * sudah jadi jalan masuknya. `arsip` tetap dibaca untuk membedakan dua
-				 * keadaan kosong di atas.
-				 */}
-				<div className="flex min-w-0 flex-col gap-6">
-					<ProgramActivityTimeline activities={aktivitas} />
-				</div>
+				<ProgramLedProjectHistory
+					projects={riwayat}
+					programId={program.id}
+					canManage={canManage}
+					onEdit={handleEdit}
+					onDelete={handleDelete}
+				/>
 
 				<div className="flex flex-col gap-4">
-					<ProgramAttentionPanel attention={attention} />
 					<ProgramEvidencePanel summary={evidenceProdi} programId={program.id} />
 					<ProgramTeamPanel penyusun={penyusun} />
 				</div>

@@ -1,8 +1,4 @@
-import {
-	pickRecentChapterSaves,
-	type ChapterAttention,
-	type ChapterEntity,
-} from '~/features/chapter/domain/entities/chapter.entity';
+import { type ChapterAttention } from '~/features/chapter/domain/entities/chapter.entity';
 import { type EvidenceSummary } from '~/features/evidence/domain/entities/evidence.entity';
 import {
 	deriveDeadline,
@@ -11,12 +7,13 @@ import {
 import { deriveAccreditationValidity } from './study-program.entity';
 
 /**
- * Aturan turunan Dashboard Prodi (docs/application_flow.md §5.1).
+ * Aturan "prodi ini tersendat di mana", diturunkan per prodi.
  *
- * Ditaruh di domain, bukan di komponen, mengikuti jejak `summarizeChapters`:
- * dashboard agregat institusi nanti perlu tahu prodi mana yang tersendat, dan
- * jawabannya harus datang dari aturan yang sama — bukan dari salinan yang
- * perlahan menyimpang.
+ * Lahir untuk panel Perlu Perhatian Dashboard Prodi, tapi sejak panel itu
+ * dibuang dari §5.1 satu-satunya pembacanya adalah **Dashboard Utama** (§4.0c):
+ * kolom Perlu Perhatian dan pengurutan risiko tabel kesiapan prodi keduanya
+ * dihitung dari sini. Tetap tinggal di domain prodi karena cakupan aturannya
+ * memang satu prodi — yang di atasnya hanya menjumlahkan.
  */
 
 export const PROGRAM_ATTENTION_SEVERITIES = ['MENDESAK', 'PERLU_DITINDAK'] as const;
@@ -29,22 +26,6 @@ export type ProgramAttentionItem = {
 	alasan: string;
 	severitas: ProgramAttentionSeverity;
 };
-
-export type ProgramActivityKind = 'BAB' | 'DOKUMEN';
-
-export type ProgramActivity = {
-	kind: ProgramActivityKind;
-	/** ISO. */
-	waktu: string;
-	judul: string;
-	keterangan: string;
-};
-
-/** Berapa banyak baris yang muat di panel sebelum sisanya diringkas. */
-export const MAX_PROGRAM_ATTENTION_SHOWN = 5;
-
-/** Berapa banyak jejak aktivitas yang ditampilkan. */
-export const MAX_PROGRAM_ACTIVITY_SHOWN = 4;
 
 /**
  * Hal-hal yang menghambat kesiapan akreditasi prodi ini, terurut dari yang
@@ -166,45 +147,4 @@ export function buildProgramAttention({
 	);
 
 	return [...mendesak, ...perluDitindak, ...bab];
-}
-
-/**
- * Jejak "penyusunan ini masih bergerak atau mandek": bab-bab yang terakhir
- * disimpan, ditutup penanda kapan penyusunannya dimulai. Terbaru di atas.
- *
- * Cakupannya sengaja **hanya dokumen yang sedang disusun**. Waktu unggah bukti
- * dukung dulunya ikut di sini, tapi bukti dukung tidak terikat ke satu Dokumen
- * LED (§5.2) sehingga entri lintas penyusunan itu membuat daftar ini seolah
- * bicara tentang pekerjaan sekarang padahal tidak — jejaknya kini tinggal di
- * panel Bukti Dukung Prodi.
- */
-export function buildProgramActivity({
-	penyusunanAktif,
-	chapters,
-	maxBab = MAX_PROGRAM_ACTIVITY_SHOWN - 1,
-}: {
-	penyusunanAktif: LedProjectEntity | null;
-	chapters: ChapterEntity[];
-	maxBab?: number;
-}): ProgramActivity[] {
-	if (!penyusunanAktif) return [];
-
-	const activities: ProgramActivity[] = pickRecentChapterSaves(
-		chapters,
-		maxBab,
-	).map((chapter) => ({
-		kind: 'BAB',
-		waktu: chapter.terakhirDisimpan!,
-		judul: `Bab ${chapter.urutanBab}. ${chapter.judulBab}`,
-		keterangan: 'Disimpan',
-	}));
-
-	activities.push({
-		kind: 'DOKUMEN',
-		waktu: penyusunanAktif.createdAt,
-		judul: penyusunanAktif.judul,
-		keterangan: 'Penyusunan dimulai',
-	});
-
-	return activities;
 }
