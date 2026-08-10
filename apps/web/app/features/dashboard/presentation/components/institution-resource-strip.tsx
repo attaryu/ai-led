@@ -17,7 +17,7 @@ import { formatRelativeTime } from '~/core/lib/format-time';
 import { type InstitutionResources } from '../../domain/entities/institution-readiness.entity';
 
 /**
- * Blok D Dashboard Utama (docs/application_flow.md §4.0d) — bekal yang berlaku
+ * Dashboard Utama §4.0d (docs/application_flow.md) — bekal yang berlaku
  * **lintas penyusunan**, karena itu berdiri di luar baris ringkasan dokumen
  * yang sedang disusun dan menyebut kerangka waktunya sendiri.
  */
@@ -39,8 +39,9 @@ export function InstitutionResourceStrip({
 	const { evidenceTenant, prodiTanpaPenyusun } = sumberDaya;
 	const belumSiap = evidenceTenant.menunggu + evidenceTenant.diproses;
 
-	// Penyebutnya total prodi, sama dengan kartu Prodi Sedang Menyusun di §4.0b,
-	// supaya dua persen di halaman yang sama tidak diam-diam mengukur hal berbeda.
+	// Penyebutnya total prodi, sama dengan hitungan "n dari m prodi sedang
+	// menyusun" di subjudul §4.0c, supaya dua angka di halaman yang sama tidak
+	// diam-diam mengukur hal berbeda.
 	const persenTanpaPenyusun =
 		totalProdi === 0 ? 0 : Math.round((prodiTanpaPenyusun / totalProdi) * 100);
 

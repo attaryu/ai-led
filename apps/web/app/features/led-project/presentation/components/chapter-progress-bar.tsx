@@ -1,3 +1,8 @@
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from '~/core/components/ui/tooltip';
 import { cn } from '~/core/lib/utils';
 import {
 	chapterProgressLabels,
@@ -23,7 +28,7 @@ const segmentStyles: Record<ChapterProgress, string> = {
 
 /**
  * Pembagian bab satu Dokumen LED dalam satu bar (docs/application_flow.md
- * §5.1b).
+ * §5.1b, §4.0c).
  *
  * Dipakai di Dashboard Prodi sebagai ganti empat kartu angka: pertanyaan di
  * lapis prodi hanya "sejauh apa dokumennya berjalan", dan satu bidang yang
@@ -34,12 +39,20 @@ const segmentStyles: Record<ChapterProgress, string> = {
  * Angkanya diambil dari `summary.perStatus` — bukan dari `terisi`/`terkunci`
  * yang boleh tumpang tindih — karena bar bertumpuk hanya jujur bila segmennya
  * saling lepas dan totalnya persis jumlah bab.
+ *
+ * Tiap segmen adalah tombol pemicu tooltip, bukan `div` mati. Di dalam sel tabel
+ * (§4.0c) legendanya tidak muat, jadi tooltip itulah satu-satunya cara warna
+ * menyebutkan namanya — dan karena pemicunya tombol sungguhan, keterangannya
+ * juga terjangkau keyboard, bukan hanya kursor.
  */
 export function ChapterProgressBar({
 	summary,
+	showLegend = true,
 	className,
 }: {
 	summary: ChapterSummary;
+	/** Dimatikan di dalam sel tabel yang tidak punya ruang untuk legenda. */
+	showLegend?: boolean;
 	className?: string;
 }) {
 	const { total, perStatus } = summary;
@@ -70,13 +83,32 @@ export function ChapterProgressBar({
 				aria-valuemax={100}
 				aria-label="Kelengkapan bab"
 			>
-				{terpakai.map((status) => (
-					<div
-						key={status}
-						className={segmentStyles[status]}
-						style={{ width: `${(perStatus[status] / total) * 100}%` }}
-					/>
-				))}
+				{terpakai.map((status) => {
+					const jumlah = perStatus[status];
+					const persen = Math.round((jumlah / total) * 100);
+
+					return (
+						<Tooltip key={status}>
+							{/*
+							 * `TooltipTrigger` Base UI merender `<button>`, jadi lebarnya
+							 * harus tetap menempel di pemicu itu sendiri supaya pembagian
+							 * flex-nya bertahan, dan gaya bawaan tombol perlu dinolkan agar
+							 * segmennya tetap setipis bar.
+							 */}
+							<TooltipTrigger
+								aria-label={`${chapterProgressLabels[status]}: ${jumlah} bab`}
+								className={cn(
+									'block h-full cursor-default border-0 p-0',
+									segmentStyles[status],
+								)}
+								style={{ width: `${(jumlah / total) * 100}%` }}
+							/>
+							<TooltipContent>
+								{chapterProgressLabels[status]} — {jumlah} bab ({persen}%)
+							</TooltipContent>
+						</Tooltip>
+					);
+				})}
 			</div>
 
 			{/*
@@ -84,21 +116,23 @@ export function ChapterProgressBar({
 			 * terkunci" tidak menambah apa pun yang tidak sudah terbaca dari bar, dan
 			 * legenda yang selalu empat baris justru menenggelamkan yang berubah.
 			 */}
-			<ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-				{terpakai.map((status) => (
-					<li key={status} className="flex items-center gap-1.5">
-						<span
-							aria-hidden
-							className={cn(
-								'size-2 shrink-0 rounded-full',
-								segmentStyles[status],
-							)}
-						/>
-						<span className="tabular-nums">{perStatus[status]}</span>
-						{chapterProgressLabels[status].toLowerCase()}
-					</li>
-				))}
-			</ul>
+			{showLegend && (
+				<ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+					{terpakai.map((status) => (
+						<li key={status} className="flex items-center gap-1.5">
+							<span
+								aria-hidden
+								className={cn(
+									'size-2 shrink-0 rounded-full',
+									segmentStyles[status],
+								)}
+							/>
+							<span className="tabular-nums">{perStatus[status]}</span>
+							{chapterProgressLabels[status].toLowerCase()}
+						</li>
+					))}
+				</ul>
+			)}
 		</div>
 	);
 }

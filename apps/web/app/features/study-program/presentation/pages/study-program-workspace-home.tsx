@@ -37,9 +37,10 @@ import { useProgramReadiness } from '../hooks/use-program-readiness';
  * hanya membuat halaman ini jadi salinan lapis di bawahnya. Yang tersisa cuma
  * satu bar: cukup untuk tahu dokumennya bergerak atau tidak.
  *
- * Aturan "prodi ini tersendat di mana" sendiri tetap hidup di
- * `program-readiness.entity.ts` — pembacanya sekarang Dashboard Utama (§4.0c),
- * yang memang bertugas membandingkan prodi satu sama lain.
+ * Aturan "prodi ini tersendat di mana" yang dulu menggerakkan panel itu sudah
+ * dihapus seluruhnya: sejak §4.0c dipecah jadi dua tabel, pemicunya berubah jadi
+ * bentuk halaman — tabel Perlu Segera Disusun, kolom tenggat yang merah — bukan
+ * lagi angka yang perlu dijumlahkan.
  *
  * Berbeda dari versi sebelumnya, halaman ini **punya** aksi ubah data — ubah dan
  * hapus Dokumen LED di tabel riwayat. Sesuai §1 keduanya tidak dirender sama

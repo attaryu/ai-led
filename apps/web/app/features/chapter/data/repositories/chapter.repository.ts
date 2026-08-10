@@ -535,8 +535,7 @@ export const chapterRepository = {
 		this.save(
 			all.map((chapter) => (chapter.id === chapterId ? updated : chapter)),
 		);
-		// Catatan menggerakkan panel Perlu Perhatian §6.1 sekaligus kolom senama di
-		// tabel risiko Dashboard Utama.
+		// Catatan menggerakkan panel Perlu Perhatian §6.1.
 		this.notify();
 		return updated;
 	},

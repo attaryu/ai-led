@@ -1,5 +1,4 @@
 import {
-	pickChaptersNeedingAttention,
 	summarizeChapters,
 	type ChapterEntity,
 	type ChapterSummary,
@@ -12,13 +11,10 @@ import {
 import {
 	deriveDeadline,
 	pickPenyusunanAktif,
+	type DeadlineUrgency,
 	type LedProjectEntity,
 	type ProjectDeadline,
 } from '~/features/led-project/domain/entities/led-project.entity';
-import {
-	buildProgramAttention,
-	type ProgramAttentionItem,
-} from '~/features/study-program/domain/entities/program-readiness.entity';
 import {
 	deriveAccreditationValidity,
 	peringkatAkreditasiEnum,
@@ -34,18 +30,17 @@ import { type UserEntity } from '~/features/users/domain/entities/user.entity';
  * Berkas ini **tidak menuliskan satu pun aturan hitung baru**. Seluruhnya
  * memanggil ulang fungsi domain yang sudah dipakai Dashboard Prodi dan Dashboard
  * Project LED — `summarizeChapters`, `summarizeEvidence`,
- * `pickPenyusunanAktif`, `buildProgramAttention`, `deriveDeadline`,
- * `deriveAccreditationValidity` —
+ * `pickPenyusunanAktif`, `deriveDeadline`, `deriveAccreditationValidity` —
  * persis seperti yang dijanjikan komentar masing-masing fungsi itu. Menyalin
  * aturannya ke sini akan membuat angka institusi perlahan menyimpang dari angka
  * prodi, dan dua dashboard yang menyebut hal sama dengan angka berbeda lebih
  * buruk daripada tidak punya dashboard institusi sama sekali.
  *
- * Yang benar-benar baru di sini hanya cara **mengagregasi** dan cara
- * **mengurutkan** baris.
+ * Yang benar-benar baru di sini hanya cara **membagi** prodi ke dua tabel dan
+ * cara **mengurutkan** masing-masing.
  */
 
-/** Satu prodi sebagai satu baris di tabel perbandingan (§4.0c). */
+/** Satu prodi sebagai satu baris di salah satu tabel §4.0c. */
 export type ProgramReadinessRow = {
 	program: StudyProgramEntity;
 	/** `null` bila prodi belum pernah terakreditasi — bukan berarti kedaluwarsa. */
@@ -55,13 +50,10 @@ export type ProgramReadinessRow = {
 	chapterSummary: ChapterSummary;
 	/** `null` bila belum menyusun, atau penyusunannya tidak dipatok tenggat. */
 	tenggat: ProjectDeadline | null;
-	attention: ProgramAttentionItem[];
-	mendesak: number;
-	perluDitindak: number;
 };
 
 /**
- * Blok A — capaian akreditasi yang sudah disahkan (kerangka waktu: masa lalu).
+ * §4.0a — capaian akreditasi yang sudah disahkan (kerangka waktu: masa lalu).
  *
  * Disajikan sebagai **distribusi**, bukan rata-rata: peringkat itu ordinal, dan
  * merata-ratakan Unggul dengan Baik menghasilkan angka yang tidak berarti apa
@@ -80,33 +72,34 @@ export type InstitutionAccreditation = {
 	kedaluwarsa: number;
 	/** Prodi yang masa berlakunya tersisa ≤ 365 hari. */
 	mendekati: number;
+	/**
+	 * Prodi dengan masa berlaku terpendek lebih dulu, dipotong
+	 * {@link MAX_ACCREDITATION_EXPIRY_SHOWN}.
+	 *
+	 * Angka `kedaluwarsa` dan `mendekati` di atas menjawab "berapa banyak";
+	 * daftar ini menjawab "kapan, dan untuk prodi yang mana".
+	 */
+	terdekatBerakhir: AccreditationExpiry[];
 };
+
+/** Berapa banyak prodi yang muat di daftar masa berlaku sebelum sisanya dipotong. */
+export const MAX_ACCREDITATION_EXPIRY_SHOWN = 5;
 
 /**
- * Blok B — usaha yang sedang berjalan (kerangka waktu: sekarang).
+ * Satu prodi di daftar masa berlaku terdekat (§4.0a).
  *
- * Seluruh angka di sini **hanya milik dokumen yang sedang disusun**. Peringkat
- * akreditasi dan akumulasi lintas penyusunan tidak boleh ikut: itu kesalahan
- * yang sudah pernah dibuat dan diperbaiki di Dashboard Prodi (§5.1, catatan di
- * PRD §3.8).
+ * Sengaja tidak membawa keadaan penyusunannya. Daftar ini menjawab "kapan masa
+ * berlaku kami berakhir" untuk **seluruh** prodi yang punya masa berlaku;
+ * pertanyaan "siapa yang harus mulai sekarang" dijawab tabel Perlu Segera
+ * Disusun (§4.0c), lengkap dengan tombolnya. Menjawabnya di dua tempat membuat
+ * pembaca menebak-nebak mana yang mengikat.
  */
-export type InstitutionDrafting = {
-	totalProdi: number;
-	prodiMenyusun: number;
-	/** 0–100; berapa banyak prodi yang sedang menyusun dokumen. */
-	persenProdiMenyusun: number;
-	babTotal: number;
-	babTerisi: number;
-	babTerkunci: number;
-	/** Bab yang diajukan Penyusun dan belum direspons Penjamin Mutu (§12.2). */
-	babMenungguReview: number;
-	persenKelengkapan: number;
-	persenKesiapanReview: number;
-	tenggatLewat: number;
-	tenggatDekat: number;
+export type AccreditationExpiry = {
+	program: StudyProgramEntity;
+	validity: AccreditationValidity;
 };
 
-/** Blok D — bekal prodi yang berlaku lintas penyusunan. */
+/** §4.0d — bekal prodi yang berlaku lintas penyusunan. */
 export type InstitutionResources = {
 	/** Hanya `ownerTipe = TENANT`, supaya cocok dengan `/dashboard/evidence` (§4.4). */
 	evidenceTenant: EvidenceSummary;
@@ -114,10 +107,20 @@ export type InstitutionResources = {
 };
 
 export type InstitutionReadiness = {
-	/** Sudah terurut: yang paling perlu ditindak di atas. */
+	/** Seluruh prodi, urutan apa adanya. Dipakai agregat, bukan dirender. */
 	rows: ProgramReadinessRow[];
+	/** Tabel pertama §4.0c, sudah terurut {@link compareDraftingUrgency}. */
+	sedangMenyusun: ProgramReadinessRow[];
+	/** Tabel kedua §4.0c, sudah terurut {@link compareAccreditationUrgency}. */
+	perluDisusun: ProgramReadinessRow[];
+	/**
+	 * Prodi yang belum menyusun tapi akreditasinya masih panjang — tidak masuk
+	 * tabel mana pun. Jumlahnya tetap dibawa supaya penjumlahan kedua tabel bisa
+	 * dicocokkan dengan total prodi; tanpa itu, prodi yang hilang dari layar
+	 * terbaca sebagai data yang tidak terhitung.
+	 */
+	belumPerlu: number;
 	akreditasi: InstitutionAccreditation;
-	penyusunan: InstitutionDrafting;
 	sumberDaya: InstitutionResources;
 };
 
@@ -133,8 +136,7 @@ export type InstitutionReadinessInput = {
 	/** Seluruh `DOKUMEN_LED` prodi tersebut, belum dipilah aktif/arsip. */
 	projectsByProgram: Map<string, LedProjectEntity[]>;
 	chaptersByProject: Map<string, ChapterEntity[]>;
-	/** Bukti dukung `owner_tipe = PROGRAM_STUDI` milik prodi tersebut. */
-	evidenceByProgram: Map<string, EvidenceEntity[]>;
+	/** Dipakai menghitung `prodiTanpaPenyusun` (§4.0d), bukan per baris tabel. */
 	penyusunByProgram: Map<string, UserEntity[]>;
 	/** Bukti dukung `owner_tipe = TENANT`, berlaku lintas prodi. */
 	evidenceTenant: EvidenceEntity[];
@@ -156,29 +158,17 @@ export function buildProgramReadinessRows({
 	programs,
 	projectsByProgram,
 	chaptersByProject,
-	evidenceByProgram,
-	penyusunByProgram,
 	now = Date.now(),
-}: Omit<InstitutionReadinessInput, 'evidenceTenant'>): ProgramReadinessRow[] {
+}: Pick<
+	InstitutionReadinessInput,
+	'programs' | 'projectsByProgram' | 'chaptersByProject' | 'now'
+>): ProgramReadinessRow[] {
 	return programs.map((program) => {
 		const { aktif } = pickPenyusunanAktif(
 			projectsByProgram.get(program.id) ?? [],
 		);
 
 		const chapters = aktif ? (chaptersByProject.get(aktif.id) ?? []) : [];
-		const evidenceProdi = summarizeEvidence(
-			evidenceByProgram.get(program.id) ?? [],
-		);
-		const penyusun = penyusunByProgram.get(program.id) ?? [];
-
-		const attention = buildProgramAttention({
-			berlakuSampaiAkreditasi: program.berlakuSampaiAkreditasi,
-			penyusunanAktif: aktif,
-			chapterAttention: pickChaptersNeedingAttention(chapters, now),
-			evidenceProdi,
-			jumlahPenyusun: penyusun.length,
-			now,
-		});
 
 		return {
 			program,
@@ -189,49 +179,75 @@ export function buildProgramReadinessRows({
 			penyusunanAktif: aktif,
 			chapterSummary: summarizeChapters(chapters),
 			tenggat: aktif ? deriveDeadline(aktif.tenggat, now) : null,
-			attention,
-			mendesak: attention.filter((item) => item.severitas === 'MENDESAK').length,
-			perluDitindak: attention.filter(
-				(item) => item.severitas === 'PERLU_DITINDAK',
-			).length,
 		};
 	});
 }
 
+/** Makin kecil makin menekan; penyusunan tanpa tenggat paling belakang. */
+const deadlineRank: Record<DeadlineUrgency, number> = {
+	LEWAT: 0,
+	DEKAT: 1,
+	AMAN: 2,
+};
+
 /**
- * Urutan tabel §4.0c: **paling berisiko di atas**, bukan alfabet.
+ * Urutan tabel **Sedang Menyusun** (§4.0c): yang tenggatnya paling menekan di
+ * atas.
  *
- * Halaman ini dibaca dari atas, jadi hal pertama yang terlihat harus hal yang
- * perlu ditindak. Mengurutkan menurut nama prodi memindahkan pekerjaan mencari
- * "siapa yang tertinggal" kembali ke pembacanya — padahal itulah satu-satunya
- * pertanyaan yang halaman ini ada untuk menjawabnya.
+ * Kedua kuncinya sengaja hanya memakai kolom yang **terlihat** di tabel itu —
+ * tenggat dan kelengkapan bab. Urutan yang bersandar pada angka yang tidak
+ * dirender memaksa pembaca mempercaya begitu saja bahwa barisnya benar; urutan
+ * yang bersandar pada kolomnya sendiri bisa diperiksa dengan mata.
  *
- * Kelengkapan jadi pemutus ketiga supaya prodi yang sama-sama bersih tetap
- * terurut dari yang paling sedikit progresnya; nama prodi jadi pemutus terakhir
- * agar urutannya tidak berubah-ubah antar render.
+ * Penyusunan tanpa tenggat turun paling bawah alih-alih dianggap aman: tidak
+ * dipatok adalah pilihan yang sah (§14), jadi ia tidak boleh mendahului
+ * penyusunan yang tenggatnya nyata — tapi juga tidak boleh terbaca terlambat.
+ * Aturan nulls-last yang sama dipakai `ledProjectRepository.findPaged`.
  */
-export function compareProgramRisk(
+export function compareDraftingUrgency(
 	a: ProgramReadinessRow,
 	b: ProgramReadinessRow,
 ): number {
-	if (a.mendesak !== b.mendesak) return b.mendesak - a.mendesak;
-	if (a.perluDitindak !== b.perluDitindak) {
-		return b.perluDitindak - a.perluDitindak;
+	const urgensiA = a.tenggat ? deadlineRank[a.tenggat.urgensi] : 3;
+	const urgensiB = b.tenggat ? deadlineRank[b.tenggat.urgensi] : 3;
+	if (urgensiA !== urgensiB) return urgensiA - urgensiB;
+
+	if (a.tenggat && b.tenggat && a.tenggat.sisaHari !== b.tenggat.sisaHari) {
+		return a.tenggat.sisaHari - b.tenggat.sisaHari;
 	}
 
-	const kelengkapanA = a.penyusunanAktif
-		? a.chapterSummary.persenKelengkapan
-		: 0;
-	const kelengkapanB = b.penyusunanAktif
-		? b.chapterSummary.persenKelengkapan
-		: 0;
+	const kelengkapanA = a.chapterSummary.persenKelengkapan;
+	const kelengkapanB = b.chapterSummary.persenKelengkapan;
 	if (kelengkapanA !== kelengkapanB) return kelengkapanA - kelengkapanB;
 
 	return a.program.studyProgramName.localeCompare(b.program.studyProgramName);
 }
 
 /**
- * Blok A. Prodi `BELUM_TERAKREDITASI` masuk komposisi sebagai kategorinya
+ * Urutan tabel **Perlu Segera Disusun** (§4.0c): yang paling telat di atas.
+ *
+ * Prodi yang belum pernah terakreditasi ditaruh paling bawah, bukan paling
+ * atas. Ia memang harus menyusun, tapi tidak punya tanggal yang sedang berjalan
+ * — menyelipkannya di antara baris bertanggal memaksa pembaca membandingkan
+ * "belum pernah" dengan "terlambat 39 hari", padahal keduanya tidak sebanding.
+ */
+export function compareAccreditationUrgency(
+	a: ProgramReadinessRow,
+	b: ProgramReadinessRow,
+): number {
+	if (a.akreditasi && b.akreditasi) {
+		if (a.akreditasi.sisaHari !== b.akreditasi.sisaHari) {
+			return a.akreditasi.sisaHari - b.akreditasi.sisaHari;
+		}
+	} else if (a.akreditasi !== b.akreditasi) {
+		return a.akreditasi ? -1 : 1;
+	}
+
+	return a.program.studyProgramName.localeCompare(b.program.studyProgramName);
+}
+
+/**
+ * §4.0a. Prodi `BELUM_TERAKREDITASI` masuk komposisi sebagai kategorinya
  * sendiri dan **tidak** dihitung kedaluwarsa: tidak pernah punya masa berlaku
  * berbeda dari masa berlaku yang sudah habis, dan keduanya tidak boleh
  * ditampilkan dengan cara yang sama (§5.1e).
@@ -271,61 +287,61 @@ export function summarizeInstitutionAccreditation(
 		persenKomposisi,
 		kedaluwarsa,
 		mendekati,
+		// Diisi `buildInstitutionReadiness`, yang sudah punya barisnya.
+		terdekatBerakhir: [],
 	};
 }
 
 /**
- * Blok B, diagregasi sebagai **jumlah bab lintas prodi** — bukan rata-rata
- * persen antar prodi.
+ * Prodi yang masa berlaku akreditasinya paling dekat berakhir, terpendek dulu
+ * (§4.0a).
  *
- * Pertanyaannya "berapa banyak pekerjaan yang sudah jadi", sehingga prodi
- * dengan bab lebih banyak memang harus berbobot lebih. Rata-rata persen
- * memberi bobot sama ke tiap prodi, sehingga satu prodi kecil yang tuntas bisa
- * menutupi prodi besar yang mandek.
- *
- * Prodi yang belum menyusun menyumbang nol ke pembilang **dan** penyebut: ia
- * sudah terhitung di angka `prodiMenyusun`, dan menghitungnya lagi sebagai bab
- * kosong akan menghukum angka kelengkapan dua kali untuk satu keadaan yang sama.
+ * Prodi yang belum pernah terakreditasi **tidak ikut**: tidak punya masa berlaku
+ * bukan masa berlaku yang pendek, dan menaruhnya di daftar ini — di posisi mana
+ * pun — memaksa pembaca membandingkan dua hal yang tidak sebanding (§5.1e). Ia
+ * sudah punya tempatnya sendiri sebagai kategori di komposisi.
  */
-export function summarizeInstitutionDrafting(
+export function pickAccreditationExpiringSoonest(
 	rows: ProgramReadinessRow[],
-): InstitutionDrafting {
-	let prodiMenyusun = 0;
-	let babTotal = 0;
-	let babTerisi = 0;
-	let babTerkunci = 0;
-	let babMenungguReview = 0;
-	let tenggatLewat = 0;
-	let tenggatDekat = 0;
+	limit: number = MAX_ACCREDITATION_EXPIRY_SHOWN,
+): AccreditationExpiry[] {
+	return rows
+		.filter((row) => row.akreditasi !== null)
+		.map((row) => ({ program: row.program, validity: row.akreditasi! }))
+		.sort((a, b) => a.validity.sisaHari - b.validity.sisaHari)
+		.slice(0, limit);
+}
 
-	for (const row of rows) {
-		if (!row.penyusunanAktif) continue;
+export const programDraftingStatusEnum = [
+	'PERLU_SEGERA_MENYUSUN',
+	'SEDANG_MENYUSUN',
+	'BELUM_PERLU',
+] as const;
+export type ProgramDraftingStatus = (typeof programDraftingStatusEnum)[number];
 
-		prodiMenyusun += 1;
-		babTotal += row.chapterSummary.total;
-		babTerisi += row.chapterSummary.terisi;
-		babTerkunci += row.chapterSummary.terkunci;
-		babMenungguReview += row.chapterSummary.menungguReview;
-
-		// Penyusunan tanpa tenggat tidak ikut dihitung berisiko: tidak dipatok
-		// adalah pilihan yang sah (§14), bukan keterlambatan.
-		if (row.tenggat?.urgensi === 'LEWAT') tenggatLewat += 1;
-		if (row.tenggat?.urgensi === 'DEKAT') tenggatDekat += 1;
+/**
+ * Keadaan penyusunan satu prodi — aturan yang membagi prodi ke dua tabel §4.0c.
+ *
+ * `PERLU_SEGERA_MENYUSUN` mencakup **tiga** keadaan yang sama-sama berarti
+ * "harus mulai sekarang": masa berlaku tersisa ≤ 365 hari, masa berlaku sudah
+ * lewat, dan belum pernah terakreditasi sama sekali. Yang ketiga dulu tidak
+ * ikut — `deriveAccreditationValidity(null)` mengembalikan `null` sehingga tidak
+ * ada urgensi yang bisa dihitung — dan akibatnya prodi yang belum pernah
+ * terakreditasi dan belum punya dokumen tidak muncul di tabel mana pun. Itu
+ * keadaan paling awal yang bisa dialami sebuah prodi, bukan keadaan yang aman.
+ *
+ * Ini sekarang **satu-satunya** definisi. Sebelumnya aturan yang sama juga hidup
+ * sebagai pemicu #3 `buildProgramAttention`, dan keduanya harus dijaga sejalan;
+ * mesin atensi itu sudah dihapus bersama kolom yang merendernya.
+ */
+export function deriveProgramDraftingStatus(
+	row: ProgramReadinessRow,
+): ProgramDraftingStatus {
+	if (row.penyusunanAktif) return 'SEDANG_MENYUSUN';
+	if (row.akreditasi === null || row.akreditasi.urgensi !== 'AMAN') {
+		return 'PERLU_SEGERA_MENYUSUN';
 	}
-
-	return {
-		totalProdi: rows.length,
-		prodiMenyusun,
-		persenProdiMenyusun: percent(prodiMenyusun, rows.length),
-		babTotal,
-		babTerisi,
-		babTerkunci,
-		babMenungguReview,
-		persenKelengkapan: percent(babTerisi, babTotal),
-		persenKesiapanReview: percent(babTerkunci, babTotal),
-		tenggatLewat,
-		tenggatDekat,
-	};
+	return 'BELUM_PERLU';
 }
 
 /**
@@ -336,7 +352,6 @@ export function buildInstitutionReadiness({
 	programs,
 	projectsByProgram,
 	chaptersByProject,
-	evidenceByProgram,
 	penyusunByProgram,
 	evidenceTenant,
 	now = Date.now(),
@@ -345,15 +360,37 @@ export function buildInstitutionReadiness({
 		programs,
 		projectsByProgram,
 		chaptersByProject,
-		evidenceByProgram,
-		penyusunByProgram,
 		now,
-	}).sort(compareProgramRisk);
+	});
+
+	// Satu lintasan, tiga ember: tiap prodi masuk tepat satu, sehingga
+	// `sedangMenyusun + perluDisusun + belumPerlu` selalu sama dengan jumlah prodi.
+	const sedangMenyusun: ProgramReadinessRow[] = [];
+	const perluDisusun: ProgramReadinessRow[] = [];
+	let belumPerlu = 0;
+
+	for (const row of rows) {
+		switch (deriveProgramDraftingStatus(row)) {
+			case 'SEDANG_MENYUSUN':
+				sedangMenyusun.push(row);
+				break;
+			case 'PERLU_SEGERA_MENYUSUN':
+				perluDisusun.push(row);
+				break;
+			default:
+				belumPerlu += 1;
+		}
+	}
 
 	return {
 		rows,
-		akreditasi: summarizeInstitutionAccreditation(programs, now),
-		penyusunan: summarizeInstitutionDrafting(rows),
+		sedangMenyusun: sedangMenyusun.sort(compareDraftingUrgency),
+		perluDisusun: perluDisusun.sort(compareAccreditationUrgency),
+		belumPerlu,
+		akreditasi: {
+			...summarizeInstitutionAccreditation(programs, now),
+			terdekatBerakhir: pickAccreditationExpiringSoonest(rows),
+		},
 		sumberDaya: {
 			evidenceTenant: summarizeEvidence(evidenceTenant),
 			prodiTanpaPenyusun: programs.filter(

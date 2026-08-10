@@ -58,14 +58,6 @@ function read(): InstitutionReadiness {
 		 * dashboard dokumennya dibuka — itu memang keadaan sebenarnya.
 		 */
 		chaptersByProject: groupBy(chapters, (chapter) => chapter.ledProjectId),
-		evidenceByProgram: groupBy(
-			evidences.filter(
-				(evidence) =>
-					evidence.ownerTipe === 'PROGRAM_STUDI' &&
-					evidence.studyProgramId !== null,
-			),
-			(evidence) => evidence.studyProgramId!,
-		),
 		penyusunByProgram: groupBy(
 			users.filter(
 				(user) => user.role === 'Penyusun' && Boolean(user.studyProgramId),

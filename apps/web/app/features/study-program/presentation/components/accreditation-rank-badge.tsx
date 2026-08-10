@@ -19,6 +19,30 @@ const rankStyles: Record<PeringkatAkreditasi, string> = {
 		'bg-slate-100 text-slate-800 border-slate-200/50 dark:bg-slate-900/30 dark:text-slate-300 dark:border-slate-800/30',
 };
 
+/**
+ * Warna **isian** untuk mark data — segmen bar komposisi di §4.0a. Keluarga
+ * warnanya sama dengan badge di atas supaya satu peringkat selalu berwarna sama
+ * di seluruh aplikasi, tapi nuansanya 600, bukan 100: badge menampung teks di
+ * dalamnya sehingga latarnya harus pucat, sedangkan pada bar justru bidangnya
+ * yang harus terbaca. Preseden yang sama dipakai `chapter-progress-bar.tsx`.
+ *
+ * Ketiga warna peringkat sudah **dihitung**, bukan ditaksir: lolos seluruh
+ * pemeriksaan palet kategorikal (pita lightness, lantai chroma, keterpisahan
+ * buta warna ΔE 16.1 protan, lantai penglihatan normal ΔE 16.9, kontras ≥ 3:1)
+ * pada surface kartu terang maupun gelap.
+ *
+ * Slot keempat sengaja abu-abu netral, bukan warna keempat:
+ * `BELUM_TERAKREDITASI` adalah **ketiadaan** peringkat, dan memberinya identitas
+ * warna sendiri membuatnya terbaca sebagai capaian keempat — persis alasan
+ * `BELUM_DIISI` diperlakukan sama di bar kelengkapan bab.
+ */
+export const accreditationRankFills: Record<PeringkatAkreditasi, string> = {
+	UNGGUL: 'bg-emerald-600',
+	BAIK_SEKALI: 'bg-sky-600',
+	BAIK: 'bg-amber-600',
+	BELUM_TERAKREDITASI: 'bg-muted-foreground/25',
+};
+
 /** `PROGRAM_STUDI.peringkat_akreditasi` (docs/application_flow.md §5.1). */
 export function AccreditationRankBadge({
 	peringkat,
