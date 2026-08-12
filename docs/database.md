@@ -149,6 +149,7 @@ Ini adalah tabel identitas — menentukan siapa yang login, dan lewat kolom `rol
 | `email` | string | Digunakan untuk login |
 | `password_hash` | string | Kata sandi terenkripsi |
 | `role` | string | `ADMIN` \| `PIMPINAN` \| `PENJAMIN_MUTU` \| `PENYUSUN` |
+| `dibuat_pada` | datetime | Waktu akun dibuat; ditampilkan di tabel Manajemen User |
 
 ### Penjelasan Role (final)
 
@@ -192,6 +193,7 @@ Prodi adalah unit pemisah ruang kerja utama di bawah tenant — `PENYUSUN` hanya
 | `peringkat_akreditasi` | string | `UNGGUL` \| `BAIK_SEKALI` \| `BAIK` \| `BELUM_TERAKREDITASI` — peringkat yang sedang berlaku |
 | `nomor_sk_akreditasi` | string (nullable) | Nomor SK peringkat yang berlaku; kosong bila belum terakreditasi |
 | `berlaku_sampai_akreditasi` | date (nullable) | Akhir masa berlaku; kosong bila belum terakreditasi |
+| `dibuat_pada` | datetime | Waktu prodi didaftarkan; dipakai sebagai kolom urut di tabel Manajemen Program Studi |
 
 > **Catatan desain — kenapa identitas akreditasi ada di sini.** Enam kolom terakhir ditambahkan bersama Dashboard Prodi (`docs/application_flow.md` §5.1). Sebelumnya `PROGRAM_STUDI` hanya menyimpan `nama`, sehingga halaman level prodi tidak punya bahan untuk bicara tentang prodinya sendiri dan mau tak mau kembali jadi daftar dokumen.
 >
@@ -231,6 +233,7 @@ Ini adalah "pintu masuk" ke ruang kerja khusus — begitu user mengklik salah sa
 | `tahun_akademik` | string | Contoh: "2026/2027" |
 | `status_keseluruhan` | string | `DRAFT` \| `REVIEW` \| `SELESAI` — status agregat seluruh dokumen |
 | `tenggat` | date (nullable) | Target internal kapan dokumen ini harus selesai; kosong berarti tidak dipatok |
+| `dibuat_pada` | datetime | Waktu dokumen dibuat; dipakai sebagai kolom urut di daftar Dokumen LED |
 
 > **Catatan desain — tenggat di dokumen, bukan di prodi.** PRD §3.1 menyebut "tenggat waktu (opsional)" tapi tidak pernah menetapkan tempatnya. Diletakkan di sini karena masa berlaku akreditasi prodi jaraknya tahunan dan tidak berubah tiap siklus, sedangkan yang mendorong kerja sehari-hari adalah target penyelesaian dokumen yang sedang berjalan — dua hal berbeda yang keduanya tetap ditampilkan berdampingan di Dashboard Prodi (§5.1).
 >
