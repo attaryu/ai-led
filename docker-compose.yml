@@ -2,8 +2,8 @@ services:
   backend:
     build:
       context: ./backend
-      args:
-        HF_TOKEN: ${HF_TOKEN:-}
+      secrets:
+        - hf_token
     ports:
       - "8000:8000"
     volumes:
@@ -30,3 +30,7 @@ services:
       - BACKEND_URL=http://backend:8000
     depends_on:
       - backend
+
+secrets:
+  hf_token:
+    environment: HF_TOKEN
