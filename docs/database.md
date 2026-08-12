@@ -68,7 +68,7 @@ KELOMPOK PANDUAN REFERENSI (master data global, di-seed sekali, lintas tenant)
 PANDUAN_REFERENSI ── PANDUAN_DETAIL ── PANDUAN_DETAIL_BAB (nomor bab standar)
 ```
 
-Berikut dokumentasi setiap tabel, dikelompokkan dan diurutkan dari entitas tertinggi ke turunannya.
+Berikut dokumentasi setiap tabel, dikelompokkan dan diurutkan dari entitas tertinggi ke turunannya. Untuk melihat relasinya sekilas tanpa membaca seluruh dokumen ini, ada diagram di [`database-erd.md`](./database-erd.md).
 
 ### Konvensi: menyimpan nama, bukan hanya id
 
