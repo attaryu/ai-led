@@ -17,6 +17,7 @@
    - [BUKTI_DUKUNG_DRAFT](#9-bukti_dukung_draft)
 5. [Kelompok: Skoring (Simulasi Penilaian)](#kelompok-skoring-simulasi-penilaian)
    - [RUBRIK_KRITERIA](#10-rubrik_kriteria)
+   - [RUBRIK_LEVEL](#10a-rubrik_level)
    - [RUBRIK_KRITERIA_BAB](#11-rubrik_kriteria_bab)
    - [HASIL_SKOR_KRITERIA](#12-hasil_skor_kriteria)
    - [Skor RAGAS — belum punya tempat di skema ini](#12a-skor-ragas--belum-punya-tempat-di-skema-ini)
@@ -68,6 +69,14 @@ PANDUAN_REFERENSI ── PANDUAN_DETAIL ── PANDUAN_DETAIL_BAB (nomor bab sta
 ```
 
 Berikut dokumentasi setiap tabel, dikelompokkan dan diurutkan dari entitas tertinggi ke turunannya.
+
+### Konvensi: menyimpan nama, bukan hanya id
+
+Beberapa tabel menyimpan **nama** di samping foreign key ke sumbernya — `BAB_DRAFT.dibuat_oleh_nama`, `BUKTI_DUKUNG.diunggah_oleh_nama`, `HASIL_SKOR_KRITERIA.dijalankan_oleh_nama`, serta `nama_dokumen`/`tipe_file` di `BUKTI_DUKUNG_BAB` dan `BUKTI_DUKUNG_DRAFT`. Ini disengaja, bukan kelalaian normalisasi.
+
+Alasannya satu: **tabel-tabel itu arsip.** Gunanya justru menjawab "bab ini dulu disusun dari berkas apa, oleh siapa" bertahun kemudian saat diperiksa asesor. Kalau yang tersimpan cuma id, satu penghapusan user atau berkas membuat seluruh jejaknya berhenti bisa dibaca — tidak ada tempat lain di sistem yang masih tahu namanya.
+
+Yang **tidak** ikut disalin: nilai yang berubah sepanjang umur entitasnya (`ukuran_bytes`, `status_ekstraksi`, role user). Menyalin itu berarti mengarsipkan keadaan yang langsung basi. Yang diarsipkan hanya **identitas**; keadaan terkini dibaca langsung dari sumbernya saat ditampilkan.
 
 ### Dua kelompok tambahan: skema yang sudah berjalan di prototipe
 
@@ -262,6 +271,7 @@ Ini adalah **kondisi aktif/terkini** dari sebuah bab — semua yang sedang diker
 | `catatan_oleh_nama` | string (nullable) | Nama penulis catatan terakhir. **Denormalisasi**, bukan FK, dengan alasan yang sama seperti `BAB_DRAFT.dibuat_oleh_nama`: catatan harus tetap terbaca setelah usernya dihapus |
 | `catatan_pada` | datetime (nullable) | Waktu catatan terakhir ditulis. Bersama kolom di atas selalu bergerak mengikuti `catatan_penjamin_mutu` — ketiganya ikut dikosongkan saat catatan dicabut |
 | `diajukan_review_pada` | datetime (nullable) | Kapan Penyusun menyatakan bab ini siap direview (§12.3); `null` berarti tidak sedang diantrekan. Selama terisi, **seluruh** `PENYUSUN` tidak bisa mengubah isinya — termasuk yang mengajukan — sementara `PENJAMIN_MUTU` tetap bisa. Dikosongkan otomatis begitu Penjamin Mutu merespons: mengunci bab, atau menulis `catatan_penjamin_mutu`. **Tanpa kolom pengaju** — pembekuannya berlaku untuk peran, bukan satu user, jadi tidak ada `user_id` yang perlu dibandingkan |
+| `ragas` | jsonb (nullable) | Skor RAGAS kondisi aktif, bentuknya sesuai §12a. `null` bila isi bab tidak lahir dari generate. Ditimpa tiap generate |
 | `terakhir_disimpan` | datetime | Waktu autosave terakhir |
 
 ### Relasi
@@ -300,6 +310,8 @@ Ini adalah "titik pulih" — daftar riwayat versi suatu bab yang bisa ditinjau u
 | `konten_snapshot` | jsonb | Salinan `konten_kerja` pada saat checkpoint dibuat; **tidak pernah berubah** setelahnya |
 | `sumber` | string | `AI` \| `MANUAL` — menandai apakah checkpoint ini hasil generate AI atau disimpan manual oleh user |
 | `referensi_chunk_ids` | text | Opsional; daftar ID *chunk* dari vector database eksternal (RAG) yang menjadi rujukan saat AI menghasilkan konten ini |
+| `dibuat_oleh_nama` | string | Nama pembuat checkpoint. **Denormalisasi**, bukan FK — lihat [catatan konvensi](#konvensi-menyimpan-nama-bukan-hanya-id) |
+| `ragas` | jsonb (nullable) | Salinan permanen skor RAGAS saat checkpoint dibuat, bentuknya sesuai §12a. `null` bila isi yang di-snapshot memang tidak pernah dinilai |
 | `dibuat_pada` | datetime | Waktu checkpoint dibuat |
 
 ### Relasi
@@ -342,6 +354,7 @@ Ini adalah "perpustakaan" bukti — dikelola di dua tempat berbeda sesuai leveln
 | `status_ekstraksi` | string | `MENUNGGU` \| `DIPROSES` \| `SIAP` \| `GAGAL` — tahap pipeline ekstraksi teks/OCR (PRD §3.3). Bukti dukung baru bisa dipakai sebagai konteks AI setelah `SIAP` |
 | `catatan_gagal` | string (nullable) | Alasan singkat saat `status_ekstraksi = GAGAL`, ditampilkan ke user beserta tombol coba lagi |
 | `diunggah_oleh_user_id` | string (FK) | User yang mengunggah; dipakai jejak audit (PRD §2.1) sekaligus penentu hak hapus bagi `PENYUSUN` |
+| `diunggah_oleh_nama` | string | Nama pengunggah. **Denormalisasi**, bukan FK — lihat [catatan konvensi](#konvensi-menyimpan-nama-bukan-hanya-id) |
 | `waktu_diunggah` | datetime | Waktu file diunggah |
 
 > **Catatan desain — unggahan lewat presigned URL.** Berkas tidak melewati server aplikasi: frontend meminta presigned URL ke backend, mengunggah langsung ke R2, lalu melapor balik. Baris `BUKTI_DUKUNG` baru dibuat pada langkah pelaporan itu — dengan `status_ekstraksi = MENUNGGU` — sehingga tidak ada baris menggantung untuk unggahan yang gagal di tengah jalan. Unggahan bersifat batch (banyak berkas sekaligus), tapi tiap berkas berdiri sendiri: satu berkas gagal tidak menggugurkan sisanya.
@@ -377,6 +390,8 @@ Isi tabel ini mencerminkan "apa yang sedang dijadikan rujukan saat ini" untuk ba
 | `id` | string (PK) | Identitas unik baris relasi |
 | `bukti_dukung_id` | string (FK) | Bukti dukung yang dikaitkan |
 | `bab_dokumen_id` | string (FK) | Bab yang dikaitkan |
+| `nama_dokumen` | string | Nama berkas saat rujukan dibuat. **Denormalisasi** — lihat [catatan konvensi](#konvensi-menyimpan-nama-bukan-hanya-id) |
+| `tipe_file` | string | Ekstensi huruf kecil (`pdf`, `xlsx`, …), untuk ikon dan keterangan arsip |
 
 ### Relasi
 - Menghubungkan satu `BUKTI_DUKUNG` ke satu `BAB_DOKUMEN`, dengan kardinalitas many-to-many secara keseluruhan.
@@ -402,6 +417,8 @@ Ini adalah bagian dari "arsip" satu checkpoint — memungkinkan user melihat kem
 | `id` | string (PK) | Identitas unik baris relasi |
 | `bukti_dukung_id` | string (FK) | Bukti dukung yang dipakai sebagai sumber |
 | `bab_draft_id` | string (FK) | Checkpoint yang dihasilkan dari bukti dukung tersebut |
+| `nama_dokumen` | string | Nama berkas saat checkpoint dibuat. **Denormalisasi** — lihat [catatan konvensi](#konvensi-menyimpan-nama-bukan-hanya-id) |
+| `tipe_file` | string | Ekstensi huruf kecil (`pdf`, `xlsx`, …), untuk ikon dan keterangan arsip |
 
 ### Relasi
 - Menghubungkan satu `BUKTI_DUKUNG` ke satu `BAB_DRAFT`, many-to-many secara keseluruhan.
@@ -429,7 +446,7 @@ User (Penjamin Mutu atau Penyusun) tidak mengelola tabel ini langsung — mereka
 | `id` | string (PK) | Identitas unik kriteria |
 | `kode_kriteria` | string | Kode sesuai rubrik asli, misal "C1", "4.1a" |
 | `deskripsi` | string | Bunyi kriteria/pertanyaan penilaian |
-| `skor_maksimal` | int | Skor tertinggi yang mungkin didapat untuk kriteria ini (bisa berbeda tiap kriteria) |
+| `skor_maksimal` | int | ⚠️ **Jangan dibuat saat implementasi.** Skor tertinggi untuk kriteria ini — sudah bisa diturunkan dari `RUBRIK_LEVEL`, alasannya di catatan bawah |
 
 > **Celah yang ditemukan saat tab Rubrik dibangun — `level_skor` belum ada.**
 >
@@ -442,12 +459,44 @@ User (Penjamin Mutu atau Penyusun) tidak mengelola tabel ini langsung — mereka
 > Skala 1–4 yang dipakai seluruh kriteria contoh **bukan** aturan sistem: bentuknya tetap mengizinkan kriteria dengan jumlah level berbeda, sesuai kalimat "bisa berbeda tiap kriteria" di baris `skor_maksimal`.
 
 ### Relasi
+- Satu kriteria dipecah menjadi beberapa `RUBRIK_LEVEL` — satu baris per level skor.
 - Satu kriteria dapat berlaku untuk banyak nomor bab lewat `RUBRIK_KRITERIA_BAB`.
 - Satu kriteria dapat memiliki banyak `HASIL_SKOR_KRITERIA` (satu per setiap kali bab/checkpoint disimulasikan).
 
 ### Fitur terkait
 - **Sumber acuan simulasi skor**: saat user menjalankan simulasi pada suatu bab, sistem mengambil semua `RUBRIK_KRITERIA` yang terkait dengan nomor bab tersebut (lewat `RUBRIK_KRITERIA_BAB`), lalu meminta AI menilai `konten_kerja`/`konten_snapshot` bab terhadap tiap kriteria itu.
 - **Bab tanpa kriteria = tidak ada hasil skor**: jika suatu nomor bab tidak punya baris terkait di `RUBRIK_KRITERIA_BAB`, maka simulasi skor untuk bab itu otomatis kosong/tidak berlaku.
+
+---
+
+## 10a. RUBRIK_LEVEL
+
+### Deskripsi
+Pemecahan `RUBRIK_KRITERIA` menjadi level-level skornya — satu baris per level. Inilah yang menjawab "apa bedanya skor 3 dan skor 4 untuk kriteria ini", pertanyaan yang tidak bisa dijawab kalau yang tersimpan hanya angka tertingginya.
+
+Tabel ini adalah formalisasi dari celah yang dicatat di `RUBRIK_KRITERIA` — di kode ia sudah ada sebagai larik `levelSkor` pada `RubricCriterion` (`features/chapter/domain/entities/rubric-criterion.entity.ts`), tinggal dinormalisasi saat masuk basis data. Polanya sejajar `PANDUAN_REFERENSI` → `PANDUAN_DETAIL`.
+
+### Konteks pengguna
+Isi tabel inilah yang tampil di tab Rubrik (`docs/application_flow.md` §9.1): tiap kriteria dibentangkan level demi level, supaya penyusun tahu apa yang harus dipenuhi untuk naik satu tingkat, bukan cuma melihat skor akhirnya.
+
+### Kolom
+
+| Kolom | Tipe | Keterangan |
+|---|---|---|
+| `id` | string (PK) | Identitas unik baris level |
+| `kriteria_id` | string (FK) | Kriteria induk → `RUBRIK_KRITERIA` |
+| `skor` | int | Nilai level ini, misal 1, 2, 3, 4 |
+| `deskripsi` | text | Bunyi level tersebut — apa yang harus dipenuhi untuk mendapat skor ini |
+
+Constraint: `UNIQUE(kriteria_id, skor)` — satu kriteria tidak boleh punya dua level dengan angka sama.
+
+### Relasi
+- Banyak `RUBRIK_LEVEL` dimiliki satu `RUBRIK_KRITERIA`.
+
+### Fitur terkait
+- **Tampilan rubrik per bab**: tab Rubrik menampilkan tiap kriteria beserta seluruh levelnya, diurutkan `skor`.
+- **Skor maksimal dihitung, bukan disimpan**: nilai `skor` tertinggi milik suatu kriteria adalah skor maksimalnya. Menyimpannya terpisah di `RUBRIK_KRITERIA` membuka celah tidak sinkron — misal `skor_maksimal = 5` pada kriteria yang cuma punya empat level, kesalahan yang tidak akan tertangkap siapa pun.
+- **Jumlah level boleh berbeda antar kriteria**: skala 1–4 yang dipakai kriteria contoh bukan aturan sistem.
 
 ---
 
@@ -497,6 +546,7 @@ Inilah yang benar-benar ditampilkan ke user di halaman editor bab: breakdown sko
 | `skor_didapat` | int | Skor yang diberikan untuk kriteria ini pada simulasi tersebut |
 | `justifikasi` | text | Opsional, alasan/narasi kenapa mendapat skor segini (misal dari AI) |
 | `dijalankan_oleh_user_id` | string (FK) | User yang menjalankan simulasi |
+| `dijalankan_oleh_nama` | string | Nama penjalan simulasi. **Denormalisasi**, bukan FK — lihat [catatan konvensi](#konvensi-menyimpan-nama-bukan-hanya-id) |
 | `dijalankan_pada` | datetime | Waktu simulasi dijalankan |
 
 ### Relasi
