@@ -1,8 +1,11 @@
 import { Controller, ForbiddenException, Get, Param } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { PrismaService } from '../database/prisma.service';
 import { Protected } from '../tenant/protected.decorator';
 import { CurrentTenant } from '../tenant/current-tenant.decorator';
 
+@ApiTags('tenants')
+@ApiBearerAuth()
 @Protected()
 @Controller('tenants')
 export class TenantsController {
