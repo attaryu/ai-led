@@ -1,8 +1,16 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { Prisma, PrismaClient } from '@ai-led/db';
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(PrismaService.name);
 
   constructor() {
@@ -15,7 +23,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     await this.$connect();
 
     this.$on('query' as never, (event: Prisma.QueryEvent) => {
-      this.logger.debug(`${event.query} +${event.params} (${event.duration}ms)`);
+      this.logger.debug(
+        `${event.query} +${event.params} (${event.duration}ms)`,
+      );
     });
   }
 
