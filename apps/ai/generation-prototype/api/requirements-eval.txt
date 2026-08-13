@@ -1,0 +1,12 @@
+# Paket eval — install on-demand sebelum jalankan scripts/evaluate.py.
+# Berat (~2 GB) jadi sengaja TIDAK di-bake ke image utama.
+#
+# Install:
+#   docker compose run --rm api pip install -r /app/requirements-eval.txt
+
+rouge-score==0.1.2
+nltk==3.9.1
+ragas==0.2.1
+datasets==3.0.1
+litellm==1.47.0
+langchain-community==0.3.0

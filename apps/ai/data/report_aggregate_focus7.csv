@@ -1,0 +1,4 @@
+model,n,mae,rmse,exact_pct,within1_pct,pearson_r,avg_confidence,avg_runtime_sec,total_runtime_sec,n_errors,n_none
+qwen3.5:35b,7,0.5714,0.7559,42.86,100.0,0.3536,0.7786,30.17,211.2,0,0
+deepseek-r1:32b,7,0.7143,1.2536,57.14,85.71,0.4148,0.7429,68.24,477.7,0,0
+mistral-small3.2:24b,7,1.81,2.153,14.29,42.86,0.3394,0.8786,14.1,98.7,0,0
