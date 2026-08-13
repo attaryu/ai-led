@@ -1,3 +1,10 @@
 /graphify-out/
 /.playwright-mcp/
 /docs/.*
+
+node_modules/
+dist/
+build/
+.env
+.env.*
+!.env.example

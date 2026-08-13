@@ -1,0 +1,579 @@
+// Sumber kebenaran skema: docs/database.md
+// Model & kolom di sini adalah terjemahan langsung dari 15 tabel rancangan (§1-15)
+// + RUBRIK_LEVEL (celah dicatat di §10) + 8 model produksi untuk kelompok
+// prototipe AI-LED / AMI Assessment (§16-21), mengikuti arahan integrasi di
+// docs/database.md "Catatan Integrasi".
+//
+// Keputusan desain yang tidak eksplisit di docs (dijawab di sini, bukan dibiarkan
+// implisit):
+// - RagasScore dinormalisasi jadi tabel sendiri (target_tipe/bab_id/bab_draft_id),
+//   persis usulan §12a — bukan kolom jsonb "ragas" ganda di BabDokumen/BabDraft.
+//   Menghindari dua sumber kebenaran untuk data yang sama.
+// - GenerationRun menyimpan kolom `model`, menutup celah Catatan Integrasi #2
+//   (BAB_DRAFT sebelumnya hanya tahu sumber=AI, bukan AI yang mana).
+// - ReasoningStep.sessionId diberi FK sungguhan ke AssessmentSession (ON DELETE
+//   CASCADE) — Catatan Integrasi #7 menandai ini "perbaikan yang murah", jadi
+//   langsung diperbaiki di sini alih-alih diwariskan.
+// - AssessmentSession disambungkan ke tenant & dokumen (Catatan Integrasi #5).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────── Enums ───────────────────────────
+
+enum Role {
+  ADMIN
+  PIMPINAN
+  PENJAMIN_MUTU
+  PENYUSUN
+}
+
+enum Jenjang {
+  D3
+  D4
+  S1
+  S2
+  S3
+}
+
+enum PeringkatAkreditasi {
+  UNGGUL
+  BAIK_SEKALI
+  BAIK
+  BELUM_TERAKREDITASI
+}
+
+enum StatusDokumen {
+  DRAFT
+  REVIEW
+  SELESAI
+}
+
+enum SumberDraft {
+  AI
+  MANUAL
+}
+
+enum OwnerTipe {
+  TENANT
+  PROGRAM_STUDI
+}
+
+enum StatusEkstraksi {
+  MENUNGGU
+  DIPROSES
+  SIAP
+  GAGAL
+}
+
+enum TargetTipe {
+  BAB_AKTIF
+  BAB_DRAFT
+}
+
+enum TipePanduan {
+  PANDUAN_LAM
+  TEMPLATE_LKPS
+  DOKUMEN_RUBRIK
+}
+
+enum ChatRole {
+  USER
+  ASSISTANT
+}
+
+enum JobType {
+  GENERASI_BAB
+  ASSESSMENT_AMI
+  INGESTION_BUKTI_DUKUNG
+}
+
+enum JobStatus {
+  WAITING
+  ACTIVE
+  COMPLETED
+  FAILED
+}
+
+enum AssessmentStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// ─────────────────── Kelompok: Organisasi & Pengguna ───────────────────
+
+/// docs/database.md §1
+model Tenant {
+  id              String @id @default(cuid())
+  namaUniversitas String @map("nama_universitas")
+
+  users              User[]
+  programStudi       ProgramStudi[]
+  buktiDukung        BuktiDukung[]
+  jobs               Job[]
+  assessmentSessions AssessmentSession[]
+
+  @@map("tenant")
+}
+
+/// docs/database.md §2
+model User {
+  id             String   @id @default(cuid())
+  tenantId       String   @map("tenant_id")
+  programStudiId String?  @map("program_studi_id")
+  namaLengkap    String   @map("nama_lengkap")
+  email          String   @unique
+  passwordHash   String   @map("password_hash")
+  role           Role
+  dibuatPada     DateTime @default(now()) @map("dibuat_pada")
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  programStudi ProgramStudi? @relation(fields: [programStudiId], references: [id])
+
+  babDraftDibuat      BabDraft[]          @relation("BabDraftDibuatOleh")
+  buktiDukungDiunggah BuktiDukung[]       @relation("BuktiDukungDiunggahOleh")
+  hasilSkorDijalankan HasilSkorKriteria[] @relation("HasilSkorDijalankanOleh")
+  chatMessages        ChatMessage[]
+  jobsCreated         Job[]
+  assessmentSessions  AssessmentSession[]
+
+  @@index([tenantId])
+  @@map("user")
+}
+
+/// docs/database.md §3
+model ProgramStudi {
+  id                      String              @id @default(cuid())
+  tenantId                String              @map("tenant_id")
+  nama                    String
+  kode                    String
+  jenjang                 Jenjang
+  fakultas                String
+  ketuaProdi              String              @map("ketua_prodi")
+  peringkatAkreditasi     PeringkatAkreditasi @map("peringkat_akreditasi")
+  nomorSkAkreditasi       String?             @map("nomor_sk_akreditasi")
+  berlakuSampaiAkreditasi DateTime?           @map("berlaku_sampai_akreditasi") @db.Date
+  dibuatPada              DateTime            @default(now()) @map("dibuat_pada")
+
+  tenant      Tenant        @relation(fields: [tenantId], references: [id])
+  users       User[]
+  dokumenLed  DokumenLed[]
+  buktiDukung BuktiDukung[]
+
+  @@index([tenantId])
+  @@map("program_studi")
+}
+
+// ─────────────────────── Kelompok: Dokumen LED ───────────────────────
+
+/// docs/database.md §4
+model DokumenLed {
+  id                String        @id @default(cuid())
+  programStudiId    String        @map("program_studi_id")
+  judul             String
+  tahunAkademik     String        @map("tahun_akademik")
+  statusKeseluruhan StatusDokumen @map("status_keseluruhan")
+  tenggat           DateTime?     @db.Date
+  dibuatPada        DateTime      @default(now()) @map("dibuat_pada")
+
+  programStudi       ProgramStudi        @relation(fields: [programStudiId], references: [id])
+  babDokumen         BabDokumen[]
+  assessmentSessions AssessmentSession[]
+
+  @@index([programStudiId])
+  @@map("dokumen_led")
+}
+
+/// docs/database.md §5
+model BabDokumen {
+  id                  String    @id @default(cuid())
+  dokumenId           String    @map("dokumen_id")
+  urutanBab           Int       @map("urutan_bab")
+  judulBab            String    @map("judul_bab")
+  kontenKerja         Json      @map("konten_kerja")
+  checkpointAktifId   String?   @map("checkpoint_aktif_id")
+  terkunci            Boolean   @default(false)
+  catatanPenjaminMutu String?   @map("catatan_penjamin_mutu") @db.Text
+  catatanOlehNama     String?   @map("catatan_oleh_nama")
+  catatanPada         DateTime? @map("catatan_pada")
+  diajukanReviewPada  DateTime? @map("diajukan_review_pada")
+  terakhirDisimpan    DateTime  @updatedAt @map("terakhir_disimpan")
+
+  dokumen           DokumenLed          @relation(fields: [dokumenId], references: [id])
+  checkpointAktif   BabDraft?           @relation("CheckpointAktif", fields: [checkpointAktifId], references: [id])
+  babDraft          BabDraft[]          @relation("BabDraftOfBab")
+  buktiDukungBab    BuktiDukungBab[]
+  hasilSkorKriteria HasilSkorKriteria[]
+  ragasScores       RagasScore[]
+  chatMessages      ChatMessage[]
+
+  @@unique([dokumenId, urutanBab])
+  @@map("bab_dokumen")
+}
+
+/// docs/database.md §6
+model BabDraft {
+  id                String      @id @default(cuid())
+  babId             String      @map("bab_id")
+  dibuatOlehUserId  String      @map("dibuat_oleh_user_id")
+  versi             Int
+  label             String?
+  kontenSnapshot    Json        @map("konten_snapshot")
+  sumber            SumberDraft
+  referensiChunkIds String?     @map("referensi_chunk_ids") @db.Text
+  dibuatOlehNama    String      @map("dibuat_oleh_nama")
+  dibuatPada        DateTime    @default(now()) @map("dibuat_pada")
+
+  bab             BabDokumen   @relation("BabDraftOfBab", fields: [babId], references: [id])
+  dibuatOleh      User         @relation("BabDraftDibuatOleh", fields: [dibuatOlehUserId], references: [id])
+  checkpointOfBab BabDokumen[] @relation("CheckpointAktif")
+
+  buktiDukungDraft  BuktiDukungDraft[]
+  hasilSkorKriteria HasilSkorKriteria[]
+  ragasScores       RagasScore[]
+  generationRun     GenerationRun?
+
+  @@unique([babId, versi])
+  @@index([babId])
+  @@map("bab_draft")
+}
+
+// ─────────────────────── Kelompok: Bukti Dukung ───────────────────────
+
+/// docs/database.md §7
+model BuktiDukung {
+  id                 String          @id @default(cuid())
+  ownerTipe          OwnerTipe       @map("owner_tipe")
+  tenantId           String?         @map("tenant_id")
+  programStudiId     String?         @map("program_studi_id")
+  namaDokumen        String          @map("nama_dokumen")
+  fileUrl            String          @map("file_url")
+  tipeFile           String          @map("tipe_file")
+  ukuranBytes        Int             @map("ukuran_bytes")
+  statusEkstraksi    StatusEkstraksi @map("status_ekstraksi")
+  catatanGagal       String?         @map("catatan_gagal")
+  diunggahOlehUserId String          @map("diunggah_oleh_user_id")
+  diunggahOlehNama   String          @map("diunggah_oleh_nama")
+  waktuDiunggah      DateTime        @default(now()) @map("waktu_diunggah")
+
+  tenant       Tenant?       @relation(fields: [tenantId], references: [id])
+  programStudi ProgramStudi? @relation(fields: [programStudiId], references: [id])
+  diunggahOleh User          @relation("BuktiDukungDiunggahOleh", fields: [diunggahOlehUserId], references: [id])
+
+  buktiDukungBab     BuktiDukungBab[]
+  buktiDukungDraft   BuktiDukungDraft[]
+  assessmentSessions AssessmentSession[]
+
+  @@index([tenantId])
+  @@index([programStudiId])
+  @@map("bukti_dukung")
+}
+
+/// docs/database.md §8 — kondisi aktif, ditimpa tiap generate ulang
+model BuktiDukungBab {
+  id            String @id @default(cuid())
+  buktiDukungId String @map("bukti_dukung_id")
+  babDokumenId  String @map("bab_dokumen_id")
+  namaDokumen   String @map("nama_dokumen")
+  tipeFile      String @map("tipe_file")
+
+  buktiDukung BuktiDukung @relation(fields: [buktiDukungId], references: [id])
+  babDokumen  BabDokumen  @relation(fields: [babDokumenId], references: [id])
+
+  @@unique([buktiDukungId, babDokumenId])
+  @@map("bukti_dukung_bab")
+}
+
+/// docs/database.md §9 — permanen, menempel ke satu checkpoint
+model BuktiDukungDraft {
+  id            String @id @default(cuid())
+  buktiDukungId String @map("bukti_dukung_id")
+  babDraftId    String @map("bab_draft_id")
+  namaDokumen   String @map("nama_dokumen")
+  tipeFile      String @map("tipe_file")
+
+  buktiDukung BuktiDukung @relation(fields: [buktiDukungId], references: [id])
+  babDraft    BabDraft    @relation(fields: [babDraftId], references: [id])
+
+  @@unique([buktiDukungId, babDraftId])
+  @@map("bukti_dukung_draft")
+}
+
+// ─────────────────── Kelompok: Skoring (Simulasi Penilaian) ───────────────────
+
+/// docs/database.md §10 — skor_maksimal sengaja TIDAK dibuat, diturunkan dari RubrikLevel
+model RubrikKriteria {
+  id           String @id @default(cuid())
+  kodeKriteria String @map("kode_kriteria")
+  deskripsi    String @db.Text
+
+  level             RubrikLevel[]
+  kriteriaBab       RubrikKriteriaBab[]
+  hasilSkorKriteria HasilSkorKriteria[]
+
+  @@map("rubrik_kriteria")
+}
+
+/// docs/database.md §10a
+model RubrikLevel {
+  id         String @id @default(cuid())
+  kriteriaId String @map("kriteria_id")
+  skor       Int
+  deskripsi  String @db.Text
+
+  kriteria RubrikKriteria @relation(fields: [kriteriaId], references: [id])
+
+  @@unique([kriteriaId, skor])
+  @@map("rubrik_level")
+}
+
+/// docs/database.md §11 — urutan_bab adalah matching key, BUKAN FK ke BabDokumen.id
+model RubrikKriteriaBab {
+  id         String @id @default(cuid())
+  kriteriaId String @map("kriteria_id")
+  urutanBab  Int    @map("urutan_bab")
+
+  kriteria RubrikKriteria @relation(fields: [kriteriaId], references: [id])
+
+  @@unique([kriteriaId, urutanBab])
+  @@map("rubrik_kriteria_bab")
+}
+
+/// docs/database.md §12 — target BAB_AKTIF (ditimpa tiap re-run) atau BAB_DRAFT (permanen)
+model HasilSkorKriteria {
+  id                   String     @id @default(cuid())
+  kriteriaId           String     @map("kriteria_id")
+  targetTipe           TargetTipe @map("target_tipe")
+  babId                String?    @map("bab_id")
+  babDraftId           String?    @map("bab_draft_id")
+  skorDidapat          Int        @map("skor_didapat")
+  justifikasi          String?    @db.Text
+  dijalankanOlehUserId String     @map("dijalankan_oleh_user_id")
+  dijalankanOlehNama   String     @map("dijalankan_oleh_nama")
+  dijalankanPada       DateTime   @default(now()) @map("dijalankan_pada")
+
+  kriteria       RubrikKriteria @relation(fields: [kriteriaId], references: [id])
+  bab            BabDokumen?    @relation(fields: [babId], references: [id])
+  babDraft       BabDraft?      @relation(fields: [babDraftId], references: [id])
+  dijalankanOleh User           @relation("HasilSkorDijalankanOleh", fields: [dijalankanOlehUserId], references: [id])
+
+  @@index([babId])
+  @@index([babDraftId])
+  @@map("hasil_skor_kriteria")
+}
+
+// ─────────────── Kelompok: Panduan Referensi (Master Data RAG) ───────────────
+
+/// docs/database.md §13
+model PanduanReferensi {
+  id         String      @id @default(cuid())
+  tipe       TipePanduan
+  judul      String
+  fileUrl    String      @map("file_url")
+  tipeFile   String      @map("tipe_file")
+  dibuatPada DateTime    @default(now()) @map("dibuat_pada")
+
+  detail PanduanDetail[]
+
+  @@map("panduan_referensi")
+}
+
+/// docs/database.md §14
+model PanduanDetail {
+  id        String @id @default(cuid())
+  panduanId String @map("panduan_id")
+  kodePoin  String @map("kode_poin")
+  judulPoin String @map("judul_poin")
+  isiTeks   String @map("isi_teks") @db.Text
+
+  panduan   PanduanReferensi   @relation(fields: [panduanId], references: [id])
+  detailBab PanduanDetailBab[]
+
+  @@map("panduan_detail")
+}
+
+/// docs/database.md §15 — urutan_bab adalah matching key, BUKAN FK
+model PanduanDetailBab {
+  id              String @id @default(cuid())
+  panduanDetailId String @map("panduan_detail_id")
+  urutanBab       Int    @map("urutan_bab")
+
+  panduanDetail PanduanDetail @relation(fields: [panduanDetailId], references: [id])
+
+  @@map("panduan_detail_bab")
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Kelompok baru: produksi untuk AI-LED Generation & AMI Assessment
+// (menggantikan prototipe §16-21 — lihat catatan desain di atas)
+// ═══════════════════════════════════════════════════════════════════
+
+/// Jejak teknis lengkap satu proses generate — 1:1 dengan BabDraft yang
+/// dihasilkannya. Mengganti `drafts` (§16); kontennya sendiri tetap hidup
+/// di BabDraft.kontenSnapshot, bukan di sini.
+model GenerationRun {
+  id          String   @id @default(cuid())
+  babDraftId  String   @unique @map("bab_draft_id")
+  model       String
+  pedomanUsed Json     @map("pedoman_used")
+  rubricUsed  Json     @map("rubric_used")
+  checklist   Json
+  chunksUsed  Json     @map("chunks_used")
+  judgeResult Json?    @map("judge_result")
+  promptFull  String   @map("prompt_full") @db.Text
+  latencySec  Float    @map("latency_sec")
+  tokenCount  Int      @map("token_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  babDraft   BabDraft    @relation(fields: [babDraftId], references: [id])
+  evalResult EvalResult?
+
+  @@map("generation_runs")
+}
+
+/// Skor RAGAS dinormalisasi — persis usulan §12a, menempel ke bab aktif
+/// ATAU checkpoint sesuai target_tipe (pola sama dengan HasilSkorKriteria).
+model RagasScore {
+  id           String     @id @default(cuid())
+  targetTipe   TargetTipe @map("target_tipe")
+  babId        String?    @map("bab_id")
+  babDraftId   String?    @map("bab_draft_id")
+  metrik       Json
+  jumlahChunk  Int        @map("jumlah_chunk")
+  dihitungPada DateTime   @map("dihitung_pada")
+
+  bab      BabDokumen? @relation(fields: [babId], references: [id])
+  babDraft BabDraft?   @relation(fields: [babDraftId], references: [id])
+
+  @@index([babId])
+  @@index([babDraftId])
+  @@map("ragas_scores")
+}
+
+/// Riwayat chat revisi, diikat ke kondisi aktif bab (bukan section_id/model
+/// bebas seperti prototipe §17 — prototipe multi-model dijatuhkan di produksi).
+model ChatMessage {
+  id           String   @id @default(cuid())
+  babDokumenId String   @map("bab_dokumen_id")
+  userId       String   @map("user_id")
+  role         ChatRole
+  message      String   @db.Text
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  babDokumen BabDokumen @relation(fields: [babDokumenId], references: [id])
+  user       User       @relation(fields: [userId], references: [id])
+
+  @@index([babDokumenId])
+  @@map("chat_messages")
+}
+
+/// Riwayat job BullMQ yang tahan lama di Postgres (Redis menyimpan state
+/// aktif; tabel ini untuk audit/riwayat setelah job selesai/di-evict).
+model Job {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  createdByUserId String    @map("created_by_user_id")
+  type            JobType
+  queueName       String    @map("queue_name")
+  bullJobId       String    @unique @map("bull_job_id")
+  status          JobStatus @default(WAITING)
+  progress        Int       @default(0)
+  payload         Json
+  result          Json?
+  error           String?   @db.Text
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id])
+  createdBy User   @relation(fields: [createdByUserId], references: [id])
+
+  @@index([tenantId, status])
+  @@map("jobs")
+}
+
+/// Produksi dari §19, disambungkan ke tenant & dokumen (Catatan Integrasi #5).
+model AssessmentSession {
+  id                   String           @id @default(cuid())
+  tenantId             String           @map("tenant_id")
+  dokumenId            String           @map("dokumen_id")
+  createdByUserId      String           @map("created_by_user_id")
+  laporanBuktiDukungId String?          @map("laporan_bukti_dukung_id")
+  totalIndicators      Int              @map("total_indicators")
+  completedIndicators  Int              @default(0) @map("completed_indicators")
+  status               AssessmentStatus @default(RUNNING)
+  error                String?          @db.Text
+  createdAt            DateTime         @default(now()) @map("created_at")
+  updatedAt            DateTime         @updatedAt @map("updated_at")
+
+  tenant             Tenant       @relation(fields: [tenantId], references: [id])
+  dokumen            DokumenLed   @relation(fields: [dokumenId], references: [id])
+  createdBy          User         @relation(fields: [createdByUserId], references: [id])
+  laporanBuktiDukung BuktiDukung? @relation(fields: [laporanBuktiDukungId], references: [id])
+
+  indicatorResults IndicatorResult[]
+  reasoningSteps   ReasoningStep[]
+
+  @@index([tenantId, status])
+  @@map("assessment_sessions")
+}
+
+/// Produksi dari §20 — menambah kolom `model` (Catatan Integrasi #2).
+model IndicatorResult {
+  id             String   @id @default(cuid())
+  sessionId      String   @map("session_id")
+  indicatorNo    Int      @map("indicator_no")
+  score          Decimal? @db.Decimal(5, 2)
+  justification  String?  @db.Text
+  confidence     Decimal? @db.Decimal(4, 3)
+  recommendation String?  @db.Text
+  model          String?
+  error          String?  @db.Text
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  session AssessmentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, indicatorNo])
+  @@map("indicator_results")
+}
+
+/// Produksi dari §21 — session_id diberi FK sungguhan (Catatan Integrasi #7),
+/// beda dari prototipe yang sengaja/tidak sengaja membiarkannya lepas.
+model ReasoningStep {
+  id          String   @id @default(cuid())
+  sessionId   String   @map("session_id")
+  indicatorNo Int      @map("indicator_no")
+  stepIndex   Int      @map("step_index")
+  content     String   @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  session AssessmentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, indicatorNo])
+  @@map("reasoning_steps")
+}
+
+/// Produksi dari §18 — alat benchmark, diikat ke GenerationRun (bukan
+/// section_id/model bebas) supaya tetap tertelusur ke draf & model yang sama.
+model EvalResult {
+  id               String   @id @default(cuid())
+  generationRunId  String   @unique @map("generation_run_id")
+  rouge1           Float?   @map("rouge_1")
+  rouge2           Float?   @map("rouge_2")
+  rougeL           Float?   @map("rouge_l")
+  bleu4            Float?   @map("bleu_4")
+  answerRelevancy  Float?   @map("answer_relevancy")
+  contextPrecision Float?   @map("context_precision")
+  contextRecall    Float?   @map("context_recall")
+  evaluatedAt      DateTime @default(now()) @map("evaluated_at")
+
+  generationRun GenerationRun @relation(fields: [generationRunId], references: [id])
+
+  @@map("eval_results")
+}

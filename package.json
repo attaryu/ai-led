@@ -1,0 +1,8 @@
+{
+  "name": "ai-led",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}
