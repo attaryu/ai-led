@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 import { evidenceRepository } from '../../data/repositories/evidence.repository';
 import { type UploadEvidenceTargetDto } from '../../domain/dtos/upload-evidence.dto';
+import { type EvidenceEntity } from '../../domain/entities/evidence.entity';
 
 export type UploadPhase =
 	| 'antre'
@@ -21,6 +22,8 @@ export type EvidenceUploadItem = {
 	studyProgramName: string | null;
 	progress: number;
 	phase: UploadPhase;
+	/** Baris `BUKTI_DUKUNG` yang tercipta; baru terisi sesudah `phase = 'selesai'`. */
+	evidenceId?: string;
 	error?: string;
 };
 
@@ -37,6 +40,8 @@ type EvidenceUploadState = {
 		target: UploadEvidenceTargetDto;
 		studyProgramName: string | null;
 		uploader: UploaderIdentity;
+		/** Dipanggil per berkas yang barisnya berhasil tercatat; lihat catatan di bawah. */
+		onUploaded?: (evidence: EvidenceEntity) => void;
 	}) => void;
 	retryItem: (id: string) => void;
 	dismissItem: (id: string) => void;
@@ -68,7 +73,7 @@ export const useEvidenceUploadStore = create<EvidenceUploadState>(
 			patch(item.id, { phase: 'presign', progress: 0, error: undefined });
 
 			try {
-				await evidenceRepository.upload({
+				const evidence = await evidenceRepository.upload({
 					file: item.file,
 					target: item.target,
 					uploadedByUserId: uploader.userId,
@@ -78,7 +83,12 @@ export const useEvidenceUploadStore = create<EvidenceUploadState>(
 						patch(item.id, { phase: 'uploading', progress: percent }),
 				});
 
-				patch(item.id, { phase: 'selesai', progress: 100 });
+				patch(item.id, {
+					phase: 'selesai',
+					progress: 100,
+					evidenceId: evidence.id,
+				});
+				listeners.get(item.id)?.(evidence);
 			} catch (error) {
 				patch(item.id, {
 					phase: 'gagal',
@@ -94,11 +104,27 @@ export const useEvidenceUploadStore = create<EvidenceUploadState>(
 		// disimpan di luar state supaya tidak memicu render.
 		const uploaders = new Map<string, UploaderIdentity>();
 
+		/**
+		 * Penerima kabar "berkas ini sudah tercatat", per baris antrean. Sengaja
+		 * bukan bagian dari state dengan alasan yang sama seperti `uploaders`, plus
+		 * satu lagi: pendengarnya adalah komponen yang bisa hilang di tengah jalan —
+		 * tab Generasi ikut mati saat penggunanya berpindah bab. Kalau itu terjadi,
+		 * unggahannya tetap tuntas dan berkasnya tetap masuk pustaka; yang hilang
+		 * cuma tindak lanjutnya, dan memang begitu yang diinginkan.
+		 */
+		const listeners = new Map<string, (evidence: EvidenceEntity) => void>();
+
 		return {
 			items: [],
 			isCollapsed: false,
 
-			startBatch: ({ files, target, studyProgramName, uploader }) => {
+			startBatch: ({
+				files,
+				target,
+				studyProgramName,
+				uploader,
+				onUploaded,
+			}) => {
 				const newItems: EvidenceUploadItem[] = files.map((file, index) => ({
 					id: `${Date.now()}-${index}-${file.name}`,
 					file,
@@ -110,7 +136,10 @@ export const useEvidenceUploadStore = create<EvidenceUploadState>(
 					phase: 'antre',
 				}));
 
-				newItems.forEach((item) => uploaders.set(item.id, uploader));
+				newItems.forEach((item) => {
+					uploaders.set(item.id, uploader);
+					if (onUploaded) listeners.set(item.id, onUploaded);
+				});
 
 				set((state) => ({
 					items: [...newItems, ...state.items],
@@ -129,6 +158,7 @@ export const useEvidenceUploadStore = create<EvidenceUploadState>(
 
 			dismissItem: (id) => {
 				uploaders.delete(id);
+				listeners.delete(id);
 				set((state) => ({
 					items: state.items.filter((item) => item.id !== id),
 				}));
@@ -138,7 +168,10 @@ export const useEvidenceUploadStore = create<EvidenceUploadState>(
 				set((state) => {
 					state.items
 						.filter((item) => item.phase === 'selesai')
-						.forEach((item) => uploaders.delete(item.id));
+						.forEach((item) => {
+							uploaders.delete(item.id);
+							listeners.delete(item.id);
+						});
 					return {
 						items: state.items.filter((item) => item.phase !== 'selesai'),
 					};
@@ -146,6 +179,7 @@ export const useEvidenceUploadStore = create<EvidenceUploadState>(
 
 			dismissAll: () => {
 				uploaders.clear();
+				listeners.clear();
 				set({ items: [] });
 			},
 
