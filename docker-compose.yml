@@ -11,5 +11,63 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file: apps/backend/.env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_led?schema=public
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+
+  ai:
+    build:
+      context: ./apps/ai
+      secrets:
+        - hf_token
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./apps/ai/data:/app/data
+    env_file: apps/ai/.env
+    environment:
+      DATA_DIR: /app/data
+      HF_HOME: /root/.cache/huggingface
+      SENTENCE_TRANSFORMERS_HOME: /root/.cache/huggingface/sentence-transformers
+      HF_HUB_DISABLE_XET: "1"
+    depends_on:
+      - postgres
+
+  web:
+    build:
+      context: ./apps/web
+    restart: unless-stopped
+    ports:
+      - "5173:3000"
+    environment:
+      API_BASE_URL: http://backend:3000
+    depends_on:
+      - backend
+
+secrets:
+  hf_token:
+    environment: HF_TOKEN
+
 volumes:
   postgres_data:
+  redis_data:
