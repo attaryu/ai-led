@@ -1,0 +1,8 @@
+indicator_no,score_type,ref_score,deepseek-r1:32b_score,deepseek-r1:32b_diff,deepseek-r1:32b_marker,mistral-small3.2:24b_score,mistral-small3.2:24b_diff,mistral-small3.2:24b_marker,qwen3.5:35b_score,qwen3.5:35b_diff,qwen3.5:35b_marker
+14,composite,3.0,3.0,0.0,exact,3.0,0.0,exact,3.0,0.0,exact
+15,composite,3.0,3.0,0.0,exact,2.33,0.67,within1,3.0,0.0,exact
+16,composite,3.0,3.0,0.0,exact,0.0,3.0,off,4.0,1.0,within1
+17,qualitative,2.0,1.0,1.0,within1,0.0,2.0,off,3.0,1.0,within1
+20,qualitative,3.0,0.0,3.0,off,0.0,3.0,off,3.0,0.0,exact
+22,qualitative,3.0,2.0,1.0,within1,0.0,3.0,off,4.0,1.0,within1
+24,qualitative,3.0,3.0,0.0,exact,4.0,1.0,within1,4.0,1.0,within1

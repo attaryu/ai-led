@@ -8,3 +8,12 @@ build/
 .env
 .env.*
 !.env.example
+
+# Python (apps/ai)
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+data/uploads/
+data/chroma_db/
+data/rubric_cache/
