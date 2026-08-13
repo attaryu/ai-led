@@ -4,3 +4,15 @@
 /.react-router/
 /build/
 /docs/.*
+
+# Naskah riset: prosa akademik dan render figurnya, bukan pengetahuan produk.
+# PDF/DOCX-nya memang sudah lewat sendiri, tapi 15 berkas .md dan 12 PNG figur
+# tidak.
+/paper/
+
+# Hasil eksperimen benchmark: angka, bukan struktur pengetahuan. CSV-nya tidak
+# terbaca graphify, laporan .md-nya terbaca.
+/apps/ai/data/
+
+# Demo UI satu berkas yang berdiri sendiri di luar aplikasi web.
+/apps/ai/static/
