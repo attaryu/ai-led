@@ -4,12 +4,10 @@ import {
 	NotebookIcon,
 	PaperclipIcon,
 } from '@phosphor-icons/react';
-import { useParams } from 'react-router';
+import { useOutletContext } from 'react-router';
 
-import { PlaceholderPage } from '~/core/components/placeholder-page';
 import { StatCard } from '~/core/components/ui/stat-card';
 import { formatRelativeTime } from '~/core/lib/format-time';
-import { ledProjectRepository } from '../../data/repositories/led-project.repository';
 import { ChapterProgressTable } from '../components/chapter-progress-table';
 import { ProjectAttentionPanel } from '../components/project-attention-panel';
 import { useProjectProgress } from '../hooks/use-project-progress';
@@ -22,27 +20,13 @@ import { type LedProjectEntity } from '../../domain/entities/led-project.entity'
  * perlu disembunyikan per role (§1) — penjagaannya sudah selesai di layout
  * lapis ini. Judul bab di tabel menautkan ke Editor Bab (§7), yang berdiri
  * sebagai root URL sendiri di `/editor/:projectId/:chapterId`.
+ *
+ * `ledProject` diambil dari layout (`LedProjectWorkspaceLayout`) lewat outlet
+ * context, bukan lookup terpisah — layout itu juga yang sudah menampilkan
+ * keadaan "tidak ditemukan"/"sedang memuat" sebelum merender `<Outlet>`.
  */
 export function LedProjectWorkspaceHome() {
-	const { projectId } = useParams<{ projectId: string }>();
-	const ledProject = projectId
-		? ledProjectRepository.findById(projectId)
-		: undefined;
-
-	// Layout sudah menampilkan keadaan "tidak ditemukan" dan tidak merender
-	// halaman ini; cabang ini hanya penjaga bila rutenya dipakai di luar layout.
-	if (!ledProject) {
-		return (
-			<PlaceholderPage
-				title="Dokumen LED tidak ditemukan"
-				description="Dokumen yang diminta tidak ada di daftar."
-				links={[
-					{ label: 'Dokumen LED lintas prodi', to: '/dashboard/led-projects' },
-				]}
-			/>
-		);
-	}
-
+	const ledProject = useOutletContext<LedProjectEntity>();
 	return <ProjectProgressView ledProject={ledProject} />;
 }
 

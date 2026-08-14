@@ -20,24 +20,30 @@ export function StudyProgramManagement() {
 		StudyProgramEntity[]
 	>([]);
 
-	const loadData = React.useCallback(() => {
-		setStudyPrograms(studyProgramRepository.findAll());
+	const loadData = React.useCallback(async () => {
+		setStudyPrograms(await studyProgramRepository.findAll());
 	}, []);
 
 	React.useEffect(() => {
-		loadData();
+		void loadData();
 		window.addEventListener('storage-update', loadData);
 		return () => {
 			window.removeEventListener('storage-update', loadData);
 		};
 	}, [loadData]);
 
-	const handleDelete = React.useCallback((id: string) => {
-		if (confirm('Apakah Anda yakin ingin menghapus Prodi ini?')) {
-			studyProgramRepository.delete(id);
-			loadData();
-		}
-	}, [loadData]);
+	const handleDelete = React.useCallback(
+		(id: string) => {
+			if (confirm('Apakah Anda yakin ingin menghapus Prodi ini?')) {
+				// `delete()` menyiarkan 'storage-update' sendiri setelah selesai —
+				// listener di atas yang memuat ulang, tidak perlu dipanggil di sini.
+				studyProgramRepository.delete(id).catch((e: unknown) => {
+					alert(e instanceof Error ? e.message : 'Gagal menghapus Prodi.');
+				});
+			}
+		},
+		[],
+	);
 
 	const handleEdit = React.useCallback((id: string) => {
 		navigate(`/dashboard/study-programs/${id}/edit`);

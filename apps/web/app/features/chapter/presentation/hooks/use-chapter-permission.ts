@@ -73,7 +73,10 @@ export function useChapterPermission(
 	/** `studyProgramId` milik dokumennya — dibaca dari data, bukan dari URL. */
 	studyProgramId: string | undefined,
 ): ChapterPermission {
-	const session = useSession();
+	// `undefined` (boot-refresh belum selesai) diperlakukan sama dengan belum
+	// login: hook ini hanya menjawab boleh/tidak, dan tanpa akses adalah jawaban
+	// paling aman selama sesi belum pasti — begitu resolve, ia menghitung ulang.
+	const session = useSession() ?? null;
 
 	if (!session || session.role === 'Admin') {
 		return {

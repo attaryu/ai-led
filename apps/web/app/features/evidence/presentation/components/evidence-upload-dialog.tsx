@@ -74,7 +74,7 @@ export function EvidenceUploadDialog({
 	const inputRef = React.useRef<HTMLInputElement>(null);
 
 	React.useEffect(() => {
-		if (level === 'TENANT') setStudyPrograms(studyProgramRepository.findAll());
+		if (level === 'TENANT') studyProgramRepository.findAll().then(setStudyPrograms);
 	}, [level]);
 
 	// Setiap kali modal dibuka lagi, ia mulai dari kondisi bersih — antrean lama

@@ -51,13 +51,8 @@ export function ProfileMenu({
 			>
 				<DropdownMenuItem
 					className="cursor-pointer text-destructive"
-					// Sesinya masih mock di localStorage, tapi tetap harus dihapus:
-					// landing page membedakan tamu dari pengguna yang sudah masuk lewat
-					// ada tidaknya sesi tersimpan. Begitu autentikasi asli jalan,
-					// penghapusan token masuk ke `clear()` yang sama.
 					onClick={() => {
-						sessionRepository.clear();
-						navigate('/login');
+						void sessionRepository.clear().then(() => navigate('/login'));
 					}}
 				>
 					<SignOutIcon className="size-4" />

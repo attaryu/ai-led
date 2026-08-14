@@ -1,7 +1,6 @@
 import * as React from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useOutletContext } from 'react-router';
 
-import { PlaceholderPage } from '~/core/components/placeholder-page';
 import {
 	Card,
 	CardDescription,
@@ -10,7 +9,6 @@ import {
 } from '~/core/components/ui/card';
 import { useSession } from '~/features/auth/presentation/hooks/use-session';
 import { ledProjectRepository } from '~/features/led-project/data/repositories/led-project.repository';
-import { studyProgramRepository } from '../../data/repositories/study-program.repository';
 import { type StudyProgramEntity } from '../../domain/entities/study-program.entity';
 import { ActiveProjectCard } from '../components/active-project-card';
 import { ProgramAccreditationCard } from '../components/program-accreditation-card';
@@ -47,25 +45,11 @@ import { useProgramReadiness } from '../hooks/use-program-readiness';
  * sekali di luar Penjamin Mutu, bukan sekadar dinonaktifkan.
  */
 export function StudyProgramWorkspaceHome() {
-	const { programId } = useParams<{ programId: string }>();
-	const studyProgram = programId
-		? studyProgramRepository.findById(programId)
-		: undefined;
-
-	// Layout sudah menampilkan keadaan "tidak ditemukan" dan tidak merender
-	// halaman ini; cabang ini hanya penjaga bila rutenya dipakai di luar layout.
-	if (!studyProgram) {
-		return (
-			<PlaceholderPage
-				title="Prodi tidak ditemukan"
-				description="Prodi yang diminta tidak ada di daftar."
-				links={[
-					{ label: 'Daftar Program Studi', to: '/dashboard/study-programs' },
-				]}
-			/>
-		);
-	}
-
+	// Layout lapis ini (`StudyProgramWorkspaceLayout`) sudah mengambil prodinya
+	// lewat API dan menampilkan keadaan "tidak ditemukan"/"sedang memuat"
+	// sendiri sebelum merender `<Outlet>` — halaman ini tidak perlu mengambil
+	// ulang datanya lewat request kedua, cukup baca dari context.
+	const studyProgram = useOutletContext<StudyProgramEntity>();
 	return <ProgramReadinessView program={studyProgram} />;
 }
 
@@ -93,10 +77,12 @@ function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 
 	const handleDelete = React.useCallback((id: string) => {
 		if (confirm('Apakah Anda yakin ingin menghapus Dokumen LED ini?')) {
-			ledProjectRepository.delete(id);
-			// Hook kesiapan berlangganan event yang sama, jadi barisnya hilang tanpa
+			// `delete()` menyiarkan 'storage-update' sendiri setelah selesai — hook
+			// kesiapan berlangganan event yang sama, jadi barisnya hilang tanpa
 			// halaman ini perlu memuat ulang sendiri.
-			window.dispatchEvent(new Event('storage-update'));
+			ledProjectRepository.delete(id).catch((e: unknown) => {
+				alert(e instanceof Error ? e.message : 'Gagal menghapus Dokumen LED.');
+			});
 		}
 	}, []);
 

@@ -31,15 +31,23 @@ export type ProgramReadiness = {
 	penyusun: UserEntity[];
 };
 
-function read(programId: string): ProgramReadiness {
+const EMPTY_READINESS: ProgramReadiness = {
+	penyusunanAktif: null,
+	arsip: [],
+	chapterSummary: summarizeChapters([]),
+	evidenceProdi: summarizeEvidence([]),
+	penyusun: [],
+};
+
+async function read(programId: string): Promise<ProgramReadiness> {
 	const { aktif, arsip } = pickPenyusunanAktif(
-		ledProjectRepository.findByStudyProgramId(programId),
+		await ledProjectRepository.findByStudyProgramId(programId),
 	);
 
 	// Bab hanya dibaca untuk dokumen yang sedang disusun: angka kelengkapan yang
 	// mencampur dokumen lama yang sudah tuntas akan selalu terlihat bagus dan
 	// menyembunyikan pekerjaan yang sebenarnya belum jalan.
-	const chapters = aktif ? chapterRepository.findByProjectId(aktif.id) : [];
+	const chapters = aktif ? await chapterRepository.findByProjectId(aktif.id) : [];
 	const chapterSummary = summarizeChapters(chapters);
 
 	const evidenceProdi = summarizeEvidence(
@@ -69,15 +77,21 @@ function read(programId: string): ProgramReadiness {
  * dependensi efek akan memicu pembacaan ulang tanpa henti.
  */
 export function useProgramReadiness(programId: string): ProgramReadiness {
-	const [readiness, setReadiness] = React.useState<ProgramReadiness>(() =>
-		read(programId),
-	);
+	const [readiness, setReadiness] = React.useState<ProgramReadiness>(EMPTY_READINESS);
 
 	React.useEffect(() => {
-		const load = () => setReadiness(read(programId));
+		let cancelled = false;
+		const load = () => {
+			read(programId).then((result) => {
+				if (!cancelled) setReadiness(result);
+			});
+		};
 		load();
 		window.addEventListener('storage-update', load);
-		return () => window.removeEventListener('storage-update', load);
+		return () => {
+			cancelled = true;
+			window.removeEventListener('storage-update', load);
+		};
 	}, [programId]);
 
 	return readiness;

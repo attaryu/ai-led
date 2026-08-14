@@ -28,7 +28,9 @@ export function useEvidencePermission(
 	level: EvidenceOwnerType,
 	studyProgramId?: string,
 ): EvidencePermission {
-	const session = useSession();
+	// `undefined` (boot-refresh belum selesai) diperlakukan sama dengan belum
+	// login — lihat catatan yang sama di `useChapterPermission`.
+	const session = useSession() ?? null;
 
 	if (!session || session.role === 'Admin') {
 		return {

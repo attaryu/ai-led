@@ -39,9 +39,17 @@ function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
  * Aturan hitungnya tetap yang sama; yang berbeda hanya berapa kali datanya
  * dibaca.
  */
-function read(): InstitutionReadiness {
-	const programs = studyProgramRepository.findAll();
-	const projects: LedProjectEntity[] = ledProjectRepository.findAll();
+async function read(): Promise<InstitutionReadiness> {
+	const [programs, projects]: [
+		Awaited<ReturnType<typeof studyProgramRepository.findAll>>,
+		LedProjectEntity[],
+	] = await Promise.all([
+		studyProgramRepository.findAll(),
+		ledProjectRepository.findAll(),
+	]);
+	// `chapterRepository`/`evidenceRepository`/`userRepository` masih mock lokal
+	// (belum ada endpoint backend-nya — lihat catatan migrasi di masing-masing
+	// repository), jadi tetap sinkron.
 	const chapters: ChapterEntity[] = chapterRepository.findAll();
 	const evidences: EvidenceEntity[] = evidenceRepository.findAll();
 	const users: UserEntity[] = userRepository.findAll();
@@ -78,11 +86,22 @@ function read(): InstitutionReadiness {
  * berubah dari halaman lain — Penjamin Mutu membuat Dokumen LED baru, bukti
  * dukung selesai diekstraksi, Pimpinan menugaskan Penyusun ke prodi.
  */
+const EMPTY_READINESS = buildInstitutionReadiness({
+	programs: [],
+	projectsByProgram: new Map(),
+	chaptersByProject: new Map(),
+	penyusunByProgram: new Map(),
+	evidenceTenant: [],
+});
+
 export function useInstitutionReadiness(): InstitutionReadiness {
-	const [readiness, setReadiness] = React.useState<InstitutionReadiness>(read);
+	const [readiness, setReadiness] =
+		React.useState<InstitutionReadiness>(EMPTY_READINESS);
 
 	React.useEffect(() => {
-		const load = () => setReadiness(read());
+		const load = () => {
+			read().then(setReadiness);
+		};
 		load();
 		window.addEventListener('storage-update', load);
 		return () => window.removeEventListener('storage-update', load);

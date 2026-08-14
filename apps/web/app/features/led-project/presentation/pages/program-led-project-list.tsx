@@ -1,12 +1,12 @@
 import * as React from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useOutletContext, useParams } from 'react-router';
 import { PlusIcon } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
 import { DataTable } from '~/core/components/ui/data-table';
 import { useDataTableState } from '~/core/hooks/use-data-table-state';
 import { useSession } from '~/features/auth/presentation/hooks/use-session';
-import { studyProgramRepository } from '~/features/study-program/data/repositories/study-program.repository';
+import { type StudyProgramEntity } from '~/features/study-program/domain/entities/study-program.entity';
 import { ledProjectRepository } from '../../data/repositories/led-project.repository';
 import { getLedProjectColumns } from '../components/led-project-columns';
 import { type LedProjectPage } from '../../domain/dtos/led-project-query.dto';
@@ -32,9 +32,9 @@ export function ProgramLedProjectList() {
 	// di level ini (§6.2) dan Penyusun tidak pernah punya aksi di sini (§15).
 	const canManage = session?.role === 'Penjamin Mutu';
 
-	const studyProgram = programId
-		? studyProgramRepository.findById(programId)
-		: undefined;
+	// Diambil layout lapis prodi (`StudyProgramWorkspaceLayout`), bukan lookup
+	// terpisah — datanya sudah tersedia begitu halaman ini dirender.
+	const studyProgram = useOutletContext<StudyProgramEntity>();
 
 	const {
 		sorting,
@@ -68,10 +68,10 @@ export function ProgramLedProjectList() {
 	 * halaman dikerjakan repository (§4.6) — halaman hanya menerima satu halaman
 	 * data beserta jumlah totalnya.
 	 */
-	const loadData = React.useCallback(() => {
+	const loadData = React.useCallback(async () => {
 		if (!programId) return;
 		setPage(
-			ledProjectRepository.findPaged({
+			await ledProjectRepository.findPaged({
 				studyProgramId: programId,
 				q: globalFilter || undefined,
 				sort: sortId,
@@ -83,7 +83,7 @@ export function ProgramLedProjectList() {
 	}, [programId, globalFilter, sortId, sortDir, pageIndex, pageSize]);
 
 	React.useEffect(() => {
-		loadData();
+		void loadData();
 		window.addEventListener('storage-update', loadData);
 		return () => {
 			window.removeEventListener('storage-update', loadData);
@@ -93,16 +93,14 @@ export function ProgramLedProjectList() {
 	/** Dibawa formulir supaya Batal dan simpan memulangkan ke daftar ini. */
 	const returnTo = `/study-programs/${programId}/led-projects`;
 
-	const handleDelete = React.useCallback(
-		(id: string) => {
-			if (confirm('Apakah Anda yakin ingin menghapus Dokumen LED ini?')) {
-				ledProjectRepository.delete(id);
-				loadData();
-				window.dispatchEvent(new Event('storage-update'));
-			}
-		},
-		[loadData],
-	);
+	const handleDelete = React.useCallback((id: string) => {
+		if (confirm('Apakah Anda yakin ingin menghapus Dokumen LED ini?')) {
+			// `delete()` menyiarkan 'storage-update' sendiri setelah selesai.
+			ledProjectRepository.delete(id).catch((e: unknown) => {
+				alert(e instanceof Error ? e.message : 'Gagal menghapus Dokumen LED.');
+			});
+		}
+	}, []);
 
 	const handleEdit = React.useCallback(
 		(id: string) => {

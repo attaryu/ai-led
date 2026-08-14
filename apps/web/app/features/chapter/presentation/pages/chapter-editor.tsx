@@ -10,6 +10,7 @@ import {
 } from '~/features/auth/presentation/hooks/use-role-guard';
 import { useSession } from '~/features/auth/presentation/hooks/use-session';
 import { ledProjectRepository } from '~/features/led-project/data/repositories/led-project.repository';
+import { type LedProjectEntity } from '~/features/led-project/domain/entities/led-project.entity';
 import { chapterRepository } from '../../data/repositories/chapter.repository';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import { findTocPathForChapter } from '../../domain/entities/chapter-toc.entity';
@@ -45,14 +46,39 @@ export function ChapterEditor() {
 	}>();
 	const session = useSession();
 
-	const ledProject = projectId
-		? ledProjectRepository.findById(projectId)
-		: undefined;
-	const chapters = projectId
-		? chapterRepository.findByProjectId(projectId)
-		: [];
+	// `findByProjectId` (bab) dan `findById` (dokumen induk) sekarang HTTP —
+	// dimuat sekali per `projectId`, bukan dibaca sinkron saat render seperti
+	// dulu. `undefined` = masih dimuat, dibedakan dari `[]`/`null` yang berarti
+	// sudah selesai dan memang tidak ada.
+	const [ledProject, setLedProject] = React.useState<
+		LedProjectEntity | null | undefined
+	>(undefined);
+	const [chapters, setChapters] = React.useState<ChapterEntity[] | undefined>(
+		undefined,
+	);
+
+	React.useEffect(() => {
+		if (!projectId) {
+			setLedProject(null);
+			setChapters([]);
+			return;
+		}
+		setLedProject(undefined);
+		setChapters(undefined);
+		let cancelled = false;
+		ledProjectRepository.findById(projectId).then((found) => {
+			if (!cancelled) setLedProject(found ?? null);
+		});
+		chapterRepository.findByProjectId(projectId).then((found) => {
+			if (!cancelled) setChapters(found);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [projectId]);
+
 	const chapter =
-		projectId && chapterId
+		chapters && chapterId
 			? chapters.find((item) => item.id === chapterId)
 			: undefined;
 
@@ -93,6 +119,16 @@ export function ChapterEditor() {
 			return berikutnya;
 		});
 	}, []);
+
+	// Ditaruh sesudah seluruh hook di atas (Rules of Hooks) — `ledProject`/
+	// `chapters` sekarang datang dari HTTP, jadi ada jeda sebelum keduanya siap.
+	if (ledProject === undefined || chapters === undefined) {
+		return (
+			<div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+				Memuat…
+			</div>
+		);
+	}
 
 	// Ditolak menang atas segalanya: Penyusun yang mengetik projectId prodi lain
 	// harus dipulangkan, bukan diberi tahu dokumennya ada atau tidak.

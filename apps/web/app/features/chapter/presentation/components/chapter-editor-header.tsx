@@ -3,7 +3,6 @@ import { Link } from 'react-router';
 
 import { initials } from '~/core/lib/initials';
 import { ProfileMenu } from '~/features/auth/presentation/components/profile-menu';
-import { RoleSwitcher } from '~/features/auth/presentation/components/role-switcher';
 import { useSession } from '~/features/auth/presentation/hooks/use-session';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import { type AutosaveStatus } from '../hooks/use-chapter-autosave';
@@ -13,11 +12,6 @@ import { ChapterSaveIndicator } from './chapter-save-indicator';
 
 /**
  * Header Editor Bab.
- *
- * `RoleSwitcher` ikut dipasang di sini karena Editor Bab tidak memakai
- * `AppShell` — tanpa itu tidak ada satu pun jalan menguji jalur "Pimpinan hanya
- * baca" (§15) tanpa keluar dari halaman. Ia tetap alat pengembangan sementara
- * yang dihapus bersama seluruh pemanggilnya begitu autentikasi sungguhan jalan.
  */
 export function ChapterEditorHeader({
 	projectId,
@@ -72,8 +66,6 @@ export function ChapterEditorHeader({
 					izin={izin}
 					onReviewed={onReviewed}
 				/>
-
-				<RoleSwitcher />
 
 				{session && (
 					<div className="flex items-center gap-2">

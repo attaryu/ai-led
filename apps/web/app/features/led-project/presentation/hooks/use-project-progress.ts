@@ -18,11 +18,18 @@ export type ProjectProgress = {
 	buktiDukungTersedia: number;
 };
 
-function read(
+const EMPTY_PROGRESS: ProjectProgress = {
+	chapters: [],
+	summary: summarizeChapters([]),
+	attention: [],
+	buktiDukungTersedia: 0,
+};
+
+async function read(
 	ledProjectId: string,
 	studyProgramId: string,
-): ProjectProgress {
-	const chapters = chapterRepository.findByProjectId(ledProjectId);
+): Promise<ProjectProgress> {
+	const chapters = await chapterRepository.findByProjectId(ledProjectId);
 
 	return {
 		chapters,
@@ -45,15 +52,21 @@ export function useProjectProgress(
 	ledProjectId: string,
 	studyProgramId: string,
 ): ProjectProgress {
-	const [progress, setProgress] = React.useState<ProjectProgress>(() =>
-		read(ledProjectId, studyProgramId),
-	);
+	const [progress, setProgress] = React.useState<ProjectProgress>(EMPTY_PROGRESS);
 
 	React.useEffect(() => {
-		const load = () => setProgress(read(ledProjectId, studyProgramId));
+		let cancelled = false;
+		const load = () => {
+			read(ledProjectId, studyProgramId).then((result) => {
+				if (!cancelled) setProgress(result);
+			});
+		};
 		load();
 		window.addEventListener('storage-update', load);
-		return () => window.removeEventListener('storage-update', load);
+		return () => {
+			cancelled = true;
+			window.removeEventListener('storage-update', load);
+		};
 	}, [ledProjectId, studyProgramId]);
 
 	return progress;

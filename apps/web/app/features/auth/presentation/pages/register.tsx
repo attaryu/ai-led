@@ -1,6 +1,8 @@
+import * as React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate, Link } from 'react-router';
+import { ApiError } from '~/core/lib/api-client';
 import {
 	Card,
 	CardContent,
@@ -27,6 +29,7 @@ const formId = 'register-form';
 
 export function Register() {
 	const navigate = useNavigate();
+	const [formError, setFormError] = React.useState<string | null>(null);
 	const {
 		register,
 		handleSubmit,
@@ -41,12 +44,21 @@ export function Register() {
 		},
 	});
 
-	const onSubmit = (data: RegisterDto) => {
-		console.log('Register Success:', data);
-		// Sama seperti login: registrasi berhasil berarti sesi aktif, kalau tidak
-		// landing page masih menganggap pengguna sebagai tamu.
-		sessionRepository.signIn();
-		navigate('/dashboard');
+	const onSubmit = async (data: RegisterDto) => {
+		setFormError(null);
+		try {
+			// Registrasi selalu membuat tenant baru + akun Admin (backend belum
+			// punya modul User untuk mengundang role lain — lihat docs tracker).
+			await sessionRepository.register({
+				namaLengkap: data.fullname,
+				email: data.email,
+				password: data.password,
+				namaUniversitas: data.universityName,
+			});
+			navigate('/dashboard');
+		} catch (e) {
+			setFormError(e instanceof ApiError ? e.message : 'Gagal mendaftar. Coba lagi.');
+		}
 	};
 
 	return (
@@ -62,6 +74,9 @@ export function Register() {
 				<CardContent>
 					<form id={formId} onSubmit={handleSubmit(onSubmit)}>
 						<FieldGroup>
+							{formError && (
+								<p className="text-sm text-destructive">{formError}</p>
+							)}
 							<Field data-invalid={!!errors.fullname}>
 								<FieldLabel htmlFor="fullname">Nama Lengkap</FieldLabel>
 								<Input

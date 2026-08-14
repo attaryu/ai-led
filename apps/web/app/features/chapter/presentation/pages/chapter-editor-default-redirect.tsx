@@ -1,7 +1,8 @@
+import * as React from 'react';
 import { Navigate, useParams } from 'react-router';
 
 import { chapterRepository } from '../../data/repositories/chapter.repository';
-import { pickDefaultChapter } from '../../domain/entities/chapter.entity';
+import { pickDefaultChapter, type ChapterEntity } from '../../domain/entities/chapter.entity';
 
 /**
  * `/editor/:projectId` tanpa menyebut bab — jalan masuk resmi dari sidebar
@@ -18,10 +19,32 @@ import { pickDefaultChapter } from '../../domain/entities/chapter.entity';
  */
 export function ChapterEditorDefaultRedirect() {
 	const { projectId } = useParams<{ projectId: string }>();
+	const [chapters, setChapters] = React.useState<ChapterEntity[] | undefined>(
+		undefined,
+	);
 
-	// `findByProjectId` memmaterialisasi bab bila dokumennya belum punya, jadi
-	// jalan masuk ini tidak pernah menemui daftar kosong untuk dokumen yang ada.
-	const chapters = projectId ? chapterRepository.findByProjectId(projectId) : [];
+	React.useEffect(() => {
+		if (!projectId) {
+			setChapters([]);
+			return;
+		}
+		let cancelled = false;
+		chapterRepository.findByProjectId(projectId).then((found) => {
+			if (!cancelled) setChapters(found);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [projectId]);
+
+	if (chapters === undefined) {
+		return (
+			<div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+				Memuat…
+			</div>
+		);
+	}
+
 	const target = pickDefaultChapter(chapters);
 
 	// Tidak ada babnya berarti dokumennya sendiri yang tidak ada; lapis 3 sudah
