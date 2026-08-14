@@ -14,9 +14,15 @@ from vectorstore.chroma_store import search_led
 def search_led_evidence(query: str, n_results: int = 5) -> str:
     """Cari bukti/narasi dari dokumen LED menggunakan semantic search.
 
-    Gunakan query yang spesifik sesuai aspek indikator.
-    Contoh query: "mekanisme penyusunan visi misi program studi".
-    Mengembalikan top-N chunk teks dari LED beserta metadata halaman.
+    Query harus KAYA KONTEKS, bukan cuma keyword pendek — masukkan nomor
+    indikator DAN kata kunci konkret dari kriteria rubrik (bukan cuma nama
+    topik umum), karena embedding query yang kaya konteks menghasilkan
+    retrieval yang jauh lebih relevan.
+    Contoh query buruk: "visi misi".
+    Contoh query baik: "indikator 3 - proses penyusunan visi misi tujuan
+    strategi program studi yang melibatkan pemangku kepentingan internal
+    eksternal".
+    Mengembalikan top-N chunk teks dari LED beserta metadata halaman/paragraf.
     """
     persist_dir = os.environ.get("CHROMA_PERSIST_DIR", "data/chroma_db")
     results = search_led(query=query, persist_dir=persist_dir, n_results=n_results)

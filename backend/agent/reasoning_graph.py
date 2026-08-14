@@ -68,13 +68,14 @@ PROTOKOL: setiap respons HARUS berupa JSON satu baris. Pilih salah satu:
 Tool yang tersedia:
 
 1. get_indicator_rubric  — args: {"indicator_no": <int 1-78>}
-2. search_led_evidence   — args: {"query": "<id>", "n_results": <int, default 5>}
+2. search_led_evidence   — args: {"query": "<id, WAJIB kaya konteks: nomor indikator + kata kunci konkret dari kriteria rubrik, bukan cuma topik umum>", "n_results": <int, default 5>}
 3. get_lkps_table        — args: {"table_reference": "<misal 'Tabel 2.a. LKPS' atau '6.f.2'>"}
 4. compute_formula_score — args: {"formula_expression": "<expr Python: BOP / 5000000>", "variables": {<key: value>}}
 
 ALUR WAJIB:
 1. Mulai: get_indicator_rubric untuk pahami kriteria scoring
-2. Lanjut: search_led_evidence untuk bukti kualitatif
+2. Lanjut: search_led_evidence untuk bukti kualitatif — query harus kaya
+   konteks (nomor indikator + kata kunci kriteria rubrik), bukan keyword pendek
 3. (Opsional) get_lkps_table jika rubrik merujuk tabel LKPS
 4. (Opsional) compute_formula_score jika rubrik berbasis formula
 5. SELESAI dengan {"action": "final", ...}

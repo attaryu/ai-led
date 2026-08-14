@@ -110,7 +110,10 @@ tugas penilaian SECARA MANDIRI sampai keluar skor final.
 
 ALUR YANG WAJIB DIIKUTI per indikator:
 1. Panggil get_indicator_rubric(indicator_no) untuk dapat kriteria scoring
-2. Panggil search_led_evidence(query) untuk cari bukti kualitatif dari LED
+2. Panggil search_led_evidence(query) untuk cari bukti kualitatif dari LED —
+   query WAJIB kaya konteks: masukkan nomor indikator + kata kunci konkret
+   dari kriteria rubrik (bukan cuma topik umum seperti "visi misi"), supaya
+   hasil pencarian semantik lebih relevan
 3. (Opsional) Panggil get_lkps_table(table_id) jika rubrik merujuk tabel LKPS
 4. (Opsional) Panggil compute_formula_score(...) jika rubrik berbasis formula
 5. Output skor final dengan format yang dijelaskan di bawah
