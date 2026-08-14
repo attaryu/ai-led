@@ -4,6 +4,7 @@ import {
 	MagnifyingGlassIcon,
 	SparkleIcon,
 	SpinnerGapIcon,
+	UploadSimpleIcon,
 	WarningCircleIcon,
 } from '@phosphor-icons/react';
 
@@ -14,6 +15,8 @@ import { ScrollArea } from '~/core/components/ui/scroll-area';
 import { Textarea } from '~/core/components/ui/textarea';
 import { formatRelativeTimeLong } from '~/core/lib/format-time';
 import { EvidenceStatusBadge } from '~/features/evidence/presentation/components/evidence-status-badge';
+import { EvidenceUploadDialog } from '~/features/evidence/presentation/components/evidence-upload-dialog';
+import { useEvidencePermission } from '~/features/evidence/presentation/hooks/use-evidence-permission';
 import { formatBytes } from '~/features/evidence/presentation/utils/evidence-format';
 import { type EvidenceEntity } from '~/features/evidence/domain/entities/evidence.entity';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
@@ -63,6 +66,9 @@ export function ChapterGenerationPanel({
 		jumlahBaru,
 		punyaDasar,
 		jumlahGugur,
+		namaProdi,
+		tandaiUnggahanBaru,
+		jumlahMenungguOtomatis,
 		prompt,
 		setPrompt,
 		status,
@@ -75,6 +81,16 @@ export function ChapterGenerationPanel({
 	} = generasi;
 
 	const sedangBerjalan = status === 'berjalan';
+
+	/**
+	 * Hak unggah dibaca terpisah dari `izin`, dan sengaja **tidak** diikat ke
+	 * `izin.canEdit`. Mengunggah bukti dukung tidak menyentuh isi bab, jadi §12.2
+	 * tidak melarangnya saat bab terkunci; dan §4.4 memberi Pimpinan — yang di
+	 * editor hanya membaca — hak unggah yang penuh.
+	 */
+	const izinBukti = useEvidencePermission('PROGRAM_STUDI', studyProgramId);
+	const bisaUnggah = izinBukti.canUpload && izinBukti.session !== null;
+	const [unggahTerbuka, setUnggahTerbuka] = React.useState(false);
 
 	/**
 	 * Prompt tertutup secara bawaan karena ia memang opsional (§12.1 bahkan tidak
@@ -93,7 +109,28 @@ export function ChapterGenerationPanel({
 		<div className="flex min-h-0 flex-1 flex-col">
 			<div className="shrink-0 space-y-2 px-5 pt-4 pb-2">
 				<div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
-					<p className="text-sm font-medium">Bukti Dukung</p>
+					<div className="flex items-center gap-1">
+						<p className="text-sm font-medium">Bukti Dukung</p>
+
+						{/*
+						 * Ditaruh menempel pada judulnya, bukan di kaki panel bersama
+						 * tombol Generate: yang ini menambah isi daftar di atasnya, bukan
+						 * menjalankan apa pun atas pilihan yang sudah dibuat.
+						 */}
+						{bisaUnggah && (
+							<Button
+								type="button"
+								size="sm"
+								variant="ghost"
+								onClick={() => setUnggahTerbuka(true)}
+								disabled={sedangBerjalan}
+								aria-label="Unggah bukti dukung"
+								className="size-6 cursor-pointer p-0 text-muted-foreground hover:text-foreground"
+							>
+								<UploadSimpleIcon className="size-4" />
+							</Button>
+						)}
+					</div>
 
 					<div className="flex items-baseline gap-2 text-xs text-muted-foreground">
 						<span>
@@ -150,11 +187,32 @@ export function ChapterGenerationPanel({
 			<ScrollArea className="min-h-0 flex-1">
 				<div className="px-5">
 					{daftar.length === 0 ? (
-						<p className="py-8 text-center text-xs leading-relaxed text-muted-foreground">
-							{totalPustaka === 0
-								? 'Belum ada bukti dukung yang bisa dipakai bab ini. Unggah dari Perpustakaan Bukti Dukung lebih dulu.'
-								: 'Tidak ada berkas yang cocok dengan pencarian.'}
-						</p>
+						totalPustaka === 0 && bisaUnggah ? (
+							// Ajakannya kini bisa dituntaskan di tempat; sebelumnya kalimat ini
+							// memulangkan pengguna ke Perpustakaan Bukti Dukung dan kembali.
+							<div className="flex flex-col items-center gap-2 py-8 text-center">
+								<p className="text-xs leading-relaxed text-muted-foreground">
+									Belum ada bukti dukung yang bisa dipakai bab ini.
+								</p>
+								<Button
+									type="button"
+									size="sm"
+									variant="outline"
+									onClick={() => setUnggahTerbuka(true)}
+									disabled={sedangBerjalan}
+									className="cursor-pointer"
+								>
+									<UploadSimpleIcon />
+									Unggah bukti dukung
+								</Button>
+							</div>
+						) : (
+							<p className="py-8 text-center text-xs leading-relaxed text-muted-foreground">
+								{totalPustaka === 0
+									? 'Belum ada bukti dukung yang bisa dipakai bab ini. Unggah dari Perpustakaan Bukti Dukung lebih dulu.'
+									: 'Tidak ada berkas yang cocok dengan pencarian.'}
+							</p>
+						)
 					) : (
 						<ul className="space-y-0.5 pb-2">
 							{daftar.map((bukti) => (
@@ -172,6 +230,18 @@ export function ChapterGenerationPanel({
 			</ScrollArea>
 
 			<div className="shrink-0 space-y-2 border-t border-border px-5 py-3">
+				{/*
+				 * Auto-centang tanpa keterangan terbaca seperti perilaku hantu: berkas
+				 * yang barusan diunggah tampil mati beberapa detik, lalu tiba-tiba
+				 * tercentang sendiri. Baris ini yang mengumumkannya lebih dulu.
+				 */}
+				{jumlahMenungguOtomatis > 0 && (
+					<p className="text-xs leading-relaxed text-muted-foreground">
+						{jumlahMenungguOtomatis} berkas yang baru diunggah sedang diproses
+						dan akan tercentang sendiri begitu siap dipakai.
+					</p>
+				)}
+
 				{jumlahGugur > 0 && (
 					<p className="text-xs leading-relaxed text-muted-foreground">
 						{jumlahGugur} bukti dari generate sebelumnya sudah tidak tersedia
@@ -304,6 +374,28 @@ export function ChapterGenerationPanel({
 					</p>
 				)}
 			</div>
+
+			{/*
+			 * Modal yang sama persis dengan yang dipakai kedua Perpustakaan Bukti
+			 * Dukung — termasuk panel progres melayangnya, yang sudah terpasang di
+			 * akar aplikasi sehingga unggahan tetap jalan walau penggunanya berpindah
+			 * bab atau keluar dari editor (§4.5).
+			 */}
+			{bisaUnggah && izinBukti.session && (
+				<EvidenceUploadDialog
+					open={unggahTerbuka}
+					onOpenChange={setUnggahTerbuka}
+					level="PROGRAM_STUDI"
+					studyProgramId={studyProgramId}
+					studyProgramName={namaProdi}
+					allowTenantTarget={izinBukti.canUploadTenant}
+					uploader={{
+						userId: izinBukti.session.userId,
+						name: izinBukti.session.namaLengkap,
+					}}
+					onUploaded={tandaiUnggahanBaru}
+				/>
+			)}
 		</div>
 	);
 }

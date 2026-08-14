@@ -328,6 +328,7 @@ pilih berkas (batch) → minta presigned URL ke backend → PUT langsung ke obje
 - **Gagal saat unggah** (jaringan/storage) → baris di panel menampilkan alasannya dengan tombol coba lagi; tidak ada baris `BUKTI_DUKUNG` yang tercipta.
 - **Gagal saat ekstraksi** → barisnya sudah ada dan tetap tampil di perpustakaan berstatus `GAGAL` beserta catatan; ekstraksi bisa diulang tanpa mengunggah berkasnya lagi.
 - Bukti dukung berstatus selain `SIAP` tetap terlihat di daftar, tapi belum bisa dipakai sebagai konteks AI (PRD §3.3).
+- **Titik masuknya tidak cuma dua perpustakaan.** Alur yang sama persis — modal, panel melayang, antrean ekstraksi — juga bisa dimulai dari tab Generasi di Editor Bab, supaya bukti dukung bisa diunggah sambil menulis (§12.1a). Yang berbeda hanya pilihan targetnya, yang di sana menyempit ke prodi dokumen atau universitas.
 
 ### 4.6 Tampilan Perpustakaan Bukti Dukung
 
@@ -764,6 +765,16 @@ Tampilan mengikuti konsep dua-sidebar ala Figma:
 > - **Lebar sidebar kanan bisa diseret** (320–560 px, tersimpan per browser). Sketsa di §7 menggambarnya tetap; 320 px tidak cukup memuat daftar bukti dukung, pencarian, dan prompt sekaligus.
 >
 > **Status implementasi.** Yang sudah jalan: pemilihan bukti dukung, prompt, dan generate yang menimpa `konten_kerja` sekaligus memperbarui `BUKTI_DUKUNG_BAB` — mengikuti pasal ini, **bukan** `docs/database.md` §4 yang menyimpan hasilnya sebagai `BAB_DRAFT` baru untuk di-restore user. Keduanya berselisih dan yang dipakai kode adalah pasal ini; §4 di `database.md` menunggu iterasi checkpoint. Yang **belum**: skor RAGAS otomatis (butuh tab Skor) dan kunci `lock:bab:{bab_id}` di §13 (belum ada lapis Redis). Pemanggilan AI-nya sendiri masih tiruan di `features/chapter/data/sources/remote/chapter-generation.mock.ts`.
+
+#### 12.1a Unggah bukti dukung dari dalam tab ini
+
+Menyusul permintaan agar bukti dukung bisa diunggah **sambil menulis**, tidak harus keluar dulu ke Perpustakaan Bukti Dukung lalu kembali. Sebelum ini, keadaan kosong daftarnya secara harfiah menyuruh begitu.
+
+- **Tombol unggah menempel pada judul "Bukti Dukung"** di kepala tab, dan keadaan kosongnya berisi ajakan yang membuka modal yang sama. Modal, antrean, panel progres melayang, dan pipeline ekstraksinya **persis** yang di §4.5 — tidak ada alur unggah kedua.
+- **Hak unggah dibaca terpisah dari hak edit bab.** Mengunggah tidak menyentuh `konten_kerja`, jadi §12.2 tidak melarangnya saat bab terkunci, dan `PIMPINAN` yang di editor hanya membaca tetap melihat tombolnya sesuai §4.4. Yang tidak berhak tidak melihatnya sama sekali (§1).
+- **Targetnya**: bawaannya prodi pemilik dokumen. Pengunggah level tenant (`PIMPINAN`, `PENJAMIN_MUTU`) mendapat pilihan kedua, **Universitas**. Prodi lain tidak pernah jadi pilihan dari sini — untuk itu ada perpustakaan tenant (§4.4.1) — karena dari dalam editor sebuah prodi, mengunggah ke prodi tetangga hampir selalu salah pencet, bukan niat.
+- **Auto-centang.** Berkas yang diunggah dari tab ini tercentang sendiri begitu status ekstraksinya `SIAP`; sepanjang menunggu, ada keterangan yang mengumumkannya supaya centang yang muncul belakangan tidak terasa datang sendiri. Yang `GAGAL` tidak dicentang — badge dan `catatan_gagal`-nya sudah jadi keterangannya. Pilihan ini terhitung "baru", jadi ikut terangkut tombol pembatalan seperti centang manual.
+- **Batasnya**: berpindah bab selagi unggahan berjalan tidak membatalkan apa pun — berkasnya tetap tuntas dan masuk pustaka — tapi auto-centangnya hangus. Ia memang milik bab tempat berkas itu diunggah.
 
 ### 12.2 Penguncian bab (`terkunci`)
 

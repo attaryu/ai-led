@@ -5,6 +5,7 @@ import {
 	type EvidenceEntity,
 	type EvidenceStatus,
 } from '~/features/evidence/domain/entities/evidence.entity';
+import { studyProgramRepository } from '~/features/study-program/data/repositories/study-program.repository';
 import { chapterDraftRepository } from '../../data/repositories/chapter-draft.repository';
 import { chapterRepository } from '../../data/repositories/chapter.repository';
 import { generateChapterContent } from '../../data/sources/remote/chapter-generation.mock';
@@ -96,6 +97,17 @@ export function useChapterGeneration({
 	/** Versi checkpoint yang lahir dari hasil terakhir; `null` selama belum disimpan. */
 	const [versiTersimpan, setVersiTersimpan] = React.useState<number | null>(null);
 
+	/**
+	 * Bukti dukung yang diunggah dari panel ini dan masih menunggu ekstraksinya
+	 * selesai. Begitu statusnya `SIAP` ia dicentang sendiri: pengguna mengunggah
+	 * berkas dari tab Generasi justru karena ingin memakainya untuk generate ini,
+	 * jadi menyuruhnya mencari lagi berkasnya di daftar hanya menambah satu
+	 * langkah tanpa menambah pilihan.
+	 */
+	const [menungguOtomatis, setMenungguOtomatis] = React.useState<
+		ReadonlySet<string>
+	>(() => new Set());
+
 	const muat = React.useCallback(() => {
 		setPustaka(evidenceRepository.findAvailableForStudyProgram(studyProgramId));
 	}, [studyProgramId]);
@@ -137,6 +149,68 @@ export function useChapterGeneration({
 		// Selisihnya ditampilkan, tidak dibuang diam-diam.
 		setJumlahGugur(chapter.buktiDukung.length - dipulihkan.length);
 	}
+
+	/**
+	 * Efek, bukan bagian dari `muat()`: pemulihan pilihan di atas berjalan di fase
+	 * render dan **mengganti** seluruh isi `terpilih`. Mencentang dari dalam
+	 * pemuatan berarti bertaruh siapa yang menulis belakangan; di sini ia dijamin
+	 * berjalan sesudah keduanya selesai.
+	 */
+	React.useEffect(() => {
+		if (menungguOtomatis.size === 0) return;
+
+		const siap: string[] = [];
+		const rampung: string[] = [];
+
+		for (const id of menungguOtomatis) {
+			const bukti = pustaka.find((kandidat) => kandidat.id === id);
+			// Belum muncul di pustaka: daftarnya belum tersegarkan, tunggu putaran
+			// `storage-update` berikutnya.
+			if (!bukti) continue;
+
+			if (bukti.status === STATUS_TERPAKAI) {
+				siap.push(id);
+				rampung.push(id);
+			} else if (bukti.status === 'GAGAL') {
+				// Berhenti menunggu tanpa pesan tambahan: badge `GAGAL` dan
+				// `catatanGagal` di barisnya sudah jadi keterangannya.
+				rampung.push(id);
+			}
+		}
+
+		if (rampung.length === 0) return;
+
+		if (siap.length > 0) {
+			// Ditambahkan ke `terpilih` saja, tidak ke `dasar` — supaya ia terhitung
+			// "baru" dan ikut terangkut tombol pembatalan, sama seperti centang manual.
+			setTerpilih((sebelumnya) => {
+				const berikutnya = new Set(sebelumnya);
+				siap.forEach((id) => berikutnya.add(id));
+				return berikutnya;
+			});
+		}
+
+		setMenungguOtomatis((sebelumnya) => {
+			const berikutnya = new Set(sebelumnya);
+			rampung.forEach((id) => berikutnya.delete(id));
+			return berikutnya;
+		});
+	}, [pustaka, menungguOtomatis]);
+
+	/** Disodorkan ke modal unggah sebagai `onUploaded`. */
+	const tandaiUnggahanBaru = React.useCallback((evidence: EvidenceEntity) => {
+		setMenungguOtomatis((sebelumnya) => new Set(sebelumnya).add(evidence.id));
+	}, []);
+
+	/**
+	 * Dibutuhkan modal unggah: label targetnya, sekaligus `studyProgramName` yang
+	 * didenormalisasi ke baris bukti dukung yang tercipta.
+	 */
+	const namaProdi = React.useMemo(
+		() =>
+			studyProgramRepository.findById(studyProgramId)?.studyProgramName ?? null,
+		[studyProgramId],
+	);
 
 	/**
 	 * Tiga kolom yang sama dengan `evidenceRepository.findPaged`, supaya mengetik
@@ -310,6 +384,10 @@ export function useChapterGeneration({
 		/** `true` bila bab ini sudah pernah digenerate — mengubah label pembatalan. */
 		punyaDasar: dasar.size > 0,
 		jumlahGugur,
+		namaProdi,
+		tandaiUnggahanBaru,
+		/** Unggahan dari panel ini yang masih menunggu ekstraksinya selesai. */
+		jumlahMenungguOtomatis: menungguOtomatis.size,
 		prompt,
 		setPrompt,
 		status,

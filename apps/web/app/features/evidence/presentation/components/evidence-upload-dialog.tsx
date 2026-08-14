@@ -23,6 +23,7 @@ import {
 	EVIDENCE_ACCEPT_ATTRIBUTE,
 	EVIDENCE_ACCEPTED_EXTENSIONS,
 	validateEvidenceFile,
+	type EvidenceEntity,
 	type EvidenceOwnerType,
 } from '../../domain/entities/evidence.entity';
 import { uploadEvidenceTargetSchema } from '../../domain/dtos/upload-evidence.dto';
@@ -53,20 +54,43 @@ export function EvidenceUploadDialog({
 	level,
 	studyProgramId,
 	studyProgramName,
+	allowTenantTarget = false,
 	uploader,
+	onUploaded,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	level: EvidenceOwnerType;
 	studyProgramId?: string;
 	studyProgramName?: string | null;
+	/**
+	 * Membuka opsi "Universitas" pada konteks yang cakupannya terkunci ke satu
+	 * prodi (`level === 'PROGRAM_STUDI'`), untuk pengunggah yang memang berwenang
+	 * lintas prodi. Prodi lain tetap tidak pernah dirender — hanya prodi yang
+	 * sedang dibuka dan universitas.
+	 */
+	allowTenantTarget?: boolean;
 	uploader: UploaderIdentity;
+	/**
+	 * Dipanggil per berkas yang barisnya berhasil tercatat. Dipakai pemanggil yang
+	 * perlu menindaklanjuti hasil unggahannya — mis. tab Generasi yang mencentang
+	 * berkas baru begitu ekstraksinya selesai.
+	 */
+	onUploaded?: (evidence: EvidenceEntity) => void;
 }) {
 	const startBatch = useEvidenceUploadStore((state) => state.startBatch);
 
+	/**
+	 * Nilai awal pemilih target. Di lapis prodi ia bukan sekadar penanda kosong:
+	 * begitu opsi universitas ikut dirender, `targetValue` jadi satu-satunya
+	 * sumber target untuk kedua lapis, dan bawaannya harus prodi yang sedang
+	 * dibuka — bukan universitas.
+	 */
+	const targetBawaan = level === 'TENANT' ? TENANT_OPTION : (studyProgramId ?? '');
+
 	const [queued, setQueued] = React.useState<QueuedFile[]>([]);
 	const [isDragging, setIsDragging] = React.useState(false);
-	const [targetValue, setTargetValue] = React.useState<string>(TENANT_OPTION);
+	const [targetValue, setTargetValue] = React.useState<string>(targetBawaan);
 	const [targetError, setTargetError] = React.useState<string | null>(null);
 	const [studyPrograms, setStudyPrograms] = React.useState<
 		StudyProgramEntity[]
@@ -82,11 +106,11 @@ export function EvidenceUploadDialog({
 	React.useEffect(() => {
 		if (open) {
 			setQueued([]);
-			setTargetValue(TENANT_OPTION);
+			setTargetValue(targetBawaan);
 			setTargetError(null);
 			setIsDragging(false);
 		}
-	}, [open]);
+	}, [open, targetBawaan]);
 
 	const addFiles = React.useCallback((files: FileList | null) => {
 		if (!files) return;
@@ -112,18 +136,13 @@ export function EvidenceUploadDialog({
 	const rejectedCount = queued.length - validFiles.length;
 
 	const handleSubmit = () => {
+		// Satu sumber target untuk kedua lapis: `targetValue`. Di lapis prodi tanpa
+		// opsi universitas ia tidak pernah berubah dari prodi yang sedang dibuka,
+		// jadi hasilnya sama dengan versi bercabang sebelumnya.
 		const target =
-			level === 'TENANT'
-				? targetValue === TENANT_OPTION
-					? { ownerTipe: 'TENANT' as const, studyProgramId: null }
-					: {
-							ownerTipe: 'PROGRAM_STUDI' as const,
-							studyProgramId: targetValue,
-						}
-				: {
-						ownerTipe: 'PROGRAM_STUDI' as const,
-						studyProgramId: studyProgramId ?? null,
-					};
+			targetValue === TENANT_OPTION
+				? { ownerTipe: 'TENANT' as const, studyProgramId: null }
+				: { ownerTipe: 'PROGRAM_STUDI' as const, studyProgramId: targetValue };
 
 		const parsed = uploadEvidenceTargetSchema.safeParse(target);
 		if (!parsed.success) {
@@ -134,10 +153,11 @@ export function EvidenceUploadDialog({
 
 		const targetProgramName =
 			parsed.data.ownerTipe === 'PROGRAM_STUDI'
-				? level === 'TENANT'
-					? (studyPrograms.find((program) => program.id === targetValue)
+				? parsed.data.studyProgramId === studyProgramId
+					? (studyProgramName ?? null)
+					: // Hanya terisi di lapis tenant; di lapis prodi cabang ini tak terjangkau.
+						(studyPrograms.find((program) => program.id === targetValue)
 							?.studyProgramName ?? null)
-					: (studyProgramName ?? null)
 				: null;
 
 		startBatch({
@@ -145,6 +165,7 @@ export function EvidenceUploadDialog({
 			target: parsed.data,
 			studyProgramName: targetProgramName,
 			uploader,
+			onUploaded,
 		});
 		onOpenChange(false);
 	};
@@ -181,6 +202,35 @@ export function EvidenceUploadDialog({
 										Prodi {program.studyProgramName}
 									</option>
 								))}
+							</Select>
+							{targetError && (
+								<p className="text-sm text-destructive">{targetError}</p>
+							)}
+						</Field>
+					) : allowTenantTarget ? (
+						/*
+						 * Tepat dua pilihan. Prodi lain sengaja tidak ikut walau
+						 * pengunggahnya berwenang atas semuanya: cakupan yang sedang dibuka
+						 * adalah prodi ini, dan mengunggah ke prodi tetangga dari sini
+						 * hampir selalu salah pencet, bukan niat. Untuk itu ada perpustakaan
+						 * tenant (§4.4.1).
+						 */
+						<Field data-invalid={!!targetError}>
+							<FieldLabel htmlFor="evidence-target">Simpan ke</FieldLabel>
+							<Select
+								id="evidence-target"
+								value={targetValue}
+								onChange={(event) => {
+									setTargetValue(event.target.value);
+									setTargetError(null);
+								}}
+							>
+								<option value={studyProgramId ?? ''}>
+									Prodi {studyProgramName}
+								</option>
+								<option value={TENANT_OPTION}>
+									Universitas (berlaku lintas prodi)
+								</option>
 							</Select>
 							{targetError && (
 								<p className="text-sm text-destructive">{targetError}</p>

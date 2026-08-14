@@ -20,6 +20,16 @@ export type EvidencePermission = {
 	session: SessionEntity | null;
 	canView: boolean;
 	canUpload: boolean;
+	/**
+	 * Boleh mengarahkan unggahan ke level universitas, bukan cuma ke satu prodi.
+	 *
+	 * Dipisah dari `canUpload` karena ada tempat yang cakupannya sudah terkunci ke
+	 * satu prodi — Perpustakaan Bukti Dukung prodi dan tab Generasi di Editor Bab —
+	 * tapi pengunggahnya sendiri berwenang lintas prodi. Di situ pilihan targetnya
+	 * cukup dua: prodi yang sedang dibuka, atau universitas. Prodi lain tidak
+	 * pernah jadi pilihan; untuk itu ada perpustakaan tenant (§4.4.1).
+	 */
+	canUploadTenant: boolean;
 	canDelete: (evidence: EvidenceEntity) => boolean;
 	canRetry: (evidence: EvidenceEntity) => boolean;
 };
@@ -37,6 +47,7 @@ export function useEvidencePermission(
 			session,
 			canView: false,
 			canUpload: false,
+			canUploadTenant: false,
 			canDelete: () => false,
 			canRetry: () => false,
 		};
@@ -63,6 +74,7 @@ export function useEvidencePermission(
 		session,
 		canView,
 		canUpload,
+		canUploadTenant: canUpload && isTenantWide,
 		canDelete,
 		// Ekstraksi ulang tidak menghapus apa pun, jadi cukup hak lihat + unggah.
 		canRetry: () => canUpload,
