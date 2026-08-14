@@ -16,7 +16,8 @@ COPY requirements.txt .
 # torch >= 2.6 wajib karena transformers menolak torch.load utk CVE-2025-32434.
 # bge-m3 punya safetensors, jadi safetensors path tetap aman.
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+    pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124 \
+    --extra-index-url https://pypi.org/simple
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r requirements.txt

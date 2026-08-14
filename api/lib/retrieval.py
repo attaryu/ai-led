@@ -27,6 +27,11 @@ except Exception:
 CHROMA_PATH     = os.environ.get("CHROMA_PATH", "/data/chroma_db")
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-m3")
 
+# Toggle collection pedoman: "pedoman" (lama, embed=full text) atau
+# "pedoman_new" (chunking dinamis rancangan.txt, embed=heading/prefix saja).
+# Set PEDOMAN_COLLECTION=pedoman_new di .env utk switch tanpa ubah kode.
+PEDOMAN_COLLECTION = os.environ.get("PEDOMAN_COLLECTION", "pedoman")
+
 
 @lru_cache(maxsize=1)
 def get_embeddings() -> HuggingFaceEmbeddings:
@@ -144,7 +149,7 @@ def _search(collection_name: str, query: str, k: int,
 
 def search_pedoman(query: str, k: int = 5, where: Optional[Dict] = None):
     """RAG 1: cari instruksi/struktur penulisan dari pedoman LED-PS."""
-    return _search("pedoman", query, k, where)
+    return _search(PEDOMAN_COLLECTION, query, k, where)
 
 
 def search_rubric(query: str, k: int = 5, where: Optional[Dict] = None):
@@ -158,8 +163,19 @@ def search_lkps(query: str, k: int = 5, where: Optional[Dict] = None):
 
 
 def search_evidence(query: str, k: int = 5, where: Optional[Dict] = None):
-    """RAG 4: cari bukti kualitatif dari repository SPMI."""
+    """RAG 4: cari bukti kualitatif dari repository SPMI.
+
+    `where={"id_bukti_dukung": {"$in": [...]}}` men-scope pencarian HANYA ke
+    dokumen yg user pilih di alur rekomendasi (lihat generator.py
+    `_retrieve_facts`) -- bukan blanket search ke seluruh evidence terupload."""
     return _search("evidence", query, k, where)
+
+
+def search_document_registry(query: str, k: int = 8, where: Optional[Dict] = None):
+    """RAG baru (tahap rekomendasi): cari folder evidence kandidat dari
+    Document Registry (granularitas folder, bukan isi file) -- lihat
+    document_registry di schema.sql & database.md #9b."""
+    return _search("document_registry", query, k, where)
 
 
 def search_context(query: str, k: int = 8, where: Optional[Dict] = None):

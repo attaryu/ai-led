@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1.4
+FROM python:3.12-slim
+
+WORKDIR /app
+
+ENV PIP_DEFAULT_TIMEOUT=600 \
+    PIP_RETRIES=20 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# LibreOffice utk convert doc/docx/ppt/pptx -> pdf (lib/extraction/mineru.py::convert_to_pdf).
+# libgl1/libglib2.0-0 dibutuhkan opencv-python (dependency mineru[core]) --
+# tanpa ini import cv2 gagal "libGL.so.1: cannot open shared object file".
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libreoffice \
+        libgl1 \
+        libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+
+# torch CUDA sama seperti image api (embedding + MinerU sama2 diuntungkan GPU
+# kalau tersedia; MinerU auto-fallback CPU kalau tidak ada GPU).
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124 \
+    --extra-index-url https://pypi.org/simple
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt
+
+# MinerU CLI -- self-contained di image ini (bukan mount venv host). Model
+# deep-learning MinerU diunduh saat RUN PERTAMA dipakai (bukan saat build),
+# tersimpan di /root/.cache -- persist via named volume mineru_cache di
+# docker-compose.yml supaya tidak diunduh ulang tiap restart container.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install "mineru[core]"
+
+COPY . .
+
+CMD ["rq", "worker", "documents", "--url", "redis://redis:6379"]

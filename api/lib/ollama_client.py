@@ -141,6 +141,34 @@ def get_llm_for_judge(model: str) -> OllamaLLM:
     return get_llm(model, temperature=0.0, num_predict=2500)
 
 
+def get_llm_for_lkps_decision(model: str) -> OllamaLLM:
+    """Keputusan biner (butuh LKPS? LKPS cukup?): output pendek, deterministic-ish."""
+    return get_llm(model, temperature=0.1, num_predict=300)
+
+
+def get_llm_for_query_gen(model: str) -> OllamaLLM:
+    """Query generation (document_query / lkps_evidence_query): output JSON pendek."""
+    return get_llm(model, temperature=0.2, num_predict=400)
+
+
+def get_llm_for_recommendation(model: str) -> OllamaLLM:
+    """Sintesis rekomendasi dokumen akhir ke user: narasi pendek + list."""
+    return get_llm(model, temperature=0.3, num_predict=800)
+
+
+def get_llm_for_route_and_plan(model: str) -> OllamaLLM:
+    """Gabungan needs_lkps + document_query (2 keputusan 1 call) --
+    num_predict = jumlah kebutuhan lkps_decision(300) + query_gen(400)."""
+    return get_llm(model, temperature=0.2, num_predict=700)
+
+
+def get_llm_for_assess_and_recommend(model: str) -> OllamaLLM:
+    """Gabungan lkps_sufficient + lkps_evidence_query + recommendation_text/
+    items (3 keputusan 1 call) -- num_predict = jumlah kebutuhan
+    lkps_sufficiency(300) + evidence_query(400) + recommendation(800)."""
+    return get_llm(model, temperature=0.2, num_predict=1500)
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Legacy direct HTTP API (utk fungsi yg belum di-migrate)
 # ──────────────────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { useStore } from "../lib/store.js";
 import { api, streamChat } from "../lib/api.js";
 
 export default function ChatPane() {
+  const dokumenId        = useStore((s) => s.activeDokumenId);
   const activeId         = useStore((s) => s.activeId);
   const model            = useStore((s) => s.model);
   const sectionDetail    = useStore((s) => s.sectionDetail);
@@ -18,10 +19,10 @@ export default function ChatPane() {
 
   useEffect(() => {
     if (!activeId) return setChatHistory([]);
-    api.getChatHistory(activeId, model)
+    api.getChatHistory(dokumenId, activeId, model)
       .then(setChatHistory)
       .catch(() => setChatHistory([]));
-  }, [activeId, model, setChatHistory]);
+  }, [dokumenId, activeId, model, setChatHistory]);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -38,13 +39,13 @@ export default function ChatPane() {
 
     let acc = "";
     streamChat(
-      activeId, model, userMsg,
+      dokumenId, activeId, model, userMsg,
       (tok) => { acc += tok; setPartial(acc); },
       async () => {
         setStreaming(false);
-        const hist  = await api.getChatHistory(activeId, model);
+        const hist  = await api.getChatHistory(dokumenId, activeId, model);
         setChatHistory(hist);
-        const fresh = await api.getSection(activeId, model);
+        const fresh = await api.getSection(dokumenId, activeId, model);
         setSectionDetail(fresh);
         setPartial("");
       },

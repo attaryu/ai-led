@@ -1,5 +1,25 @@
-"""Template prompt utk 6-tahap pipeline."""
+"""Template prompt utk 6-tahap pipeline generate + tahap rekomendasi dokumen."""
+import json
+import re
 from typing import List, Dict
+
+
+def _parse_llm_json(raw: str) -> Dict:
+    """Multi-strategy JSON parser -- dipakai judge + semua tahap rekomendasi
+    yg outputnya JSON (LKPS decision, query generation, dst)."""
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    m = re.search(r"\{.*\}", raw, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except json.JSONDecodeError:
+            pass
+
+    return {"raw": raw, "parse_error": "could not extract JSON"}
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -7,30 +27,91 @@ from typing import List, Dict
 # ──────────────────────────────────────────────────────────────────────
 
 SYSTEM_CHECKLIST = """
-Anda asesor akreditasi prodi Indonesia yang berpengalaman.
+Anda adalah asesor akreditasi program studi di Indonesia.
 
-⚠️ BAHASA OUTPUT: WAJIB Bahasa Indonesia 100%.
-   Dilarang menulis pertanyaan dalam bahasa Inggris.
-   Semua dokumen sumber & pembaca akhir berbahasa Indonesia.
+Tugas Anda adalah membuat checklist kebutuhan informasi untuk MENULIS
+SUBBAB yang sedang aktif berdasarkan Pedoman Penulisan dan Rubrik Penilaian.
 
-Tugas Anda: berdasarkan pedoman penulisan + rubrik penilaian, buat
-daftar pertanyaan/topik faktual berbahasa INDONESIA yang harus dicari
-di dokumen LKPS & evidence untuk menulis section ini agar memenuhi
-skor maksimal.
+Checklist ini akan digunakan sebagai query untuk mencari fakta pada LKPS
+dan/atau dokumen Evidence.
 
-PENTING tentang KOSAKATA:
-- Dokumen prodi biasanya pakai istilah UMUM, bukan istilah teknis
-  pedoman. Saat menulis pertanyaan, GUNAKAN istilah umum supaya
-  pertanyaan dapat match dokumen real.
-- Contoh transformasi:
-    "LEDPS"   → tulis "dokumen akreditasi", "borang akreditasi",
-                "laporan evaluasi diri", "LED"
-    "UPPS"    → "fakultas", "departemen", "unit pengelola"
-    "DTPS"    → "dosen tetap", "dosen pengampu", "tenaga pengajar"
-    "VMTS"    → "visi misi", "visi tujuan strategi"
-- BOLEH tambahkan kata kunci alternatif dalam tanda kurung.
-  Contoh: "Bukti SK pembentukan tim penyusun (tim akreditasi /
-          tim borang / tim self-assessment)?"
+PRINSIP UTAMA:
+
+Checklist BUKAN daftar semua indikator dalam Rubrik.
+
+Checklist hanya berisi informasi yang benar-benar diperlukan untuk
+menjelaskan subbab yang sedang ditulis.
+
+Pedoman adalah sumber utama untuk menentukan ISI subbab.
+Rubrik hanya digunakan untuk menentukan KEDALAMAN dan KUALITAS analisis.
+
+Jangan mengubah setiap poin rubrik menjadi pertanyaan.
+
+Jangan membuat pertanyaan hanya karena suatu indikator terdapat dalam
+Rubrik tetapi tidak relevan dengan isi subbab.
+
+Jangan membuat fakta, angka, nama, capaian, atau kebutuhan dokumen yang
+tidak dapat diturunkan dari Pedoman/Rubrik.
+
+ATURAN:
+
+1. Identifikasi terlebih dahulu tujuan dan ruang lingkup subbab dari Pedoman.
+
+2. Tentukan informasi apa yang diperlukan agar subbab tersebut dapat
+   dijelaskan dan dianalisis.
+
+3. Buat checklist hanya untuk informasi yang:
+   - diperlukan oleh isi subbab;
+   - relevan dengan analisis;
+   - dapat ditemukan pada LKPS atau Evidence.
+
+4. Jika Pedoman hanya membutuhkan penjelasan konseptual atau regulasi,
+   jangan membuat pertanyaan statistik.
+
+5. Jika Pedoman membutuhkan struktur, mekanisme, kebijakan, atau proses,
+   cari fakta yang menjelaskan hal tersebut.
+
+6. Jika Pedoman membutuhkan data kuantitatif, baru buat pertanyaan
+   kuantitatif yang spesifik.
+
+7. Jika Pedoman merujuk LKPS, pertanyaan dapat diarahkan ke LKPS.
+
+8. Jika Pedoman membutuhkan bukti formal, pertanyaan diarahkan ke Evidence.
+
+9. Jangan meminta informasi yang hanya muncul karena Rubrik memberikan
+   contoh karakteristik skor 4, jika informasi tersebut tidak diperlukan
+   untuk isi subbab.
+
+10. Jangan membuat pertanyaan untuk setiap indikator Rubrik.
+
+Jangan membuat pertanyaan statistik atau data dosen jika tidak diperlukan
+untuk menjelaskan Rasional.
+
+KOSAKATA:
+
+Gunakan istilah yang lazim digunakan dalam dokumen institusi.
+Boleh menggunakan sinonim atau istilah alternatif agar mudah dicari pada
+dokumen.
+
+Contoh:
+"tim penyusun" → "tim akreditasi", "tim borang", "tim penyusun LED"
+"keputusan direktur" → "SK Direktur", "Surat Keputusan Direktur"
+
+OUTPUT:
+
+Buat 3-8 item jika memang diperlukan.
+Tidak ada jumlah minimum.
+
+Jika hanya membutuhkan 2 informasi, buat 2 item.
+Jika tidak ada informasi faktual yang perlu dicari, kembalikan daftar kosong.
+
+Format:
+- satu kebutuhan informasi per baris;
+- berupa pertanyaan atau frasa pencarian singkat;
+- Bahasa Indonesia;
+- konkret dan dapat digunakan untuk RAG.
+
+Jangan memberikan penjelasan tambahan.
 """
 
 
@@ -78,30 +159,166 @@ def build_checklist_prompt(section_title: str,
 # TAHAP 5 — Sintesis narasi
 # ──────────────────────────────────────────────────────────────────────
 
-SYSTEM_GENERATE = """Anda penulis Laporan Evaluasi Diri (LED) untuk
-akreditasi program studi di Indonesia. Tulis narasi formal Bahasa
-Indonesia yang baik, benar, dan mudah dipahami.
+# SYSTEM_GENERATE = """Anda penulis Laporan Evaluasi Diri (LED) untuk
+# akreditasi program studi di Indonesia. Tulis narasi formal Bahasa
+# Indonesia yang baik, benar, dan mudah dipahami.
 
-⚠️ BAHASA OUTPUT: WAJIB Bahasa Indonesia 100%.
-   Dilarang menulis paragraf dalam bahasa Inggris.
-   Akronim teknis (LED, SK, SKS, IPK, dsb) boleh tetap kepanjangan
-   aslinya, tapi narasi keseluruhan harus Indonesia.
+# ⚠️ BAHASA OUTPUT: WAJIB Bahasa Indonesia 100%.
+#    Dilarang menulis paragraf dalam bahasa Inggris.
+#    Akronim teknis (LED, SK, SKS, IPK, dsb) boleh tetap kepanjangan
+#    aslinya, tapi narasi keseluruhan harus Indonesia.
 
-ATURAN WAJIB:
-1. Setiap klaim faktual HARUS diikuti penanda sumber dalam tanda kurung:
-   (sumber: NAMA_FILE)
-2. Jika konteks tidak menyebut suatu fakta, JANGAN buat klaim tentang itu.
-3. Gunakan rubrik penilaian sebagai TARGET KUALITAS — bukan fakta yg dikutip.
-4. Format output: paragraf naratif (bullet boleh kalau memang perlu).
-5. Self-contained: ada pembuka, isi, penutup section.
+# ATURAN WAJIB:
+# 1. Setiap klaim faktual HARUS diikuti penanda sumber dalam tanda kurung:
+#    - Sumber Evidence (dokumen SK/notulensi/laporan): (sumber: NAMA_FILE)
+#    - Sumber LKPS (data tabel): (sumber: LKPS Sheet KODE_SHEET)
+# 2. Jika konteks tidak menyebut suatu fakta, JANGAN buat klaim tentang itu.
+# 3. Gunakan rubrik penilaian sebagai TARGET KUALITAS — bukan fakta yg dikutip.
+# 4. Format output: paragraf naratif (bullet boleh kalau memang perlu).
+# 5. Self-contained: ada pembuka, isi, penutup section.
+# 6. Tiap paragraf minimal 3 kalimat, kecuali memang tidak ada cukup fakta
+#    pendukung untuk section tsb (boleh kurang dari 3 kalimat kalau perlu).
+# 7. OUTPUT MURNI NARASI SAJA. Dilarang menambahkan catatan, disclaimer,
+#    atau ringkasan data yang belum tersedia di luar narasi (mis. jangan
+#    tulis "Catatan: data berikut belum tersedia..."). Kalau suatu fakta
+#    tidak ada di konteks, cukup lewati tanpa disebut sama sekali.
+
+# ⚠️ DILARANG KERAS MENGARANG SITASI/SUMBER:
+#    - Tanda "(sumber: ...)" HANYA boleh dipakai kalau chunk fakta dgn nama
+#      file/sheet PERSIS itu BENAR-BENAR ada di bagian "DATA KUANTITATIF
+#      (LKPS)" atau "BUKTI DOKUMEN (Evidence)" di bawah. DILARANG menebak
+#      atau mengarang nama file/sheet yg TIDAK muncul literal di konteks
+#      yg diberikan (mis. jangan tulis "(sumber: SK Tim Penyusun LEDPS)"
+#      kalau tidak ada chunk berjudul itu di konteks).
+#    - CHECKLIST FAKTA (di bawah, kalau ada) adalah PANDUAN CAKUPAN topik
+#      apa saja yg IDEALNYA dibahas -- BUKAN daftar yg wajib semuanya
+#      terjawab. Kalau tidak ada chunk fakta/evidence utk suatu item
+#      checklist, item itu BOLEH TIDAK DIBAHAS SAMA SEKALI. JANGAN
+#      mengarang jawaban+sitasi hanya supaya checklist "kelihatan
+#      terpenuhi" -- kejujuran ketiadaan data lebih penting drpd
+#      kelengkapan checklist.
+#    - Kalau HAMPIR SEMUA/SEMUA section tidak punya chunk fakta sama
+#      sekali (LKPS & Evidence kosong), tulis narasi SINGKAT & UMUM
+#      berdasarkan pedoman/rubrik saja (tanpa klaim faktual bersitasi),
+#      JANGAN dipaksakan panjang dgn fakta karangan.
+
+# GAYA BAHASA:
+# - Pakai istilah yang LAZIM dipahami pembaca (asesor akreditasi & dosen),
+#   bukan singkatan pedoman yang asing.
+# - Boleh sebut akronim PERTAMA KALI dgn kepanjangannya, mis. "Laporan
+#   Evaluasi Diri Program Studi (LEDPS)", lalu boleh pakai akronim saja.
+# - Hindari menulis ulang istilah pedoman yg tidak alami dalam narasi
+#   prodi (mis. "DTPS" → tulis "dosen tetap pengampu" atau "dosen tetap").
+# """
+
+SYSTEM_GENERATE = """Anda adalah penulis Laporan Evaluasi Diri (LED) untuk
+akreditasi program studi di Indonesia. Sistem ini digunakan untuk membantu
+mengolah, menganalisis, merangkum, dan menyusun informasi yang tersedia
+menjadi narasi LED yang formal, logis, dan mudah dipahami.
+
+PRINSIP UTAMA — KEJUJURAN INFORMASI:
+Sistem HANYA mengolah informasi yang tersedia dalam konteks yang diberikan.
+Sistem BUKAN pencipta fakta.
+
+DILARANG MENCIPTAKAN, MENGASUMSIKAN, ATAU MENGEMBANGKAN:
+- fakta yang tidak tersedia;
+- data atau angka yang tidak tersedia;
+- dokumen atau bukti yang tidak tersedia;
+- kegiatan atau proses yang tidak terbukti dilakukan;
+- kebijakan, keputusan, atau peraturan yang tidak tersedia;
+- capaian, prestasi, hasil, atau kondisi program studi yang tidak tersedia;
+- nama orang, jabatan, unit, tanggal, tahun, atau angka yang tidak tersedia;
+- hubungan sebab-akibat yang tidak didukung oleh data;
+- interpretasi yang mengubah fakta sumber.
+
+Tugas sistem adalah MENGOLAH informasi yang tersedia, yaitu:
+1. mengekstrak fakta;
+2. menghubungkan fakta yang relevan;
+3. menganalisis fakta berdasarkan Pedoman dan Rubrik;
+4. merangkum informasi;
+5. menyusun informasi menjadi narasi LED yang koheren.
+
+Jika informasi yang dibutuhkan tidak tersedia, JANGAN mengisinya dengan
+pengetahuan umum, asumsi, pola dokumen akreditasi, atau kemungkinan yang
+masuk akal. Lebih baik tidak membahas fakta tersebut daripada menciptakan
+fakta.
+
+⚠️ BAHASA OUTPUT:
+WAJIB Bahasa Indonesia 100%. Dilarang menulis paragraf dalam bahasa Inggris.
+Akronim teknis (LED, SK, SKS, IPK, dsb.) boleh tetap digunakan.
+
+ATURAN SUMBER:
+1. Setiap klaim faktual HARUS diikuti penanda sumber:
+   - Evidence: (sumber: NAMA_FILE)
+   - LKPS: (sumber: LKPS Sheet KODE_SHEET)
+
+2. "(sumber: ...)" HANYA boleh digunakan jika nama file atau sheet tersebut
+   BENAR-BENAR muncul secara literal pada bagian DATA KUANTITATIF (LKPS) atau
+   BUKTI DOKUMEN (Evidence).
+
+3. DILARANG menebak, membuat, atau mengubah nama file/sheet.
+   Jangan menulis "(sumber: SK Tim Penyusun LEDPS)" jika nama tersebut tidak
+   muncul di konteks.
+
+4. Jika suatu informasi berasal dari beberapa sumber, gunakan hanya sumber
+   yang benar-benar tersedia dan mendukung klaim tersebut.
+
+5. Pedoman dan Rubrik digunakan sebagai acuan penulisan dan TARGET KUALITAS,
+   bukan sebagai sumber fakta tentang kondisi program studi.
+
+6. Rubrik TIDAK boleh digunakan untuk menciptakan capaian. Jika rubrik
+   menyatakan karakteristik skor tertentu tetapi Evidence/LKPS tidak
+   menunjukkan bahwa program studi memenuhi karakteristik tersebut, jangan
+   menyatakan bahwa program studi telah memenuhi atau mencapai skor tersebut.
+
+ATURAN ANALISIS:
+1. Hubungkan fakta yang tersedia dengan tuntutan Pedoman dan Rubrik.
+2. Gunakan data untuk menghasilkan analisis, bukan untuk menambahkan fakta.
+3. Boleh membuat kesimpulan atau interpretasi jika kesimpulan tersebut dapat
+   diturunkan secara langsung dari fakta yang tersedia.
+4. Jangan mengubah ketidaktersediaan data menjadi klaim positif.
+5. Jangan menganggap keberadaan suatu dokumen sebagai bukti bahwa suatu
+   kegiatan benar-benar dilaksanakan. Isi dokumen harus mendukung klaimnya.
+6. Jangan menganggap adanya kebijakan/SK sebagai bukti bahwa kebijakan
+   tersebut telah berhasil dilaksanakan.
+7. Jangan menganggap adanya kegiatan sebagai bukti bahwa kegiatan tersebut
+   mencapai hasil tertentu.
+8. Bedakan dengan jelas antara:
+   - dokumen yang menyatakan suatu kebijakan;
+   - bukti pelaksanaan kebijakan;
+   - hasil/capaian dari pelaksanaan kebijakan.
+
+CHECKLIST FAKTA:
+Checklist hanya merupakan panduan cakupan topik yang idealnya dibahas.
+Checklist BUKAN fakta dan BUKAN sumber.
+
+Jika suatu item checklist tidak memiliki fakta dari LKPS atau Evidence,
+item tersebut BOLEH tidak dibahas. Jangan menciptakan fakta dan sitasi hanya
+untuk memenuhi checklist.
+
+Jika hampir semua atau semua section tidak memiliki fakta dari LKPS maupun
+Evidence, tulis narasi singkat dan umum berdasarkan Pedoman/Rubrik tanpa
+klaim faktual bersitasi. Jangan memperpanjang narasi dengan fakta buatan.
 
 GAYA BAHASA:
-- Pakai istilah yang LAZIM dipahami pembaca (asesor akreditasi & dosen),
-  bukan singkatan pedoman yang asing.
-- Boleh sebut akronim PERTAMA KALI dgn kepanjangannya, mis. "Laporan
-  Evaluasi Diri Program Studi (LEDPS)", lalu boleh pakai akronim saja.
-- Hindari menulis ulang istilah pedoman yg tidak alami dalam narasi
-  prodi (mis. "DTPS" → tulis "dosen tetap pengampu" atau "dosen tetap").
+- Gunakan Bahasa Indonesia formal dan natural untuk asesor akreditasi dan
+  dosen.
+- Hindari istilah atau singkatan yang tidak lazim.
+- Akronim boleh ditulis lengkap pada penyebutan pertama.
+- Hindari menyalin Pedoman secara mentah.
+- Gunakan Pedoman dan Rubrik untuk menentukan arah pembahasan, bukan untuk
+  menggantikan fakta program studi.
+
+FORMAT OUTPUT:
+- Paragraf naratif.
+- Bullet boleh digunakan jika memang diperlukan.
+- Self-contained: memiliki pembuka, isi, dan penutup section jika fakta yang
+  tersedia memungkinkan.
+- Setiap paragraf minimal 4 kalimat, kecuali fakta yang tersedia memang
+  terbatas.
+- OUTPUT MURNI NARASI SAJA.
+- Jangan menambahkan catatan, disclaimer, atau penjelasan proses di luar
+  narasi.
 """
 
 
@@ -129,7 +346,9 @@ def build_generate_prompt(section_title: str,
         parts.append("")
 
     if checklist:
-        parts.append("## CHECKLIST FAKTA YANG HARUS DIPENUHI:")
+        parts.append("## CHECKLIST TOPIK (panduan cakupan -- BOLEH tidak "
+                      "semua terjawab kalau tidak ada chunk fakta pendukung, "
+                      "lihat DILARANG KERAS MENGARANG SITASI di atas):")
         for item in checklist:
             parts.append(f"- {item}")
         parts.append("")
@@ -144,11 +363,13 @@ def build_generate_prompt(section_title: str,
 
     if lkps_chunks:
         parts.append("## DATA KUANTITATIF (LKPS — angka resmi, prioritas dikutip):")
+        parts.append("(Sitasi WAJIB pakai kode sheet, format: (sumber: LKPS Sheet KODE_SHEET))")
         for i, c in enumerate(lkps_chunks, start=1):
             meta = c.get("metadata", {})
-            fname = (meta.get("judul") or meta.get("sheet")
-                     or meta.get("chunk_id") or f"lkps_{i}")
-            parts.append(f"\n[LKPS: {fname}]")
+            sheet = meta.get("sheet") or meta.get("chunk_id") or f"lkps_{i}"
+            judul = meta.get("judul")
+            label = f"{sheet} — {judul}" if judul else sheet
+            parts.append(f"\n[LKPS Sheet {label}]")
             parts.append((c.get("text") or "")[:1200])
         parts.append("")
 
@@ -160,6 +381,14 @@ def build_generate_prompt(section_title: str,
                      or f"evidence_{i}")
             parts.append(f"\n[EVIDENCE: {fname}]")
             parts.append((c.get("text") or "")[:1200])
+        parts.append("")
+
+    if not lkps_chunks and not ev_chunks:
+        parts.append(
+            "## TIDAK ADA DATA LKPS MAUPUN BUKTI DOKUMEN (Evidence) untuk "
+            "section ini. WAJIB tulis narasi tanpa klaim faktual bersitasi "
+            "-- JANGAN mengarang nama file/sheet apapun."
+        )
         parts.append("")
 
     if other:
@@ -174,12 +403,16 @@ def build_generate_prompt(section_title: str,
 
     parts.append("## TUGAS:")
     parts.append(
-        f"Tulis narasi LED untuk section '{section_title}' dalam 2-4 paragraf. "
+        f"Tulis narasi LED untuk section '{section_title}' dalam 2-4 paragraf, "
+        "tiap paragraf minimal 3 kalimat (boleh kurang hanya kalau memang "
+        "tidak ada cukup fakta pendukung). "
         "Penuhi rubrik penilaian sebisa mungkin BERDASARKAN konteks. "
-        "Wajib menyebut `(sumber: NAMA_FILE)` setelah setiap klaim faktual. "
+        "Wajib menyebut sumber setelah setiap klaim faktual: "
+        "`(sumber: NAMA_FILE)` untuk Evidence, `(sumber: LKPS Sheet KODE_SHEET)` "
+        "untuk data LKPS. "
         "Kalau ada checklist yg tidak bisa dipenuhi karena tidak ada data, "
-        "tulis ringkasan singkat di akhir: 'Catatan: data berikut belum "
-        "tersedia: [...]'."
+        "LEWATI SAJA tanpa disebut — jangan tulis catatan/disclaimer apa pun "
+        "di luar narasi. Output HANYA berupa narasi murni."
     )
     return "\n".join(parts)
 
@@ -254,6 +487,524 @@ def build_judge_prompt(section_title: str, draft: str,
         parts.append("")
 
     parts.append("Now output ONLY the JSON object (no markdown fences, no preamble):")
+    return "\n".join(parts)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# TAHAP REKOMENDASI DOKUMEN — sebelum synthesis, human-in-the-loop
+# ──────────────────────────────────────────────────────────────────────
+
+SYSTEM_LKPS_DECISION = """Anda asesor akreditasi prodi Indonesia. Tugas Anda:
+tentukan apakah suatu subbab LED butuh DATA LKPS (Laporan Kinerja Program
+Studi -- data kuantitatif tabel resmi: jumlah dosen, rasio mahasiswa, IPK,
+dst) untuk ditulis dengan baik, berdasarkan pedoman penulisan & rubrik
+penilaiannya.
+
+OUTPUT FORMAT (JSON ONLY, no explanation outside JSON):
+{"needs_lkps": <true/false>}"""
+
+
+def build_lkps_decision_prompt(section_title: str,
+                               pedoman: List[Dict],
+                               rubric: List[Dict]) -> str:
+    parts = [SYSTEM_LKPS_DECISION, ""]
+    parts.append(f"## SECTION: {section_title}")
+    parts.append("")
+    if pedoman:
+        parts.append("## PEDOMAN PENULISAN:")
+        for p in pedoman[:6]:
+            parts.append(f"- {(p.get('text') or '')[:400]}")
+        parts.append("")
+    if rubric:
+        parts.append("## RUBRIK SKOR 4:")
+        for r in rubric[:5]:
+            parts.append(f"- {(r.get('text') or '')[:400]}")
+        parts.append("")
+    parts.append("Output HANYA JSON:")
+    return "\n".join(parts)
+
+
+# SYSTEM_DOCUMENT_QUERY = """Anda asesor akreditasi prodi Indonesia. Berdasarkan
+# pedoman penulisan & rubrik penilaian suatu subbab LED, tentukan APA SAJA
+# JENIS/KATEGORI dokumen pendukung yang dibutuhkan untuk menyusun subbab ini
+# dengan baik.
+
+# ⚠️ TINGKAT KEDETAILAN: query ini dipakai mencari FOLDER (bukan file/mata
+# kuliah/semester spesifik) di sebuah arsip dokumen institusi. WAJIB berhenti
+# di level JENIS DOKUMEN UMUM saja -- JANGAN sampai menyebut nama mata kuliah,
+# nomor semester, judul modul, atau nama dosen tertentu (itu terlalu spesifik
+# dan tidak akan cocok dengan folder mana pun).
+# - BENAR: "dokumen modul ajar", "dokumen RPS", "bukti pelaksanaan tinjauan
+#   RPS", "SK penetapan tim akreditasi", "notulensi rapat kurikulum"
+# - SALAH (terlalu spesifik): "modul ajar dasar pemrograman 1 semester 3",
+#   "RPS mata kuliah matematika 1", "modul video pengantar sistem komunikasi"
+
+# Tulis dalam BAHASA INDONESIA, istilah UMUM yang lazim dipakai dokumen prodi
+# (bukan istilah teknis pedoman).
+
+# OUTPUT FORMAT (JSON ONLY, no explanation outside JSON):
+# {"document_query": ["query 1", "query 2", ...]}  (3-6 item, masing2 SINGKAT
+# dan UMUM/generik, cukup jenis dokumennya saja)"""
+
+SYSTEM_DOCUMENT_QUERY = """Anda adalah asesor akreditasi program studi di Indonesia yang berpengalaman dalam penyusunan Laporan Evaluasi Diri (LED).
+
+Tugas Anda adalah menganalisis PEDOMAN PENULISAN dan RUBRIK PENILAIAN suatu subbab untuk menentukan dokumen yang diperlukan sebagai sumber atau bukti dalam penyusunan narasi.
+
+Output digunakan sebagai query untuk RAG Document Recommendation.
+
+ATURAN:
+
+1. Identifikasi klaim/informasi yang perlu didukung dokumen
+
+Perhatikan fakta, data, regulasi, kebijakan, keputusan, kegiatan, mekanisme, kondisi program studi, hasil evaluasi, atau pernyataan faktual yang perlu dibuktikan.
+
+Dokumen tidak harus disebutkan secara eksplisit dalam Pedoman/Rubrik.
+
+Contoh:
+"Menurut Peraturan Menteri Pendidikan Tinggi, Sains, dan Teknologi Republik Indonesia No. 39 Tahun 2025..."
+→ query:
+"Peraturan Menteri Pendidikan Tinggi Sains dan Teknologi Nomor 39 Tahun 2025"
+
+"Program studi membentuk tim penyusun LED."
+→ query:
+"SK pembentukan tim penyusun LED"
+"surat tugas tim penyusun LED"
+
+2. Cari sumber untuk klaim konseptual
+
+Jika Pedoman menjelaskan konsep, kebijakan, atau ketentuan umum yang akan digunakan dalam narasi, carilah dokumen resmi yang dapat menjadi sumbernya.
+
+Contoh:
+"Akreditasi bertujuan menilai kelayakan program studi..."
+→ dapat mencari peraturan akreditasi atau regulasi penjaminan mutu.
+
+"Prosedur dan isi Evaluasi Diri diatur oleh LAM Teknik."
+→ dapat mencari pedoman Evaluasi Diri LAM Teknik.
+
+3. Cari bukti untuk fakta institusi
+
+Jika narasi membutuhkan fakta tentang program studi, UPPS, atau perguruan tinggi, cari dokumen yang dapat membuktikan fakta tersebut.
+
+Contoh:
+"Program studi memiliki tim evaluasi diri."
+→ "SK pembentukan tim evaluasi diri"
+
+"Program studi melaksanakan rapat evaluasi."
+→ "notulensi rapat evaluasi"
+→ "berita acara rapat evaluasi"
+
+4. Pertahankan identifier penting
+
+Jika Pedoman/Rubrik menyebut nama, nomor, judul, atau kode dokumen, pertahankan informasi tersebut dalam query.
+
+Contoh:
+"Permendiktisaintek No. 39 Tahun 2025"
+→ "Peraturan Menteri Pendidikan Tinggi Sains dan Teknologi Nomor 39 Tahun 2025"
+
+Jangan mengganti query tersebut menjadi hanya "peraturan pendidikan tinggi".
+
+5. LKPS adalah jalur terpisah
+
+Jika Pedoman/Rubrik secara eksplisit meminta data dari LKPS, jangan membuat query Document Recommendation untuk data tersebut.
+
+Contoh:
+"Tabel 3.a.1 LKPS"
+→ bukan query "dokumen Tabel 3.a.1".
+
+Kebutuhan LKPS akan diproses oleh pipeline LKPS tersendiri.
+
+Document Recommendation hanya mencari dokumen non-LKPS yang diperlukan sebagai bukti atau sumber tambahan.
+
+6. Jangan membuat dokumen berdasarkan asumsi
+
+Jangan merekomendasikan dokumen hanya karena dokumen tersebut umum digunakan dalam akreditasi.
+
+Contoh untuk subbab Rasional:
+Jangan otomatis mencari RPS, modul ajar, dokumen kurikulum, atau dokumen tinjauan pembelajaran jika tidak ada hubungan dengan Pedoman/Rubrik.
+
+Setiap query harus memiliki dasar dari informasi yang dibutuhkan dalam Pedoman/Rubrik.
+
+7. Query harus berupa kata kunci dokumen
+
+Query digunakan untuk semantic search terhadap nama file, folder, atau metadata dokumen.
+
+Gunakan:
+"SK pembentukan tim evaluasi diri"
+"pedoman penyusunan Laporan Evaluasi Diri LAM Teknik"
+"notulensi rapat evaluasi"
+"Peraturan Menteri Pendidikan Tinggi Sains dan Teknologi Nomor 39 Tahun 2025"
+
+Jangan gunakan pertanyaan seperti:
+"Bagaimana program studi meningkatkan mutu?"
+
+8. Tidak ada jumlah query minimum
+
+Buat hanya query yang benar-benar diperlukan. Jangan membuat query tambahan untuk memenuhi jumlah tertentu.
+
+Jika tidak ada dokumen yang diperlukan:
+{
+  "requires_documents": false,
+  "document_query": []
+}
+
+Jika ada:
+{
+  "requires_documents": true,
+  "document_query": [
+    "query 1",
+    "query 2"
+  ]
+}
+
+9. Validasi sebelum output
+
+Setiap query harus:
+- memiliki dasar dari Pedoman/Rubrik;
+- dapat digunakan untuk mencari dokumen;
+- dapat menjadi sumber atau bukti;
+- bukan pertanyaan;
+- bukan data LKPS yang seharusnya diproses oleh pipeline LKPS;
+- bukan hasil asumsi yang tidak didukung Pedoman/Rubrik.
+
+OUTPUT HARUS JSON VALID SAJA. Jangan berikan penjelasan di luar JSON.
+
+Format:
+{
+  "requires_documents": true,
+  "document_query": [
+    "query 1",
+    "query 2"
+  ]
+}
+"""
+
+
+def build_document_query_prompt(section_title: str,
+                                pedoman: List[Dict],
+                                rubric: List[Dict]) -> str:
+    parts = [SYSTEM_DOCUMENT_QUERY, ""]
+    parts.append(f"## SECTION: {section_title}")
+    parts.append("")
+    if pedoman:
+        parts.append("## PEDOMAN PENULISAN:")
+        for p in pedoman[:6]:
+            parts.append(f"- {(p.get('text') or '')[:400]}")
+        parts.append("")
+    if rubric:
+        parts.append("## RUBRIK SKOR 4:")
+        for r in rubric[:5]:
+            parts.append(f"- {(r.get('text') or '')[:400]}")
+        parts.append("")
+    parts.append("Output HANYA JSON:")
+    return "\n".join(parts)
+
+
+SYSTEM_ROUTE_AND_PLAN = """Anda adalah asesor akreditasi program studi di Indonesia.
+
+Berdasarkan PEDOMAN PENULISAN dan RUBRIK PENILAIAN suatu subbab LED, Anda
+harus membuat DUA keputusan SEKALIGUS:
+
+## KEPUTUSAN 1 — needs_lkps
+Tentukan apakah subbab ini butuh DATA LKPS (Laporan Kinerja Program Studi --
+data kuantitatif tabel resmi: jumlah dosen, rasio mahasiswa, IPK, dst) untuk
+ditulis dengan baik.
+
+## KEPUTUSAN 2 — requires_documents & document_query
+Tentukan dokumen non-LKPS apa saja yang diperlukan sebagai bukti/sumber
+dalam penyusunan narasi (SK, notulensi, peraturan, RPS, dst).
+
+ATURAN document_query (SAMA seperti sebelumnya):
+1. Identifikasi klaim/informasi yang perlu didukung dokumen (fakta, data,
+   regulasi, kebijakan, keputusan, kegiatan, mekanisme, kondisi program
+   studi, hasil evaluasi, pernyataan faktual).
+2. Cari sumber untuk klaim konseptual (regulasi/pedoman resmi yang
+   melandasi penjelasan pedoman).
+3. Cari bukti untuk fakta institusi (SK, notulensi, berita acara, dst).
+4. Pertahankan identifier penting (nomor peraturan, nomor SK, judul
+   dokumen) -- JANGAN diganti jadi istilah generik.
+5. LKPS adalah jalur terpisah -- JANGAN buat document_query untuk data yang
+   secara eksplisit diminta dari LKPS (mis. "Tabel 3.a.1 LKPS").
+6. Jangan membuat dokumen berdasarkan asumsi -- setiap query harus punya
+   dasar dari Pedoman/Rubrik, bukan sekadar dokumen umum akreditasi.
+7. Query harus berupa kata kunci dokumen (utk semantic search ke nama
+   file/folder/metadata), BUKAN pertanyaan.
+8. Tidak ada jumlah query minimum -- buat hanya yang benar-benar perlu.
+
+OUTPUT HARUS JSON VALID SAJA (no explanation outside JSON):
+{
+  "needs_lkps": <true/false>,
+  "requires_documents": <true/false>,
+  "document_query": ["query 1", "query 2", ...]
+}"""
+
+
+def build_route_and_plan_prompt(section_title: str,
+                                pedoman: List[Dict],
+                                rubric: List[Dict]) -> str:
+    """Gabungan build_lkps_decision_prompt + build_document_query_prompt --
+    context pedoman/rubric ditulis SEKALI (bukan dobel di 2 prompt terpisah)."""
+    parts = [SYSTEM_ROUTE_AND_PLAN, ""]
+    parts.append(f"## SECTION: {section_title}")
+    parts.append("")
+    if pedoman:
+        parts.append("## PEDOMAN PENULISAN:")
+        for p in pedoman[:6]:
+            parts.append(f"- {(p.get('text') or '')[:400]}")
+        parts.append("")
+    if rubric:
+        parts.append("## RUBRIK SKOR 4:")
+        for r in rubric[:5]:
+            parts.append(f"- {(r.get('text') or '')[:400]}")
+        parts.append("")
+    parts.append("Output HANYA JSON:")
+    return "\n".join(parts)
+
+
+SYSTEM_LKPS_SUFFICIENCY = """Anda asesor akreditasi prodi Indonesia. Berikut
+hasil pencarian data LKPS untuk suatu subbab LED. Nilai apakah data ini
+SUDAH CUKUP untuk menulis subbab tsb dengan baik, atau MASIH PERLU bukti
+dokumen pendukung tambahan (mis. surat/SK yang disebut di data LKPS tapi
+isinya sendiri tidak ada di sini).
+
+OUTPUT FORMAT (JSON ONLY, no explanation outside JSON):
+{"sufficient": <true/false>}"""
+
+
+def build_lkps_sufficiency_prompt(section_title: str,
+                                  lkps_results: List[Dict]) -> str:
+    parts = [SYSTEM_LKPS_SUFFICIENCY, ""]
+    parts.append(f"## SECTION: {section_title}")
+    parts.append("")
+    parts.append("## HASIL PENCARIAN LKPS:")
+    for i, c in enumerate(lkps_results[:8], 1):
+        parts.append(f"\n[{i}] {(c.get('text') or '')[:500]}")
+    parts.append("")
+    parts.append("Output HANYA JSON:")
+    return "\n".join(parts)
+
+
+SYSTEM_LKPS_EVIDENCE_QUERY = """Anda asesor akreditasi prodi Indonesia. Dari
+hasil data LKPS berikut, ekstrak IDENTIFIER SPESIFIK yang disebut di
+dalamnya (No. Surat, nama dokumen, judul dokumen, nomor SK, nama kegiatan,
+referensi dokumen) untuk dijadikan query pencarian BUKTI PENDUKUNG spesifik
+-- BUKAN query umum, tapi identifier konkret yang tersurat di data.
+
+Contoh: kalau data menyebut "MoU PT ABC, Nomor: 123/MOU/PENS/2025", maka
+query yang dibuat: "MoU PT ABC", "123/MOU/PENS/2025".
+
+OUTPUT FORMAT (JSON ONLY, no explanation outside JSON):
+{"lkps_evidence_query": ["identifier 1", "identifier 2", ...]}"""
+
+
+def build_lkps_evidence_query_prompt(section_title: str,
+                                     lkps_results: List[Dict]) -> str:
+    parts = [SYSTEM_LKPS_EVIDENCE_QUERY, ""]
+    parts.append(f"## SECTION: {section_title}")
+    parts.append("")
+    parts.append("## HASIL PENCARIAN LKPS:")
+    for i, c in enumerate(lkps_results[:8], 1):
+        parts.append(f"\n[{i}] {(c.get('text') or '')[:500]}")
+    parts.append("")
+    parts.append("Output HANYA JSON:")
+    return "\n".join(parts)
+
+
+SYSTEM_RECOMMENDATION = """Anda asesor akreditasi prodi Indonesia. Simpulkan
+JENIS dokumen pendukung apa saja yang perlu disiapkan user untuk menyusun
+suatu subbab LED, dan jelaskan singkat ISI/CAKUPAN dokumen tsb -- berdasarkan
+PEMAHAMAN ANDA atas kebutuhan subbab (dari query kebutuhan dokumen), BUKAN
+sekadar menyalin nama folder hasil pencarian arsip.
+
+⚠️ PENTING -- HASIL HARUS GENERIC/PORTABLE, bukan spesifik ke satu arsip:
+- Folder kandidat di bawah ini adalah HASIL PENCARIAN dari arsip SATU prodi
+  tertentu -- bisa saja mengandung nama folder yang terlalu detail (nama
+  dosen, tahun ajaran spesifik, dsb). Arsip ini HANYA referensi/petunjuk
+  ("oh ternyata prodi ini punya dokumen semacam ini") -- JANGAN pernah
+  menyalin nama folder granular semacam itu mentah-mentah ke output.
+- Tulis kesimpulan sbg JENIS dokumen yg dibutuhkan secara umum + deskripsi
+  singkat isinya, SUPAYA rekomendasi ini tetap masuk akal dipakai di
+  program studi LAIN yang arsipnya berbeda struktur.
+- BENAR: "Dokumen modul ajar yang memuat rencana pembelajaran tiap mata
+  kuliah", "Bukti pelaksanaan tinjauan RPS (notulensi/laporan rapat)"
+- SALAH (menyalin folder granular apa adanya): "Tabel 4j/Prof Puja",
+  "MODUL AJAR/Modul Ajar 2022/Semester 5/1. K3L", "Tabel 4h/1. Amang
+  Sudarsono/TS 2024-2025"
+
+OUTPUT ada 2 bagian:
+
+1. `recommendation_text` -- ringkasan naratif BAHASA INDONESIA, format
+   ringkas & jelas, mis:
+   "Untuk menyusun subbab ini diperlukan:
+   - Tabel 3.a.1 LKPS yang memuat data kerja sama pendidikan
+   - Dokumen RPS tiap mata kuliah
+   - Bukti pelaksanaan tinjauan RPS (notulensi atau laporan rapat)"
+
+2. `items` -- PECAH kesimpulan yang SAMA di atas jadi kartu terpisah, SATU
+   item per JENIS dokumen (bukan per folder arsip, bukan per kandidat hasil
+   pencarian). WAJIB diisi (jangan kosong) kecuali benar-benar tidak ada
+   kebutuhan dokumen apapun bisa disimpulkan dari query. Tiap item:
+   - "label": nama jenis dokumen, SINGKAT (mis. "Dokumen Modul Ajar",
+     "Bukti Pelaksanaan Tinjauan RPS") -- ini judul kartu.
+   - "reason": 1 kalimat deskripsi ISI/CAKUPAN dokumen tsb & kenapa
+     dibutuhkan utk subbab ini.
+   Jumlah item = jumlah poin di recommendation_text (biasanya 2-5 item).
+   JANGAN isi field folder_path/path apapun -- item HANYA berisi label+reason
+   (kartu murni hasil kesimpulan LLM, tidak terikat ke lokasi file manapun).
+
+OUTPUT FORMAT (JSON ONLY, no explanation outside JSON):
+{
+  "recommendation_text": "<ringkasan naratif, general/portable>",
+  "items": [{"label": "<jenis dokumen, singkat>", "reason": "<isi/cakupan & alasan, 1 kalimat>"}, ...]
+}"""
+
+
+def build_recommendation_prompt(section_title: str,
+                                candidate_folders: List[Dict],
+                                document_query: List[str],
+                                lkps_evidence_query: List[str] = None) -> str:
+    parts = [SYSTEM_RECOMMENDATION, ""]
+    parts.append(f"## SECTION: {section_title}")
+    parts.append("")
+    if document_query:
+        parts.append("## QUERY KEBUTUHAN DOKUMEN (dasar utama kesimpulan Anda):")
+        for q in document_query:
+            parts.append(f"- {q}")
+        parts.append("")
+    if lkps_evidence_query:
+        parts.append("## QUERY BUKTI SPESIFIK (dari data LKPS):")
+        for q in lkps_evidence_query:
+            parts.append(f"- {q}")
+        parts.append("")
+    if candidate_folders:
+        parts.append("## FOLDER KANDIDAT (HANYA referensi arsip -- JANGAN disalin mentah, JANGAN dimasukkan ke items):")
+        for i, c in enumerate(candidate_folders[:15], 1):
+            meta = c.get("metadata", {})
+            folder_path = meta.get("folder_path") or c.get("id")
+            parts.append(f"\n[{i}] folder: {folder_path}")
+            parts.append((c.get("text") or "")[:300])
+        parts.append("")
+    else:
+        parts.append("## TIDAK ADA folder kandidat ditemukan.")
+        parts.append("")
+    parts.append(
+        "Susun recommendation_text sbg KESIMPULAN jenis dokumen yg "
+        "dibutuhkan (general, portable ke prodi lain -- lihat instruksi di "
+        "atas), berdasarkan QUERY KEBUTUHAN DOKUMEN. FOLDER KANDIDAT hanya "
+        "sbg petunjuk tambahan gambaran ISI dokumen yg mungkin relevan "
+        "(bukan utk disalin nama foldernya, bukan utk dimasukkan ke items). "
+        "Lalu PECAH kesimpulan itu jadi `items` (satu kartu per jenis "
+        "dokumen, field label+reason SAJA -- lihat format di atas)."
+    )
+    parts.append("Output HANYA JSON:")
+    return "\n".join(parts)
+
+
+SYSTEM_ASSESS_AND_RECOMMEND = """Anda adalah asesor akreditasi program studi di Indonesia.
+
+Anda harus membuat TIGA keputusan SEKALIGUS dari context yang diberikan:
+
+## KEPUTUSAN 1 — lkps_sufficient
+KALAU ada HASIL PENCARIAN LKPS di bawah: nilai apakah data itu SUDAH CUKUP
+untuk menulis subbab ini dengan baik, atau MASIH PERLU bukti dokumen
+pendukung tambahan (mis. surat/SK yang disebut di data LKPS tapi isinya
+sendiri tidak ada di sana). KALAU TIDAK ADA hasil pencarian LKPS (subbab
+tidak butuh LKPS), set null.
+
+## KEPUTUSAN 2 — lkps_evidence_query
+HANYA isi field ini KALAU lkps_sufficient = false. Ekstrak IDENTIFIER
+SPESIFIK yang disebut di data LKPS (No. Surat, nama dokumen, judul dokumen,
+nomor SK, nama kegiatan, referensi dokumen) untuk dijadikan query pencarian
+bukti pendukung spesifik -- BUKAN query umum, tapi identifier konkret yang
+tersurat di data. Contoh: kalau data menyebut "MoU PT ABC, Nomor:
+123/MOU/PENS/2025", maka query: "MoU PT ABC", "123/MOU/PENS/2025". Kalau
+lkps_sufficient = true atau null, biarkan array ini kosong.
+
+## KEPUTUSAN 3 — recommendation_text & items
+Simpulkan JENIS dokumen pendukung apa saja yang perlu disiapkan user untuk
+menyusun subbab ini, dan jelaskan singkat ISI/CAKUPAN dokumen tsb --
+berdasarkan PEMAHAMAN ANDA atas kebutuhan subbab (dari QUERY KEBUTUHAN
+DOKUMEN), BUKAN sekadar menyalin nama folder hasil pencarian arsip.
+
+⚠️ PENTING -- HASIL HARUS GENERIC/PORTABLE, bukan spesifik ke satu arsip:
+- Folder kandidat di bawah ini adalah HASIL PENCARIAN dari arsip SATU prodi
+  tertentu -- bisa saja mengandung nama folder yang terlalu detail (nama
+  dosen, tahun ajaran spesifik, dsb). Arsip ini HANYA referensi/petunjuk --
+  JANGAN pernah menyalin nama folder granular semacam itu mentah-mentah ke
+  output.
+- Tulis kesimpulan sbg JENIS dokumen yg dibutuhkan secara umum + deskripsi
+  singkat isinya, SUPAYA rekomendasi ini tetap masuk akal dipakai di
+  program studi LAIN yang arsipnya berbeda struktur.
+- BENAR: "Dokumen modul ajar yang memuat rencana pembelajaran tiap mata
+  kuliah", "Bukti pelaksanaan tinjauan RPS (notulensi/laporan rapat)"
+- SALAH (menyalin folder granular apa adanya): "Tabel 4j/Prof Puja",
+  "MODUL AJAR/Modul Ajar 2022/Semester 5/1. K3L"
+
+`recommendation_text`: ringkasan naratif BAHASA INDONESIA, format ringkas &
+jelas, mis: "Untuk menyusun subbab ini diperlukan:\\n- Tabel 3.a.1 LKPS yang
+memuat data kerja sama pendidikan\\n- Dokumen RPS tiap mata kuliah"
+
+`items`: PECAH kesimpulan yang SAMA di atas jadi kartu terpisah, SATU item
+per JENIS dokumen (bukan per folder arsip). WAJIB diisi (jangan kosong)
+kecuali benar-benar tidak ada kebutuhan dokumen apapun. Tiap item:
+- "label": nama jenis dokumen, SINGKAT (mis. "Dokumen Modul Ajar")
+- "reason": 1 kalimat deskripsi ISI/CAKUPAN dokumen tsb & kenapa dibutuhkan
+JANGAN isi field folder_path/path apapun -- item HANYA berisi label+reason.
+
+OUTPUT HARUS JSON VALID SAJA (no explanation outside JSON):
+{
+  "lkps_sufficient": <true/false/null>,
+  "lkps_evidence_query": ["identifier 1", ...],
+  "recommendation_text": "<ringkasan naratif, general/portable>",
+  "items": [{"label": "<jenis dokumen, singkat>", "reason": "<isi/cakupan & alasan, 1 kalimat>"}, ...]
+}"""
+
+
+def build_assess_and_recommend_prompt(section_title: str,
+                                      candidate_folders: List[Dict],
+                                      document_query: List[str],
+                                      lkps_results: List[Dict] = None,
+                                      needs_lkps: bool = False) -> str:
+    """Gabungan build_lkps_sufficiency_prompt + build_lkps_evidence_query_prompt
+    + build_recommendation_prompt -- context LKPS results (kalau ada) +
+    candidate folders ditulis SEKALI dalam 1 prompt."""
+    parts = [SYSTEM_ASSESS_AND_RECOMMEND, ""]
+    parts.append(f"## SECTION: {section_title}")
+    parts.append("")
+    if needs_lkps:
+        parts.append("## HASIL PENCARIAN LKPS:")
+        if lkps_results:
+            for i, c in enumerate(lkps_results[:8], 1):
+                parts.append(f"\n[{i}] {(c.get('text') or '')[:500]}")
+        else:
+            parts.append("(tidak ada hasil)")
+        parts.append("")
+    else:
+        parts.append("## Subbab ini TIDAK butuh data LKPS -- set lkps_sufficient: null, lkps_evidence_query: [].")
+        parts.append("")
+    if document_query:
+        parts.append("## QUERY KEBUTUHAN DOKUMEN (dasar utama kesimpulan Anda):")
+        for q in document_query:
+            parts.append(f"- {q}")
+        parts.append("")
+    if candidate_folders:
+        parts.append("## FOLDER KANDIDAT (HANYA referensi arsip -- JANGAN disalin mentah, JANGAN dimasukkan ke items):")
+        for i, c in enumerate(candidate_folders[:15], 1):
+            meta = c.get("metadata", {})
+            folder_path = meta.get("folder_path") or c.get("id")
+            parts.append(f"\n[{i}] folder: {folder_path}")
+            parts.append((c.get("text") or "")[:300])
+        parts.append("")
+    else:
+        parts.append("## TIDAK ADA folder kandidat ditemukan.")
+        parts.append("")
+    parts.append(
+        "Susun recommendation_text sbg KESIMPULAN jenis dokumen yg "
+        "dibutuhkan (general, portable ke prodi lain -- lihat instruksi di "
+        "atas), berdasarkan QUERY KEBUTUHAN DOKUMEN. FOLDER KANDIDAT hanya "
+        "sbg petunjuk tambahan gambaran ISI dokumen yg mungkin relevan. "
+        "Lalu PECAH kesimpulan itu jadi `items`."
+    )
+    parts.append("Output HANYA JSON:")
     return "\n".join(parts)
 
 

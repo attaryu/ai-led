@@ -1,4 +1,36 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: led-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-led}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-led}
+      POSTGRES_DB: ${POSTGRES_DB:-led}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Mount schema.sql read-only -- auto-apply hanya saat volume pgdata
+      # masih kosong (first boot). Untuk migrasi data existing pakai
+      # scripts/migrate_to_postgres.py + scripts/import_chunks.py (manual).
+      - ./api/db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-led} -d ${POSTGRES_DB:-led}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: led-redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   api:
     build:
       context: ./api
@@ -15,18 +47,31 @@ services:
               capabilities: [gpu]
     ports:
       - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes:
-      # SQLite + Chroma persisted on host so generate results survive rebuilds
+      # Chroma persisted on host so generate results survive rebuilds.
+      # led.db (SQLite lama) tetap ada di ./data sbg arsip, TIDAK dipakai lagi.
       - ./data:/data
-      # Mount source dataset read-only (chunks_all.json + LED existing PDF)
-      - ../code/output/chunks_all.json:/data/chunks_all.json:ro
+      # Mount source dataset read-only (led_bab_tabel.json dipakai outline.py)
       - ../code/output/led_bab_tabel.json:/data/led_bab_tabel.json:ro
       - ../document/result:/data/led_existing:ro
       - ../document/intruction:/data/instruction:ro
+      # Hasil ekstraksi new_extract_mechanism.ipynb (pedoman/rubrik/lkps/evidence.json)
+      # dipakai scripts/import_chunks.py
+      - ../code/output/new_extract_mechanism:/data/new_extract_mechanism:ro
+      # Halaman "Document": file fisik upload user disimpan di sini (sama
+      # folder yg dipakai worker utk membaca & memproses file)
+      - ../document/evidence:/app_document/evidence
       # Live reload during dev
       - ./api:/app
       - ./scripts:/scripts
     environment:
+      REDIS_URL: redis://redis:6379
+      DOCUMENT_EVIDENCE_ROOT: /app_document/evidence
       # Ollama endpoint - bisa ke host lokal atau remote (Vast.ai dst)
       OLLAMA_HOST:  ${OLLAMA_HOST:-http://host.docker.internal:11434}
       OLLAMA_TOKEN: ${OLLAMA_TOKEN:-}
@@ -38,10 +83,13 @@ services:
       LANGCHAIN_API_KEY:    ${LANGCHAIN_API_KEY:-}
       LANGCHAIN_PROJECT:    ${LANGCHAIN_PROJECT:-led-generator}
       LANGCHAIN_ENDPOINT:   ${LANGCHAIN_ENDPOINT:-https://api.smith.langchain.com}
-      DB_PATH: /data/led.db
+      DATABASE_URL: postgresql://${POSTGRES_USER:-led}:${POSTGRES_PASSWORD:-led}@postgres:5432/${POSTGRES_DB:-led}
+      LEGACY_DB_PATH: /data/led.db
       CHROMA_PATH: /data/chroma_db
-      CHUNKS_PATH: /data/chunks_all.json
       LED_STRUCT_PATH: /data/led_bab_tabel.json
+      # Collection pedoman yg dipakai search_pedoman(): "pedoman" (lama) atau
+      # "pedoman_new" (chunking dinamis, embed=heading saja -- lihat retrieval.py)
+      PEDOMAN_COLLECTION: ${PEDOMAN_COLLECTION:-pedoman}
       # bge-m3: multilingual (100+ bahasa), 1024 dim, ~1.4 GB model file.
       # Lebih kuat dari firqaaa/indo-sbert utk vocabulary mismatch (synonym/alias).
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-m3}
@@ -72,3 +120,47 @@ services:
     depends_on:
       - api
     command: npm run dev -- --host 0.0.0.0
+
+  worker:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.worker
+      network: host
+    container_name: led-worker
+    restart: unless-stopped
+    # GPU access utk MinerU (layout detection) + embedding sentence-transformers
+    # -- tanpa ini onnxruntime/torch di dalam container tidak bisa lihat GPU
+    # host sama sekali, MinerU auto-fallback CPU (lebih lambat).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data:/data
+      - ../document/evidence:/app_document/evidence
+      # Persist model MinerU (diunduh saat run pertama) antar restart container
+      - mineru_cache:/root/.cache
+      - ./api:/app
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-led}:${POSTGRES_PASSWORD:-led}@postgres:5432/${POSTGRES_DB:-led}
+      REDIS_URL: redis://redis:6379
+      DOCUMENT_EVIDENCE_ROOT: /app_document/evidence
+      CHROMA_PATH: /data/chroma_db
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-m3}
+      EMBEDDING_DEVICE: ${EMBEDDING_DEVICE:-}
+      HF_HOME: /data/hf_cache
+      PYTHONUNBUFFERED: "1"
+      ANONYMIZED_TELEMETRY: "False"
+      CHROMA_TELEMETRY_IMPL: "none"
+
+volumes:
+  pgdata:
+  mineru_cache:
