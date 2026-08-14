@@ -234,7 +234,8 @@ Prasyarat agar opsi-opsi ini bisa diterapkan dengan mulus: seluruh komunikasi jo
 ## 9. Autentikasi, Keamanan, & Logging
 
 - **Autentikasi**: JWT dengan refresh token rotation; `tenant_id` disisipkan di dalam token/header, wajib difilter di setiap query PostgreSQL untuk menjaga isolasi multi-tenant.
-- **Password**: di-hash dengan **bcrypt**.
+- **Dua jalur pembuatan akun, satu entitas `USER`**: registrasi mandiri (publik, selalu membuat `TENANT` baru beserta `ADMIN` pertamanya) terpisah dari pembuatan akun oleh Admin (butuh token, `tenant_id` diambil dari token dan **tidak pernah** dari request body). Keduanya menghasilkan baris `USER` biasa — tidak ada pemisahan entitas "user asli" vs "user buatan Admin", karena seluruh relasi konten (`BAB_DRAFT`, `BUKTI_DUKUNG`, `HASIL_SKOR_KRITERIA`, dan lain-lain) menunjuk ke satu `USER`, dan role sudah cukup membedakan kewenangannya.
+- **Password**: di-hash dengan **bcrypt**. Password akun buatan Admin diisi oleh Admin (§4.2 `application_flow.md`), bukan lewat token undangan.
 - **Akses file**: seluruh interaksi dengan Cloudflare R2 menggunakan **presigned URL** bermasa berlaku terbatas.
 - **Logging**: file-based selama development, dengan transport yang dirancang mudah di-_swap_ untuk kebutuhan production (detail transport production belum ditentukan).
 

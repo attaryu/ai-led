@@ -285,9 +285,15 @@ Satu hal lagi yang sengaja **tidak** dilakukan: halaman ini tidak memanggil pemb
 
 ### 4.2 Manajemen User
 
-- **Membuat user baru** (`USER.role`, `email`, `password_hash`, dsb) — hanya `ADMIN`.
+- **Membuat user baru** (`USER.role`, `email`, `password_hash`, dsb) — hanya `ADMIN`. Password diisi oleh Admin saat membuat akun.
 - **Assign/edit `program_studi_id`** seorang user (khusus untuk menempatkan `PENYUSUN` ke prodi tertentu) — hanya `PIMPINAN`.
 - `PENJAMIN_MUTU` tidak punya menu ini sama sekali.
+
+> **Belum diputuskan — Penyusun yang belum ditugaskan.** Karena membuat akun dan menugaskannya ke prodi dipegang dua role yang berbeda, ada jeda di mana sebuah `USER` ber-role `PENYUSUN` sudah sah tapi `program_studi_id`-nya masih kosong. Keadaan itu bukan anomali data — ia lahir dari pembagian wewenang di atas.
+>
+> Persoalannya, tidak ada satu pun halaman yang boleh dibuka orang tersebut: lapis tenant menolak Penyusun (§2), sedangkan lapis prodi tidak punya prodi untuk dituju. Baris 18 pada tabel edge case §4 pun mengandaikan Penyusun selalu punya prodi.
+>
+> Tiga kemungkinan jawabannya — menolak pembuatan `PENYUSUN` sebelum prodinya ditunjuk, memberi halaman "belum ditugaskan" yang mengarahkan ke Pimpinan, atau menolak login-nya sampai ditugaskan — masing-masing mengubah perilaku frontend maupun backend, jadi harus dipilih sebelum menu ini dilepas dari data mock.
 
 ### 4.3 Daftar Program Studi (navigasi)
 
