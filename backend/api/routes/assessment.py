@@ -34,6 +34,7 @@ from agent.graph import build_graph_auto
 from agent.tools.rubric_tool import _get_rubrics
 from db.supabase_client import (
     create_session,
+    get_completed_indicator_numbers,
     get_supabase,
     log_indicator_result,
     log_reasoning_step,
@@ -62,6 +63,14 @@ class StartAssessmentRequest(BaseModel):
 class StartAssessmentResponse(BaseModel):
     session_id: str
     total_indicators: int
+    message: str
+
+
+class ResumeAssessmentResponse(BaseModel):
+    session_id: str
+    total_indicators: int
+    skipped_indicators: int
+    remaining_indicators: int
     message: str
 
 
@@ -119,6 +128,37 @@ class _SimpleIndicator:
 # ---------------------------------------------------------------------------
 
 
+def _derive_indicators(laporan_path: Optional[str]) -> list:
+    """Shared by /start and /resume: laporan_path -> Excel-derived subset,
+    otherwise every cached rubric. Raises HTTPException on failure."""
+    if laporan_path:
+        if not os.path.exists(laporan_path):
+            raise HTTPException(
+                status_code=400,
+                detail=f"File not found on server: {laporan_path}",
+            )
+        indicators = read_indicator_rows(laporan_path)
+        if not indicators:
+            raise HTTPException(
+                status_code=422,
+                detail="No indicator rows found in the provided Laporan_AK.xlsx file.",
+            )
+        return indicators
+
+    # Default: evaluate every rubric in the cached matrix
+    rubrics = _get_rubrics()
+    indicators = [
+        _SimpleIndicator(indicator_no=r.no, kriteria=r.kriteria)
+        for r in rubrics
+    ]
+    if not indicators:
+        raise HTTPException(
+            status_code=500,
+            detail="No rubrics available — has the matrix been parsed?",
+        )
+    return indicators
+
+
 @router.post("/start", response_model=StartAssessmentResponse)
 async def start_assessment(
     body: StartAssessmentRequest,
@@ -130,30 +170,7 @@ async def start_assessment(
     Excel template. Otherwise, all 78 default indicators are evaluated.
     Results are persisted to Supabase only — nothing is written back to Excel.
     """
-    if body.laporan_path:
-        if not os.path.exists(body.laporan_path):
-            raise HTTPException(
-                status_code=400,
-                detail=f"File not found on server: {body.laporan_path}",
-            )
-        indicators = read_indicator_rows(body.laporan_path)
-        if not indicators:
-            raise HTTPException(
-                status_code=422,
-                detail="No indicator rows found in the provided Laporan_AK.xlsx file.",
-            )
-    else:
-        # Default: evaluate every rubric in the cached matrix
-        rubrics = _get_rubrics()
-        indicators = [
-            _SimpleIndicator(indicator_no=r.no, kriteria=r.kriteria)
-            for r in rubrics
-        ]
-        if not indicators:
-            raise HTTPException(
-                status_code=500,
-                detail="No rubrics available — has the matrix been parsed?",
-            )
+    indicators = _derive_indicators(body.laporan_path)
 
     session_id = str(uuid.uuid4())
     parallel = body.max_parallel or MAX_PARALLEL
@@ -171,6 +188,74 @@ async def start_assessment(
         session_id=session_id,
         total_indicators=len(indicators),
         message="Assessment pipeline started. Poll /assessment/{session_id}/status for progress.",
+    )
+
+
+@router.post("/{session_id}/resume", response_model=ResumeAssessmentResponse)
+async def resume_assessment(
+    session_id: str,
+    background_tasks: BackgroundTasks,
+) -> ResumeAssessmentResponse:
+    """Resume a session that was cut off mid-run (worker crash/restart).
+
+    Re-derives the same indicator subset the session originally used (same
+    laporan_path, or default rubrics), then skips whichever indicators
+    already have a row in indicator_results — their graph run already
+    finished, successfully or with a logged error. Only indicators with no
+    row at all (never started, or in-flight when the process died) are
+    (re-)processed, under the SAME session_id.
+    """
+    try:
+        sess = (
+            get_supabase()
+            .table("assessment_sessions")
+            .select("*")
+            .eq("session_id", session_id)
+            .single()
+            .execute()
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}") from exc
+
+    if not sess.data:
+        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
+
+    laporan_path = sess.data.get("laporan_path") or None
+    all_indicators = _derive_indicators(laporan_path)
+
+    done = get_completed_indicator_numbers(session_id)
+    remaining = [ind for ind in all_indicators if ind.indicator_no not in done]
+
+    if not remaining:
+        update_session_status(
+            session_id=session_id,
+            status="completed",
+            completed_indicators=len(all_indicators),
+        )
+        return ResumeAssessmentResponse(
+            session_id=session_id,
+            total_indicators=len(all_indicators),
+            skipped_indicators=len(done),
+            remaining_indicators=0,
+            message="All indicators already have a result — session marked completed.",
+        )
+
+    update_session_status(session_id=session_id, status="running")
+
+    background_tasks.add_task(
+        _run_assessment_pipeline,
+        session_id=session_id,
+        indicators=remaining,
+        max_parallel=MAX_PARALLEL,
+        initial_completed=len(done),
+    )
+
+    return ResumeAssessmentResponse(
+        session_id=session_id,
+        total_indicators=len(all_indicators),
+        skipped_indicators=len(done),
+        remaining_indicators=len(remaining),
+        message="Resumed. Poll /assessment/{session_id}/status for progress.",
     )
 
 
@@ -394,8 +479,12 @@ async def _run_assessment_pipeline(
     session_id: str,
     indicators: list,
     max_parallel: int,
+    initial_completed: int = 0,
 ) -> None:
-    """Background task: score all indicators and update session status when done."""
+    """Background task: score all `indicators` and update session status when
+    done. `indicators` may be a subset (resume) — `initial_completed` seeds
+    the progress counter so /status reflects total session progress, not
+    just progress within this particular run."""
     try:
         ollama_client = create_ollama_client_from_env()
         graph = build_graph_auto(ollama_client)
@@ -411,7 +500,7 @@ async def _run_assessment_pipeline(
             for indicator in indicators
         ]
 
-        completed = 0
+        completed = initial_completed
         for coro in asyncio.as_completed(tasks):
             await coro
             completed += 1
@@ -424,9 +513,12 @@ async def _run_assessment_pipeline(
         update_session_status(
             session_id=session_id,
             status="completed",
-            completed_indicators=len(indicators),
+            completed_indicators=initial_completed + len(indicators),
         )
-        logger.info("Assessment session %s completed (%d indicators)", session_id, len(indicators))
+        logger.info(
+            "Assessment session %s completed (%d indicators this run, %d total)",
+            session_id, len(indicators), initial_completed + len(indicators),
+        )
 
     except Exception as exc:
         logger.exception("Pipeline failure for session %s", session_id)
