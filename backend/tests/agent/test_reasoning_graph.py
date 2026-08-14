@@ -311,3 +311,107 @@ def test_checklist_generation_failure_does_not_block_flow():
 
     assert result["checklist"] is None
     assert result["final_score"] == 2.0
+
+
+# ── independent judge ───────────────────────────────────────────────────────
+
+
+def test_judge_runs_after_finalize_and_lowers_confidence_when_ungrounded():
+    import json
+    from unittest.mock import MagicMock, patch
+
+    from langchain_core.messages import AIMessage
+    from llm.ollama_client import OllamaClient
+    from agent.reasoning_graph import build_reasoning_graph
+
+    rubric_tool_call = AIMessage(
+        content='{"action": "get_indicator_rubric", "args": {"indicator_no": 1}}'
+    )
+    checklist_response = AIMessage(content="- Dokumen VMTS tersedia\n- Proses partisipatif")
+    evidence_tool_call = AIMessage(
+        content='{"action": "search_led_evidence", "args": {"query": "visi misi"}}'
+    )
+    final_answer = AIMessage(
+        content=(
+            '{"action": "final", "score": 3, '
+            '"justification": "Program studi disusun partisipatif dengan 100 dosen.", '
+            '"confidence": 0.9, "recommendation": "Pertahankan praktik baik."}'
+        )
+    )
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = [
+        rubric_tool_call, checklist_response, evidence_tool_call, final_answer,
+    ]
+
+    fake_judge_llm = MagicMock()
+    fake_judge_llm.invoke.return_value = AIMessage(
+        content=json.dumps({
+            "grounded": False,
+            "hallucinated_claims": ["100 dosen tidak disebut di bukti manapun"],
+            "missing_facts": [],
+            "notes": "Angka 100 dosen mengada-ada.",
+        })
+    )
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="deepseek-r1:14b", timeout_seconds=30)
+
+    with (
+        patch("agent.reasoning_graph._build_reasoning_llm", return_value=fake_llm),
+        patch("agent.reasoning_graph.build_judge_llm", return_value=fake_judge_llm),
+        patch("agent.tools.rubric_tool._get_rubrics", return_value=[]),
+        patch(
+            "agent.tools.led_tool.search_led",
+            return_value=[{
+                "text": "Visi misi disusun lewat rapat pimpinan.",
+                "metadata": {"page_start": 12, "page_end": 12, "para_start": -1, "para_end": -1, "section_heading": ""},
+                "distance": 0.1,
+            }],
+        ),
+    ):
+        graph = build_reasoning_graph(fake_client)
+        result = graph.invoke(_make_state(), config={"recursion_limit": 60})
+
+    assert result["final_score"] == 3.0
+    assert result["judge_verdict"]["grounded"] is False
+    assert result["confidence"] <= 0.3
+    fake_judge_llm.invoke.assert_called_once()
+
+
+def test_judge_failure_does_not_block_result():
+    from unittest.mock import MagicMock, patch
+
+    from langchain_core.messages import AIMessage
+    from llm.ollama_client import OllamaClient
+    from agent.reasoning_graph import build_reasoning_graph
+
+    rubric_tool_call = AIMessage(
+        content='{"action": "get_indicator_rubric", "args": {"indicator_no": 1}}'
+    )
+    checklist_response = AIMessage(content="- Dokumen VMTS tersedia")
+    final_answer = AIMessage(
+        content=(
+            '{"action": "final", "score": 2, "justification": "Bukti terbatas.", '
+            '"confidence": 0.7, "recommendation": "Lengkapi bukti."}'
+        )
+    )
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = [rubric_tool_call, checklist_response, final_answer]
+
+    fake_judge_llm = MagicMock()
+    fake_judge_llm.invoke.side_effect = RuntimeError("judge unreachable")
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="deepseek-r1:14b", timeout_seconds=30)
+
+    with (
+        patch("agent.reasoning_graph._build_reasoning_llm", return_value=fake_llm),
+        patch("agent.reasoning_graph.build_judge_llm", return_value=fake_judge_llm),
+        patch("agent.tools.rubric_tool._get_rubrics", return_value=[]),
+    ):
+        graph = build_reasoning_graph(fake_client)
+        result = graph.invoke(_make_state(), config={"recursion_limit": 60})
+
+    assert result["final_score"] == 2.0
+    assert result["confidence"] == 0.7
+    assert "error" in (result["judge_verdict"] or {})

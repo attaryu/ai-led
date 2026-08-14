@@ -50,3 +50,9 @@ class AssessmentState(TypedDict):
     # tool result comes back — injected into the conversation as guidance and
     # logged for audit trail. None if generation failed or was skipped.
     checklist: Optional[list]
+
+    # ── Independent judge verdict (graph.py / reasoning_graph.py) ─────────────
+    # Post-hoc check by a SEPARATE model (RAGAS_* judge config) on whether the
+    # final justification is grounded in evidence actually retrieved this run.
+    # {"error": ...} if the judge call itself failed — never blocks the result.
+    judge_verdict: Optional[dict]

@@ -190,6 +190,125 @@ def find_tool_result(messages: list, tool_name: str) -> Optional[str]:
     return last_any
 
 
+def collect_evidence_text(
+    messages: list,
+    tool_names: tuple[str, ...] = ("search_led_evidence", "get_lkps_table"),
+) -> str:
+    """Concatenate the content of every ToolMessage from the given tools —
+    i.e. the actual evidence retrieved this run, as opposed to the rubric
+    (criteria) or formula (computation) — for the judge to check the final
+    justification against."""
+    from langchain_core.messages import ToolMessage
+
+    parts = []
+    for msg in messages:
+        if isinstance(msg, ToolMessage) and getattr(msg, "name", None) in tool_names:
+            parts.append(f"[{msg.name}] {msg.content}")
+    return "\n\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Independent judge — shared by graph.py and reasoning_graph.py
+# ---------------------------------------------------------------------------
+
+JUDGE_PROMPT_TEMPLATE = """Anda adalah auditor independen yang mengevaluasi apakah justifikasi
+skor akreditasi di bawah ini benar-benar didukung oleh bukti yang tersedia —
+TANPA menilai ulang apakah skornya sendiri sudah tepat secara substansi.
+
+JUSTIFIKASI YANG DINILAI:
+{justification}
+
+BUKTI YANG TERSEDIA (hasil pencarian LED/LKPS selama proses penilaian):
+{evidence_text}
+
+TUGAS: Nilai apakah setiap klaim konkret dalam justifikasi di atas (terutama
+angka, nama dokumen, dan pernyataan faktual) didukung oleh bukti yang
+tersedia. Jawab HANYA dengan JSON satu baris, tanpa markdown maupun
+penjelasan lain:
+
+{{"grounded": <true/false>, "hallucinated_claims": ["<klaim yang tidak didukung bukti>", ...], "missing_facts": ["<hal relevan yang tersedia di bukti tapi tidak disebut>", ...], "notes": "<1 kalimat ringkasan>"}}
+
+Kalau semua klaim didukung bukti dan tidak ada yang mengada-ada, grounded
+harus true dan hallucinated_claims kosong."""
+
+_JUDGE_CODE_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+_JUDGE_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+def parse_judge_verdict(text: str) -> Optional[dict]:
+    """Best-effort JSON extraction for the judge's verdict — tolerant of
+    <think> blocks (reasoning-model judges), code fences, and surrounding
+    prose, since the judge is a separate, independently-configured model
+    that isn't guaranteed to follow the "JSON only" instruction perfectly."""
+    import json
+
+    cleaned = _JUDGE_THINK_RE.sub("", text or "").strip()
+
+    fenced = _JUDGE_CODE_FENCE_RE.findall(cleaned)
+    for candidate in reversed(fenced):
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+
+    candidates: list[str] = []
+    depth = 0
+    start = -1
+    for i, ch in enumerate(cleaned):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start >= 0:
+                candidates.append(cleaned[start: i + 1])
+                start = -1
+    for candidate in reversed(candidates):
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+
+    return None
+
+
+def build_judge_llm():
+    """Return a plain chat model for the independent judge, configured via
+    RAGAS_* env vars (same resolution as the offline RAGAS eval judge, so
+    there's one place to configure "the model that grades other models" —
+    see eval.ragas_eval.get_judge_llm_config). Deliberately NOT the same
+    instance/config as the assessment model, so it isn't grading its own
+    justification."""
+    from eval.ragas_eval import get_judge_llm_config
+
+    cfg = get_judge_llm_config()
+
+    if cfg["provider"] == "openrouter":
+        from langchain_openai import ChatOpenAI
+
+        return ChatOpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.environ["OPENROUTER_API_KEY"],
+            model=cfg["model"],
+            temperature=0.0,
+        )
+
+    from langchain_ollama import ChatOllama
+
+    kwargs: dict = {
+        "base_url": os.environ.get(
+            "RAGAS_OLLAMA_BASE_URL", os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        ),
+        "model": cfg["model"],
+        "temperature": 0.0,
+    }
+    api_key = os.environ.get("RAGAS_OLLAMA_API_KEY", os.environ.get("OLLAMA_API_KEY"))
+    if api_key and not api_key.startswith("<"):
+        kwargs["client_kwargs"] = {"headers": {"Authorization": f"Bearer {api_key}"}}
+    return ChatOllama(**kwargs)
+
+
 def build_graph(ollama_client: OllamaClient) -> StateGraph:
     """Compile and return the assessment LangGraph.
 
@@ -415,6 +534,42 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
 
         return state
 
+    # ── Node: judge (independent post-hoc grounding check) ───────────────────
+
+    def judge_node(state: AssessmentState) -> AssessmentState:
+        """Check whether the final justification is grounded in evidence
+        actually retrieved this run, using a SEPARATE model (build_judge_llm)
+        so the assessment model isn't grading its own homework. Soft signal:
+        lowers confidence when ungrounded, never blocks or reruns scoring.
+        Skipped entirely if there's no score to judge."""
+        if state.get("final_score") is None:
+            return state
+
+        evidence_text = collect_evidence_text(state["messages"])
+        justification = state.get("justification") or ""
+
+        try:
+            judge_llm = build_judge_llm()
+            prompt = JUDGE_PROMPT_TEMPLATE.format(
+                justification=justification[:1500],
+                evidence_text=evidence_text[:3000] or "(tidak ada bukti tercatat)",
+            )
+            response = judge_llm.invoke([HumanMessage(content=prompt)])
+            verdict = parse_judge_verdict(response.content or "")
+        except Exception as exc:
+            verdict = {"error": str(exc)}
+
+        state["judge_verdict"] = verdict
+
+        if verdict and verdict.get("grounded") is False:
+            current_conf = state.get("confidence")
+            if current_conf is not None:
+                state["confidence"] = min(current_conf, 0.3)
+
+        steps = state.get("reasoning_steps", [])
+        state["reasoning_steps"] = list(steps) + [{"judge_verdict": verdict}]
+        return state
+
     # ── Build graph ───────────────────────────────────────────────────────────
 
     def route_after_tools(state: AssessmentState) -> Literal["checklist", "agent"]:
@@ -426,6 +581,7 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
     graph.add_node("checklist", checklist_node)
     graph.add_node("force", force_finalize_node)
     graph.add_node("parse_output", parse_output_node)
+    graph.add_node("judge", judge_node)
 
     graph.set_entry_point("agent")
     graph.add_conditional_edges(
@@ -438,6 +594,7 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
     )
     graph.add_edge("checklist", "agent")
     graph.add_edge("force", "agent")
-    graph.add_edge("parse_output", END)
+    graph.add_edge("parse_output", "judge")
+    graph.add_edge("judge", END)
 
     return graph.compile()
