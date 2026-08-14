@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { Prisma } from '@ai-led/db';
 import { PrismaService } from '../database/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { CreateProgramStudiDto } from './dto/create-program-studi.dto';
@@ -47,6 +52,18 @@ export class ProgramStudiService {
   async remove(id: string) {
     await this.findOne(id);
     const { tenantId } = this.tenantContext.getOrThrow();
-    await this.prisma.programStudi.delete({ where: { id, tenantId } });
+    try {
+      await this.prisma.programStudi.delete({ where: { id, tenantId } });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2003'
+      ) {
+        throw new ConflictException(
+          'Program studi ini masih punya Dokumen LED, user, atau bukti dukung terkait dan tidak bisa dihapus',
+        );
+      }
+      throw err;
+    }
   }
 }
