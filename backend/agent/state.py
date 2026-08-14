@@ -34,3 +34,19 @@ class AssessmentState(TypedDict):
     confidence: Optional[float]
     recommendation: Optional[str]
     error: Optional[str]
+
+    # ── Internal loop-control counters (graph.py / reasoning_graph.py) ────────
+    # MUST be declared here, not just set ad hoc on the state dict — LangGraph
+    # only persists keys that are part of the compiled state schema across
+    # node executions. An undeclared key gets silently dropped between steps,
+    # which is exactly how the force-retry limit went unenforced before this
+    # was added (see the "stabilisasi flow agent" fix).
+    _force_count: Optional[int]
+    _tool_call_count: Optional[int]
+    _checklist_built: Optional[bool]
+
+    # ── Systematic pre-scoring checklist (graph.py / reasoning_graph.py) ──────
+    # Rubric sub-criteria extracted once per indicator, right after the rubric
+    # tool result comes back — injected into the conversation as guidance and
+    # logged for audit trail. None if generation failed or was skipped.
+    checklist: Optional[list]

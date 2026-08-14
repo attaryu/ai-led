@@ -2,7 +2,7 @@
 
 import re
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from agent.state import AssessmentState
 
@@ -44,6 +44,180 @@ def test_build_graph_returns_compiled_graph():
     graph = build_graph(fake_client)
     # Compiled StateGraph has an `invoke` attribute
     assert hasattr(graph, "invoke")
+
+
+# ── loop termination: model that never stops calling tools ────────────────────
+
+def test_graph_terminates_when_llm_always_calls_tools():
+    """A model that validly calls a tool on every turn (never emits a
+    parseable SKOR line, never stops requesting tools) must be forced to a
+    final answer within a bounded number of turns — not loop until it hits
+    LangGraph's own recursion limit.
+
+    Regression test for the missing tool-call cap: previously `should_continue`
+    routed to "tools" unconditionally whenever the model returned tool_calls,
+    with no counter — 30 LLM calls in and still climbing before this fix.
+    """
+    from langchain_core.messages import AIMessage
+    from llm.ollama_client import OllamaClient
+    from agent.graph import build_graph
+
+    always_tool_call = AIMessage(
+        content="",
+        tool_calls=[
+            {"name": "get_indicator_rubric", "args": {"indicator_no": 1}, "id": "call_1"}
+        ],
+    )
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = always_tool_call
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
+
+    with (
+        patch("agent.graph._build_llm", return_value=fake_llm),
+        patch("agent.tools.rubric_tool._get_rubrics", return_value=[]),
+    ):
+        graph = build_graph(fake_client)
+        # Small-but-generous recursion_limit: the fix must terminate well
+        # under LangGraph's own limit, not rely on it as a safety net.
+        result = graph.invoke(_make_state(), config={"recursion_limit": 40})
+
+    # Terminated on its own (no GraphRecursionError) — the mock LLM never once
+    # emitted a parseable SKOR line, so the graph had to force its way to
+    # parse_output rather than exit "naturally".
+    assert fake_llm.invoke.call_count < 40
+    # parse_output always runs eventually, even if the forced answer is empty —
+    # confirm we actually reached it rather than stopping mid-loop.
+    assert "final_score" in result
+
+
+# ── checklist node ──────────────────────────────────────────────────────────
+
+def test_checklist_built_once_and_injected_before_finalizing():
+    """After the rubric tool result comes back, a checklist should be built
+    once (one extra LLM call), stored in state, and injected into the
+    conversation — then the flow continues to a normal final answer."""
+    import json
+    from langchain_core.messages import AIMessage
+    from llm.ollama_client import OllamaClient
+    from agent.graph import build_graph
+
+    rubric_tool_call = AIMessage(
+        content="",
+        tool_calls=[
+            {"name": "get_indicator_rubric", "args": {"indicator_no": 1}, "id": "call_1"}
+        ],
+    )
+    checklist_response = AIMessage(
+        content=(
+            "- Dokumen VMTS tersedia dan lengkap\n"
+            "- Proses penyusunan melibatkan pemangku kepentingan\n"
+            "- VMTS sudah disosialisasikan ke sivitas akademika"
+        )
+    )
+    final_answer = AIMessage(
+        content=(
+            "SKOR: 3\nJUSTIFIKASI: Bukti memadai.\nCONFIDENCE: 0.8\n"
+            "REKOMENDASI: Lengkapi dokumentasi sosialisasi."
+        )
+    )
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = [rubric_tool_call, checklist_response, final_answer]
+
+    fake_rubric_json = json.dumps({
+        "no": 1, "kriteria": "VMTS", "indikator": "...",
+        "score_type": "qualitative",
+        "score_criteria": {"4": "VMTS lengkap, partisipatif, dan disosialisasikan"},
+        "formula": None, "lkps_table_ref": None, "sub_score_formula": None,
+    })
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
+
+    with (
+        patch("agent.graph._build_llm", return_value=fake_llm),
+        patch("agent.tools.rubric_tool._get_rubrics") as mock_rubrics,
+    ):
+        mock_rubrics.return_value = [
+            MagicMock(
+                no=1, kriteria="VMTS", indikator="...", score_type="qualitative",
+                score_criteria={"4": "VMTS lengkap, partisipatif, dan disosialisasikan"},
+                formula=None, lkps_table_ref=None, sub_score_formula=None,
+            )
+        ]
+        graph = build_graph(fake_client)
+        result = graph.invoke(_make_state(), config={"recursion_limit": 40})
+
+    assert result["checklist"] is not None
+    assert len(result["checklist"]) == 3
+    assert any("VMTS" in item for item in result["checklist"])
+    assert result["final_score"] == 3.0
+    # 3 LLM calls total: rubric tool-call turn, checklist generation, final answer.
+    assert fake_llm.invoke.call_count == 3
+    # The checklist got injected into the conversation as a HumanMessage.
+    injected = [
+        m for m in result["messages"]
+        if getattr(m, "type", None) == "human" and "Checklist" in (m.content or "")
+    ]
+    assert len(injected) == 1
+
+
+def test_checklist_generation_failure_does_not_block_flow():
+    """If the checklist LLM call itself raises, the flow must still reach a
+    final answer instead of crashing the whole indicator."""
+    from langchain_core.messages import AIMessage
+    from llm.ollama_client import OllamaClient
+    from agent.graph import build_graph
+
+    rubric_tool_call = AIMessage(
+        content="",
+        tool_calls=[
+            {"name": "get_indicator_rubric", "args": {"indicator_no": 1}, "id": "call_1"}
+        ],
+    )
+    final_answer = AIMessage(
+        content="SKOR: 2\nJUSTIFIKASI: Bukti terbatas.\nCONFIDENCE: 0.6\nREKOMENDASI: Lengkapi bukti."
+    )
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = [rubric_tool_call, RuntimeError("LLM timeout"), final_answer]
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
+
+    with (
+        patch("agent.graph._build_llm", return_value=fake_llm),
+        patch("agent.tools.rubric_tool._get_rubrics", return_value=[]),
+    ):
+        graph = build_graph(fake_client)
+        result = graph.invoke(_make_state(), config={"recursion_limit": 40})
+
+    assert result["checklist"] is None
+    assert result["final_score"] == 2.0
+
+
+def test_graph_terminates_when_llm_never_finalizes():
+    """A chat-tuned model that goes conversational — never calls a tool, never
+    emits a parseable SKOR line — must stop after FORCE_LIMIT retries.
+
+    Regression test for _force_count silently not persisting across graph
+    steps (it wasn't declared in AssessmentState, so LangGraph dropped it
+    between node executions and the retry limit never actually applied)."""
+    from langchain_core.messages import AIMessage
+    from llm.ollama_client import OllamaClient
+    from agent.graph import build_graph
+
+    chatty = AIMessage(content="Saya melihat Anda telah membagikan beberapa dokumen...")
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = chatty
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
+
+    with patch("agent.graph._build_llm", return_value=fake_llm):
+        graph = build_graph(fake_client)
+        result = graph.invoke(_make_state(), config={"recursion_limit": 40})
+
+    assert fake_llm.invoke.call_count < 40
+    assert "final_score" in result
 
 
 # ── parse_output logic (extracted for unit testing) ───────────────────────────

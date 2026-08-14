@@ -161,3 +161,153 @@ def test_build_reasoning_graph_returns_compiled():
     fake = OllamaClient(base_url="http://fake:11434", model="deepseek-r1:14b", timeout_seconds=30)
     graph = build_reasoning_graph(fake)
     assert hasattr(graph, "invoke")
+
+
+# ── loop termination: model that never stops calling tools ────────────────────
+
+
+def _make_state():
+    from unittest.mock import MagicMock
+
+    return {
+        "session_id": "test-session",
+        "indicator_no": 1,
+        "indicator_row": MagicMock(indicator_no=1, kriteria="Kondisi Eksternal"),
+        "rubric": None,
+        "led_evidence": [],
+        "lkps_data": {},
+        "messages": [],
+        "reasoning_steps": [],
+        "final_score": None,
+        "sub_score_i": None,
+        "sub_score_ii": None,
+        "justification": None,
+        "confidence": None,
+        "recommendation": None,
+        "error": None,
+    }
+
+
+def test_reasoning_graph_terminates_when_llm_always_calls_tools():
+    """A reasoning model that emits a VALID tool-call JSON on every turn and
+    never emits {"action": "final", ...} must be forced to a final answer
+    within a bounded number of turns, not loop until it hits LangGraph's own
+    recursion limit.
+
+    Regression test: MAX_ITERATIONS was previously only checked on the
+    invalid-JSON / unknown-action branches — a model that keeps validly
+    calling a tool had no cap at all.
+    """
+    from unittest.mock import MagicMock, patch
+
+    from langchain_core.messages import AIMessage
+    from llm.ollama_client import OllamaClient
+    from agent.reasoning_graph import build_reasoning_graph
+
+    always_tool_call = AIMessage(
+        content='{"action": "get_indicator_rubric", "args": {"indicator_no": 1}}'
+    )
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = always_tool_call
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="deepseek-r1:14b", timeout_seconds=30)
+
+    with (
+        patch("agent.reasoning_graph._build_reasoning_llm", return_value=fake_llm),
+        patch("agent.tools.rubric_tool._get_rubrics", return_value=[]),
+    ):
+        graph = build_reasoning_graph(fake_client)
+        result = graph.invoke(_make_state(), config={"recursion_limit": 60})
+
+    assert fake_llm.invoke.call_count < 60
+    assert "final_score" in result
+
+
+# ── checklist node ──────────────────────────────────────────────────────────
+
+
+def test_checklist_built_once_and_injected_before_finalizing():
+    from unittest.mock import MagicMock, patch
+
+    from langchain_core.messages import AIMessage
+    from llm.ollama_client import OllamaClient
+    from agent.reasoning_graph import build_reasoning_graph
+
+    rubric_tool_call = AIMessage(
+        content='{"action": "get_indicator_rubric", "args": {"indicator_no": 1}}'
+    )
+    checklist_response = AIMessage(
+        content=(
+            "- Dokumen VMTS tersedia dan lengkap\n"
+            "- Proses penyusunan melibatkan pemangku kepentingan\n"
+            "- VMTS sudah disosialisasikan ke sivitas akademika"
+        )
+    )
+    final_answer = AIMessage(
+        content=(
+            '{"action": "final", "score": 3, "justification": "Bukti memadai.", '
+            '"confidence": 0.8, "recommendation": "Lengkapi dokumentasi sosialisasi."}'
+        )
+    )
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = [rubric_tool_call, checklist_response, final_answer]
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="deepseek-r1:14b", timeout_seconds=30)
+
+    with (
+        patch("agent.reasoning_graph._build_reasoning_llm", return_value=fake_llm),
+        patch("agent.tools.rubric_tool._get_rubrics") as mock_rubrics,
+    ):
+        mock_rubrics.return_value = [
+            MagicMock(
+                no=1, kriteria="VMTS", indikator="...", score_type="qualitative",
+                score_criteria={"4": "VMTS lengkap, partisipatif, dan disosialisasikan"},
+                formula=None, lkps_table_ref=None, sub_score_formula=None,
+            )
+        ]
+        graph = build_reasoning_graph(fake_client)
+        result = graph.invoke(_make_state(), config={"recursion_limit": 40})
+
+    assert result["checklist"] is not None
+    assert len(result["checklist"]) == 3
+    assert result["final_score"] == 3.0
+    assert fake_llm.invoke.call_count == 3
+    injected = [
+        m for m in result["messages"]
+        if "Checklist" in (getattr(m, "content", "") or "")
+    ]
+    assert len(injected) == 1
+
+
+def test_checklist_generation_failure_does_not_block_flow():
+    from unittest.mock import MagicMock, patch
+
+    from langchain_core.messages import AIMessage
+    from llm.ollama_client import OllamaClient
+    from agent.reasoning_graph import build_reasoning_graph
+
+    rubric_tool_call = AIMessage(
+        content='{"action": "get_indicator_rubric", "args": {"indicator_no": 1}}'
+    )
+    final_answer = AIMessage(
+        content=(
+            '{"action": "final", "score": 2, "justification": "Bukti terbatas.", '
+            '"confidence": 0.6, "recommendation": "Lengkapi bukti."}'
+        )
+    )
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = [rubric_tool_call, RuntimeError("LLM timeout"), final_answer]
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="deepseek-r1:14b", timeout_seconds=30)
+
+    with (
+        patch("agent.reasoning_graph._build_reasoning_llm", return_value=fake_llm),
+        patch("agent.tools.rubric_tool._get_rubrics", return_value=[]),
+    ):
+        graph = build_reasoning_graph(fake_client)
+        result = graph.invoke(_make_state(), config={"recursion_limit": 40})
+
+    assert result["checklist"] is None
+    assert result["final_score"] == 2.0

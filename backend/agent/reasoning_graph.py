@@ -20,11 +20,12 @@ import json
 import logging
 import os
 import re
-from typing import Literal
+from typing import Literal, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
 
+from agent.graph import CHECKLIST_PROMPT_TEMPLATE, parse_checklist
 from agent.state import AssessmentState
 from agent.tools.formula_tool import compute_formula_score
 from agent.tools.led_tool import search_led_evidence
@@ -43,6 +44,11 @@ _TOOL_REGISTRY = {
 }
 
 MAX_ITERATIONS = 12  # hard cap on tool-call loops per indicator
+# After MAX_ITERATIONS, give the model FORCE_LIMIT extra nudges to emit a
+# final answer using whatever evidence it already gathered, before giving up
+# entirely (mirrors agent/graph.py's FORCE_LIMIT for the native-tool-calling
+# graph — same "degrade gracefully, don't just null out" philosophy).
+FORCE_LIMIT = 2
 
 _SYSTEM_PROMPT = """Anda adalah AGEN OTONOM penilai akreditasi (AMI).
 Anda BUKAN chatbot. JANGAN bertanya balik. JANGAN menawarkan bantuan.
@@ -136,6 +142,25 @@ def _extract_json(content: str) -> dict | None:
     return None
 
 
+def _find_reasoning_tool_result(messages: list, tool_name: str) -> Optional[str]:
+    """Return the content of the most recent "Tool result (<tool_name>): ..."
+    message, falling back to the single most recent tool-result message of
+    any name if none matches exactly. Mirrors agent.graph.find_tool_result,
+    but reasoning-mode tool results are plain HumanMessages (this graph
+    doesn't use LangChain's native ToolMessage / tool_calls machinery)."""
+    prefix_any = "Tool result ("
+    prefix_named = f"Tool result ({tool_name}):"
+    last_any: Optional[str] = None
+    for msg in reversed(messages):
+        content = getattr(msg, "content", "") or ""
+        if content.startswith(prefix_any):
+            if last_any is None:
+                last_any = content
+            if content.startswith(prefix_named):
+                return content[len(prefix_named):].strip()
+    return last_any
+
+
 # ---------------------------------------------------------------------------
 # LLM builder (no bind_tools — reasoning models don't support it)
 # ---------------------------------------------------------------------------
@@ -196,16 +221,30 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
         state["messages"] = list(state["messages"]) + [response]
         return state
 
-    def parse_and_dispatch(state: AssessmentState) -> Literal["tool_call", "finalize", "error"]:
+    def _force_or_give_up(state: AssessmentState, reason: str) -> Literal["force", "error"]:
+        """Shared MAX_ITERATIONS overflow handler for every dispatch branch
+        (invalid JSON, unknown action, or a validly-repeating tool call).
+
+        All three share the SAME FORCE_LIMIT budget, so a model that keeps
+        finding new ways to avoid finalizing can't loop past
+        MAX_ITERATIONS + FORCE_LIMIT turns total, regardless of which branch
+        it keeps landing in.
+        """
+        forces = state.get("_force_count", 0)
+        if forces < FORCE_LIMIT:
+            return "force"
+        state["error"] = f"{reason} and force-finalize attempts exhausted."
+        return "error"
+
+    def parse_and_dispatch(state: AssessmentState) -> Literal["tool_call", "finalize", "force", "error"]:
         last = state["messages"][-1].content
         parsed = _extract_json(last)
+        iters = state.get("reasoning_steps", [])
 
         if parsed is None:
             # Could be a degenerate response — give the model one chance to retry
-            iters = state.get("reasoning_steps", [])
             if len(iters) >= MAX_ITERATIONS:
-                state["error"] = "Max iterations reached without final JSON."
-                return "error"
+                return _force_or_give_up(state, "Max iterations reached without final JSON")
             state["messages"].append(
                 HumanMessage(
                     content=(
@@ -222,13 +261,13 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
             return "finalize"
 
         if action in _TOOL_REGISTRY:
+            if len(iters) >= MAX_ITERATIONS:
+                return _force_or_give_up(state, f"Iteration limit reached while still calling tools ('{action}')")
             return "tool_call"
 
         # Unknown action — nudge the model
-        iters = state.get("reasoning_steps", [])
         if len(iters) >= MAX_ITERATIONS:
-            state["error"] = f"Unknown action '{action}' and iteration limit reached."
-            return "error"
+            return _force_or_give_up(state, f"Unknown action '{action}' and iteration limit reached")
         state["messages"].append(
             HumanMessage(
                 content=(
@@ -293,6 +332,65 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
         state["reasoning_steps"] = list(steps) + [f"tool:{action}"]
         return state
 
+    def checklist_node(state: AssessmentState) -> AssessmentState:
+        """Build an explicit checklist of rubric sub-criteria to check, once
+        per indicator, from whatever the rubric tool returned. Same
+        soft-guidance behavior as agent.graph's checklist_node — never
+        blocks the flow, and a missing checklist item is a valid reason for
+        a conservative score rather than something that must be forced."""
+        state["_checklist_built"] = True
+
+        rubric_text = _find_reasoning_tool_result(state["messages"], "get_indicator_rubric")
+        if not rubric_text:
+            state["checklist"] = None
+            return state
+
+        try:
+            prompt = CHECKLIST_PROMPT_TEMPLATE.format(rubric_text=rubric_text[:2000])
+            response = llm.invoke([HumanMessage(content=prompt)])
+            checklist = parse_checklist(response.content or "")
+        except Exception:
+            checklist = []
+
+        state["checklist"] = checklist or None
+
+        if checklist:
+            bullet_list = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(checklist))
+            state["messages"].append(
+                HumanMessage(
+                    content=(
+                        "Checklist kriteria yang WAJIB dicek untuk indikator ini "
+                        "(hasil analisis rubrik):\n"
+                        f"{bullet_list}\n\n"
+                        "Pastikan bukti untuk tiap poin sudah dicari sebelum memberi jawaban "
+                        "final. Jika bukti untuk suatu poin tidak ditemukan, itu sah — "
+                        "sebutkan di justifikasi.\n\n"
+                        "Lanjutkan dengan JSON satu baris seperti biasa."
+                    )
+                )
+            )
+
+        steps = state.get("reasoning_steps", [])
+        state["reasoning_steps"] = list(steps) + [{"checklist": checklist}]
+        return state
+
+    def force_finalize_node(state: AssessmentState) -> AssessmentState:
+        """Nudge the model to emit {"action": "final", ...} NOW, using
+        whatever evidence it already gathered, instead of giving up outright."""
+        forces = state.get("_force_count", 0)
+        state["_force_count"] = forces + 1
+        state["messages"].append(
+            HumanMessage(
+                content=(
+                    "STOP. Batas iterasi tercapai. Berikan HANYA satu baris JSON final "
+                    "sekarang, berdasarkan bukti yang sudah terkumpul:\n"
+                    '{"action": "final", "score": <0-4>, "justification": "<2-3 kalimat>", '
+                    '"confidence": <0.0-1.0>, "recommendation": "<2-3 kalimat actionable>"}'
+                )
+            )
+        )
+        return state
+
     def finalize_node(state: AssessmentState) -> AssessmentState:
         last = state["messages"][-1].content
         parsed = _extract_json(last) or {}
@@ -319,18 +417,27 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
         state["recommendation"] = str(recommendation)[:500] if recommendation else None
         return state
 
+    def route_after_tools(state: AssessmentState) -> Literal["checklist", "agent"]:
+        return "agent" if state.get("_checklist_built") else "checklist"
+
     graph = StateGraph(AssessmentState)
     graph.add_node("agent", agent_node)
     graph.add_node("tools", tool_node)
+    graph.add_node("checklist", checklist_node)
+    graph.add_node("force", force_finalize_node)
     graph.add_node("finalize", finalize_node)
 
     graph.set_entry_point("agent")
     graph.add_conditional_edges(
         "agent",
         parse_and_dispatch,
-        {"tool_call": "tools", "finalize": "finalize", "error": END},
+        {"tool_call": "tools", "finalize": "finalize", "force": "force", "error": END},
     )
-    graph.add_edge("tools", "agent")
+    graph.add_conditional_edges(
+        "tools", route_after_tools, {"checklist": "checklist", "agent": "agent"}
+    )
+    graph.add_edge("checklist", "agent")
+    graph.add_edge("force", "agent")
     graph.add_edge("finalize", END)
 
     return graph.compile()
