@@ -1,8 +1,6 @@
-import * as React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useNavigate, Link } from 'react-router';
-import { ApiError } from '~/core/lib/api-client';
+import { Navigate, Link } from 'react-router';
 import {
 	Card,
 	CardContent,
@@ -19,18 +17,19 @@ import {
 	FieldGroup,
 	FieldLabel,
 } from '~/core/components/ui/field';
-import { sessionRepository } from '../../data/repositories/session.repository';
+import { useLogin } from '../hooks/use-auth-mutations';
+import { authErrorMessage, useGuestOnly } from '../hooks/use-guest-only';
 import { loginSchema, type LoginDto } from '../../domain/dtos/login.dto';
 
 const formId = 'login-form';
 
 export function Login() {
-	const navigate = useNavigate();
-	const [formError, setFormError] = React.useState<string | null>(null);
+	const guard = useGuestOnly();
+	const login = useLogin();
 	const {
 		register,
 		handleSubmit,
-		formState: { errors, isSubmitting },
+		formState: { errors },
 	} = useForm<LoginDto>({
 		resolver: zodResolver(loginSchema),
 		defaultValues: {
@@ -39,15 +38,28 @@ export function Login() {
 		},
 	});
 
-	const onSubmit = async (data: LoginDto) => {
-		setFormError(null);
-		try {
-			await sessionRepository.login(data);
-			navigate('/dashboard');
-		} catch (e) {
-			setFormError(e instanceof ApiError ? e.message : 'Gagal masuk. Coba lagi.');
-		}
-	};
+	/*
+	 * Tidak ada `navigate()` di mana pun pada berkas ini, dan itu disengaja.
+	 * `useLogin` menaruh sesi baru ke cache, `useGuestOnly` melihatnya pada
+	 * render berikutnya lalu berubah jadi `denied` — cabang di bawah yang
+	 * mengantar. Jalur keluar halaman ini jadi satu, dipakai bersama oleh
+	 * "baru saja berhasil masuk" dan "membuka /login padahal sudah punya sesi",
+	 * sehingga tidak ada versi kedua yang bisa lupa menghormati `?next=` atau
+	 * mengirim Penyusun ke dashboard yang bukan haknya.
+	 */
+	if (guard.status === 'pending') {
+		return (
+			<div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+				Memuat…
+			</div>
+		);
+	}
+
+	if (guard.status === 'denied') {
+		return <Navigate to={guard.redirectTo} replace />;
+	}
+
+	const formError = authErrorMessage(login.error, 'Gagal masuk. Coba lagi.');
 
 	return (
 		<div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
@@ -59,7 +71,10 @@ export function Login() {
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
-					<form id={formId} onSubmit={handleSubmit(onSubmit)}>
+					<form
+						id={formId}
+						onSubmit={handleSubmit((data) => login.mutate(data))}
+					>
 						<FieldGroup>
 							{formError && (
 								<p className="text-sm text-destructive">{formError}</p>
@@ -71,7 +86,7 @@ export function Login() {
 									type="email"
 									placeholder="name@example.com"
 									aria-invalid={!!errors.email}
-									disabled={isSubmitting}
+									disabled={login.isPending}
 									{...register('email')}
 								/>
 								{errors.email && (
@@ -86,7 +101,7 @@ export function Login() {
 									type="password"
 									placeholder="••••••"
 									aria-invalid={!!errors.password}
-									disabled={isSubmitting}
+									disabled={login.isPending}
 									{...register('password')}
 								/>
 								{errors.password && (
@@ -101,10 +116,10 @@ export function Login() {
 					<Button
 						className="w-full"
 						type="submit"
-						disabled={isSubmitting}
+						disabled={login.isPending}
 						form={formId}
 					>
-						{isSubmitting ? 'Loading...' : 'Masuk'}
+						{login.isPending ? 'Loading...' : 'Masuk'}
 					</Button>
 					<p className="text-center text-sm text-muted-foreground">
 						Belum punya akun?{' '}

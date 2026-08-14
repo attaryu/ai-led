@@ -1,4 +1,4 @@
-import { setAccessToken } from '~/core/lib/api-client';
+import { ApiError, setAccessToken } from '~/core/lib/api-client';
 import { type UserRole } from '~/features/users/domain/entities/user.entity';
 import {
 	sessionSchema,
@@ -12,8 +12,6 @@ import {
 	type RegisterPayload,
 } from '../sources/remote/auth.remote-source';
 
-export const SESSION_UPDATE_EVENT = 'session-update';
-
 const ROLE_FROM_BACKEND: Record<BackendRole, UserRole> = {
 	ADMIN: 'Admin',
 	PIMPINAN: 'Pimpinan',
@@ -22,6 +20,7 @@ const ROLE_FROM_BACKEND: Record<BackendRole, UserRole> = {
 };
 
 function toSession(result: AuthResult): SessionEntity {
+	setAccessToken(result.accessToken);
 	return sessionSchema.parse({
 		userId: result.user.id,
 		tenantId: result.user.tenantId,
@@ -31,68 +30,65 @@ function toSession(result: AuthResult): SessionEntity {
 	});
 }
 
-let currentSession: SessionEntity | null = null;
-/** Menggabungkan `bootstrap()` yang dipicu bersamaan oleh beberapa `useSession()` jadi satu request. */
-let bootstrapInFlight: Promise<SessionEntity | null> | null = null;
-
+/**
+ * Repository tanpa state.
+ *
+ * Sebelumnya berkas ini memegang `currentSession`, menggabungkan bootstrap yang
+ * bertabrakan lewat `bootstrapInFlight`, dan menyiarkan perubahan lewat
+ * `window` CustomEvent. Ketiganya dihapus: cache, penggabungan request yang
+ * sedang berjalan, dan penyiaran ke seluruh subscriber adalah tepat apa yang
+ * TanStack Query kerjakan — lihat query `['session']` di `use-session.ts`.
+ *
+ * Yang tersisa cuma pemetaan bentuk backend ke `SessionEntity`, plus satu efek
+ * samping yang memang tidak punya rumah lain: menaruh access token ke memori
+ * `api-client`.
+ */
 export const sessionRepository = {
-	/** Sesi yang sudah dibangun di memori — `null` sebelum `bootstrap()`/`login()`/`register()` selesai. */
-	get(): SessionEntity | null {
-		return currentSession;
-	},
-
-	isAuthenticated(): boolean {
-		return currentSession !== null;
-	},
-
 	async login(payload: LoginPayload): Promise<SessionEntity> {
-		const result = await authRemoteSource.login(payload);
-		setAccessToken(result.accessToken);
-		currentSession = toSession(result);
-		window.dispatchEvent(new Event(SESSION_UPDATE_EVENT));
-		return currentSession;
+		return toSession(await authRemoteSource.login(payload));
 	},
 
 	async register(payload: RegisterPayload): Promise<SessionEntity> {
-		const result = await authRemoteSource.register(payload);
-		setAccessToken(result.accessToken);
-		currentSession = toSession(result);
-		window.dispatchEvent(new Event(SESSION_UPDATE_EVENT));
-		return currentSession;
+		return toSession(await authRemoteSource.register(payload));
 	},
 
 	/**
-	 * Memulihkan sesi dari refresh-token cookie saat aplikasi baru dimuat —
-	 * access token hidup di memori saja, jadi hilang tiap reload halaman.
-	 * Gagal (tidak ada cookie / kedaluwarsa) berarti memang belum login, bukan
-	 * error yang perlu dilaporkan.
+	 * Memulihkan sesi dari refresh-token cookie — access token hidup di memori
+	 * saja, jadi hilang tiap kali halaman dimuat ulang. Fungsi yang sama juga
+	 * dipakai untuk memperpanjang sesi sebelum access token mati, karena
+	 * "memulihkan sesi" dan "memperbarui token" memang satu tindakan.
+	 *
+	 * `null` berarti **dipastikan belum login**, dan hanya 401/403 yang berhak
+	 * menyimpulkan itu. Sisanya dilempar ulang: backend yang tumbang atau
+	 * jaringan yang putus tidak mengatakan apa pun tentang keabsahan sesi, dan
+	 * memperlakukannya sebagai "belum login" akan menendang pengguna ke halaman
+	 * masuk padahal sesinya baik-baik saja. Dengan dilempar, Query mengulang
+	 * sendiri dan tetap memegang sesi yang terakhir berhasil.
 	 */
-	bootstrap(): Promise<SessionEntity | null> {
-		if (bootstrapInFlight) return bootstrapInFlight;
-
-		bootstrapInFlight = (async () => {
-			try {
-				const result = await authRemoteSource.refresh();
-				setAccessToken(result.accessToken);
-				currentSession = toSession(result);
-			} catch {
+	async restore(): Promise<SessionEntity | null> {
+		try {
+			return toSession(await authRemoteSource.refresh());
+		} catch (e) {
+			if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
 				setAccessToken(null);
-				currentSession = null;
+				return null;
 			}
-			window.dispatchEvent(new Event(SESSION_UPDATE_EVENT));
-			return currentSession;
-		})();
-
-		return bootstrapInFlight;
+			throw e;
+		}
 	},
 
-	async clear(): Promise<void> {
+	/**
+	 * `finally` supaya token tetap dibuang meski backend tidak bisa dihubungi:
+	 * pengguna menekan "Keluar" dan harus benar-benar keluar, apa pun jawaban
+	 * server. Cookie-nya sendiri mungkin tertinggal — utang yang dicatat di
+	 * docs/.backend-blockers.md, karena logout memang belum mencabut token di
+	 * sisi server.
+	 */
+	async logout(): Promise<void> {
 		try {
 			await authRemoteSource.logout();
 		} finally {
 			setAccessToken(null);
-			currentSession = null;
-			window.dispatchEvent(new Event(SESSION_UPDATE_EVENT));
 		}
 	},
 };

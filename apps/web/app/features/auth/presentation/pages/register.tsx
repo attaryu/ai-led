@@ -1,8 +1,6 @@
-import * as React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useNavigate, Link } from 'react-router';
-import { ApiError } from '~/core/lib/api-client';
+import { Navigate, Link } from 'react-router';
 import {
 	Card,
 	CardContent,
@@ -19,7 +17,8 @@ import {
 	FieldGroup,
 	FieldLabel,
 } from '~/core/components/ui/field';
-import { sessionRepository } from '../../data/repositories/session.repository';
+import { useRegister } from '../hooks/use-auth-mutations';
+import { authErrorMessage, useGuestOnly } from '../hooks/use-guest-only';
 import {
 	registerSchema,
 	type RegisterDto,
@@ -28,12 +27,12 @@ import {
 const formId = 'register-form';
 
 export function Register() {
-	const navigate = useNavigate();
-	const [formError, setFormError] = React.useState<string | null>(null);
+	const guard = useGuestOnly();
+	const registerAccount = useRegister();
 	const {
 		register,
 		handleSubmit,
-		formState: { errors, isSubmitting },
+		formState: { errors },
 	} = useForm<RegisterDto>({
 		resolver: zodResolver(registerSchema),
 		defaultValues: {
@@ -44,22 +43,24 @@ export function Register() {
 		},
 	});
 
-	const onSubmit = async (data: RegisterDto) => {
-		setFormError(null);
-		try {
-			// Registrasi selalu membuat tenant baru + akun Admin (backend belum
-			// punya modul User untuk mengundang role lain — lihat docs tracker).
-			await sessionRepository.register({
-				namaLengkap: data.fullname,
-				email: data.email,
-				password: data.password,
-				namaUniversitas: data.universityName,
-			});
-			navigate('/dashboard');
-		} catch (e) {
-			setFormError(e instanceof ApiError ? e.message : 'Gagal mendaftar. Coba lagi.');
-		}
-	};
+	// Pengalihan setelah berhasil ditangani cabang `denied` di bawah — lihat
+	// catatan di `login.tsx`.
+	if (guard.status === 'pending') {
+		return (
+			<div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+				Memuat…
+			</div>
+		);
+	}
+
+	if (guard.status === 'denied') {
+		return <Navigate to={guard.redirectTo} replace />;
+	}
+
+	const formError = authErrorMessage(
+		registerAccount.error,
+		'Gagal mendaftar. Coba lagi.',
+	);
 
 	return (
 		<div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
@@ -72,7 +73,20 @@ export function Register() {
 				</CardHeader>
 
 				<CardContent>
-					<form id={formId} onSubmit={handleSubmit(onSubmit)}>
+					<form
+						id={formId}
+						onSubmit={handleSubmit((data) =>
+							// Registrasi selalu membuat tenant baru + akun Admin (backend
+							// belum punya modul User untuk mengundang role lain — lihat
+							// docs/.backend-blockers.md).
+							registerAccount.mutate({
+								namaLengkap: data.fullname,
+								email: data.email,
+								password: data.password,
+								namaUniversitas: data.universityName,
+							}),
+						)}
+					>
 						<FieldGroup>
 							{formError && (
 								<p className="text-sm text-destructive">{formError}</p>
@@ -84,7 +98,7 @@ export function Register() {
 									type="text"
 									placeholder="John Doe"
 									aria-invalid={!!errors.fullname}
-									disabled={isSubmitting}
+									disabled={registerAccount.isPending}
 									{...register('fullname')}
 								/>
 								{errors.fullname && (
@@ -99,7 +113,7 @@ export function Register() {
 									type="email"
 									placeholder="name@example.com"
 									aria-invalid={!!errors.email}
-									disabled={isSubmitting}
+									disabled={registerAccount.isPending}
 									{...register('email')}
 								/>
 								{errors.email && (
@@ -114,7 +128,7 @@ export function Register() {
 									type="password"
 									placeholder="••••••"
 									aria-invalid={!!errors.password}
-									disabled={isSubmitting}
+									disabled={registerAccount.isPending}
 									{...register('password')}
 								/>
 								{errors.password && (
@@ -131,7 +145,7 @@ export function Register() {
 									type="text"
 									placeholder="Universitas Indonesia"
 									aria-invalid={!!errors.universityName}
-									disabled={isSubmitting}
+									disabled={registerAccount.isPending}
 									{...register('universityName')}
 								/>
 								{errors.universityName && (
@@ -146,10 +160,10 @@ export function Register() {
 					<Button
 						className="w-full"
 						type="submit"
-						disabled={isSubmitting}
+						disabled={registerAccount.isPending}
 						form={formId}
 					>
-						{isSubmitting ? 'Loading...' : 'Daftar'}
+						{registerAccount.isPending ? 'Loading...' : 'Daftar'}
 					</Button>
 					<p className="text-center text-sm text-muted-foreground">
 						Sudah punya akun?{' '}

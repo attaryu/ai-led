@@ -1,3 +1,5 @@
+import { useLocation } from 'react-router';
+
 import { type SessionEntity } from '../../domain/entities/session.entity';
 import { useSession } from './use-session';
 
@@ -65,13 +67,20 @@ export function useRoleGuard(
 	resourceProgramId?: string | null,
 ): RoleGuardResult {
 	const session = useSession();
+	const location = useLocation();
 
-	// `undefined` = boot-refresh (`/auth/refresh`) masih berjalan, belum bisa
+	// `undefined` = pemulihan sesi (`/auth/refresh`) masih berjalan, belum bisa
 	// dinilai. `null` = sudah selesai dan dipastikan belum login — beda dari
 	// `pending`, ini keputusan final yang layout sudah tahu cara meresponnya
 	// (redirect), sama seperti `denied` lain di bawah.
 	if (session === undefined) return { status: 'pending' };
-	if (session === null) return { status: 'denied', redirectTo: '/login' };
+	if (session === null) {
+		// Tujuan semula dititipkan supaya tautan dalam tidak hangus: tanpa ini,
+		// siapa pun yang membuka `/dashboard/users` tanpa sesi akan mendarat di
+		// dashboard setelah masuk, dan harus mencari sendiri jalan kembali.
+		const next = encodeURIComponent(location.pathname + location.search);
+		return { status: 'denied', redirectTo: `/login?next=${next}` };
+	}
 
 	if (layer === 'tenant') {
 		// Penyusun tidak berwenang melihat prodi lain maupun menu manajemen

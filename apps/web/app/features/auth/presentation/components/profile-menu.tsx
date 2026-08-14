@@ -1,5 +1,4 @@
 import { DotsThreeVerticalIcon, SignOutIcon } from '@phosphor-icons/react';
-import { useNavigate } from 'react-router';
 
 import { buttonVariants } from '~/core/components/ui/button';
 import {
@@ -9,7 +8,7 @@ import {
 	DropdownMenuTrigger,
 } from '~/core/components/ui/dropdown-menu';
 import { cn } from '~/core/lib/utils';
-import { sessionRepository } from '../../data/repositories/session.repository';
+import { useLogout } from '../hooks/use-auth-mutations';
 
 /**
  * Menu "aksi lain" milik identitas user, dipakai card profil sidebar maupun
@@ -25,7 +24,7 @@ export function ProfileMenu({
 }: {
 	side?: 'top' | 'bottom';
 }) {
-	const navigate = useNavigate();
+	const logout = useLogout();
 
 	return (
 		<DropdownMenu>
@@ -49,11 +48,16 @@ export function ProfileMenu({
 				sideOffset={8}
 				className="w-48 bg-popover"
 			>
+				{/*
+				 * Tanpa `navigate` sesudahnya: `useLogout` mengosongkan sesi di cache,
+				 * dan `useRoleGuard` milik layout yang sedang merender halaman inilah
+				 * yang mengantar ke `/login`. Satu jalur keluar, dipakai bersama
+				 * dengan keadaan sesi yang mati sendiri di tengah pemakaian.
+				 */}
 				<DropdownMenuItem
 					className="cursor-pointer text-destructive"
-					onClick={() => {
-						void sessionRepository.clear().then(() => navigate('/login'));
-					}}
+					disabled={logout.isPending}
+					onClick={() => logout.mutate()}
 				>
 					<SignOutIcon className="size-4" />
 					Keluar
