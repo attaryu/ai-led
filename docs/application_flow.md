@@ -286,14 +286,15 @@ Satu hal lagi yang sengaja **tidak** dilakukan: halaman ini tidak memanggil pemb
 ### 4.2 Manajemen User
 
 - **Membuat user baru** (`USER.role`, `email`, `password_hash`, dsb) — hanya `ADMIN`. Password diisi oleh Admin saat membuat akun.
-- **Assign/edit `program_studi_id`** seorang user (khusus untuk menempatkan `PENYUSUN` ke prodi tertentu) — hanya `PIMPINAN`.
+- **Membuat `PENYUSUN` wajib sekalian menunjuk prodinya.** Pembuatan ditolak bila `program_studi_id` kosong — lihat catatan di bawah.
+- **Assign/edit `program_studi_id`** seorang user (memindahkan `PENYUSUN` ke prodi lain setelah akunnya ada) — hanya `PIMPINAN`.
 - `PENJAMIN_MUTU` tidak punya menu ini sama sekali.
 
-> **Belum diputuskan — Penyusun yang belum ditugaskan.** Karena membuat akun dan menugaskannya ke prodi dipegang dua role yang berbeda, ada jeda di mana sebuah `USER` ber-role `PENYUSUN` sudah sah tapi `program_studi_id`-nya masih kosong. Keadaan itu bukan anomali data — ia lahir dari pembagian wewenang di atas.
+> **Catatan desain — `PENYUSUN` tidak boleh ada tanpa prodi.** Membuat akun dan memindahkannya antar prodi tetap dipegang dua role berbeda, tapi **penunjukan prodi pertama ikut ke Admin saat pembuatan**, bukan ditunda sampai Pimpinan bertindak. Wewenang Pimpinan adalah *memindahkan*, bukan *mengaktifkan*.
 >
-> Persoalannya, tidak ada satu pun halaman yang boleh dibuka orang tersebut: lapis tenant menolak Penyusun (§2), sedangkan lapis prodi tidak punya prodi untuk dituju. Baris 18 pada tabel edge case §4 pun mengandaikan Penyusun selalu punya prodi.
+> Alasannya: seorang `PENYUSUN` tanpa prodi tidak punya satu pun halaman yang boleh ia buka. Lapis tenant menolak Penyusun (§2), sedangkan lapis prodi tidak punya prodi untuk dituju — ia akan masuk aplikasi lalu tidak bisa ke mana-mana. Menutup keadaan itu di titik pembuatannya lebih murah daripada merancang halaman khusus untuk keadaan yang memang tidak seharusnya ada. Baris 18 pada tabel edge case §4, yang mengandaikan Penyusun selalu punya prodi, dengan begitu tetap benar.
 >
-> Tiga kemungkinan jawabannya — menolak pembuatan `PENYUSUN` sebelum prodinya ditunjuk, memberi halaman "belum ditugaskan" yang mengarahkan ke Pimpinan, atau menolak login-nya sampai ditugaskan — masing-masing mengubah perilaku frontend maupun backend, jadi harus dipilih sebelum menu ini dilepas dari data mock.
+> **Konsekuensinya pada penghapusan prodi:** menghapus `PROGRAM_STUDI` yang masih punya `PENYUSUN` akan menciptakan kembali keadaan yang justru dilarang di atas. Penghapusan seperti itu harus ditolak selama masih ada Penyusun yang menempatinya; pindahkan dulu penghuninya.
 
 ### 4.3 Daftar Program Studi (navigasi)
 

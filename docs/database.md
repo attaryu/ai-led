@@ -165,8 +165,9 @@ Ini adalah tabel identitas — menentukan siapa yang login, dan lewat kolom `rol
 - Satu user (`PENYUSUN`) ditempatkan di **tepat satu** `PROGRAM_STUDI` lewat `program_studi_id`; role lain umumnya beroperasi di level tenant (`program_studi_id` kosong).
 
 ### Fitur terkait
-- **Manajemen akun**: hanya `ADMIN` yang bisa membuat user baru dengan role apa pun di dalam tenant-nya.
-- **Penugasan ke prodi**: hanya `PIMPINAN` yang bisa mengubah `program_studi_id` seorang user (assign/pindah prodi) setelah user tersebut dibuat oleh Admin.
+- **Manajemen akun**: hanya `ADMIN` yang bisa membuat user baru dengan role apa pun di dalam tenant-nya. Khusus role `PENYUSUN`, `program_studi_id` wajib ikut ditunjuk saat pembuatan — akun Penyusun tanpa prodi tidak boleh ada, karena tidak ada satu pun halaman yang boleh ia buka (`application_flow.md` §4.2).
+- **Penugasan ke prodi**: hanya `PIMPINAN` yang bisa mengubah `program_studi_id` seorang user setelah akunnya dibuat. Wewenangnya *memindahkan* Penyusun antar prodi, bukan mengaktifkan yang belum punya prodi.
+- **Penghapusan prodi**: `PROGRAM_STUDI` yang masih dihuni `PENYUSUN` tidak boleh dihapus. Relasi `USER.program_studi_id` bersifat opsional sehingga default Prisma akan meng-`SetNull` penghuninya — tepat menghasilkan keadaan yang dilarang di atas.
 - **Kontrol akses berbasis role**: seluruh menu dan tombol aksi di UI mengikuti tabel kewenangan di atas.
 
 ---
