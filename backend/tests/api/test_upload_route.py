@@ -112,10 +112,10 @@ def test_upload_matrix_returns_422_on_parse_failure(client, tmp_path):
 # ── POST /upload/led ──────────────────────────────────────────────────────────
 
 
-def test_upload_led_requires_pdf(client):
+def test_upload_led_rejects_invalid_extension(client):
     resp = client.post(
         "/upload/led",
-        files={"file": ("report.docx", io.BytesIO(b"docx"), "application/octet-stream")},
+        files={"file": ("report.txt", io.BytesIO(b"plain text"), "text/plain")},
     )
     assert resp.status_code == 400
 
@@ -132,6 +132,30 @@ def test_upload_led_success(client, tmp_path):
     assert resp.status_code == 200
     data = resp.json()
     assert data["filename"] == "led.pdf"
+    assert data["size_bytes"] > 0
+
+    import api.routes.upload as up
+    assert up._uploaded["led"] is True
+
+
+def test_upload_led_accepts_docx(client, tmp_path):
+    with (
+        patch("api.routes.upload.UPLOAD_DIR", str(tmp_path)),
+        patch("api.routes.upload._index_led_background"),  # suppress background task
+    ):
+        resp = client.post(
+            "/upload/led",
+            files={
+                "file": (
+                    "report.docx",
+                    io.BytesIO(b"docx"),
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )
+            },
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["filename"] == "led.docx"
     assert data["size_bytes"] > 0
 
     import api.routes.upload as up
@@ -266,3 +290,20 @@ def test_index_led_background_sets_error_on_failure(tmp_path):
 
     assert up._led_index_status["state"] == "error"
     assert "PDF read error" in up._led_index_status["error"]
+
+
+def test_index_led_background_routes_docx_to_docx_chunker(tmp_path):
+    fake_chunks = [MagicMock()] * 7
+
+    with (
+        patch("ingestion.led_docx_chunker.chunk_led_docx", return_value=fake_chunks) as mock_docx,
+        patch("ingestion.led_chunker.chunk_led_pdf") as mock_pdf,
+        patch("vectorstore.chroma_store.index_led_chunks"),
+    ):
+        import api.routes.upload as up
+        up._index_led_background(str(tmp_path / "led.docx"))
+
+    mock_docx.assert_called_once()
+    mock_pdf.assert_not_called()
+    assert up._led_index_status["state"] == "ready"
+    assert up._led_index_status["chunk_count"] == 7

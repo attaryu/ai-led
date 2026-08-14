@@ -24,7 +24,7 @@ def search_led_evidence(query: str, n_results: int = 5) -> str:
         [
             {
                 "text": r["text"][:1000],  # cap per chunk to avoid context overload
-                "page": r["metadata"].get("page_start"),
+                **_location_fields(r["metadata"]),
                 "section": r["metadata"].get("section_heading"),
                 "relevance_score": round(1 - r["distance"], 3),
             }
@@ -32,3 +32,20 @@ def search_led_evidence(query: str, n_results: int = 5) -> str:
         ],
         ensure_ascii=False,
     )
+
+
+def _location_fields(metadata: dict) -> dict:
+    """Return a {"page": N} or {"paragraph": N} citation hint for the agent.
+
+    page_start/page_end are -1 for docx-sourced chunks (no physical pages);
+    para_start/para_end are -1 for pdf-sourced ones — see LEDChunk. Never
+    surface the -1 sentinel itself, since it would read as a nonsense
+    citation ("LED hal. -1").
+    """
+    page_start = metadata.get("page_start", -1)
+    if page_start is not None and page_start >= 0:
+        return {"page": page_start}
+    para_start = metadata.get("para_start", -1)
+    if para_start is not None and para_start >= 0:
+        return {"paragraph": para_start}
+    return {}

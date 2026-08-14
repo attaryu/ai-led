@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import uuid
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 import pdfplumber
 
@@ -45,6 +45,9 @@ _SECTION_PATTERNS = [
 # ---------------------------------------------------------------------------
 
 _PAGE_BREAK = "\n<<<PAGE_BREAK>>>\n"
+# Docx equivalent of _PAGE_BREAK, used by led_docx_chunker.py — defined here
+# so both extraction front-ends and _sliding_window_chunks agree on the marker.
+_PARA_BREAK = "\n<<<PARA_BREAK>>>\n"
 
 
 @dataclass
@@ -55,6 +58,12 @@ class LEDChunk:
     page_end: int
     section_heading: Optional[str]
     char_start: int
+    # Paragraph-index position, populated only for chunks sourced from a
+    # .docx LED (which has no physical pages). -1 = n/a, mirrors the
+    # page_start/page_end "n/a" convention below rather than using None
+    # (keeps every field a plain int, which is what ChromaDB metadata needs).
+    para_start: int = -1
+    para_end: int = -1
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +82,11 @@ def chunk_led_pdf(pdf_path: str) -> list[LEDChunk]:
     5. Detect section headings and return LEDChunk objects.
     """
     combined_text, page_offsets = _extract_pages(pdf_path)
-    chunks = _sliding_window_chunks(combined_text, page_offsets)
+    chunks = _sliding_window_chunks(
+        combined_text,
+        position_offsets=page_offsets,
+        heading_resolver=lambda text, char_start, char_end: _detect_section_heading(text),
+    )
     return chunks
 
 
@@ -108,13 +121,27 @@ def _extract_pages(pdf_path: str) -> tuple[str, dict[int, int]]:
     return "".join(parts), page_offsets
 
 
+_BREAK_MARKERS = (_PAGE_BREAK, _PARA_BREAK)
+
+
 def _sliding_window_chunks(
     text: str,
-    page_offsets: dict[int, int],
+    position_offsets: dict[int, int],
+    heading_resolver: Callable[[str, int, int], Optional[str]],
+    position_field: str = "page",
 ) -> list[LEDChunk]:
-    """Produce overlapping chunks of ≤ CHUNK_MAX_CHARS characters."""
+    """Produce overlapping chunks of ≤ CHUNK_MAX_CHARS characters.
+
+    `position_offsets` maps a char offset to a "position" number (PDF page or
+    docx paragraph index); `position_field` selects whether that position is
+    written to page_start/page_end or para_start/para_end on the resulting
+    LEDChunk (the other pair is left at its -1 "n/a" default).
+    `heading_resolver(chunk_text, char_start, char_end)` returns a section
+    heading for the chunk — regex-on-text for PDF, offset lookup for docx.
+    """
+    assert position_field in ("page", "para")
     chunks: list[LEDChunk] = []
-    sorted_offsets = sorted(page_offsets.keys())
+    sorted_offsets = sorted(position_offsets.keys())
     text_len = len(text)
     pos = 0
 
@@ -130,23 +157,30 @@ def _sliding_window_chunks(
 
         raw_chunk = text[pos:end]
 
-        # Strip page-break markers from the chunk text (use full marker to avoid orphan \n)
-        clean_text = raw_chunk.replace(_PAGE_BREAK, " ").strip()
+        # Strip break markers from the chunk text (use full marker to avoid orphan \n)
+        clean_text = raw_chunk
+        for marker in _BREAK_MARKERS:
+            clean_text = clean_text.replace(marker, " ")
+        clean_text = clean_text.strip()
         # Collapse repeated whitespace
         clean_text = re.sub(r"\n{3,}", "\n\n", clean_text)
 
         if len(clean_text) >= 50:
-            page_start = _page_at_offset(pos, sorted_offsets, page_offsets)
-            page_end = _page_at_offset(end - 1, sorted_offsets, page_offsets)
-            heading = _detect_section_heading(clean_text)
+            start_pos = _value_at_offset(pos, sorted_offsets, position_offsets)
+            end_pos = _value_at_offset(end - 1, sorted_offsets, position_offsets)
+            heading = heading_resolver(clean_text, pos, end)
+            position_kwargs = (
+                {"page_start": start_pos, "page_end": end_pos, "para_start": -1, "para_end": -1}
+                if position_field == "page"
+                else {"page_start": -1, "page_end": -1, "para_start": start_pos, "para_end": end_pos}
+            )
             chunks.append(
                 LEDChunk(
                     chunk_id=str(uuid.uuid4()),
                     text=clean_text,
-                    page_start=page_start,
-                    page_end=page_end,
                     section_heading=heading,
                     char_start=pos,
+                    **position_kwargs,
                 )
             )
 
@@ -157,18 +191,18 @@ def _sliding_window_chunks(
     return chunks
 
 
-def _page_at_offset(
+def _value_at_offset(
     offset: int,
     sorted_offsets: list[int],
-    page_offsets: dict[int, int],
+    offset_map: dict[int, int],
 ) -> int:
-    """Binary-search version: return page number for a given char offset."""
+    """Binary-search: return the value mapped to the last offset <= `offset`."""
     lo, hi = 0, len(sorted_offsets) - 1
     result = 0
     while lo <= hi:
         mid = (lo + hi) // 2
         if sorted_offsets[mid] <= offset:
-            result = page_offsets[sorted_offsets[mid]]
+            result = offset_map[sorted_offsets[mid]]
             lo = mid + 1
         else:
             hi = mid - 1
