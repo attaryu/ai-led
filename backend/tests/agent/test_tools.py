@@ -43,6 +43,17 @@ def test_formula_tool_rejects_dangerous_builtins():
     assert "error" in result
 
 
+def test_formula_tool_missing_variable_returns_error():
+    """A plausible LLM mistake: referencing a variable name that wasn't
+    passed in `variables`. Must degrade to a structured error, not crash."""
+    from agent.tools.formula_tool import compute_formula_score
+
+    result = json.loads(
+        compute_formula_score.invoke({"formula_expression": "BOP / 5000000", "variables": {"OTHER": 1}})
+    )
+    assert "error" in result
+
+
 # ── rubric_tool (mocked file system) ─────────────────────────────────────────
 
 
@@ -52,6 +63,34 @@ def test_rubric_tool_not_found(monkeypatch):
 
     monkeypatch.setitem(rubric_tool._rubric_cache, "rubrics", [])
     result = json.loads(rubric_tool.get_indicator_rubric.invoke({"indicator_no": 999}))
+    assert "error" in result
+
+
+def test_rubric_tool_missing_cache_file_returns_error(monkeypatch, tmp_path):
+    """The cache file not existing yet (e.g. matrix.pdf never uploaded) must
+    surface as a structured tool error, not an unhandled FileNotFoundError —
+    get_indicator_rubric is the mandatory FIRST tool call per the system
+    prompt, so an uncaught crash here kills every single indicator."""
+    from agent.tools import rubric_tool
+
+    rubric_tool._rubric_cache.clear()
+    monkeypatch.setenv("RUBRIC_CACHE_PATH", str(tmp_path / "does_not_exist.json"))
+
+    result = json.loads(rubric_tool.get_indicator_rubric.invoke({"indicator_no": 1}))
+    assert "error" in result
+
+
+def test_rubric_tool_corrupted_cache_file_returns_error(monkeypatch, tmp_path):
+    """A corrupted (non-JSON) cache file must also degrade to a structured
+    error instead of an unhandled json.JSONDecodeError."""
+    from agent.tools import rubric_tool
+
+    rubric_tool._rubric_cache.clear()
+    bad_file = tmp_path / "corrupt.json"
+    bad_file.write_text("{not valid json", encoding="utf-8")
+    monkeypatch.setenv("RUBRIC_CACHE_PATH", str(bad_file))
+
+    result = json.loads(rubric_tool.get_indicator_rubric.invoke({"indicator_no": 1}))
     assert "error" in result
 
 
@@ -103,6 +142,22 @@ def test_lkps_tool_with_registry(monkeypatch):
     lkps_tool.set_lkps_registry(FakeRegistry())
     result = lkps_tool.get_lkps_table.invoke({"table_reference": "Tabel 2.a. LKPS"})
     assert "Alice" in result or "Nama" in result
+
+
+def test_lkps_tool_empty_sheet_returns_error_not_crash():
+    """A matching sheet that's empty (no rows) must degrade to the normal
+    'not found' error, not crash on an empty DataFrame."""
+    import pandas as pd
+    from agent.tools import lkps_tool
+
+    class FakeRegistry:
+        sheets = {"2a1": pd.DataFrame()}
+        def get_by_ref(self, ref):
+            return None  # mirrors LKPSRegistry.get_by_ref: all matches empty -> None
+
+    lkps_tool.set_lkps_registry(FakeRegistry())
+    result = json.loads(lkps_tool.get_lkps_table.invoke({"table_reference": "Tabel 2.a. LKPS"}))
+    assert "error" in result
 
 
 # ── led_tool ──────────────────────────────────────────────────────────────────
