@@ -1,6 +1,8 @@
+import * as React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate, Link } from 'react-router';
+import { ApiError } from '~/core/lib/api-client';
 import {
 	Card,
 	CardContent,
@@ -24,6 +26,7 @@ const formId = 'login-form';
 
 export function Login() {
 	const navigate = useNavigate();
+	const [formError, setFormError] = React.useState<string | null>(null);
 	const {
 		register,
 		handleSubmit,
@@ -36,12 +39,14 @@ export function Login() {
 		},
 	});
 
-	const onSubmit = (data: LoginDto) => {
-		console.log('Login Success:', data);
-		// Menandai sesi aktif sebelum pindah halaman: tanpa ini landing page tetap
-		// menganggap pengguna sebagai tamu dan menawarinya "Masuk" lagi.
-		sessionRepository.signIn();
-		navigate('/dashboard');
+	const onSubmit = async (data: LoginDto) => {
+		setFormError(null);
+		try {
+			await sessionRepository.login(data);
+			navigate('/dashboard');
+		} catch (e) {
+			setFormError(e instanceof ApiError ? e.message : 'Gagal masuk. Coba lagi.');
+		}
 	};
 
 	return (
@@ -56,6 +61,9 @@ export function Login() {
 				<CardContent>
 					<form id={formId} onSubmit={handleSubmit(onSubmit)}>
 						<FieldGroup>
+							{formError && (
+								<p className="text-sm text-destructive">{formError}</p>
+							)}
 							<Field data-invalid={!!errors.email}>
 								<FieldLabel htmlFor="email">Email</FieldLabel>
 								<Input

@@ -7,8 +7,47 @@ import {
 	type ChapterEntity,
 } from '../../domain/entities/chapter.entity';
 import { chapterLocalSource } from '../sources/local/chapter-local.source';
+import {
+	chapterRemoteSource,
+	type BackendBabDokumen,
+} from '../sources/remote/chapter.remote-source';
 import { chapterDraftRepository } from './chapter-draft.repository';
 import { chapterScoreRepository } from './chapter-score.repository';
+
+/**
+ * `kontenKerja` backend adalah `Json` bebas bentuk (default `{}` saat bab
+ * dibuat); frontend memakai string HTML. `{ format: 'html', body }` adalah
+ * konvensi yang sudah diantisipasi komentar `ChapterEntity.kontenKerja` —
+ * bentuk lain (termasuk `{}` kosong) dibaca sebagai "belum ada isi".
+ *
+ * `buktiDukung`/`ragas` selalu kosong: keduanya relasi terpisah di backend
+ * (`BuktiDukungBab`, `RagasScore`) yang belum di-`include` layanan manapun di
+ * Week 2 — akan terisi begitu Editor Bab (Week 4) benar-benar membacanya.
+ */
+function toEntityFromBackend(row: BackendBabDokumen): ChapterEntity {
+	const konten = row.kontenKerja;
+	const kontenKerja =
+		typeof konten === 'object' && konten !== null && typeof konten.body === 'string'
+			? konten.body
+			: null;
+
+	return {
+		id: row.id,
+		ledProjectId: row.dokumenId,
+		urutanBab: row.urutanBab,
+		judulBab: row.judulBab,
+		kontenKerja,
+		checkpointAktifId: row.checkpointAktifId,
+		terkunci: row.terkunci,
+		catatanPenjaminMutu: row.catatanPenjaminMutu,
+		catatanOlehNama: row.catatanOlehNama,
+		catatanPada: row.catatanPada,
+		diajukanReviewPada: row.diajukanReviewPada,
+		terakhirDisimpan: row.terakhirDisimpan,
+		buktiDukung: [],
+		ragas: null,
+	};
+}
 
 /**
  * Struktur bab standar LED LAM-Teknik, dipakai sebagai cetakan setiap kali
@@ -277,36 +316,20 @@ export const chapterRepository = {
 	},
 
 	/**
-	 * Materialisasi cetakan bab untuk satu Dokumen LED (§7.3). Aman dipanggil
-	 * ulang: kalau babnya sudah ada, yang tersimpan itulah yang dikembalikan.
-	 */
-	createForProject(ledProjectId: string): ChapterEntity[] {
-		const all = this.findAll();
-		const existing = all.filter(
-			(chapter) => chapter.ledProjectId === ledProjectId,
-		);
-		if (existing.length > 0) return existing;
-
-		const created = buildEmptyChapters(ledProjectId);
-		this.save([...all, ...created]);
-		return created;
-	},
-
-	/**
-	 * Bab satu dokumen, terurut `urutanBab`.
+	 * Bab satu dokumen, terurut `urutanBab` — dibaca dari `GET /dokumen/:id/bab`.
+	 * Dipakai hanya oleh ringkasan progres (Dashboard Prodi/Project LED), bukan
+	 * Editor Bab: itulah kenapa cuma metode ini (dan bukan `findById` di bawah,
+	 * yang murni dipakai alur checkpoint/generate editor) yang beralih ke HTTP —
+	 * lihat catatan migrasi tracker untuk alasan lengkapnya.
 	 *
-	 * Dokumen yang belum punya bab sama sekali — misal dibuat sebelum entitas ini
-	 * ada — dibuatkan di sini juga, sehingga tidak perlu migrasi data lama di
-	 * localStorage hanya untuk membuka dashboardnya.
+	 * Backend tidak lagi memateraikan bab otomatis untuk dokumen kosong — itu
+	 * tanggung jawab `ledProjectRepository.create()` sekarang — jadi array
+	 * kosong di sini memang berarti dokumennya belum punya bab, bukan sinyal
+	 * untuk membuatkannya.
 	 */
-	findByProjectId(ledProjectId: string): ChapterEntity[] {
-		const owned = this.findAll().filter(
-			(chapter) => chapter.ledProjectId === ledProjectId,
-		);
-		const chapters =
-			owned.length > 0 ? owned : this.createForProject(ledProjectId);
-
-		return [...chapters].sort((a, b) => a.urutanBab - b.urutanBab);
+	async findByProjectId(ledProjectId: string): Promise<ChapterEntity[]> {
+		const rows = await chapterRemoteSource.findAllForDokumen(ledProjectId);
+		return rows.map(toEntityFromBackend).sort((a, b) => a.urutanBab - b.urutanBab);
 	},
 
 	/**

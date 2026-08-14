@@ -168,6 +168,18 @@ export class BabDokumenService {
     if (bab.terkunci) {
       throw new ForbiddenException('Bab ini sedang terkunci untuk direview');
     }
-    await this.prisma.babDokumen.delete({ where: { id } });
+    try {
+      await this.prisma.babDokumen.delete({ where: { id } });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2003'
+      ) {
+        throw new ConflictException(
+          'Bab ini masih punya data terkait (checkpoint/skor/riwayat chat) dan tidak bisa dihapus',
+        );
+      }
+      throw err;
+    }
   }
 }

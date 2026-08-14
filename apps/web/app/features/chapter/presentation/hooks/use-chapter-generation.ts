@@ -206,11 +206,16 @@ export function useChapterGeneration({
 	 * Dibutuhkan modal unggah: label targetnya, sekaligus `studyProgramName` yang
 	 * didenormalisasi ke baris bukti dukung yang tercipta.
 	 */
-	const namaProdi = React.useMemo(
-		() =>
-			studyProgramRepository.findById(studyProgramId)?.studyProgramName ?? null,
-		[studyProgramId],
-	);
+	const [namaProdi, setNamaProdi] = React.useState<string | null>(null);
+	React.useEffect(() => {
+		let cancelled = false;
+		studyProgramRepository.findById(studyProgramId).then((program) => {
+			if (!cancelled) setNamaProdi(program?.studyProgramName ?? null);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [studyProgramId]);
 
 	/**
 	 * Tiga kolom yang sama dengan `evidenceRepository.findPaged`, supaya mengetik

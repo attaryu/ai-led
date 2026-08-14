@@ -10,7 +10,7 @@ export const registerSchema = userSchema
 	.extend({
 		password: z
 			.string('Password tidak valid')
-			.min(6, 'Password minimal 6 karakter'),
+			.min(8, 'Password minimal 8 karakter'),
 	});
 
 export type RegisterDto = z.infer<typeof registerSchema>;

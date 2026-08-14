@@ -14,8 +14,8 @@ export type OrganizationSummary = {
 	prodiTanpaPenyusun: number;
 };
 
-function read(): OrganizationSummary {
-	const programs = studyProgramRepository.findAll();
+async function read(): Promise<OrganizationSummary> {
+	const programs = await studyProgramRepository.findAll();
 	const users = userRepository.findAll();
 
 	const userPerRole = Object.fromEntries(
@@ -47,14 +47,31 @@ function read(): OrganizationSummary {
  * tidak berwenang atas progres LED sama sekali (§6.2), jadi datanya pun tidak
  * perlu dibaca — bukan cuma disembunyikan dari tampilan.
  */
+const EMPTY_SUMMARY: OrganizationSummary = {
+	totalProdi: 0,
+	totalUser: 0,
+	userPerRole: Object.fromEntries(
+		userRoleEnum.options.map((role) => [role, 0]),
+	) as Record<UserRole, number>,
+	prodiTanpaPenyusun: 0,
+};
+
 export function useOrganizationSummary(): OrganizationSummary {
-	const [summary, setSummary] = React.useState<OrganizationSummary>(read);
+	const [summary, setSummary] = React.useState<OrganizationSummary>(EMPTY_SUMMARY);
 
 	React.useEffect(() => {
-		const load = () => setSummary(read());
+		let cancelled = false;
+		const load = () => {
+			read().then((result) => {
+				if (!cancelled) setSummary(result);
+			});
+		};
 		load();
 		window.addEventListener('storage-update', load);
-		return () => window.removeEventListener('storage-update', load);
+		return () => {
+			cancelled = true;
+			window.removeEventListener('storage-update', load);
+		};
 	}, []);
 
 	return summary;

@@ -12,6 +12,7 @@ import {
 	CardTitle,
 	CardDescription,
 } from '~/core/components/ui/card';
+import { ApiError } from '~/core/lib/api-client';
 import { fromDateInputValue, toDateInputValue } from '~/core/lib/format-time';
 import {
 	updateStudyProgramSchema,
@@ -25,17 +26,23 @@ export function EditStudyProgram() {
 	const navigate = useNavigate();
 	const { programId } = useParams<{ programId: string }>();
 	const [program, setProgram] = React.useState<StudyProgramEntity | null>(null);
+	const [formError, setFormError] = React.useState<string | null>(null);
 
 	React.useEffect(() => {
-		if (programId) {
-			const found = studyProgramRepository.findById(programId);
+		if (!programId) return;
+		let cancelled = false;
+		studyProgramRepository.findById(programId).then((found) => {
+			if (cancelled) return;
 			if (found) {
 				setProgram(found);
 			} else {
 				alert('Program Studi tidak ditemukan!');
 				navigate('/dashboard/study-programs');
 			}
-		}
+		});
+		return () => {
+			cancelled = true;
+		};
 	}, [programId, navigate]);
 
 	const {
@@ -74,17 +81,21 @@ export function EditStudyProgram() {
 		}
 	}, [program, reset]);
 
-	const onSubmit = (data: UpdateStudyProgramDto) => {
+	const onSubmit = async (data: UpdateStudyProgramDto) => {
 		if (!programId) return;
-
-		studyProgramRepository.update(programId, {
-			...data,
-			nomorSkAkreditasi: data.nomorSkAkreditasi.trim() || null,
-			berlakuSampaiAkreditasi: fromDateInputValue(
-				data.berlakuSampaiAkreditasi,
-			),
-		});
-		navigate('/dashboard/study-programs');
+		setFormError(null);
+		try {
+			await studyProgramRepository.update(programId, {
+				...data,
+				nomorSkAkreditasi: data.nomorSkAkreditasi.trim() || null,
+				berlakuSampaiAkreditasi: fromDateInputValue(
+					data.berlakuSampaiAkreditasi,
+				),
+			});
+			navigate('/dashboard/study-programs');
+		} catch (e) {
+			setFormError(e instanceof ApiError ? e.message : 'Gagal menyimpan perubahan.');
+		}
 	};
 
 	if (!program) {
@@ -122,6 +133,9 @@ export function EditStudyProgram() {
 				</CardHeader>
 				<CardContent>
 					<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+						{formError && (
+							<p className="text-sm text-destructive">{formError}</p>
+						)}
 						<StudyProgramFormFields
 							register={register}
 							errors={errors}

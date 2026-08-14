@@ -1,10 +1,17 @@
-import { chapterRepository } from '~/features/chapter/data/repositories/chapter.repository';
+import { ApiError } from '~/core/lib/api-client';
+import { CHAPTER_TEMPLATE } from '~/features/chapter/data/repositories/chapter.repository';
+import { chapterRemoteSource } from '~/features/chapter/data/sources/remote/chapter.remote-source';
+import { studyProgramRepository } from '~/features/study-program/data/repositories/study-program.repository';
 import {
 	type LedProjectPage,
 	type LedProjectQueryDto,
 } from '../../domain/dtos/led-project-query.dto';
 import { type LedProjectEntity } from '../../domain/entities/led-project.entity';
-import { ledProjectLocalSource } from '../sources/local/led-project-local.source';
+import {
+	ledProjectRemoteSource,
+	type BackendDokumenLed,
+	type DokumenLedUpdatePayload,
+} from '../sources/remote/led-project.remote-source';
 
 /** Nilai urut yang dipakai kolom `status` supaya urutannya bermakna, bukan A-Z. */
 const statusOrder: Record<LedProjectEntity['statusKeseluruhan'], number> = {
@@ -39,129 +46,100 @@ function compare(
 	}
 }
 
-/** Tanggal ISO relatif terhadap hari ini, supaya data contoh tidak basi. */
-function inDays(days: number): string {
-	return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
-}
-
-const initialLedProjects: LedProjectEntity[] = [
-	{
-		id: '1',
-		studyProgramId: '1',
-		studyProgramName: 'Teknik Informatika',
-		judul: 'Akreditasi LED Teknik Informatika 2026',
-		tahunAkademik: '2025/2026',
-		statusKeseluruhan: 'DRAFT',
-		// Di bawah 30 hari: keadaan "tenggat dekat" punya wujud tanpa perlu diedit.
-		tenggat: inDays(23),
-		createdAt: '2026-07-30T10:00:00.000Z',
-	},
-	{
-		id: '2',
-		studyProgramId: '2',
-		studyProgramName: 'Sistem Informasi',
-		judul: 'Laporan Evaluasi Diri Sistem Informasi 2026',
-		tahunAkademik: '2025/2026',
-		statusKeseluruhan: 'REVIEW',
-		tenggat: inDays(-6),
-		createdAt: '2026-07-30T10:15:00.000Z',
-	},
-	{
-		id: '3',
-		studyProgramId: '3',
-		studyProgramName: 'Teknik Elektro',
-		judul: 'LED Akreditasi LAM-TEKNIK Teknik Elektro',
-		tahunAkademik: '2026/2027',
-		statusKeseluruhan: 'SELESAI',
-		tenggat: null,
-		createdAt: '2026-07-30T10:30:00.000Z',
-	},
-	{
-		// Penyusunan lama Teknik Informatika, supaya bentuk "satu dokumen sedang
-		// disusun + arsip" di Dashboard Prodi benar-benar terlihat.
-		id: '4',
-		studyProgramId: '1',
-		studyProgramName: 'Teknik Informatika',
-		judul: 'Laporan Evaluasi Diri Teknik Informatika 2022',
-		tahunAkademik: '2021/2022',
-		statusKeseluruhan: 'SELESAI',
-		tenggat: null,
-		createdAt: '2022-08-01T10:00:00.000Z',
-	},
-];
-
-/**
- * Mengisi `tenggat` untuk baris lama di localStorage. `findAll` mem-parse JSON
- * tanpa memvalidasinya ke skema, jadi tanpa ini dokumen yang tersimpan sebelum
- * kolomnya ada akan bernilai `undefined` — yang tidak sama dengan `null` bagi
- * `deriveDeadline`.
- */
-function normalize(project: Partial<LedProjectEntity>): LedProjectEntity {
-	return { ...(project as LedProjectEntity), tenggat: project.tenggat ?? null };
+function toEntity(row: BackendDokumenLed, studyProgramName: string): LedProjectEntity {
+	return {
+		id: row.id,
+		studyProgramId: row.programStudiId,
+		studyProgramName,
+		judul: row.judul,
+		tahunAkademik: row.tahunAkademik,
+		statusKeseluruhan: row.statusKeseluruhan,
+		tenggat: row.tenggat,
+		createdAt: row.dibuatPada,
+	};
 }
 
 export const ledProjectRepository = {
-	findAll(): LedProjectEntity[] {
-		const stored = ledProjectLocalSource.getAll();
-		if (!stored) {
-			this.save(initialLedProjects);
-			return initialLedProjects;
-		}
-		try {
-			return (JSON.parse(stored) as Partial<LedProjectEntity>[]).map(normalize);
-		} catch (e) {
-			this.save(initialLedProjects);
-			return initialLedProjects;
-		}
+	/**
+	 * Lintas prodi — backend tidak punya endpoint daftar-semua-dokumen, jadi ini
+	 * memuat seluruh prodi lebih dulu lalu menggabungkan dokumen tiap prodi.
+	 * Dijangkau hanya dari lapis tenant (§1), yang sudah menolak Penyusun —
+	 * backend sendiri akan menolak 403 bila Penyusun mencoba prodi lain.
+	 */
+	async findAll(): Promise<LedProjectEntity[]> {
+		const programs = await studyProgramRepository.findAll();
+		const rowsByProgram = await Promise.all(
+			programs.map((p) => ledProjectRemoteSource.findAllForProgramStudi(p.id)),
+		);
+		return programs.flatMap((p, i) =>
+			rowsByProgram[i].map((row) => toEntity(row, p.studyProgramName)),
+		);
 	},
 
-	save(projects: LedProjectEntity[]): void {
-		ledProjectLocalSource.setAll(JSON.stringify(projects));
+	async findById(id: string): Promise<LedProjectEntity | undefined> {
+		try {
+			const row = await ledProjectRemoteSource.findById(id);
+			const program = await studyProgramRepository.findById(row.programStudiId);
+			return toEntity(row, program?.studyProgramName ?? '(Prodi tidak diketahui)');
+		} catch (e) {
+			if (e instanceof ApiError && e.status === 404) return undefined;
+			throw e;
+		}
 	},
 
 	/**
 	 * Satu-satunya jalan membuat Dokumen LED, supaya tidak ada dokumen yang lolos
-	 * tanpa baris `BAB_DOKUMEN` — struktur bab standar memang dibuat otomatis
-	 * bersamaan (docs/application_flow.md §7.3).
+	 * tanpa struktur bab standar (§7.3) — backend tidak membuatnya otomatis
+	 * (dikonfirmasi dari `dokumen-led.service.ts`), jadi 14 bab dipateraikan di
+	 * sini lewat request terpisah begitu dokumennya sendiri berhasil dibuat.
 	 */
-	create(project: LedProjectEntity): void {
-		this.save([...this.findAll(), project]);
-		chapterRepository.createForProject(project.id);
+	async create(data: {
+		studyProgramId: string;
+		judul: string;
+		tahunAkademik: string;
+		tenggat: string | null;
+	}): Promise<LedProjectEntity> {
+		const created = await ledProjectRemoteSource.create(data.studyProgramId, {
+			judul: data.judul,
+			tahunAkademik: data.tahunAkademik,
+			tenggat: data.tenggat ?? undefined,
+		});
+
+		await Promise.all(
+			CHAPTER_TEMPLATE.map((bab) => chapterRemoteSource.create(created.id, bab)),
+		);
+
+		const program = await studyProgramRepository.findById(data.studyProgramId);
+		window.dispatchEvent(new Event('storage-update'));
+		return toEntity(created, program?.studyProgramName ?? '(Prodi tidak diketahui)');
+	},
+
+	async delete(id: string): Promise<void> {
+		await ledProjectRemoteSource.remove(id);
 		window.dispatchEvent(new Event('storage-update'));
 	},
 
-	delete(id: string): void {
-		const projects = this.findAll();
-		const updated = projects.filter((p) => p.id !== id);
-		this.save(updated);
-		// Bab tidak punya arti tanpa dokumen induknya; dibiarkan hanya akan jadi
-		// sampah yang ikut terhitung saat id dokumen kebetulan dipakai ulang.
-		chapterRepository.deleteByProjectId(id);
-	},
-
-	findById(id: string): LedProjectEntity | undefined {
-		return this.findAll().find((p) => p.id === id);
-	},
-
-	/**
-	 * Penyaringan per prodi ditaruh di repository, bukan di halaman, supaya saat
-	 * sumber datanya berpindah ke API nanti ia tinggal jadi query param tanpa
-	 * menyentuh lapis presentasi.
-	 */
-	findByStudyProgramId(studyProgramId: string): LedProjectEntity[] {
-		return this.findAll().filter((p) => p.studyProgramId === studyProgramId);
+	findByStudyProgramId(studyProgramId: string): Promise<LedProjectEntity[]> {
+		return Promise.all([
+			ledProjectRemoteSource.findAllForProgramStudi(studyProgramId),
+			studyProgramRepository.findById(studyProgramId),
+		]).then(([rows, program]) => {
+			const name = program?.studyProgramName ?? '(Prodi tidak diketahui)';
+			return rows.map((row) => toEntity(row, name));
+		});
 	},
 
 	/**
 	 * Daftar berhalaman untuk `DataTable`, yang berjalan dalam mode manual —
 	 * pencarian, pengurutan, dan pemotongan halaman memang dianggap pekerjaan
 	 * sisi sumber data (docs/application_flow.md §4.6), bukan sisi tampilan.
-	 * Tanpa ini kotak pencarian tampil tapi tidak menyaring apa pun.
+	 * Backend tidak menyediakan parameter query untuk ini, jadi tetap dikerjakan
+	 * di sini seperti sebelumnya — hanya sumber datanya yang sekarang jaringan.
 	 */
-	findPaged(query: LedProjectQueryDto): LedProjectPage {
+	async findPaged(query: LedProjectQueryDto): Promise<LedProjectPage> {
 		const scoped = query.studyProgramId
-			? this.findByStudyProgramId(query.studyProgramId)
-			: this.findAll();
+			? await this.findByStudyProgramId(query.studyProgramId)
+			: await this.findAll();
 
 		const keyword = query.q?.trim().toLowerCase() ?? '';
 		const filtered = keyword
@@ -190,9 +168,25 @@ export const ledProjectRepository = {
 		};
 	},
 
-	update(id: string, data: Partial<LedProjectEntity>): void {
-		const projects = this.findAll();
-		const updated = projects.map((p) => (p.id === id ? { ...p, ...data } : p));
-		this.save(updated);
+	/**
+	 * `studyProgramId` sengaja tidak pernah dikirim ke backend: `UpdateDokumenLedDto`
+	 * tidak punya field itu — endpoint ini tidak bisa memindahkan dokumen ke
+	 * prodi lain.
+	 */
+	async update(
+		id: string,
+		data: Partial<Omit<LedProjectEntity, 'id' | 'createdAt'>>,
+	): Promise<LedProjectEntity> {
+		const payload: DokumenLedUpdatePayload = {};
+		if (data.judul !== undefined) payload.judul = data.judul;
+		if (data.tahunAkademik !== undefined) payload.tahunAkademik = data.tahunAkademik;
+		if (data.statusKeseluruhan !== undefined)
+			payload.statusKeseluruhan = data.statusKeseluruhan;
+		if (data.tenggat !== undefined) payload.tenggat = data.tenggat ?? undefined;
+
+		const updated = await ledProjectRemoteSource.update(id, payload);
+		const program = await studyProgramRepository.findById(updated.programStudiId);
+		window.dispatchEvent(new Event('storage-update'));
+		return toEntity(updated, program?.studyProgramName ?? '(Prodi tidak diketahui)');
 	},
 };

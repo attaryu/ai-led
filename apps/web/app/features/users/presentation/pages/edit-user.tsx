@@ -39,7 +39,7 @@ export function EditUser() {
 	const [user, setUser] = React.useState<UserEntity | null>(null);
 
 	React.useEffect(() => {
-		setStudyPrograms(studyProgramRepository.findAll());
+		studyProgramRepository.findAll().then(setStudyPrograms);
 		if (userId) {
 			const found = userRepository.findById(userId);
 			if (found) {

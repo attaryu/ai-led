@@ -66,7 +66,12 @@ export function useRoleGuard(
 ): RoleGuardResult {
 	const session = useSession();
 
-	if (!session) return { status: 'pending' };
+	// `undefined` = boot-refresh (`/auth/refresh`) masih berjalan, belum bisa
+	// dinilai. `null` = sudah selesai dan dipastikan belum login — beda dari
+	// `pending`, ini keputusan final yang layout sudah tahu cara meresponnya
+	// (redirect), sama seperti `denied` lain di bawah.
+	if (session === undefined) return { status: 'pending' };
+	if (session === null) return { status: 'denied', redirectTo: '/login' };
 
 	if (layer === 'tenant') {
 		// Penyusun tidak berwenang melihat prodi lain maupun menu manajemen

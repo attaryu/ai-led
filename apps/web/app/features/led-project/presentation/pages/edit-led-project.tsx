@@ -20,6 +20,7 @@ import {
 	CardTitle,
 	CardDescription,
 } from '~/core/components/ui/card';
+import { ApiError } from '~/core/lib/api-client';
 import { fromDateInputValue, toDateInputValue } from '~/core/lib/format-time';
 import { safeReturnTo } from '~/core/lib/utils';
 import {
@@ -47,18 +48,27 @@ export function EditLedProject() {
 		'/dashboard/led-projects',
 	);
 	const [studyPrograms, setStudyPrograms] = React.useState<StudyProgramEntity[]>([]);
+	const [formError, setFormError] = React.useState<string | null>(null);
 
 	React.useEffect(() => {
-		setStudyPrograms(studyProgramRepository.findAll());
-		if (projectId) {
-			const found = ledProjectRepository.findById(projectId);
+		studyProgramRepository.findAll().then(setStudyPrograms);
+	}, []);
+
+	React.useEffect(() => {
+		if (!projectId) return;
+		let cancelled = false;
+		ledProjectRepository.findById(projectId).then((found) => {
+			if (cancelled) return;
 			if (found) {
 				setProject(found);
 			} else {
 				alert('Proyek LED tidak ditemukan!');
 				navigate(returnTo);
 			}
-		}
+		});
+		return () => {
+			cancelled = true;
+		};
 	}, [projectId, navigate, returnTo]);
 
 	const {
@@ -89,7 +99,7 @@ export function EditLedProject() {
 		}
 	}, [project, reset]);
 
-	const onSubmit = (data: UpdateLedProjectDto) => {
+	const onSubmit = async (data: UpdateLedProjectDto) => {
 		if (!projectId) return;
 
 		const prodi = studyPrograms.find((p) => p.id === data.studyProgramId);
@@ -98,17 +108,18 @@ export function EditLedProject() {
 			return;
 		}
 
-		ledProjectRepository.update(projectId, {
-			studyProgramId: data.studyProgramId,
-			studyProgramName: prodi.studyProgramName,
-			judul: data.judul,
-			tahunAkademik: data.tahunAkademik,
-			statusKeseluruhan: data.statusKeseluruhan,
-			tenggat: fromDateInputValue(data.tenggat),
-		});
-
-		window.dispatchEvent(new Event('storage-update'));
-		navigate(returnTo);
+		setFormError(null);
+		try {
+			await ledProjectRepository.update(projectId, {
+				judul: data.judul,
+				tahunAkademik: data.tahunAkademik,
+				statusKeseluruhan: data.statusKeseluruhan,
+				tenggat: fromDateInputValue(data.tenggat),
+			});
+			navigate(returnTo);
+		} catch (e) {
+			setFormError(e instanceof ApiError ? e.message : 'Gagal menyimpan perubahan.');
+		}
 	};
 
 	if (!project) {
@@ -146,6 +157,9 @@ export function EditLedProject() {
 				<CardContent>
 					<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 						<FieldGroup>
+							{formError && (
+								<p className="text-sm text-destructive">{formError}</p>
+							)}
 							<Field data-invalid={!!errors.studyProgramId}>
 								<FieldLabel htmlFor="studyProgramId">
 									Program Studi

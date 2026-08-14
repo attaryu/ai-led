@@ -1,8 +1,10 @@
+import * as React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate } from 'react-router';
 import { ArrowLeftIcon } from '@phosphor-icons/react';
 
+import { ApiError } from '~/core/lib/api-client';
 import { Button } from '~/core/components/ui/button';
 import {
 	Card,
@@ -16,12 +18,12 @@ import {
 	createStudyProgramSchema,
 	type CreateStudyProgramDto,
 } from '../../domain/dtos/create-study-program.dto';
-import { type StudyProgramEntity } from '../../domain/entities/study-program.entity';
 import { studyProgramRepository } from '../../data/repositories/study-program.repository';
 import { StudyProgramFormFields } from '../components/study-program-form-fields';
 
 export function CreateStudyProgram() {
 	const navigate = useNavigate();
+	const [formError, setFormError] = React.useState<string | null>(null);
 
 	const {
 		register,
@@ -41,22 +43,20 @@ export function CreateStudyProgram() {
 		},
 	});
 
-	const onSubmit = (data: CreateStudyProgramDto) => {
-		const newProgram: StudyProgramEntity = {
-			...data,
-			id: Date.now().toString(),
-			nomorSkAkreditasi: data.nomorSkAkreditasi.trim() || null,
-			berlakuSampaiAkreditasi: fromDateInputValue(
-				data.berlakuSampaiAkreditasi,
-			),
-			createdAt: new Date().toISOString(),
-		};
-
-		// Lewat repository, bukan localStorage langsung: dengan identitas
-		// akreditasi ikut disimpan, jalan pintas itu jadi tempat field baru
-		// gampang terlupakan.
-		studyProgramRepository.create(newProgram);
-		navigate('/dashboard/study-programs');
+	const onSubmit = async (data: CreateStudyProgramDto) => {
+		setFormError(null);
+		try {
+			await studyProgramRepository.create({
+				...data,
+				nomorSkAkreditasi: data.nomorSkAkreditasi.trim() || null,
+				berlakuSampaiAkreditasi: fromDateInputValue(
+					data.berlakuSampaiAkreditasi,
+				),
+			});
+			navigate('/dashboard/study-programs');
+		} catch (e) {
+			setFormError(e instanceof ApiError ? e.message : 'Gagal menyimpan Program Studi.');
+		}
 	};
 
 	return (
@@ -89,6 +89,9 @@ export function CreateStudyProgram() {
 				</CardHeader>
 				<CardContent>
 					<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+						{formError && (
+							<p className="text-sm text-destructive">{formError}</p>
+						)}
 						<StudyProgramFormFields
 							register={register}
 							errors={errors}

@@ -18,12 +18,12 @@ export function LedProjectManagement() {
 	const canManage = session?.role === 'Penjamin Mutu';
 	const [ledProjects, setLedProjects] = React.useState<LedProjectEntity[]>([]);
 
-	const loadData = React.useCallback(() => {
-		setLedProjects(ledProjectRepository.findAll());
+	const loadData = React.useCallback(async () => {
+		setLedProjects(await ledProjectRepository.findAll());
 	}, []);
 
 	React.useEffect(() => {
-		loadData();
+		void loadData();
 		window.addEventListener('storage-update', loadData);
 		return () => {
 			window.removeEventListener('storage-update', loadData);
@@ -32,12 +32,12 @@ export function LedProjectManagement() {
 
 	const handleDelete = React.useCallback((id: string) => {
 		if (confirm('Apakah Anda yakin ingin menghapus Proyek LED ini?')) {
-			ledProjectRepository.delete(id);
-			loadData();
-			// Dispatch custom event to notify other tables/UI that storage updated
-			window.dispatchEvent(new Event('storage-update'));
+			// `delete()` menyiarkan 'storage-update' sendiri setelah selesai.
+			ledProjectRepository.delete(id).catch((e: unknown) => {
+				alert(e instanceof Error ? e.message : 'Gagal menghapus Proyek LED.');
+			});
 		}
-	}, [loadData]);
+	}, []);
 
 	const handleEdit = React.useCallback((id: string) => {
 		navigate(`/dashboard/led-projects/${id}/edit`);

@@ -1,3 +1,4 @@
+import * as React from 'react';
 import {
 	ArchiveIcon,
 	FileIcon,
@@ -10,13 +11,13 @@ import {
 	type AppShellBreadcrumb,
 } from '~/core/components/app-shell';
 import { PlaceholderPage } from '~/core/components/placeholder-page';
-import { RoleSwitcher } from '~/features/auth/presentation/components/role-switcher';
 import {
 	canAccessTenant,
 	useRoleGuard,
 } from '~/features/auth/presentation/hooks/use-role-guard';
 import { useActiveTenant } from '~/features/tenant/presentation/hooks/use-active-tenant';
 import { studyProgramRepository } from '../../data/repositories/study-program.repository';
+import { type StudyProgramEntity } from '../../domain/entities/study-program.entity';
 
 /**
  * Lapis 2 — Dashboard Prodi (docs/application_flow.md §5).
@@ -31,21 +32,42 @@ export function StudyProgramWorkspaceLayout() {
 	const location = useLocation();
 	const tenant = useActiveTenant();
 	const guard = useRoleGuard('program', programId);
+	const [studyProgram, setStudyProgram] = React.useState<
+		StudyProgramEntity | null | undefined
+	>(undefined);
+
+	React.useEffect(() => {
+		if (!programId) {
+			setStudyProgram(null);
+			return;
+		}
+		setStudyProgram(undefined);
+		let cancelled = false;
+		studyProgramRepository.findById(programId).then((found) => {
+			if (!cancelled) setStudyProgram(found ?? null);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [programId]);
+
+	if (guard.status === 'pending' || studyProgram === undefined) {
+		return (
+			<div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+				Memuat…
+			</div>
+		);
+	}
 
 	if (guard.status === 'denied') {
 		return <Navigate to={guard.redirectTo} replace />;
 	}
 
 	// Penyusun mendarat langsung di sini dan tidak punya lapis di atasnya (§2).
-	const showTenantLink =
-		guard.status === 'allowed' && canAccessTenant(guard.session);
+	const showTenantLink = canAccessTenant(guard.session);
 	const tenantCrumb: AppShellBreadcrumb[] = showTenantLink
 		? [{ to: '/dashboard', label: 'Dashboard' }]
 		: [];
-
-	const studyProgram = programId
-		? studyProgramRepository.findById(programId)
-		: undefined;
 
 	// Prodi bisa terhapus lewat manajemen di lapis tenant sementara tautannya
 	// masih tersimpan di tab lain, jadi kondisi ini normal — bukan error.
@@ -60,7 +82,6 @@ export function StudyProgramWorkspaceLayout() {
 					items: [],
 				}}
 				breadcrumbs={[...tenantCrumb, { label: 'Prodi tidak ditemukan' }]}
-				headerAction={<RoleSwitcher />}
 			>
 				<PlaceholderPage
 					title="Prodi tidak ditemukan"
@@ -126,9 +147,8 @@ export function StudyProgramWorkspaceLayout() {
 					? [{ label: 'Bukti Dukung' }]
 					: []),
 			]}
-			headerAction={<RoleSwitcher />}
 		>
-			<Outlet />
+			<Outlet context={studyProgram} />
 		</AppShell>
 	);
 }

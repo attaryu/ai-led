@@ -1,7 +1,6 @@
 import { Outlet, useLocation, Navigate } from "react-router"
 
 import { AppShell, type AppShellBreadcrumb } from "~/core/components/app-shell"
-import { RoleSwitcher } from "~/features/auth/presentation/components/role-switcher"
 import { useRoleGuard } from "~/features/auth/presentation/hooks/use-role-guard"
 import { useDashboardSidebar } from "../components/sidebar"
 
@@ -57,17 +56,20 @@ export function DashboardLayout() {
     return label ? [{ to: `/${segments.join("/")}`, label }] : []
   })
 
+  if (guard.status === "pending") {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+        Memuat…
+      </div>
+    )
+  }
+
   if (guard.status === "denied") {
     return <Navigate to={guard.redirectTo} replace />
   }
 
   return (
-    <AppShell
-      sidebar={sidebar}
-      breadcrumbs={breadcrumbs}
-      // Sementara: alat uji hak akses, dihapus begitu autentikasi jalan.
-      headerAction={<RoleSwitcher />}
-    >
+    <AppShell sidebar={sidebar} breadcrumbs={breadcrumbs}>
       <Outlet />
     </AppShell>
   )

@@ -20,13 +20,13 @@ import {
 	CardTitle,
 	CardDescription,
 } from '~/core/components/ui/card';
+import { ApiError } from '~/core/lib/api-client';
 import { fromDateInputValue } from '~/core/lib/format-time';
 import { safeReturnTo } from '~/core/lib/utils';
 import {
 	createLedProjectSchema,
 	type CreateLedProjectDto,
 } from '../../domain/dtos/create-led-project.dto';
-import { type LedProjectEntity } from '../../domain/entities/led-project.entity';
 import { ledProjectRepository } from '../../data/repositories/led-project.repository';
 import { type StudyProgramEntity } from '../../../study-program/domain/entities/study-program.entity';
 import { studyProgramRepository } from '../../../study-program/data/repositories/study-program.repository';
@@ -35,6 +35,7 @@ export function CreateLedProject() {
 	const navigate = useNavigate();
 	const [searchParams] = useSearchParams();
 	const [studyPrograms, setStudyPrograms] = React.useState<StudyProgramEntity[]>([]);
+	const [formError, setFormError] = React.useState<string | null>(null);
 
 	/*
 	 * Formulir ini bisa dibuka dari dua tempat: daftar lintas prodi di lapis
@@ -49,7 +50,7 @@ export function CreateLedProject() {
 	);
 
 	React.useEffect(() => {
-		setStudyPrograms(studyProgramRepository.findAll());
+		studyProgramRepository.findAll().then(setStudyPrograms);
 	}, []);
 
 	const {
@@ -79,28 +80,27 @@ export function CreateLedProject() {
 		);
 	}, [studyPrograms, prodiTerpilih, setValue]);
 
-	const onSubmit = (data: CreateLedProjectDto) => {
+	const onSubmit = async (data: CreateLedProjectDto) => {
 		const prodi = studyPrograms.find((p) => p.id === data.studyProgramId);
 		if (!prodi) {
 			alert('Program Studi tidak valid!');
 			return;
 		}
 
-		const newProject: LedProjectEntity = {
-			id: Date.now().toString(),
-			studyProgramId: data.studyProgramId,
-			studyProgramName: prodi.studyProgramName,
-			judul: data.judul,
-			tahunAkademik: data.tahunAkademik,
-			statusKeseluruhan: 'DRAFT',
-			tenggat: fromDateInputValue(data.tenggat),
-			createdAt: new Date().toISOString(),
-		};
-
-		// Lewat repository, bukan localStorage langsung: di sanalah struktur bab
-		// standar ikut dibuat untuk dokumen baru ini (§7.3).
-		ledProjectRepository.create(newProject);
-		navigate(returnTo);
+		setFormError(null);
+		try {
+			// Lewat repository, bukan langsung: di sanalah struktur bab standar ikut
+			// dibuat untuk dokumen baru ini (§7.3).
+			await ledProjectRepository.create({
+				studyProgramId: data.studyProgramId,
+				judul: data.judul,
+				tahunAkademik: data.tahunAkademik,
+				tenggat: fromDateInputValue(data.tenggat),
+			});
+			navigate(returnTo);
+		} catch (e) {
+			setFormError(e instanceof ApiError ? e.message : 'Gagal menyimpan Proyek LED.');
+		}
 	};
 
 	return (
@@ -134,6 +134,9 @@ export function CreateLedProject() {
 				<CardContent>
 					<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 						<FieldGroup>
+							{formError && (
+								<p className="text-sm text-destructive">{formError}</p>
+							)}
 							<Field data-invalid={!!errors.studyProgramId}>
 								<FieldLabel htmlFor="studyProgramId">
 									Program Studi

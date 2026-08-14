@@ -1,9 +1,10 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Role, StatusDokumen } from '@ai-led/db';
+import { Prisma, Role, StatusDokumen } from '@ai-led/db';
 import { PrismaService } from '../database/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { CreateDokumenLedDto } from './dto/create-dokumen-led.dto';
@@ -76,6 +77,18 @@ export class DokumenLedService {
 
   async remove(id: string) {
     await this.findOne(id);
-    await this.prisma.dokumenLed.delete({ where: { id } });
+    try {
+      await this.prisma.dokumenLed.delete({ where: { id } });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2003'
+      ) {
+        throw new ConflictException(
+          'Dokumen LED ini masih punya bab — hapus seluruh babnya terlebih dahulu',
+        );
+      }
+      throw err;
+    }
   }
 }
