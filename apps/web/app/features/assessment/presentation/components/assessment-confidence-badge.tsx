@@ -1,3 +1,8 @@
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from '~/core/components/ui/tooltip';
 import { cn } from '~/core/lib/utils';
 import {
 	confidenceLabels,
@@ -17,6 +22,24 @@ const titik: Record<ConfidenceLevel, string> = {
 };
 
 /**
+ * Keterangan yang muncul saat badge-nya disentuh tetikus.
+ *
+ * Kalimat keduanya bukan basa-basi. Data benchmark di `apps/ai/data/` (tiga model
+ * × 60 indikator terhadap skor referensi manusia) menunjukkan indikator
+ * berkeyakinan **tinggi justru rata-rata meleset lebih jauh** daripada yang
+ * sedang — 1,06 vs 0,60 pada qwen3.5, 1,42 vs 1,19 pada mistral-small3.2. Tanpa
+ * kalimat itu, label "Tinggi" terbaca sebagai jaminan mutu yang tidak pernah
+ * diberikan siapa pun.
+ */
+function keterangan(nilai: number): string {
+	return `Keyakinan penilai AI terhadap penilaiannya sendiri (${formatConfidence(nilai)}). Dilaporkan oleh model, bukan ukuran ketepatan.`;
+}
+
+/** Gaya badge-nya sama di kedua cabang; dipisah supaya tidak tertulis dua kali. */
+const gayaBadge =
+	'inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground';
+
+/**
  * Keyakinan penilai sebagai tiga tingkat, bukan desimal telanjang.
  *
  * Prototipe menampilkannya sebagai angka mentah (`0.85`, `0.75`) di kolom paling
@@ -32,9 +55,18 @@ const titik: Record<ConfidenceLevel, string> = {
  * kata — cukup untuk ditangkap saat memindai, tidak cukup untuk merebut
  * perhatian.
  *
- * Angka persisnya lewat `title`, bukan komponen `Tooltip`: badge ini hidup di
- * dalam baris yang bisa diklik, dan `TooltipTrigger` merender `<button>` —
- * tombol bersarang bukan HTML yang sah.
+ * **`render={<span />}` bukan pilihan gaya, melainkan syarat kebenaran.** Badge
+ * ini hidup di dalam baris daftar yang seluruhnya sebuah `<button>`, sedangkan
+ * `TooltipTrigger` bawaannya merender `<button>` juga — tombol bersarang bukan
+ * HTML yang sah, dan versi pertama fitur ini memang sempat memunculkan galat
+ * hidrasi karenanya. Prop `render` milik Base UI menukar elemennya jadi `<span>`
+ * tanpa kehilangan perilaku tooltipnya; pola yang sama dipakai
+ * `BreadcrumbLink render={<Link/>}` di `app-shell.tsx`. Isi tooltipnya sendiri
+ * dirender lewat portal, jadi ia tidak ikut bersarang di dalam tombol.
+ *
+ * Sempat memakai atribut `title` untuk menghindari masalah itu; diganti karena
+ * `title` baru muncul setelah jeda sekitar sedetik, tidak bisa digayakan, dan
+ * pada baris yang sudah punya `title` lain ia bertabrakan.
  */
 export function AssessmentConfidenceBadge({
 	nilai,
@@ -45,31 +77,29 @@ export function AssessmentConfidenceBadge({
 }) {
 	if (nilai === null) {
 		return (
-			<span
-				title="Penilai tidak melaporkan tingkat keyakinannya untuk indikator ini."
-				className={cn(
-					'inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground',
-					className,
-				)}
-			>
-				<span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
-				Keyakinan —
-			</span>
+			<Tooltip>
+				<TooltipTrigger render={<span />} className={cn(gayaBadge, className)}>
+					<span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
+					Keyakinan —
+				</TooltipTrigger>
+				<TooltipContent className="leading-relaxed">
+					Penilai tidak melaporkan tingkat keyakinannya untuk indikator ini.
+				</TooltipContent>
+			</Tooltip>
 		);
 	}
 
 	const tingkat = tingkatConfidence(nilai);
 
 	return (
-		<span
-			title={formatConfidence(nilai)}
-			className={cn(
-				'inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground',
-				className,
-			)}
-		>
-			<span className={cn('size-1.5 shrink-0 rounded-full', titik[tingkat])} />
-			Keyakinan {confidenceLabels[tingkat].toLowerCase()}
-		</span>
+		<Tooltip>
+			<TooltipTrigger render={<span />} className={cn(gayaBadge, className)}>
+				<span className={cn('size-1.5 shrink-0 rounded-full', titik[tingkat])} />
+				Keyakinan {confidenceLabels[tingkat].toLowerCase()}
+			</TooltipTrigger>
+			<TooltipContent className="leading-relaxed">
+				{keterangan(nilai)}
+			</TooltipContent>
+		</Tooltip>
 	);
 }

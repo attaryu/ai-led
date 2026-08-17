@@ -46,8 +46,8 @@ const visual: Record<
  *
  * **Tidak ada badge "Dikoreksi".** Rancangan sebelumnya punya lima varian di
  * layar dan itu kebanyakan. Menyetujui dan mengoreksi sama-sama berarti "sudah
- * saya tangani", dan fakta angkanya diubah sudah terbaca di baris yang sama lewat
- * "mesin menilai X" — tepat di samping angkanya, tempat pertanyaan itu muncul.
+ * saya tangani", dan angka yang berlaku sudah tertera sebagai skor barisnya —
+ * siapa yang menghitungnya adalah rincian, dan rincian itu tempatnya di laci.
  *
  * **`TINJAU_ULANG` menggantikan "· basi".** Menempelkan "basi" pada "Disetujui"
  * menghasilkan kontradiksi yang harus dibaca dua kali; keadaan itu sebenarnya

@@ -6,7 +6,6 @@ import { type PenilaianFinalRow } from '../../domain/entities/assessment-session
 import { AssessmentConfidenceBadge } from './assessment-confidence-badge';
 import { AssessmentScoreChip } from './assessment-score-chip';
 import { AssessmentStatusBadge } from './assessment-status-badge';
-import { formatSkor } from '../utils/assessment-format';
 
 /**
  * Satu indikator sebagai baris berpengait, bukan accordion.
@@ -64,15 +63,16 @@ export function AssessmentResultRow({
 					<AssessmentStatusBadge status={row.statusTinjau} />
 
 					{/*
-					 * Penanda "perlu diperiksa" hanya muncul saat ia menambah sesuatu.
-					 * Pada baris yang belum ditinjau ia hampir selalu menyala, dan dua
-					 * penanda yang selalu muncul bersamaan berhenti menandakan apa pun.
+					 * Tanpa `title`, berbeda dari badge keyakinan di bawahnya. Label ini
+					 * sebuah **instruksi**, bukan istilah yang perlu didefinisikan —
+					 * "periksa" sudah menyatakan apa yang harus dilakukan, dan sebab
+					 * persisnya (skor rendah, penilai ragu, atau gagal dinilai) terbaca
+					 * langsung di laci begitu barisnya dibuka. Keterangan melayang yang
+					 * mengulang ketiga kemungkinan tanpa menyebut mana yang berlaku justru
+					 * menambah langkah tanpa menambah jawaban.
 					 */}
 					{row.perluDiperiksa && (
-						<span
-							title="Keyakinan rendah, skor rendah, atau gagal dinilai"
-							className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-400"
-						>
+						<span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-400">
 							<MagnifyingGlassIcon className="size-3.5" />
 							Perlu diperiksa
 						</span>
@@ -89,28 +89,18 @@ export function AssessmentResultRow({
 					{kriteria.deskripsi}
 				</span>
 
+				{/*
+				 * Skor mesin sengaja **tidak** disebut di sini, bahkan saat berbeda dari
+				 * yang berlaku. Baris ini menjawab "berapa nilai indikator ini", dan
+				 * jawabannya skor final — siapa yang menghitungnya urusan detail, dan
+				 * detail itu sudah lengkap di laci beserta alasan mesin, catatan koreksi,
+				 * dan atribusinya.
+				 */}
 				<span className="flex flex-wrap items-center gap-x-3 gap-y-1">
 					<AssessmentConfidenceBadge nilai={row.hasil?.confidence ?? null} />
 					<span className="text-xs text-muted-foreground">
 						{rubricScoreTypeLabels[kriteria.tipeSkor]}
 					</span>
-					{/*
-					 * **Ini yang menggantikan badge "Dikoreksi".** Fakta bahwa angka yang
-					 * berlaku bukan angka mesin paling berguna dibaca tepat di samping
-					 * angkanya, bukan sebagai badge keempat yang menuntut pembaca
-					 * menghubungkannya sendiri ke skor di ujung baris.
-					 *
-					 * Syaratnya **selisih yang berlaku sekarang**, bukan `mengubahSkor`.
-					 * Keduanya bisa berbeda: koreksi 3→4 yang kemudian disusul penilaian
-					 * ulang bernilai 4 tetap terhitung sebagai koreksi, tapi menuliskan
-					 * "mesin menilai 4" di sebelah chip yang juga berbunyi 4 hanya
-					 * menimbulkan pertanyaan yang tidak ada.
-					 */}
-					{row.skorMesin !== row.skorFinal && (
-						<span className="text-xs text-muted-foreground">
-							mesin menilai {formatSkor(row.skorMesin)}
-						</span>
-					)}
 				</span>
 			</span>
 

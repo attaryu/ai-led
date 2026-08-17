@@ -19,6 +19,7 @@ import { cn } from '~/core/lib/utils';
 import { rubricScoreTypeLabels } from '~/features/chapter/domain/entities/rubric-criterion.entity';
 import { type PenilaianFinalRow } from '../../domain/entities/assessment-session.entity';
 import { catatanKoreksiSchema } from '../../domain/entities/assessment-verdict.entity';
+import { AssessmentConfidenceBadge } from './assessment-confidence-badge';
 import { AssessmentScoreChip } from './assessment-score-chip';
 import { AssessmentStatusBadge } from './assessment-status-badge';
 import { formatSkor } from '../utils/assessment-format';
@@ -186,9 +187,19 @@ export function AssessmentDetailSheet({
 
 				{hasil?.justifikasi && (
 					<div className="rounded-md bg-muted/60 p-2.5">
-						<p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-							Alasan skor mesin {formatSkor(row.skorMesin)}
-						</p>
+						<div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
+							<p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+								Alasan skor mesin {formatSkor(row.skorMesin)}
+							</p>
+							{/*
+							 * Keyakinan ditaruh di sini, bukan di kepala laci: ia menerangkan
+							 * seberapa jauh **alasan di bawahnya** boleh dipercaya, bukan
+							 * indikatornya secara umum. Sebelumnya ia hanya ada di baris
+							 * daftar — sehingga hilang justru di layar tempat keputusan
+							 * diambil.
+							 */}
+							<AssessmentConfidenceBadge nilai={hasil.confidence} />
+						</div>
 						<p className="mt-1 text-xs leading-relaxed">{hasil.justifikasi}</p>
 					</div>
 				)}

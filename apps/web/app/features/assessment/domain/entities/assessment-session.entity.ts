@@ -82,9 +82,12 @@ export function persenProgres(sesi: AssessmentSessionEntity): number {
  * **`statusTinjau` dan `perluDiperiksa` dua hal berbeda, dan penamaannya sengaja
  * dijauhkan.** Yang pertama fakta tentang pekerjaan manusia (sudah dilihat atau
  * belum); yang kedua dugaan mesin tentang angkanya (patut dicurigai atau tidak).
- * Sebuah indikator bisa sudah disetujui tapi tetap patut diperiksa, dan
- * sebaliknya. Versi pertama berkas ini menamai keduanya "perlu ditinjau" dan
- * keduanya jadi tidak bisa dibedakan di layar.
+ * Versi pertama berkas ini menamai keduanya "perlu ditinjau" dan keduanya jadi
+ * tidak bisa dibedakan di layar.
+ *
+ * Keduanya tetap tidak sepenuhnya lepas: persetujuan manusia **mematikan** dugaan
+ * mesin, karena yang menyetujui sudah membaca angka beserta alasannya. Lihat
+ * {@link PenilaianFinalRow.perluDiperiksa}.
  */
 export type PenilaianFinalRow = {
 	kriteria: RubricCriterion;
@@ -108,9 +111,21 @@ export type PenilaianFinalRow = {
 	skorMesin: number | null;
 	skorMaksimal: number;
 	/**
-	 * Angkanya patut diperiksa manusia. Tiga sebab yang digabung dengan **atau**,
-	 * bukan dan: masing-masing sudah cukup jadi alasan untuk melihat lebih dekat,
-	 * dan menuntut ketiganya sekaligus akan menyembunyikan hampir semuanya.
+	 * Angkanya patut diperiksa manusia, **dan belum ada yang menyetujuinya**.
+	 *
+	 * Tiga sebab temuannya digabung dengan **atau**, bukan dan: masing-masing sudah
+	 * cukup jadi alasan untuk melihat lebih dekat, dan menuntut ketiganya sekaligus
+	 * akan menyembunyikan hampir semuanya.
+	 *
+	 * **Syarat "belum disetujui" itu yang membuatnya berhenti berbunyi.** Begitu
+	 * Penjamin Mutu menyetujui sebuah indikator, ia sudah melihat angkanya beserta
+	 * alasan mesinnya dan menyatakan itu yang berlaku — saran mesin untuk memeriksa
+	 * lagi tidak menambah apa pun, dan dua penanda yang bertentangan di satu baris
+	 * ("Disetujui" bersama "Perlu diperiksa") justru membuat pembaca ragu mana yang
+	 * harus dipercaya.
+	 *
+	 * Yang berstatus `TINJAU_ULANG` **tetap** ditandai: dasarnya sudah bergeser,
+	 * jadi persetujuan lamanya belum menjawab angka yang berlaku sekarang.
 	 */
 	perluDiperiksa: boolean;
 };
@@ -143,22 +158,25 @@ export function gabungPenilaian(input: {
 			const skorMesin = hasil?.skor ?? null;
 			const skorFinal = keputusan ? keputusan.skorFinal : skorMesin;
 
+			const statusTinjau = statusTinjauDari(keputusan, skorMesin);
+
 			const confidenceRendah =
 				hasil?.confidence != null &&
 				tingkatConfidence(hasil.confidence) === 'RENDAH';
 			const skorRendah = skorFinal !== null && skorFinal <= SKOR_PERLU_DIPERIKSA;
 			const gagal = hasil === undefined || hasil.error !== null;
+			const adaTemuan = confidenceRendah || skorRendah || gagal;
 
 			return {
 				kriteria,
 				hasil,
 				keputusan,
-				statusTinjau: statusTinjauDari(keputusan, skorMesin),
+				statusTinjau,
 				mengubahSkor: keputusan ? mengubahSkor(keputusan) : false,
 				skorFinal,
 				skorMesin,
 				skorMaksimal: skorMaksimal(kriteria),
-				perluDiperiksa: confidenceRendah || skorRendah || gagal,
+				perluDiperiksa: adaTemuan && statusTinjau !== 'DISETUJUI',
 			};
 		});
 }

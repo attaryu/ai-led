@@ -25,8 +25,14 @@ export function formatSkor(nilai: number | null): string {
 	return Number.isInteger(nilai) ? String(nilai) : nilai.toFixed(2);
 }
 
-/** Keyakinan sebagai persen bulat, untuk tooltip yang menyertai badge-nya. */
+/**
+ * Keyakinan sebagai persen bulat, untuk keterangan yang menyertai badge-nya.
+ *
+ * Tanpa imbuhan kata apa pun: ia dipakai di dalam kalimat yang sudah menyebut
+ * "keyakinan", sehingga "72% yakin" akan mengulang kata itu dua kali dalam satu
+ * tarikan napas.
+ */
 export function formatConfidence(nilai: number | null): string {
-	if (nilai === null) return 'Tidak dilaporkan';
-	return `${Math.round(nilai * 100)}% yakin`;
+	if (nilai === null) return 'tidak dilaporkan';
+	return `${Math.round(nilai * 100)}%`;
 }

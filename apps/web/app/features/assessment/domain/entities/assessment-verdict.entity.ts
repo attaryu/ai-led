@@ -89,9 +89,10 @@ export type AssessmentVerdictEntity = z.infer<typeof assessmentVerdictSchema>;
  *
  * - **"Dikoreksi" bukan status pekerjaan.** Untuk Penjamin Mutu, menyetujui dan
  *   mengoreksi sama-sama berarti "sudah saya tangani" — yang membedakan cuma
- *   angkanya, dan itu sudah terbaca langsung di baris lewat "mesin menilai X".
- *   Ia tetap dihitung sebagai fakta ({@link mengubahSkor}), hanya tidak lagi
- *   memakai badge sendiri.
+ *   angkanya, dan yang berlaku memang sudah tertera sebagai skor barisnya. Ia
+ *   tetap dihitung sebagai fakta ({@link mengubahSkor}) untuk kartu ringkasan dan
+ *   penyaring, sementara rinciannya (skor mesin, catatan, atribusi) dibaca di
+ *   laci detail.
  * - **"Disetujui · basi" adalah kontradiksi.** Disetujui atau tidak? Keadaan itu
  *   sebenarnya pekerjaan yang belum selesai, jadi ia diberi nama yang menyatakan
  *   itu: `TINJAU_ULANG`.

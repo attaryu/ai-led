@@ -218,7 +218,11 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 					label="Perlu Diperiksa"
 					icon={WarningCircleIcon}
 					value={String(ringkasan.jumlahPerluDiperiksa)}
-					hint="Keyakinan rendah, skor 2 ke bawah, atau gagal dinilai"
+					// Menyebut "belum disetujui", bukan mendaftar ketiga pemicunya:
+					// angkanya kini menyusut tiap kali Penjamin Mutu menyetujui sesuatu,
+					// dan daftar pemicu tanpa syarat itu akan membuat angkanya tampak
+					// tidak cocok dengan keterangannya sendiri.
+					hint="Temuan mesin yang belum disetujui Penjamin Mutu"
 					tone={ringkasan.jumlahPerluDiperiksa > 0 ? 'warning' : 'default'}
 				/>
 			</div>
