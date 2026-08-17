@@ -1,3 +1,5 @@
+import { assessmentSessionRepository } from '~/features/assessment/data/repositories/assessment-session.repository';
+import { assessmentVerdictRepository } from '~/features/assessment/data/repositories/assessment-verdict.repository';
 import { chapterRepository } from '~/features/chapter/data/repositories/chapter.repository';
 import {
 	type LedProjectPage,
@@ -137,6 +139,13 @@ export const ledProjectRepository = {
 		// Bab tidak punya arti tanpa dokumen induknya; dibiarkan hanya akan jadi
 		// sampah yang ikut terhitung saat id dokumen kebetulan dipakai ulang.
 		chapterRepository.deleteByProjectId(id);
+		// Sesi penilaian dan keputusan Penjamin Mutu menempel ke dokumen, jadi
+		// keduanya ikut hilang bersamanya. Dibersihkan lewat dua repository terpisah
+		// karena keduanya memang dua penyimpanan — keputusan sengaja tidak ikut
+		// terhapus saat penilaian diulang, jadi ia juga tidak bisa menumpang
+		// pembersihan sesi.
+		assessmentSessionRepository.deleteByDokumenId(id);
+		assessmentVerdictRepository.deleteByDokumenId(id);
 	},
 
 	findById(id: string): LedProjectEntity | undefined {

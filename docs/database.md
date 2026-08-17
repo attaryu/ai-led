@@ -587,6 +587,82 @@ Inilah yang benar-benar ditampilkan ke user di halaman editor bab: breakdown sko
 
 ---
 
+## 12b. Penilaian AMI — tiga celah di sekitar `AssessmentSession`
+
+> **Celah yang ditemukan saat halaman Penilaian AMI dibangun** (`/led-projects/:projectId/assessment`).
+>
+> Berbeda dari §12a, tabel intinya **sudah ada** — dan ada di **dua tempat yang tidak sama**, jadi keduanya perlu dibedakan lebih dulu sebelum celahnya masuk akal:
+>
+> | | `assessment_sessions` §19–21 | `AssessmentSession` (Prisma) |
+> |---|---|---|
+> | Sumber | Prototipe branch `ariel`, Supabase | `packages/db/prisma/schema.prisma` |
+> | Kunci | `session_id` TEXT (UUID) | `id` cuid |
+> | Terikat dokumen? | **Tidak** — tanpa `tenant_id`, `program_studi_id`, `dokumen_id`, maupun penanda penjalannya | Ya — `dokumen_id` → `DOKUMEN_LED`, `tenant_id`, `created_by_user_id` |
+> | Dipakai siapa | FastAPI `apps/ai` | belum dipakai kode mana pun |
+>
+> **Yang dipakai halaman Penilaian AMI adalah bentuk Prisma**, karena `dokumen_id`-nya itulah yang menjadikan satu sesi = satu Dokumen LED — dan itu pula alasan permukaannya hidup di lapis 3, bukan di lapis prodi maupun di dalam Editor Bab. Tabel §19–21 tetap dipertahankan di dokumen ini sebagai catatan prototipe; menyatukan keduanya adalah pekerjaan integrasi tersendiri, tercatat di "Catatan Integrasi" di bawah.
+>
+> Yang belum ada di **keduanya** tiga hal berikut.
+
+### (1) Sumber bahan penilaian belum lengkap
+
+`AssessmentSession` baru punya `laporan_bukti_dukung_id`. Dua sumber lain belum punya kolom, padahal keduanya menentukan hasil:
+
+| Field | Tipe | Keterangan |
+|---|---|---|
+| `sumber_led` | enum | `EDITOR` \| `UNGGAHAN`. `EDITOR` menilai `konten_kerja` seluruh bab; `UNGGAHAN` untuk dokumen LED yang sudah selesai disusun di luar aplikasi |
+| `led_file_url` | text? | Terisi hanya bila `sumber_led = UNGGAHAN`. **Bukan** `BUKTI_DUKUNG`: bukti dukung adalah bahan yang dirujuk dokumen, sedangkan ini dokumennya sendiri — menaruhnya di pustaka membuatnya muncul sebagai kandidat rujukan bagi bab di dokumen yang sama |
+| `lkps_bukti_dukung_id` | fk? | `BUKTI_DUKUNG` berisi data LKPS prodi. Sejajar `laporan_bukti_dukung_id` yang sudah ada |
+
+Matriks penilaian sengaja **tidak** punya kolom di sini: ia master global (`PANDUAN_REFERENSI` bertipe `DOKUMEN_RUBRIK`, tanpa `tenant_id`), di-seed sekali. Itu pula yang membuat kartu "Upload Matriks Penilaian" di prototipe AMI tidak dibawa ke produk.
+
+### (2) Keputusan Penjamin Mutu belum punya tabel
+
+`IndicatorResult` kebijakannya **ditimpa** tiap sesi — sama seperti `konten_kerja` dan `HASIL_SKOR_KRITERIA`. Karena itu keputusan Penjamin Mutu tidak boleh tinggal di sana: satu klik "Nilai Ulang" akan menghapusnya tanpa jejak.
+
+**Barisnya menyatakan peninjauan, bukan koreksi.** Rancangan pertama hanya mencatat perubahan angka, dan itu meninggalkan lubang yang serius untuk dokumen akreditasi: "tidak ada baris" berarti dua hal sekaligus — belum ada yang melihat indikator ini, **atau** sudah dilihat dan mesinnya dianggap benar. Penjamin Mutu jadi tidak bisa menjawab "berapa indikator yang masih perlu saya periksa?", dan pembaca dokumen tidak bisa membedakan angka yang sudah dipertanggungjawabkan manusia dari angka yang lolos begitu saja.
+
+Statusnya **tiga, dan ketiganya diturunkan** — tidak satu pun jadi kolom:
+
+| Status | Diturunkan dari | Skor yang berlaku |
+|---|---|---|
+| **Belum ditinjau** | tidak ada baris keputusan | skor mesin apa adanya |
+| **Disetujui** | ada baris, `skor_mesin_saat_ditinjau` = skor mesin sekarang | skor Penjamin Mutu |
+| **Perlu ditinjau ulang** | ada baris, snapshot ≠ skor mesin sekarang | skor Penjamin Mutu, **tidak** dicabut |
+
+Dua hal yang sengaja **bukan** status:
+
+- **"Dikoreksi" bukan status pekerjaan.** Menyetujui dan mengoreksi sama-sama berarti indikatornya sudah ditangani; yang membedakan cuma angkanya. Ia tetap dihitung sebagai fakta (`skor_final ≠ skor_mesin_saat_ditinjau`) untuk menjawab "seberapa sering manusia mengoreksi mesin", tapi tidak memakai penanda sendiri di daftar.
+- **"Basi" bukan pelengkap status.** Menempelkannya pada "Disetujui" menghasilkan kontradiksi; keadaan itu sebenarnya pekerjaan yang belum selesai, jadi ia berdiri sebagai status tersendiri. Konsekuensinya angka progres jadi jujur — yang dasarnya sudah bergeser berhenti dihitung selesai.
+
+Bentuk yang dipakai implementasi — kunci `(dokumen_id, indikator_no)`, menempel ke **dokumen** bukan ke sesi, supaya keputusan bertahan melewati penilaian ulang:
+
+| Field | Tipe | Keterangan |
+|---|---|---|
+| `dokumen_id` + `indikator_no` | fk + int | Kunci uniknya. Bukan `session_id` — itulah yang membuat keputusan selamat dari penilaian ulang |
+| `skor_final` | decimal | Skor yang berlaku menurut Penjamin Mutu |
+| `catatan` | text | **Wajib untuk koreksi, opsional untuk persetujuan.** Koreksi menggantikan angka yang punya justifikasi tertulis dengan angka yang tidak; menyetujui tidak — justifikasi mesinnya sudah ada, dan menuntut kalimat untuk menyatakan setuju hanya menghasilkan tujuh puluh delapan "sudah sesuai" |
+| `skor_mesin_saat_ditinjau` | decimal? | Snapshot. Satu-satunya cara mendeteksi bahwa penilaian ulang sudah menggeser dasar pertimbangannya |
+| `sesi_id_saat_ditinjau` | fk | Sesi yang jadi dasar, sebagai keterangan — bukan pemilik |
+| `ditinjau_oleh_user_id` / `_nama` / `ditinjau_pada` | | Atribusi; nama ikut disimpan dengan alasan yang sama seperti `BAB_DRAFT.dibuat_oleh_nama` |
+
+**Tidak ada kolom status maupun kolom "disetujui atau dikoreksi".** Keduanya diturunkan, mengikuti aturan yang sudah ditegakkan berkali-kali di dokumen ini (status bab, skor maksimal, total skor): kolom yang bisa dihitung dari fakta yang ada akan jadi kebenaran kedua yang bisa menyimpang. Konsekuensinya menyenangkan — menggeser skor **kembali** ke angka mesin otomatis berhenti terhitung sebagai koreksi, tanpa aksi terpisah dan tanpa pengguna perlu tahu ada dua konsep.
+
+**Penilaian final dihitung saat dibaca**: hasil mesin ditimpa keputusan — alasan yang sama dengan "total skor dihitung on-the-fly" di §12.
+
+**Keputusan yang dasarnya berubah ditandai, bukan dihapus, dan skornya tetap berlaku.** Barisnya utuh beserta catatan dan atribusinya; yang berubah hanya statusnya. Skor Penjamin Mutu **tidak** dikembalikan ke angka mesin terbaru — kalau ia berbalik sendiri, rata-rata dokumen akan bergeser tanpa ada seorang pun yang memutuskan apa pun. Menyimpannya kembali menuliskan ulang `skor_mesin_saat_ditinjau` ke angka yang berlaku sekarang, sehingga statusnya pulih jadi Disetujui — itulah cara menegaskan ulang keputusan yang sudah diperiksa lagi.
+
+### (3) RAGAS untuk penilaian belum punya tempat
+
+`EvalResult` **tidak bisa dipakai**: kolomnya `@unique` pada `generation_run_id`, jadi ia milik evaluasi *generasi*. Metrik untuk `AssessmentSession` butuh tempatnya sendiri, dan bentuknya berbeda dari §12a dalam dua hal:
+
+- **Empat metrik, bukan tiga.** Pengecualian `context_recall` di §12a berlaku karena LED tidak punya jawaban acuan. Untuk penilaian, acuannya ada — bunyi indikator beserta level skor 0–4 di matriks sudah menyatakan apa yang seharusnya dicari — dan `apps/ai/eval/ragas_eval.py` memang menjalankan keempatnya.
+- **Ada rincian per indikator.** Agregat sesi saja tidak bisa ditindaklanjuti; yang berguna adalah mengetahui indikator mana yang `context_recall`-nya rendah, karena di sanalah skor rendah berarti "mesin tidak menemukan tulisannya", bukan "dokumennya kurang".
+
+Wajar berbentuk kolom `kualitas` jsonb pada `AssessmentSession` (seperti `ragas` pada `BAB_DOKUMEN`), atau tabel `HASIL_RAGAS_AMI` bila kelak perlu di-query lintas sesi.
+
+---
+
 ## Kelompok: Panduan Referensi (Master Data RAG)
 
 ## 13. PANDUAN_REFERENSI

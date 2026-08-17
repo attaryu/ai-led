@@ -59,6 +59,12 @@ export default [
   // LAPIS 3 — dokumen LED
   route("led-projects/:projectId", "routes/led-project-workspace-layout.tsx", [
     index("routes/led-project-workspace-home.tsx"),
+    // Penilaian AMI — satu sesi per Dokumen LED, sesuai `AssessmentSession.dokumenId`
+    // yang menunjuk `DokumenLed`. Sesi yang dilihat dan tab yang aktif hidup di
+    // query string (`?sesi=`, `?tab=`), bukan di segmen path: keduanya keadaan
+    // tampilan atas halaman yang sama, dan rute anak untuk masing-masing hanya
+    // akan menggandakan halaman yang isinya identik.
+    route("assessment", "routes/led-project-workspace-assessment.tsx"),
   ]),
 
   // LAPIS 4 — Editor Bab. Dua rute sejajar, bukan induk + index(): keduanya
