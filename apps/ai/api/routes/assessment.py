@@ -21,6 +21,7 @@ no shared mutable state between indicators.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import os
 import uuid
@@ -30,6 +31,7 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
+from agent.context import AssessmentContext, current_assessment_context
 from agent.graph import build_graph_auto
 from agent.tools.rubric_tool import _get_rubrics
 from db.supabase_client import (
@@ -56,8 +58,23 @@ MAX_PARALLEL: int = int(os.environ.get("ASSESSMENT_MAX_PARALLEL", "5"))
 
 
 class StartAssessmentRequest(BaseModel):
+    # Diminta wajib (bukan default None) — tanpa ini, tools (search_led_evidence,
+    # get_lkps_table) tidak tahu dokumen tenant mana yang harus dicari. Lihat
+    # agent/context.py dan integration-plan.md.
+    tenant_id: str
+    dokumen_id: str
     laporan_path: Optional[str] = None
     max_parallel: Optional[int] = None
+
+
+class ResumeAssessmentRequest(BaseModel):
+    # Supabase (masih dipakai di sini, lihat db/supabase_client.py) tidak
+    # menyimpan tenant_id/dokumen_id sama sekali — makanya diminta lagi di
+    # sini, bukan dibaca ulang dari baris sesi. Migrasi ke Postgres monorepo
+    # (tracker "Lapis Akses Postgres dari Python") akan menghapus kebutuhan
+    # ini karena AssessmentSession di sana punya kolomnya.
+    tenant_id: str
+    dokumen_id: str
 
 
 class StartAssessmentResponse(BaseModel):
@@ -182,6 +199,8 @@ async def start_assessment(
         session_id=session_id,
         indicators=indicators,
         max_parallel=parallel,
+        tenant_id=body.tenant_id,
+        dokumen_id=body.dokumen_id,
     )
 
     return StartAssessmentResponse(
@@ -194,6 +213,7 @@ async def start_assessment(
 @router.post("/{session_id}/resume", response_model=ResumeAssessmentResponse)
 async def resume_assessment(
     session_id: str,
+    body: ResumeAssessmentRequest,
     background_tasks: BackgroundTasks,
 ) -> ResumeAssessmentResponse:
     """Resume a session that was cut off mid-run (worker crash/restart).
@@ -248,6 +268,8 @@ async def resume_assessment(
         indicators=remaining,
         max_parallel=MAX_PARALLEL,
         initial_completed=len(done),
+        tenant_id=body.tenant_id,
+        dokumen_id=body.dokumen_id,
     )
 
     return ResumeAssessmentResponse(
@@ -403,6 +425,8 @@ async def _process_single_indicator(
     indicator,
     session_id: str,
     semaphore: asyncio.Semaphore,
+    tenant_id: str,
+    dokumen_id: str,
 ) -> bool:
     """Run the LangGraph agent for one indicator and persist results to Supabase.
 
@@ -428,8 +452,15 @@ async def _process_single_indicator(
                 "error": None,
             }
 
+            # graph.invoke() runs in a real OS thread (run_in_executor), which
+            # does NOT inherit the calling coroutine's context by default —
+            # explicitly copying it is required for search_led_evidence/
+            # get_lkps_table (agent.context) to see the tenant/dokumen set
+            # just below. See agent/context.py docstring.
+            current_assessment_context.set(AssessmentContext(tenant_id, dokumen_id))
+            ctx = contextvars.copy_context()
             result = await asyncio.get_event_loop().run_in_executor(
-                None, graph.invoke, initial_state
+                None, ctx.run, graph.invoke, initial_state
             )
 
             score = result.get("final_score")
@@ -479,6 +510,8 @@ async def _run_assessment_pipeline(
     session_id: str,
     indicators: list,
     max_parallel: int,
+    tenant_id: str,
+    dokumen_id: str,
     initial_completed: int = 0,
 ) -> None:
     """Background task: score all `indicators` and update session status when
@@ -496,6 +529,8 @@ async def _run_assessment_pipeline(
                 indicator=indicator,
                 session_id=session_id,
                 semaphore=semaphore,
+                tenant_id=tenant_id,
+                dokumen_id=dokumen_id,
             )
             for indicator in indicators
         ]

@@ -42,11 +42,18 @@ def _load_indicators(nos: list[int]) -> list[_Indicator]:
     return out
 
 
+# Single-machine benchmark script, not a real tenant/document — fixed
+# identity so it keeps working now that lkps_tool/chroma_store are scoped
+# per (tenant_id, dokumen_id). See agent/context.py.
+_LOCAL_TENANT_ID = "benchmark"
+_LOCAL_DOKUMEN_ID = "benchmark"
+
+
 def _ensure_lkps_loaded():
     from agent.tools.lkps_tool import set_lkps_registry
     from ingestion.lkps_loader import load_lkps
     registry = load_lkps("/app/data/uploads/lkps.xlsx")
-    set_lkps_registry(registry)
+    set_lkps_registry(_LOCAL_TENANT_ID, _LOCAL_DOKUMEN_ID, registry)
     log.info("LKPS loaded: %d sheets", len(registry.sheets))
 
 
@@ -127,6 +134,9 @@ def main():
     indicators = _load_indicators(indicator_nos)
     log.info("Indicators to evaluate: %s", [i.indicator_no for i in indicators])
     log.info("Models to benchmark: %s", models)
+
+    from agent.context import AssessmentContext, current_assessment_context
+    current_assessment_context.set(AssessmentContext(_LOCAL_TENANT_ID, _LOCAL_DOKUMEN_ID))
 
     _ensure_lkps_loaded()
 

@@ -12,9 +12,16 @@ from __future__ import annotations
 import json
 import os
 import sys
+from agent.context import AssessmentContext, current_assessment_context
 from agent.tools.lkps_tool import get_lkps_table, set_lkps_registry
 from ingestion.lkps_loader import load_lkps
-from vectorstore.chroma_store import get_chroma_client
+from vectorstore.chroma_store import search_led
+
+# Single-machine dev/eval script, operating on whatever was last uploaded
+# locally — not a real tenant/document, just a fixed identity so it keeps
+# working now that chroma_store/lkps_tool are scoped per (tenant_id,
+# dokumen_id). See agent/context.py.
+_LOCAL_CONTEXT = AssessmentContext(tenant_id="local", dokumen_id="local")
 
 
 def _load_rubrics():
@@ -25,22 +32,26 @@ def _load_rubrics():
 def _ensure_lkps():
     """Side-effect: load LKPS registry into the lkps_tool module."""
     registry = load_lkps("/app/data/uploads/lkps.xlsx")
-    set_lkps_registry(registry)
+    set_lkps_registry(_LOCAL_CONTEXT.tenant_id, _LOCAL_CONTEXT.dokumen_id, registry)
     return registry
 
 
 def _search_led(query: str, n: int = 5) -> list[dict]:
-    client = get_chroma_client("/app/data/chroma_db")
-    coll = client.get_collection("led_chunks")
-    res = coll.query(query_texts=[query], n_results=n)
-    out = []
-    for i in range(len(res["ids"][0])):
-        out.append({
-            "text": res["documents"][0][i],
-            "page": res["metadatas"][0][i].get("page_start"),
-            "section": res["metadatas"][0][i].get("section_heading", ""),
-        })
-    return out
+    results = search_led(
+        query=query,
+        persist_dir="/app/data/chroma_db",
+        tenant_id=_LOCAL_CONTEXT.tenant_id,
+        dokumen_id=_LOCAL_CONTEXT.dokumen_id,
+        n_results=n,
+    )
+    return [
+        {
+            "text": r["text"],
+            "page": r["metadata"].get("page_start"),
+            "section": r["metadata"].get("section_heading", ""),
+        }
+        for r in results
+    ]
 
 
 def dump_indicator(no: int, rubrics: dict) -> None:
@@ -101,6 +112,7 @@ def main():
         sys.exit(1)
 
     indicator_nos = [int(x) for x in sys.argv[1:]]
+    current_assessment_context.set(_LOCAL_CONTEXT)
     rubrics = _load_rubrics()
     _ensure_lkps()
 

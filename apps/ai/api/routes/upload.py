@@ -8,7 +8,18 @@ GET  /upload/status    — Returns which files have been uploaded and LED indexi
 
 All files are saved to UPLOAD_DIR (default: data/uploads).
 LED indexing writes to CHROMA_PERSIST_DIR (default: data/chroma_db).
-Rubric cache is written to RUBRIC_CACHE_PATH (default: data/rubric_cache/matrix.json).
+Rubric cache is written to RUBRIC_CACHE_PATH (default: data/rubric_cache/matrix.json)
+— this one is NOT tenant-scoped: the AMI rubric is one shared national
+standard, the same as `RubrikKriteria`/`RubrikLevel` in
+packages/db/schema.prisma having no tenantId at all.
+
+Tenant/document scoping (`tenant_id`, `dokumen_id`): apps/ai has no
+authentication of its own — these are trusted as passed by the caller, which
+in the target architecture is NestJS (already authenticated the request
+before it ever reaches here). Every file is stored per (tenant_id,
+dokumen_id) instead of one fixed filename, so two institutions' — or two
+documents' — uploads never overwrite each other. See integration-plan.md at
+the repo root ("Isolasi Tenant & Multi-Dokumen") for why this exists.
 """
 
 from __future__ import annotations
@@ -16,10 +27,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import shutil
+import re
 from typing import Literal
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -32,10 +43,26 @@ RUBRIC_CACHE_PATH: str = os.environ.get(
     "RUBRIC_CACHE_PATH", "data/rubric_cache/matrix.json"
 )
 
-MATRIX_FILENAME = "matrix.pdf"
 LED_EXTENSIONS = (".pdf", ".docx")
-LKPS_FILENAME = "lkps.xlsx"
-LAPORAN_FILENAME = "laporan_ak.xlsx"
+
+DocKey = tuple[str, str]  # (tenant_id, dokumen_id)
+
+
+def _path_segment(value: str) -> str:
+    """Reject path-traversal characters in caller-supplied ids used as directory
+    segments — these aren't validated against a real tenant/document table
+    here (apps/ai has no DB access to check), so this is the one guard that
+    matters: no `/`, `..`, or empty string."""
+    if not value or not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+        raise HTTPException(
+            status_code=400,
+            detail="tenant_id/dokumen_id hanya boleh berisi huruf, angka, '_', '-'",
+        )
+    return value
+
+
+def _doc_dir(tenant_id: str, dokumen_id: str) -> str:
+    return os.path.join(UPLOAD_DIR, _path_segment(tenant_id), _path_segment(dokumen_id))
 
 
 def _led_filename(original_filename: str) -> str:
@@ -43,25 +70,25 @@ def _led_filename(original_filename: str) -> str:
     ext = os.path.splitext(original_filename.lower())[1]
     return f"led{ext}"
 
+
 # ── In-process state (prototype-grade; resets on restart) ────────────────────
+# Keyed by (tenant_id, dokumen_id) — a bare global here would mean two
+# documents' upload/indexing progress overwrite each other's status, the
+# same class of bug the file-path and ChromaDB collection scoping fixes.
 
-_led_index_status: dict = {
-    "state": "idle",    # idle | indexing | ready | error
-    "chunk_count": 0,
-    "error": None,
-}
+_led_index_status: dict[DocKey, dict] = {}
+_matrix_status: dict = {"rubric_count": 0, "error": None}
+_uploaded: dict[DocKey, dict[str, bool]] = {}
 
-_matrix_status: dict = {
-    "rubric_count": 0,
-    "error": None,
-}
 
-_uploaded: dict[str, bool] = {
-    "matrix": False,
-    "led": False,
-    "lkps": False,
-    "laporan": False,
-}
+def _doc_state(key: DocKey) -> dict[str, bool]:
+    return _uploaded.setdefault(key, {"led": False, "lkps": False, "laporan": False})
+
+
+def _led_status(key: DocKey) -> dict:
+    return _led_index_status.setdefault(
+        key, {"state": "idle", "chunk_count": 0, "error": None}
+    )
 
 
 # ── Response models ──────────────────────────────────────────────────────────
@@ -109,14 +136,10 @@ class LaporanUploadResponse(BaseModel):
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-def _ensure_upload_dir() -> None:
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-
-def _save_upload(file: UploadFile, filename: str) -> tuple[str, int]:
-    """Save an uploaded file to UPLOAD_DIR. Returns (full_path, size_bytes)."""
-    _ensure_upload_dir()
-    dest = os.path.join(UPLOAD_DIR, filename)
+def _save_upload(file: UploadFile, dest_dir: str, filename: str) -> tuple[str, int]:
+    """Save an uploaded file to dest_dir/filename. Returns (full_path, size_bytes)."""
+    os.makedirs(dest_dir, exist_ok=True)
+    dest = os.path.join(dest_dir, filename)
     size = 0
     with open(dest, "wb") as f:
         while chunk := file.file.read(1024 * 256):  # 256 KB chunks
@@ -128,11 +151,11 @@ def _save_upload(file: UploadFile, filename: str) -> tuple[str, int]:
 # ── Background: LED indexing ─────────────────────────────────────────────────
 
 
-def _index_led_background(led_path: str) -> None:
+def _index_led_background(led_path: str, tenant_id: str, dokumen_id: str) -> None:
     """Chunk the LED file (.pdf or .docx) and index into ChromaDB. Runs in a
     thread via BackgroundTasks."""
-    global _led_index_status
-    _led_index_status = {"state": "indexing", "chunk_count": 0, "error": None}
+    key = (tenant_id, dokumen_id)
+    _led_index_status[key] = {"state": "indexing", "chunk_count": 0, "error": None}
     try:
         from vectorstore.chroma_store import index_led_chunks
 
@@ -143,45 +166,57 @@ def _index_led_background(led_path: str) -> None:
             from ingestion.led_chunker import chunk_led_pdf
             chunks = chunk_led_pdf(led_path)
 
-        index_led_chunks(chunks, CHROMA_PERSIST_DIR)
-        _led_index_status = {
+        index_led_chunks(chunks, CHROMA_PERSIST_DIR, tenant_id, dokumen_id)
+        _led_index_status[key] = {
             "state": "ready",
             "chunk_count": len(chunks),
             "error": None,
         }
-        logger.info("LED indexed: %d chunks into %s", len(chunks), CHROMA_PERSIST_DIR)
+        logger.info(
+            "LED indexed for tenant=%s dokumen=%s: %d chunks into %s",
+            tenant_id,
+            dokumen_id,
+            len(chunks),
+            CHROMA_PERSIST_DIR,
+        )
     except Exception as exc:
-        logger.exception("LED indexing failed")
-        _led_index_status = {"state": "error", "chunk_count": 0, "error": str(exc)}
+        logger.exception("LED indexing failed for tenant=%s dokumen=%s", tenant_id, dokumen_id)
+        _led_index_status[key] = {"state": "error", "chunk_count": 0, "error": str(exc)}
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 
 @router.get("/status", response_model=UploadStatusResponse)
-def get_upload_status() -> UploadStatusResponse:
-    """Return which files are uploaded, LED indexing state, and matrix rubric count."""
-    # Auto-detect matrix from disk so a pre-existing cache is reflected after restart
-    if not _uploaded["matrix"] and os.path.exists(RUBRIC_CACHE_PATH):
+def get_upload_status(tenant_id: str, dokumen_id: str) -> UploadStatusResponse:
+    """Return which files are uploaded, LED indexing state, and matrix rubric
+    count, for one (tenant_id, dokumen_id)."""
+    key = (_path_segment(tenant_id), _path_segment(dokumen_id))
+
+    # Auto-detect matrix from disk so a pre-existing cache is reflected after
+    # restart — matrix is shared, not per-document, so this stays global.
+    if not _matrix_status.get("rubric_count") and os.path.exists(RUBRIC_CACHE_PATH):
         try:
             import json
             with open(RUBRIC_CACHE_PATH, encoding="utf-8") as f:
                 cached = json.load(f)
-            _uploaded["matrix"] = True
             _matrix_status["rubric_count"] = len(cached)
         except Exception:
             pass
 
+    doc_state = _doc_state(key)
+    led_status = _led_status(key)
+
     return UploadStatusResponse(
-        matrix_uploaded=_uploaded["matrix"],
+        matrix_uploaded=_matrix_status["rubric_count"] > 0,
         matrix_rubric_count=_matrix_status["rubric_count"],
         matrix_error=_matrix_status["error"],
-        led_uploaded=_uploaded["led"],
-        lkps_uploaded=_uploaded["lkps"],
-        laporan_uploaded=_uploaded["laporan"],
-        led_index_state=_led_index_status["state"],
-        led_chunk_count=_led_index_status["chunk_count"],
-        led_error=_led_index_status["error"],
+        led_uploaded=doc_state["led"],
+        lkps_uploaded=doc_state["lkps"],
+        laporan_uploaded=doc_state["laporan"],
+        led_index_state=led_status["state"],
+        led_chunk_count=led_status["chunk_count"],
+        led_error=led_status["error"],
     )
 
 
@@ -189,14 +224,15 @@ def get_upload_status() -> UploadStatusResponse:
 async def upload_matrix(file: UploadFile) -> MatrixUploadResponse:
     """Upload Matriks Penilaian PDF; parses rubrics and writes them to RUBRIC_CACHE_PATH.
 
-    The cache is consumed by `agent.tools.rubric_tool._get_rubrics()` and by the
-    default-78-indicator path in `/assessment/start`. Re-uploading replaces the cache.
+    Not tenant-scoped — see module docstring. Re-uploading replaces the
+    (shared) cache for everyone, same as before.
     """
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="File must be a PDF (.pdf)")
 
+    matrix_dir = os.path.join(UPLOAD_DIR, "_shared")
     path, _ = await asyncio.get_event_loop().run_in_executor(
-        None, _save_upload, file, MATRIX_FILENAME
+        None, _save_upload, file, matrix_dir, "matrix.pdf"
     )
 
     def _parse_and_cache(p: str) -> int:
@@ -216,18 +252,16 @@ async def upload_matrix(file: UploadFile) -> MatrixUploadResponse:
     except Exception as exc:
         logger.exception("Matrix parsing failed")
         _matrix_status["error"] = str(exc)
-        _uploaded["matrix"] = False
         raise HTTPException(
             status_code=422, detail=f"Failed to parse matrix PDF: {exc}"
         ) from exc
 
     _matrix_status["rubric_count"] = count
     _matrix_status["error"] = None
-    _uploaded["matrix"] = True
 
     return MatrixUploadResponse(
         message=f"Matrix parsed: {count} rubrics cached.",
-        filename=MATRIX_FILENAME,
+        filename="matrix.pdf",
         rubric_count=count,
         cache_path=RUBRIC_CACHE_PATH,
     )
@@ -235,23 +269,27 @@ async def upload_matrix(file: UploadFile) -> MatrixUploadResponse:
 
 @router.post("/led", response_model=LedUploadResponse)
 async def upload_led(
-    file: UploadFile,
     background_tasks: BackgroundTasks,
+    file: UploadFile,
+    tenant_id: str = Form(...),
+    dokumen_id: str = Form(...),
 ) -> LedUploadResponse:
-    """Upload the LED as .pdf or .docx. Indexing into ChromaDB starts immediately
-    in the background."""
+    """Upload one document's LED as .pdf or .docx. Indexing into its own
+    ChromaDB collection starts immediately in the background."""
     if not file.filename or not file.filename.lower().endswith(LED_EXTENSIONS):
         raise HTTPException(
             status_code=400, detail="File must be a PDF (.pdf) or Word document (.docx)"
         )
 
+    tenant_id, dokumen_id = _path_segment(tenant_id), _path_segment(dokumen_id)
+    key = (tenant_id, dokumen_id)
     led_filename = _led_filename(file.filename)
     path, size = await asyncio.get_event_loop().run_in_executor(
-        None, _save_upload, file, led_filename
+        None, _save_upload, file, _doc_dir(tenant_id, dokumen_id), led_filename
     )
-    _uploaded["led"] = True
+    _doc_state(key)["led"] = True
 
-    background_tasks.add_task(_index_led_background, path)
+    background_tasks.add_task(_index_led_background, path, tenant_id, dokumen_id)
 
     return LedUploadResponse(
         message="LED uploaded. Indexing started in the background — poll /upload/status for progress.",
@@ -261,13 +299,20 @@ async def upload_led(
 
 
 @router.post("/lkps", response_model=LkpsUploadResponse)
-async def upload_lkps(file: UploadFile) -> LkpsUploadResponse:
-    """Upload the LKPS Excel. Loads LKPSRegistry immediately and injects into lkps_tool."""
+async def upload_lkps(
+    file: UploadFile,
+    tenant_id: str = Form(...),
+    dokumen_id: str = Form(...),
+) -> LkpsUploadResponse:
+    """Upload one document's LKPS Excel. Loads LKPSRegistry immediately and
+    injects it into lkps_tool, scoped to (tenant_id, dokumen_id)."""
     if not file.filename or not file.filename.lower().endswith((".xlsx", ".xls")):
         raise HTTPException(status_code=400, detail="File must be an Excel file (.xlsx or .xls)")
 
+    tenant_id, dokumen_id = _path_segment(tenant_id), _path_segment(dokumen_id)
+    key = (tenant_id, dokumen_id)
     path, _ = await asyncio.get_event_loop().run_in_executor(
-        None, _save_upload, file, LKPS_FILENAME
+        None, _save_upload, file, _doc_dir(tenant_id, dokumen_id), "lkps.xlsx"
     )
 
     def _load_and_inject(p: str):
@@ -275,37 +320,44 @@ async def upload_lkps(file: UploadFile) -> LkpsUploadResponse:
         from ingestion.lkps_loader import load_lkps
 
         registry = load_lkps(p)
-        set_lkps_registry(registry)
+        set_lkps_registry(tenant_id, dokumen_id, registry)
         return registry
 
     registry = await asyncio.get_event_loop().run_in_executor(None, _load_and_inject, path)
 
     all_sheets = len(registry.sheets)
     non_empty = len([v for v in registry.sheets.values() if not v.empty])
-    _uploaded["lkps"] = True
+    _doc_state(key)["lkps"] = True
 
     return LkpsUploadResponse(
         message="LKPS Excel uploaded and registry loaded.",
-        filename=LKPS_FILENAME,
+        filename="lkps.xlsx",
         sheet_count=all_sheets,
         non_empty_sheets=non_empty,
     )
 
 
 @router.post("/laporan", response_model=LaporanUploadResponse)
-async def upload_laporan(file: UploadFile) -> LaporanUploadResponse:
-    """Upload Laporan_AK.xlsx. Returns the server-side path for use with /assessment/start."""
+async def upload_laporan(
+    file: UploadFile,
+    tenant_id: str = Form(...),
+    dokumen_id: str = Form(...),
+) -> LaporanUploadResponse:
+    """Upload one document's Laporan_AK.xlsx. Returns the server-side path for
+    use with /assessment/start."""
     if not file.filename or not file.filename.lower().endswith((".xlsx", ".xls")):
         raise HTTPException(status_code=400, detail="File must be an Excel file (.xlsx or .xls)")
 
+    tenant_id, dokumen_id = _path_segment(tenant_id), _path_segment(dokumen_id)
+    key = (tenant_id, dokumen_id)
     path, size = await asyncio.get_event_loop().run_in_executor(
-        None, _save_upload, file, LAPORAN_FILENAME
+        None, _save_upload, file, _doc_dir(tenant_id, dokumen_id), "laporan_ak.xlsx"
     )
-    _uploaded["laporan"] = True
+    _doc_state(key)["laporan"] = True
 
     return LaporanUploadResponse(
         message="Laporan_AK.xlsx uploaded.",
-        filename=LAPORAN_FILENAME,
+        filename="laporan_ak.xlsx",
         laporan_path=path,
         size_bytes=size,
     )

@@ -286,6 +286,11 @@ def build_eval_samples(
     session_id: Optional[str] = None,
     chroma_persist_dir: Optional[str] = None,
     reference_path: Optional[str] = None,
+    # Single-machine eval tool, not a real tenant/document — defaults match
+    # the "local" identity used by scripts/fetch_indicator_context.py, since
+    # chroma_store.search_led is now scoped per (tenant_id, dokumen_id).
+    tenant_id: str = "local",
+    dokumen_id: str = "local",
     progress_cb=None,
 ) -> list[EvalSample]:
     """Build EvalSample list by retrieving real LED chunks and optionally
@@ -350,7 +355,13 @@ def build_eval_samples(
 
         # Retrieve LED chunks
         try:
-            raw = search_led(query=question, persist_dir=persist_dir, n_results=5)
+            raw = search_led(
+                query=question,
+                persist_dir=persist_dir,
+                tenant_id=tenant_id,
+                dokumen_id=dokumen_id,
+                n_results=5,
+            )
             contexts = [r["text"][:1000] for r in raw]
         except Exception as exc:
             logger.warning("LED search failed for indicator %d: %s", rubric.no, exc)

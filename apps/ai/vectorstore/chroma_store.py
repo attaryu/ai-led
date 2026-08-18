@@ -3,10 +3,20 @@ ChromaDB vector store for LED chunks.
 
 Uses a multilingual SentenceTransformer embedding model so Bahasa Indonesia
 queries are handled correctly.
+
+Scoping: one collection PER (tenant_id, dokumen_id) pair, not one shared
+global collection. This used to be a single fixed collection name that
+`index_led_chunks()` deleted and rebuilt on every upload — meaning at most
+one LED document could be indexed at a time, for the whole system,
+regardless of tenant. Re-indexing now only ever touches the one collection
+for the document being (re-)indexed; every other tenant's/document's data
+is untouched (tracker: "Isolasi Tenant & Multi-Dokumen di apps/ai").
 """
 
 from __future__ import annotations
 
+import hashlib
+import re
 import threading
 
 import chromadb
@@ -18,7 +28,6 @@ from ingestion.led_chunker import LEDChunk
 # Constants
 # ---------------------------------------------------------------------------
 
-_COLLECTION_NAME = "led_chunks"
 # Multilingual model that supports Bahasa Indonesia
 _EMBED_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 
@@ -31,6 +40,22 @@ def _get_ef() -> SentenceTransformerEmbeddingFunction:
     if _ef is None:
         _ef = SentenceTransformerEmbeddingFunction(model_name=_EMBED_MODEL)
     return _ef
+
+
+def collection_name(tenant_id: str, dokumen_id: str) -> str:
+    """Deterministic per-document collection name.
+
+    Chroma collection names must be 3-512 chars, alnum/./_/- only, and
+    start/end alphanumeric — tenant_id/dokumen_id (cuid strings) already
+    satisfy that, but a hash suffix is added anyway so this doesn't quietly
+    break if an id ever contains a character Chroma rejects.
+    """
+    raw = f"led__{tenant_id}__{dokumen_id}"
+    safe = re.sub(r"[^a-zA-Z0-9._-]", "_", raw)
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8]
+    name = f"{safe}_{digest}"
+    return name[:512]
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -54,23 +79,33 @@ def get_chroma_client(persist_dir: str) -> "chromadb.ClientAPI":
         return _clients[persist_dir]
 
 
-def index_led_chunks(chunks: list[LEDChunk], persist_dir: str) -> None:
-    """Index LED chunks into ChromaDB (idempotent — deletes existing collection first).
+def index_led_chunks(
+    chunks: list[LEDChunk],
+    persist_dir: str,
+    tenant_id: str,
+    dokumen_id: str,
+) -> None:
+    """Index one document's LED chunks into its own collection (idempotent —
+    deletes only THIS document's collection first, not the whole store).
 
     Metadata stored per chunk:
-        page_start, page_end, para_start, para_end, section_heading (empty
-        string when None), char_start. page_start/page_end are -1 for
-        docx-sourced chunks; para_start/para_end are -1 for pdf-sourced ones
-        (see ingestion.led_chunker.LEDChunk).
+        tenant_id, dokumen_id (defense in depth — the collection is already
+        scoped by these, but stamping them too means a stray cross-collection
+        query would still come back empty/filterable rather than silently
+        returning another tenant's rows), page_start, page_end, para_start,
+        para_end, section_heading (empty string when None), char_start.
+        page_start/page_end are -1 for docx-sourced chunks; para_start/
+        para_end are -1 for pdf-sourced ones (see ingestion.led_chunker.LEDChunk).
     """
     import logging
     import time
     log = logging.getLogger(__name__)
 
     client = get_chroma_client(persist_dir)
+    name = collection_name(tenant_id, dokumen_id)
 
     try:
-        client.delete_collection(_COLLECTION_NAME)
+        client.delete_collection(name)
     except Exception:
         pass
 
@@ -80,7 +115,7 @@ def index_led_chunks(chunks: list[LEDChunk], persist_dir: str) -> None:
     log.info("Embedding model ready in %.1fs", time.time() - t0)
 
     collection = client.create_collection(
-        name=_COLLECTION_NAME,
+        name=name,
         embedding_function=ef,
         metadata={"hnsw:space": "cosine"},
     )
@@ -95,6 +130,8 @@ def index_led_chunks(chunks: list[LEDChunk], persist_dir: str) -> None:
             documents=[c.text for c in batch],
             metadatas=[
                 {
+                    "tenant_id": tenant_id,
+                    "dokumen_id": dokumen_id,
                     "page_start": c.page_start,
                     "page_end": c.page_end,
                     "para_start": c.para_start,
@@ -106,29 +143,48 @@ def index_led_chunks(chunks: list[LEDChunk], persist_dir: str) -> None:
             ],
         )
         done = min(i + _BATCH_SIZE, total)
-        log.info("Indexed %d/%d chunks (%.1fs elapsed)", done, total, time.time() - t_start)
-    log.info("LED indexing finished: %d chunks in %.1fs", total, time.time() - t_start)
+        log.info(
+            "[%s/%s] Indexed %d/%d chunks (%.1fs elapsed)",
+            tenant_id,
+            dokumen_id,
+            done,
+            total,
+            time.time() - t_start,
+        )
+    log.info(
+        "LED indexing finished for tenant=%s dokumen=%s: %d chunks in %.1fs",
+        tenant_id,
+        dokumen_id,
+        total,
+        time.time() - t_start,
+    )
 
 
 def search_led(
     query: str,
     persist_dir: str,
+    tenant_id: str,
+    dokumen_id: str,
     n_results: int = 5,
 ) -> list[dict]:
-    """Search LED chunks by semantic similarity.
+    """Search one document's LED chunks by semantic similarity.
 
     Returns a list of dicts with keys:
         text       – the chunk text
         chunk_id   – UUID of the chunk
         metadata   – dict {page_start, page_end, para_start, para_end, section_heading, char_start}
         distance   – cosine distance (lower = more similar)
+
+    Returns [] (not an error) if this document was never indexed — that's a
+    normal "not ready yet" state, not a system failure.
     """
     client = get_chroma_client(persist_dir)
+    name = collection_name(tenant_id, dokumen_id)
 
-    collection = client.get_collection(
-        name=_COLLECTION_NAME,
-        embedding_function=_get_ef(),
-    )
+    try:
+        collection = client.get_collection(name=name, embedding_function=_get_ef())
+    except Exception:
+        return []
 
     count = collection.count()
     if count == 0:

@@ -116,15 +116,49 @@ def test_rubric_tool_returns_fields(monkeypatch):
     assert "score_criteria" in result
 
 
+# ── lkps_tool / led_tool: (tenant_id, dokumen_id) scoping ──────────────────────
+#
+# Both tools read the current (tenant_id, dokumen_id) from agent.context
+# instead of a bare module-level global — see agent/context.py for why. Every
+# test below sets/clears that context explicitly rather than relying on
+# import-time state.
+
+
+@pytest.fixture(autouse=True)
+def _assessment_context():
+    """Set a fixed (tenant_id, dokumen_id) for every test in this module, and
+    reset it after — tests must not leak context into each other."""
+    from agent.context import AssessmentContext, current_assessment_context
+
+    token = current_assessment_context.set(AssessmentContext("tenant-x", "doc-1"))
+    yield
+    current_assessment_context.reset(token)
+
+
 # ── lkps_tool ─────────────────────────────────────────────────────────────────
 
 
 def test_lkps_tool_no_registry():
     from agent.tools import lkps_tool
 
-    lkps_tool._lkps_registry = None
+    lkps_tool._registries.clear()
     result = json.loads(lkps_tool.get_lkps_table.invoke({"table_reference": "Tabel 2.a. LKPS"}))
     assert "error" in result
+
+
+def test_lkps_tool_no_context_raises():
+    """Calling the tool with no AssessmentContext set at all — not even a
+    different tenant — must fail loudly, never silently answer from the
+    wrong (or no) document."""
+    from agent.context import current_assessment_context
+    from agent.tools import lkps_tool
+
+    token = current_assessment_context.set(None)
+    try:
+        with pytest.raises(RuntimeError):
+            lkps_tool.get_lkps_table.invoke({"table_reference": "Tabel 2.a. LKPS"})
+    finally:
+        current_assessment_context.reset(token)
 
 
 def test_lkps_tool_with_registry(monkeypatch):
@@ -139,9 +173,38 @@ def test_lkps_tool_with_registry(monkeypatch):
                 return pd.DataFrame({"Nama": ["Alice"], "Nilai": [90]})
             return None
 
-    lkps_tool.set_lkps_registry(FakeRegistry())
+    lkps_tool.set_lkps_registry("tenant-x", "doc-1", FakeRegistry())
     result = lkps_tool.get_lkps_table.invoke({"table_reference": "Tabel 2.a. LKPS"})
     assert "Alice" in result or "Nama" in result
+
+
+def test_lkps_tool_scoped_per_tenant_document(monkeypatch):
+    """Two different (tenant_id, dokumen_id) registries must never answer
+    each other's query — this is the whole point of the scoping fix."""
+    import pandas as pd
+    from agent.context import AssessmentContext, current_assessment_context
+    from agent.tools import lkps_tool
+
+    class FakeRegistry:
+        def __init__(self, name):
+            self.name = name
+            self.sheets = {"2a1": None}
+        def get_by_ref(self, ref):
+            return pd.DataFrame({"owner": [self.name]})
+
+    lkps_tool.set_lkps_registry("tenant-x", "doc-1", FakeRegistry("tenant-x-data"))
+    lkps_tool.set_lkps_registry("tenant-y", "doc-9", FakeRegistry("tenant-y-data"))
+
+    result_x = lkps_tool.get_lkps_table.invoke({"table_reference": "Tabel 1"})
+    assert "tenant-x-data" in result_x
+
+    token = current_assessment_context.set(AssessmentContext("tenant-y", "doc-9"))
+    try:
+        result_y = lkps_tool.get_lkps_table.invoke({"table_reference": "Tabel 1"})
+    finally:
+        current_assessment_context.reset(token)
+    assert "tenant-y-data" in result_y
+    assert "tenant-x-data" not in result_y
 
 
 def test_lkps_tool_empty_sheet_returns_error_not_crash():
@@ -155,7 +218,7 @@ def test_lkps_tool_empty_sheet_returns_error_not_crash():
         def get_by_ref(self, ref):
             return None  # mirrors LKPSRegistry.get_by_ref: all matches empty -> None
 
-    lkps_tool.set_lkps_registry(FakeRegistry())
+    lkps_tool.set_lkps_registry("tenant-x", "doc-1", FakeRegistry())
     result = json.loads(lkps_tool.get_lkps_table.invoke({"table_reference": "Tabel 2.a. LKPS"}))
     assert "error" in result
 
@@ -167,7 +230,9 @@ def test_led_tool_returns_json(monkeypatch):
     """Returns valid JSON list on successful search."""
     from agent.tools import led_tool
 
-    def fake_search(query, persist_dir, n_results):
+    def fake_search(query, persist_dir, tenant_id, dokumen_id, n_results):
+        assert tenant_id == "tenant-x"
+        assert dokumen_id == "doc-1"
         return [
             {
                 "text": "Program studi memiliki visi yang jelas.",
@@ -181,3 +246,15 @@ def test_led_tool_returns_json(monkeypatch):
     result = json.loads(led_tool.search_led_evidence.invoke({"query": "visi misi", "n_results": 3}))
     assert isinstance(result, list)
     assert result[0]["relevance_score"] == pytest.approx(0.9)
+
+
+def test_led_tool_no_context_raises():
+    from agent.context import current_assessment_context
+    from agent.tools import led_tool
+
+    token = current_assessment_context.set(None)
+    try:
+        with pytest.raises(RuntimeError):
+            led_tool.search_led_evidence.invoke({"query": "visi misi"})
+    finally:
+        current_assessment_context.reset(token)

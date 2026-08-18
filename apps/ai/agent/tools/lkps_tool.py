@@ -1,20 +1,27 @@
-"""Tool: get_lkps_table — retrieve LKPS data by table reference string."""
+"""Tool: get_lkps_table — retrieve LKPS data by table reference string.
+
+LKPS (Laporan Kinerja Program Studi) is per-institution self-reported data,
+not shared reference material — unlike the rubric (agent.tools.rubric_tool),
+which genuinely is one shared national standard across institutions (same
+as `RubrikKriteria`/`RubrikLevel` in packages/db/schema.prisma having no
+tenantId at all). The registry below is keyed by (tenant_id, dokumen_id) so
+one institution's LKPS never answers another's query.
+"""
 
 from __future__ import annotations
 
 import json
-from typing import Optional
 
 from langchain_core.tools import tool
 
-# Registry is injected at startup via set_lkps_registry()
-_lkps_registry: Optional[object] = None
+from agent.context import AssessmentContext, require_current_context
+
+_registries: dict[AssessmentContext, object] = {}
 
 
-def set_lkps_registry(registry) -> None:
-    """Inject the loaded LKPSRegistry so the tool can access it."""
-    global _lkps_registry
-    _lkps_registry = registry
+def set_lkps_registry(tenant_id: str, dokumen_id: str, registry) -> None:
+    """Inject a loaded LKPSRegistry for one (tenant_id, dokumen_id) pair."""
+    _registries[AssessmentContext(tenant_id, dokumen_id)] = registry
 
 
 @tool
@@ -24,16 +31,21 @@ def get_lkps_table(table_reference: str, max_rows: int = 30) -> str:
     Gunakan tool ini untuk mendapatkan data kuantitatif/statistik pendukung.
     Data dikembalikan dalam format markdown table.
     Parameter max_rows membatasi jumlah baris untuk menghindari context overload.
-    """
-    if _lkps_registry is None:
-        return json.dumps({"error": "LKPS registry belum diinisialisasi"})
 
-    df = _lkps_registry.get_by_ref(table_reference)
+    Tabel yang dicari (tenant_id, dokumen_id) diambil dari konteks run saat
+    ini (agent.context), BUKAN dari argumen tool.
+    """
+    ctx = require_current_context()
+    registry = _registries.get(ctx)
+    if registry is None:
+        return json.dumps({"error": "LKPS registry belum diinisialisasi untuk dokumen ini"})
+
+    df = registry.get_by_ref(table_reference)
     if df is None:
         return json.dumps(
             {
                 "error": f"Tabel '{table_reference}' tidak ditemukan",
-                "available_refs": list(_lkps_registry.sheets.keys())[:10],
+                "available_refs": list(registry.sheets.keys())[:10],
             }
         )
 

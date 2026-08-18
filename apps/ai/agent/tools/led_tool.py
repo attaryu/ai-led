@@ -7,6 +7,7 @@ import os
 
 from langchain_core.tools import tool
 
+from agent.context import require_current_context
 from vectorstore.chroma_store import search_led
 
 
@@ -23,9 +24,20 @@ def search_led_evidence(query: str, n_results: int = 5) -> str:
     strategi program studi yang melibatkan pemangku kepentingan internal
     eksternal".
     Mengembalikan top-N chunk teks dari LED beserta metadata halaman/paragraf.
+
+    Dokumen yang dicari (tenant_id, dokumen_id) diambil dari konteks run saat
+    ini (agent.context), BUKAN dari argumen tool — supaya model tidak pernah
+    punya jalan memilih dokumen tenant lain untuk dicari.
     """
+    ctx = require_current_context()
     persist_dir = os.environ.get("CHROMA_PERSIST_DIR", "data/chroma_db")
-    results = search_led(query=query, persist_dir=persist_dir, n_results=n_results)
+    results = search_led(
+        query=query,
+        persist_dir=persist_dir,
+        tenant_id=ctx.tenant_id,
+        dokumen_id=ctx.dokumen_id,
+        n_results=n_results,
+    )
     return json.dumps(
         [
             {
