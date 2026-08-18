@@ -18,13 +18,22 @@ const API_BASE_URL: string =
 	(import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3000';
 
 let accessToken: string | null = null;
+/** Epoch ms saat accessToken kedaluwarsa — dari `expiresIn` respons `/auth/*`. */
+let accessTokenExpiresAt: number | null = null;
 
 export function getAccessToken(): string | null {
 	return accessToken;
 }
 
-export function setAccessToken(token: string | null): void {
+/** `null` bila tidak ada token atau responsnya tidak menyertakan `expiresIn`. */
+export function getAccessTokenExpiry(): number | null {
+	return accessTokenExpiresAt;
+}
+
+/** `expiresIn` dalam detik, sesuai bentuk respons `/auth/login|register|refresh`. */
+export function setAccessToken(token: string | null, expiresIn?: number): void {
 	accessToken = token;
+	accessTokenExpiresAt = token && expiresIn ? Date.now() + expiresIn * 1000 : null;
 }
 
 export class ApiError extends Error {
@@ -119,10 +128,11 @@ async function refreshAccessToken(): Promise<boolean> {
 			});
 
 			if (res.ok) {
-				const { accessToken: token } = (await res.json()) as {
+				const { accessToken: token, expiresIn } = (await res.json()) as {
 					accessToken: string;
+					expiresIn: number;
 				};
-				setAccessToken(token);
+				setAccessToken(token, expiresIn);
 				return true;
 			}
 

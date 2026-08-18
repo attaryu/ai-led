@@ -16,6 +16,8 @@ export type BackendUser = {
 
 export type AuthResult = {
 	accessToken: string;
+	/** Detik sampai accessToken kedaluwarsa. */
+	expiresIn: number;
 	user: BackendUser;
 };
 

@@ -5,14 +5,17 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import { randomUUID } from 'node:crypto';
 import { Role, User } from '@ai-led/db';
 import { requireEnv } from '../config/env';
 import { PrismaService } from '../database/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { RefreshTokenDenylistService } from './refresh-token-denylist.service';
 import type { JwtPayload } from './types/jwt-payload.type';
 
 const ACCESS_TOKEN_TTL = '15m';
+const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const REFRESH_TOKEN_TTL = '7d';
 
 export function toSafeUser(user: User) {
@@ -24,6 +27,8 @@ export function toSafeUser(user: User) {
 interface IssuedTokens {
   accessToken: string;
   refreshToken: string;
+  /** Detik sampai accessToken kedaluwarsa — lihat notes attar.md #3. */
+  expiresIn: number;
   user: ReturnType<typeof toSafeUser>;
 }
 
@@ -32,6 +37,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly refreshDenylist: RefreshTokenDenylistService,
   ) {}
 
   async register(dto: RegisterDto): Promise<IssuedTokens> {
@@ -74,13 +80,10 @@ export class AuthService {
   }
 
   async refresh(refreshToken: string): Promise<IssuedTokens> {
-    let payload: JwtPayload;
-    try {
-      payload = this.jwt.verify<JwtPayload>(refreshToken, {
-        secret: requireEnv('JWT_REFRESH_SECRET'),
-      });
-    } catch {
-      throw new UnauthorizedException('Refresh token tidak valid');
+    const payload = this.verifyRefreshToken(refreshToken);
+
+    if (await this.refreshDenylist.isRevoked(payload.jti)) {
+      throw new UnauthorizedException('Refresh token sudah tidak berlaku');
     }
 
     const user = await this.prisma.user.findUnique({
@@ -90,7 +93,46 @@ export class AuthService {
       throw new UnauthorizedException('User tidak ditemukan');
     }
 
+    // Rotasi: token lama dicabut begitu dipakai, supaya salinan yang sempat
+    // bocor (ekstensi browser, komputer bersama, log proxy) tidak bisa dipakai
+    // lagi walau umur 7 harinya belum habis — notes attar.md #1.
+    await this.revokeToken(payload);
+
     return this.issueTokens(user);
+  }
+
+  /** Mencabut refresh token aktif — dipanggil dari `AuthController.logout`. */
+  async revokeRefreshToken(refreshToken: string): Promise<void> {
+    try {
+      const payload = this.verifyRefreshToken(refreshToken);
+      await this.revokeToken(payload);
+    } catch {
+      // Token sudah tidak valid/kedaluwarsa: tidak ada yang perlu dicabut.
+    }
+  }
+
+  /** Bentuk yang sama seperti `/auth/login` (§4), bukan payload token mentah. */
+  async me(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException('User tidak ditemukan');
+    }
+    return toSafeUser(user);
+  }
+
+  private verifyRefreshToken(refreshToken: string): JwtPayload {
+    try {
+      return this.jwt.verify<JwtPayload>(refreshToken, {
+        secret: requireEnv('JWT_REFRESH_SECRET'),
+      });
+    } catch {
+      throw new UnauthorizedException('Refresh token tidak valid');
+    }
+  }
+
+  private async revokeToken(payload: JwtPayload): Promise<void> {
+    const ttlRemaining = (payload.exp ?? 0) - Math.floor(Date.now() / 1000);
+    await this.refreshDenylist.revoke(payload.jti, ttlRemaining);
   }
 
   private issueTokens(user: User): IssuedTokens {
@@ -99,17 +141,23 @@ export class AuthService {
       tenantId: user.tenantId,
       role: user.role,
       programStudiId: user.programStudiId,
+      jti: randomUUID(),
     };
 
     const accessToken = this.jwt.sign(payload, {
       secret: requireEnv('JWT_ACCESS_SECRET'),
       expiresIn: ACCESS_TOKEN_TTL,
     });
-    const refreshToken = this.jwt.sign(payload, {
-      secret: requireEnv('JWT_REFRESH_SECRET'),
-      expiresIn: REFRESH_TOKEN_TTL,
-    });
+    const refreshToken = this.jwt.sign(
+      { ...payload, jti: randomUUID() },
+      { secret: requireEnv('JWT_REFRESH_SECRET'), expiresIn: REFRESH_TOKEN_TTL },
+    );
 
-    return { accessToken, refreshToken, user: toSafeUser(user) };
+    return {
+      accessToken,
+      refreshToken,
+      expiresIn: ACCESS_TOKEN_TTL_SECONDS,
+      user: toSafeUser(user),
+    };
   }
 }

@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 
-import { getAccessToken } from '~/core/lib/api-client';
-import { accessTokenExpiry } from '~/core/lib/jwt';
+import { getAccessTokenExpiry } from '~/core/lib/api-client';
 import { SESSION_QUERY_KEY } from '~/core/lib/query-client';
 import { sessionRepository } from '../../data/repositories/session.repository';
 import { type SessionEntity } from '../../domain/entities/session.entity';
@@ -21,16 +20,15 @@ const REFRESH_MARGIN_MS = 60_000;
 const MIN_REFRESH_DELAY_MS = 5_000;
 
 /**
- * Kapan sesi perlu di-refetch, dihitung dari `exp` access token yang sedang
- * dipegang. `false` berarti tidak ada jadwal.
+ * Kapan sesi perlu di-refetch, dihitung dari `expiresIn` yang dikembalikan
+ * `/auth/login|register|refresh`. `false` berarti tidak ada jadwal.
  *
- * `null` dari `accessTokenExpiry` — tidak ada token, atau bentuknya tak
- * terbaca — bukan keadaan darurat: jalur reaktif di `api-client` (401 →
- * refresh → ulangi) tetap menambal semuanya, hanya dengan satu request gagal
- * lebih dulu.
+ * `null` dari `getAccessTokenExpiry` — tidak ada token — bukan keadaan
+ * darurat: jalur reaktif di `api-client` (401 → refresh → ulangi) tetap
+ * menambal semuanya, hanya dengan satu request gagal lebih dulu.
  */
 function msUntilRefresh(): number | false {
-	const expiresAt = accessTokenExpiry(getAccessToken());
+	const expiresAt = getAccessTokenExpiry();
 	if (expiresAt === null) return false;
 	return Math.max(expiresAt - Date.now() - REFRESH_MARGIN_MS, MIN_REFRESH_DELAY_MS);
 }

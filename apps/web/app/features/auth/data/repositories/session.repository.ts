@@ -20,7 +20,7 @@ const ROLE_FROM_BACKEND: Record<BackendRole, UserRole> = {
 };
 
 function toSession(result: AuthResult): SessionEntity {
-	setAccessToken(result.accessToken);
+	setAccessToken(result.accessToken, result.expiresIn);
 	return sessionSchema.parse({
 		userId: result.user.id,
 		tenantId: result.user.tenantId,
@@ -80,9 +80,9 @@ export const sessionRepository = {
 	/**
 	 * `finally` supaya token tetap dibuang meski backend tidak bisa dihubungi:
 	 * pengguna menekan "Keluar" dan harus benar-benar keluar, apa pun jawaban
-	 * server. Cookie-nya sendiri mungkin tertinggal — utang yang dicatat di
-	 * docs/.backend-blockers.md, karena logout memang belum mencabut token di
-	 * sisi server.
+	 * server. Backend sendiri sudah mencabut refresh token cookie-nya di sisi
+	 * server (denylist Redis) begitu `/auth/logout` diterima — lihat
+	 * `AuthController.logout`.
 	 */
 	async logout(): Promise<void> {
 		try {

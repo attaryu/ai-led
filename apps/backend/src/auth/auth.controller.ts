@@ -29,10 +29,10 @@ export class AuthController {
     @Body() dto: RegisterDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { accessToken, refreshToken, user } =
+    const { accessToken, refreshToken, expiresIn, user } =
       await this.authService.register(dto);
     this.setRefreshCookie(res, refreshToken);
-    return { accessToken, user };
+    return { accessToken, expiresIn, user };
   }
 
   @Post('login')
@@ -41,10 +41,10 @@ export class AuthController {
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { accessToken, refreshToken, user } =
+    const { accessToken, refreshToken, expiresIn, user } =
       await this.authService.login(dto);
     this.setRefreshCookie(res, refreshToken);
-    return { accessToken, user };
+    return { accessToken, expiresIn, user };
   }
 
   @Post('refresh')
@@ -57,23 +57,30 @@ export class AuthController {
     if (typeof token !== 'string') {
       throw new UnauthorizedException('Refresh token tidak ditemukan');
     }
-    const { accessToken, refreshToken, user } =
+    const { accessToken, refreshToken, expiresIn, user } =
       await this.authService.refresh(token);
     this.setRefreshCookie(res, refreshToken);
-    return { accessToken, user };
+    return { accessToken, expiresIn, user };
   }
 
   @Post('logout')
   @HttpCode(200)
-  logout(@Res({ passthrough: true }) res: Response) {
+  async logout(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const token: unknown = req.cookies?.[REFRESH_COOKIE];
+    if (typeof token === 'string') {
+      await this.authService.revokeRefreshToken(token);
+    }
     res.clearCookie(REFRESH_COOKIE, { path: REFRESH_COOKIE_PATH });
     return { success: true };
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('me')
-  me(@CurrentUser() user: JwtPayload): JwtPayload {
-    return user;
+  me(@CurrentUser() user: JwtPayload) {
+    return this.authService.me(user.sub);
   }
 
   private setRefreshCookie(res: Response, token: string): void {
