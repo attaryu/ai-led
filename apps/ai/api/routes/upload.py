@@ -1,7 +1,7 @@
 """File upload API routes.
 
 POST /upload/matrix    — Upload Matriks Penilaian PDF; parses + caches to RUBRIC_CACHE_PATH.
-POST /upload/led       — Upload LED PDF; triggers background chunking + ChromaDB indexing.
+POST /upload/led       — Upload LED as .pdf or .docx; triggers background chunking + ChromaDB indexing.
 POST /upload/lkps      — Upload LKPS Excel; loads LKPSRegistry and injects into lkps_tool.
 POST /upload/laporan   — Upload Laporan_AK.xlsx; stores it for use by /assessment/start.
 GET  /upload/status    — Returns which files have been uploaded and LED indexing state.
@@ -33,9 +33,15 @@ RUBRIC_CACHE_PATH: str = os.environ.get(
 )
 
 MATRIX_FILENAME = "matrix.pdf"
-LED_FILENAME = "led.pdf"
+LED_EXTENSIONS = (".pdf", ".docx")
 LKPS_FILENAME = "lkps.xlsx"
 LAPORAN_FILENAME = "laporan_ak.xlsx"
+
+
+def _led_filename(original_filename: str) -> str:
+    """Preserve the uploaded LED's extension so indexing can branch on it."""
+    ext = os.path.splitext(original_filename.lower())[1]
+    return f"led{ext}"
 
 # ── In-process state (prototype-grade; resets on restart) ────────────────────
 
@@ -122,15 +128,21 @@ def _save_upload(file: UploadFile, filename: str) -> tuple[str, int]:
 # ── Background: LED indexing ─────────────────────────────────────────────────
 
 
-def _index_led_background(pdf_path: str) -> None:
-    """Chunk LED PDF and index into ChromaDB. Runs in a thread via BackgroundTasks."""
+def _index_led_background(led_path: str) -> None:
+    """Chunk the LED file (.pdf or .docx) and index into ChromaDB. Runs in a
+    thread via BackgroundTasks."""
     global _led_index_status
     _led_index_status = {"state": "indexing", "chunk_count": 0, "error": None}
     try:
-        from ingestion.led_chunker import chunk_led_pdf
         from vectorstore.chroma_store import index_led_chunks
 
-        chunks = chunk_led_pdf(pdf_path)
+        if led_path.lower().endswith(".docx"):
+            from ingestion.led_docx_chunker import chunk_led_docx
+            chunks = chunk_led_docx(led_path)
+        else:
+            from ingestion.led_chunker import chunk_led_pdf
+            chunks = chunk_led_pdf(led_path)
+
         index_led_chunks(chunks, CHROMA_PERSIST_DIR)
         _led_index_status = {
             "state": "ready",
@@ -226,20 +238,24 @@ async def upload_led(
     file: UploadFile,
     background_tasks: BackgroundTasks,
 ) -> LedUploadResponse:
-    """Upload the LED PDF. Indexing into ChromaDB starts immediately in the background."""
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="File must be a PDF (.pdf)")
+    """Upload the LED as .pdf or .docx. Indexing into ChromaDB starts immediately
+    in the background."""
+    if not file.filename or not file.filename.lower().endswith(LED_EXTENSIONS):
+        raise HTTPException(
+            status_code=400, detail="File must be a PDF (.pdf) or Word document (.docx)"
+        )
 
+    led_filename = _led_filename(file.filename)
     path, size = await asyncio.get_event_loop().run_in_executor(
-        None, _save_upload, file, LED_FILENAME
+        None, _save_upload, file, led_filename
     )
     _uploaded["led"] = True
 
     background_tasks.add_task(_index_led_background, path)
 
     return LedUploadResponse(
-        message="LED PDF uploaded. Indexing started in the background — poll /upload/status for progress.",
-        filename=LED_FILENAME,
+        message="LED uploaded. Indexing started in the background — poll /upload/status for progress.",
+        filename=led_filename,
         size_bytes=size,
     )
 

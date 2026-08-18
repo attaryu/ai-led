@@ -249,3 +249,45 @@ def test_log_reasoning_step_swallows_exception(fake_sb):
     fake_sb.table.side_effect = Exception("network")
     with patch("db.supabase_client.get_supabase", return_value=fake_sb):
         log_reasoning_step("s", 1, 0, "step")  # must not raise
+
+
+# ── get_completed_indicator_numbers ────────────────────────────────────────────
+
+
+def test_get_completed_indicator_numbers_returns_set(fake_sb):
+    from db.supabase_client import get_completed_indicator_numbers
+
+    fake_sb.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
+        {"indicator_no": 1}, {"indicator_no": 3}, {"indicator_no": 7},
+    ]
+
+    with patch("db.supabase_client.get_supabase", return_value=fake_sb):
+        result = get_completed_indicator_numbers("sess-1")
+
+    assert result == {1, 3, 7}
+    fake_sb.table.assert_called_with("indicator_results")
+    fake_sb.table().select().eq.assert_called_with("session_id", "sess-1")
+
+
+def test_get_completed_indicator_numbers_empty_when_none_done(fake_sb):
+    from db.supabase_client import get_completed_indicator_numbers
+
+    fake_sb.table.return_value.select.return_value.eq.return_value.execute.return_value.data = []
+
+    with patch("db.supabase_client.get_supabase", return_value=fake_sb):
+        result = get_completed_indicator_numbers("sess-1")
+
+    assert result == set()
+
+
+def test_get_completed_indicator_numbers_returns_empty_set_on_exception(fake_sb):
+    """A DB error must not block resume — treat it as 'nothing confirmed done
+    yet', which is the conservative (re-run rather than wrongly skip) choice."""
+    from db.supabase_client import get_completed_indicator_numbers
+
+    fake_sb.table.side_effect = Exception("network")
+
+    with patch("db.supabase_client.get_supabase", return_value=fake_sb):
+        result = get_completed_indicator_numbers("sess-1")
+
+    assert result == set()

@@ -18,7 +18,18 @@ def _get_rubrics() -> list:
         "RUBRIC_CACHE_PATH", "data/rubric_cache/matrix.json"
     )
     if "rubrics" not in _rubric_cache:
-        _rubric_cache["rubrics"] = load_cached_rubrics(cache_path)
+        try:
+            _rubric_cache["rubrics"] = load_cached_rubrics(cache_path)
+        except FileNotFoundError:
+            # Matrix PDF hasn't been uploaded/cached yet. get_indicator_rubric
+            # is the mandatory FIRST tool call per the system prompt, so
+            # letting this propagate would crash every indicator's graph run
+            # instead of surfacing a normal "not found" tool error.
+            _rubric_cache["rubrics"] = []
+            _rubric_cache["load_error"] = f"Cache rubrik belum tersedia di {cache_path}"
+        except json.JSONDecodeError as exc:
+            _rubric_cache["rubrics"] = []
+            _rubric_cache["load_error"] = f"Cache rubrik di {cache_path} rusak/tidak valid: {exc}"
     return _rubric_cache["rubrics"]
 
 
@@ -45,4 +56,6 @@ def get_indicator_rubric(indicator_no: int) -> str:
                 },
                 ensure_ascii=False,
             )
+    if "load_error" in _rubric_cache:
+        return json.dumps({"error": _rubric_cache["load_error"]})
     return json.dumps({"error": f"Indikator {indicator_no} tidak ditemukan"})

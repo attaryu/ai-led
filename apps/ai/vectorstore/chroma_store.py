@@ -58,7 +58,10 @@ def index_led_chunks(chunks: list[LEDChunk], persist_dir: str) -> None:
     """Index LED chunks into ChromaDB (idempotent — deletes existing collection first).
 
     Metadata stored per chunk:
-        page_start, page_end, section_heading (empty string when None), char_start
+        page_start, page_end, para_start, para_end, section_heading (empty
+        string when None), char_start. page_start/page_end are -1 for
+        docx-sourced chunks; para_start/para_end are -1 for pdf-sourced ones
+        (see ingestion.led_chunker.LEDChunk).
     """
     import logging
     import time
@@ -94,6 +97,8 @@ def index_led_chunks(chunks: list[LEDChunk], persist_dir: str) -> None:
                 {
                     "page_start": c.page_start,
                     "page_end": c.page_end,
+                    "para_start": c.para_start,
+                    "para_end": c.para_end,
                     "section_heading": c.section_heading or "",
                     "char_start": c.char_start,
                 }
@@ -115,7 +120,7 @@ def search_led(
     Returns a list of dicts with keys:
         text       – the chunk text
         chunk_id   – UUID of the chunk
-        metadata   – dict {page_start, page_end, section_heading, char_start}
+        metadata   – dict {page_start, page_end, para_start, para_end, section_heading, char_start}
         distance   – cosine distance (lower = more similar)
     """
     client = get_chroma_client(persist_dir)

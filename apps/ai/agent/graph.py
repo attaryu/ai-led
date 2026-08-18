@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Literal
+from typing import Literal, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
@@ -110,7 +110,10 @@ tugas penilaian SECARA MANDIRI sampai keluar skor final.
 
 ALUR YANG WAJIB DIIKUTI per indikator:
 1. Panggil get_indicator_rubric(indicator_no) untuk dapat kriteria scoring
-2. Panggil search_led_evidence(query) untuk cari bukti kualitatif dari LED
+2. Panggil search_led_evidence(query) untuk cari bukti kualitatif dari LED —
+   query WAJIB kaya konteks: masukkan nomor indikator + kata kunci konkret
+   dari kriteria rubrik (bukan cuma topik umum seperti "visi misi"), supaya
+   hasil pencarian semantik lebih relevan
 3. (Opsional) Panggil get_lkps_table(table_id) jika rubrik merujuk tabel LKPS
 4. (Opsional) Panggil compute_formula_score(...) jika rubrik berbasis formula
 5. Output skor final dengan format yang dijelaskan di bawah
@@ -139,6 +142,175 @@ JUSTIFIKASI: Program studi memiliki dokumen VMTS yang lengkap dan disusun secara
 CONFIDENCE: 0.85
 REKOMENDASI: Tingkatkan persentase DTPS yang sesuai bidang keilmuan hingga di atas 80% melalui rekrutmen dosen baru atau penyesuaian penugasan mengajar."""
 
+# ---------------------------------------------------------------------------
+# Checklist generation — shared by graph.py and reasoning_graph.py
+# ---------------------------------------------------------------------------
+
+CHECKLIST_PROMPT_TEMPLATE = """Anda asesor akreditasi program studi yang berpengalaman.
+
+Berdasarkan rubrik penilaian berikut, buat daftar 4-8 poin kriteria/fakta
+KONKRET yang wajib diverifikasi untuk menentukan skor indikator ini secara
+akurat.
+
+RUBRIK:
+{rubric_text}
+
+TUGAS: Buat daftar checklist, SATU POIN PER BARIS, diawali "- ". Tiap poin
+harus konkret dan bisa dicek lewat pencarian bukti di LED/LKPS. JANGAN beri
+penjelasan lain, HANYA daftar checklist."""
+
+_CHECKLIST_ITEM_RE = re.compile(r"^[-*•]\s+(.+)$|^\d+[\.\)]\s+(.+)$")
+
+
+def parse_checklist(text: str) -> list[str]:
+    """Extract checklist items from a freeform LLM response (bullet or
+    numbered list, one item per line). Caps at 8 items, matching the prompt."""
+    items: list[str] = []
+    for line in (text or "").split("\n"):
+        line = line.strip()
+        match = _CHECKLIST_ITEM_RE.match(line)
+        if match:
+            item = (match.group(1) or match.group(2) or "").strip()
+            if len(item) > 5:
+                items.append(item)
+    return items[:8]
+
+
+def find_tool_result(messages: list, tool_name: str) -> Optional[str]:
+    """Return the content of the most recent ToolMessage for `tool_name`,
+    falling back to the single most recent ToolMessage of any name if none
+    matches exactly (defensive — the model isn't hard-forced to call tools
+    in a fixed order, even though the initial prompt asks it to)."""
+    from langchain_core.messages import ToolMessage
+
+    last_any: Optional[str] = None
+    for msg in reversed(messages):
+        if isinstance(msg, ToolMessage):
+            if last_any is None:
+                last_any = msg.content
+            if getattr(msg, "name", None) == tool_name:
+                return msg.content
+    return last_any
+
+
+def collect_evidence_text(
+    messages: list,
+    tool_names: tuple[str, ...] = ("search_led_evidence", "get_lkps_table"),
+) -> str:
+    """Concatenate the content of every ToolMessage from the given tools —
+    i.e. the actual evidence retrieved this run, as opposed to the rubric
+    (criteria) or formula (computation) — for the judge to check the final
+    justification against."""
+    from langchain_core.messages import ToolMessage
+
+    parts = []
+    for msg in messages:
+        if isinstance(msg, ToolMessage) and getattr(msg, "name", None) in tool_names:
+            parts.append(f"[{msg.name}] {msg.content}")
+    return "\n\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Independent judge — shared by graph.py and reasoning_graph.py
+# ---------------------------------------------------------------------------
+
+JUDGE_PROMPT_TEMPLATE = """Anda adalah auditor independen yang mengevaluasi apakah justifikasi
+skor akreditasi di bawah ini benar-benar didukung oleh bukti yang tersedia —
+TANPA menilai ulang apakah skornya sendiri sudah tepat secara substansi.
+
+JUSTIFIKASI YANG DINILAI:
+{justification}
+
+BUKTI YANG TERSEDIA (hasil pencarian LED/LKPS selama proses penilaian):
+{evidence_text}
+
+TUGAS: Nilai apakah setiap klaim konkret dalam justifikasi di atas (terutama
+angka, nama dokumen, dan pernyataan faktual) didukung oleh bukti yang
+tersedia. Jawab HANYA dengan JSON satu baris, tanpa markdown maupun
+penjelasan lain:
+
+{{"grounded": <true/false>, "hallucinated_claims": ["<klaim yang tidak didukung bukti>", ...], "missing_facts": ["<hal relevan yang tersedia di bukti tapi tidak disebut>", ...], "notes": "<1 kalimat ringkasan>"}}
+
+Kalau semua klaim didukung bukti dan tidak ada yang mengada-ada, grounded
+harus true dan hallucinated_claims kosong."""
+
+_JUDGE_CODE_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+_JUDGE_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+def parse_judge_verdict(text: str) -> Optional[dict]:
+    """Best-effort JSON extraction for the judge's verdict — tolerant of
+    <think> blocks (reasoning-model judges), code fences, and surrounding
+    prose, since the judge is a separate, independently-configured model
+    that isn't guaranteed to follow the "JSON only" instruction perfectly."""
+    import json
+
+    cleaned = _JUDGE_THINK_RE.sub("", text or "").strip()
+
+    fenced = _JUDGE_CODE_FENCE_RE.findall(cleaned)
+    for candidate in reversed(fenced):
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+
+    candidates: list[str] = []
+    depth = 0
+    start = -1
+    for i, ch in enumerate(cleaned):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start >= 0:
+                candidates.append(cleaned[start: i + 1])
+                start = -1
+    for candidate in reversed(candidates):
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+
+    return None
+
+
+def build_judge_llm():
+    """Return a plain chat model for the independent judge, configured via
+    RAGAS_* env vars (same resolution as the offline RAGAS eval judge, so
+    there's one place to configure "the model that grades other models" —
+    see eval.ragas_eval.get_judge_llm_config). Deliberately NOT the same
+    instance/config as the assessment model, so it isn't grading its own
+    justification."""
+    from eval.ragas_eval import get_judge_llm_config
+
+    cfg = get_judge_llm_config()
+
+    if cfg["provider"] == "openrouter":
+        from langchain_openai import ChatOpenAI
+
+        return ChatOpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.environ["OPENROUTER_API_KEY"],
+            model=cfg["model"],
+            temperature=0.0,
+        )
+
+    from langchain_ollama import ChatOllama
+
+    kwargs: dict = {
+        "base_url": os.environ.get(
+            "RAGAS_OLLAMA_BASE_URL", os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        ),
+        "model": cfg["model"],
+        "temperature": 0.0,
+    }
+    api_key = os.environ.get("RAGAS_OLLAMA_API_KEY", os.environ.get("OLLAMA_API_KEY"))
+    if api_key and not api_key.startswith("<"):
+        kwargs["client_kwargs"] = {"headers": {"Authorization": f"Bearer {api_key}"}}
+    return ChatOllama(**kwargs)
+
 
 def build_graph(ollama_client: OllamaClient) -> StateGraph:
     """Compile and return the assessment LangGraph.
@@ -149,6 +321,57 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
     llm = _build_llm(ollama_client)
 
     tool_node = ToolNode(TOOLS)
+
+    def tools_node(state: AssessmentState) -> AssessmentState:
+        """Run the real ToolNode, then bump the round counter should_continue
+        checks against MAX_TOOL_CALLS."""
+        result = tool_node.invoke(state)
+        result["_tool_call_count"] = state.get("_tool_call_count", 0) + 1
+        return result
+
+    # ── Node: checklist (runs once, right after the first tool round) ────────
+
+    def checklist_node(state: AssessmentState) -> AssessmentState:
+        """Build an explicit checklist of rubric sub-criteria to check, once
+        per indicator, from whatever the rubric tool returned. Injected as
+        guidance, not hard-enforced — a model that genuinely finds no
+        evidence for an item can still score conservatively per the system
+        prompt's "bukti tidak ditemukan" escape hatch. Never blocks the flow:
+        a failed checklist call just skips straight to the agent."""
+        state["_checklist_built"] = True
+
+        rubric_text = find_tool_result(state["messages"], "get_indicator_rubric")
+        if not rubric_text:
+            state["checklist"] = None
+            return state
+
+        try:
+            prompt = CHECKLIST_PROMPT_TEMPLATE.format(rubric_text=rubric_text[:2000])
+            response = llm.invoke([HumanMessage(content=prompt)])
+            checklist = parse_checklist(response.content or "")
+        except Exception:
+            checklist = []
+
+        state["checklist"] = checklist or None
+
+        if checklist:
+            bullet_list = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(checklist))
+            state["messages"].append(
+                HumanMessage(
+                    content=(
+                        "Checklist kriteria yang WAJIB dicek untuk indikator ini "
+                        "(hasil analisis rubrik):\n"
+                        f"{bullet_list}\n\n"
+                        "Pastikan bukti untuk tiap poin sudah dicari sebelum memberi skor "
+                        "final. Jika bukti untuk suatu poin tidak ditemukan, itu sah — "
+                        "sebutkan di justifikasi."
+                    )
+                )
+            )
+
+        steps = state.get("reasoning_steps", [])
+        state["reasoning_steps"] = list(steps) + [{"checklist": checklist}]
+        return state
 
     # ── Node: agent ──────────────────────────────────────────────────────────
 
@@ -177,6 +400,12 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
     # emitting SKOR/JUSTIFIKASI/CONFIDENCE. We re-prompt up to FORCE_LIMIT
     # times before giving up.
     FORCE_LIMIT = 2
+    # Separate guard against a model that keeps VALIDLY calling tools forever
+    # (never stuck, never finalizing either) — without this, should_continue
+    # would route to "tools" unconditionally and the loop is only bounded by
+    # LangGraph's own recursion_limit, which surfaces as an unhandled
+    # GraphRecursionError rather than a graceful (if conservative) result.
+    MAX_TOOL_CALLS = 12
 
     def _looks_like_finalized(content: str) -> bool:
         """Detect if message contains a parseable SKOR line."""
@@ -190,17 +419,24 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
 
     def should_continue(state: AssessmentState) -> Literal["tools", "force", "parse_output"]:
         last = state["messages"][-1]
+        # Both trigger reasons below (too many tool rounds, or stuck without a
+        # final answer) share the SAME force-retry budget, so a model that
+        # exhausts MAX_TOOL_CALLS and then keeps re-requesting tools after each
+        # force nudge can't loop past FORCE_LIMIT either — it always converges
+        # on parse_output.
+        forces = state.get("_force_count", 0)
+
         if hasattr(last, "tool_calls") and last.tool_calls:
+            tool_calls_so_far = state.get("_tool_call_count", 0)
+            if tool_calls_so_far >= MAX_TOOL_CALLS:
+                return "force" if forces < FORCE_LIMIT else "parse_output"
             return "tools"
 
         content = getattr(last, "content", "") or ""
         if _looks_like_finalized(content):
             return "parse_output"
 
-        forces = state.get("_force_count", 0)
-        if forces < FORCE_LIMIT:
-            return "force"
-        return "parse_output"
+        return "force" if forces < FORCE_LIMIT else "parse_output"
 
     def force_finalize_node(state: AssessmentState) -> AssessmentState:
         """Append a system reminder forcing the model to emit final format.
@@ -301,13 +537,54 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
 
         return state
 
+    # ── Node: judge (independent post-hoc grounding check) ───────────────────
+
+    def judge_node(state: AssessmentState) -> AssessmentState:
+        """Check whether the final justification is grounded in evidence
+        actually retrieved this run, using a SEPARATE model (build_judge_llm)
+        so the assessment model isn't grading its own homework. Soft signal:
+        lowers confidence when ungrounded, never blocks or reruns scoring.
+        Skipped entirely if there's no score to judge."""
+        if state.get("final_score") is None:
+            return state
+
+        evidence_text = collect_evidence_text(state["messages"])
+        justification = state.get("justification") or ""
+
+        try:
+            judge_llm = build_judge_llm()
+            prompt = JUDGE_PROMPT_TEMPLATE.format(
+                justification=justification[:1500],
+                evidence_text=evidence_text[:3000] or "(tidak ada bukti tercatat)",
+            )
+            response = judge_llm.invoke([HumanMessage(content=prompt)])
+            verdict = parse_judge_verdict(response.content or "")
+        except Exception as exc:
+            verdict = {"error": str(exc)}
+
+        state["judge_verdict"] = verdict
+
+        if verdict and verdict.get("grounded") is False:
+            current_conf = state.get("confidence")
+            if current_conf is not None:
+                state["confidence"] = min(current_conf, 0.3)
+
+        steps = state.get("reasoning_steps", [])
+        state["reasoning_steps"] = list(steps) + [{"judge_verdict": verdict}]
+        return state
+
     # ── Build graph ───────────────────────────────────────────────────────────
+
+    def route_after_tools(state: AssessmentState) -> Literal["checklist", "agent"]:
+        return "agent" if state.get("_checklist_built") else "checklist"
 
     graph = StateGraph(AssessmentState)
     graph.add_node("agent", agent_node)
-    graph.add_node("tools", tool_node)
+    graph.add_node("tools", tools_node)
+    graph.add_node("checklist", checklist_node)
     graph.add_node("force", force_finalize_node)
     graph.add_node("parse_output", parse_output_node)
+    graph.add_node("judge", judge_node)
 
     graph.set_entry_point("agent")
     graph.add_conditional_edges(
@@ -315,8 +592,12 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
         should_continue,
         {"tools": "tools", "force": "force", "parse_output": "parse_output"},
     )
-    graph.add_edge("tools", "agent")
+    graph.add_conditional_edges(
+        "tools", route_after_tools, {"checklist": "checklist", "agent": "agent"}
+    )
+    graph.add_edge("checklist", "agent")
     graph.add_edge("force", "agent")
-    graph.add_edge("parse_output", END)
+    graph.add_edge("parse_output", "judge")
+    graph.add_edge("judge", END)
 
     return graph.compile()
