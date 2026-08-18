@@ -18,11 +18,23 @@ langchain-chroma==0.1.4
 langchain-huggingface==0.1.2
 langsmith==0.1.142
 
-# Storage
-sqlalchemy==2.0.35
+# Storage — PostgreSQL (psycopg3, raw SQL, drop-in style dgn db.py lama)
+psycopg[binary]==3.2.3
+psycopg-pool==3.2.3
 
 # Export docx
 python-docx==1.1.2
+
+# Queue -- dipakai api (enqueue) & worker (consume, lihat Dockerfile.worker)
+rq==2.1.0
+
+# Ekstraksi Evidence upload (lib/extraction/) -- excel_extractor.py & html parsing
+openpyxl==3.1.5
+beautifulsoup4==4.12.3
+pandas==2.2.3
+
+# Upload multipart -- dibutuhkan FastAPI utk UploadFile/Form (routes/documents.py)
+python-multipart==0.0.12
 
 # NOTE: paket eval (ragas, rouge-score, nltk, datasets, litellm) sengaja
 # TIDAK di requirements.txt karena berat (~1 GB extra) dan hanya dipakai

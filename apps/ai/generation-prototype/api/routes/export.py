@@ -1,48 +1,64 @@
-"""Endpoint export semua section approved jadi 1 .docx."""
+"""Endpoint export semua section approved jadi 1 .docx, discope ke 1
+dokumen_led eksplisit dari path URL (lihat routes/sections.py).
+Query langsung ke bab_dokumen, urutan ORDER BY urutan_bab -- kolom itu sudah
+merepresentasikan urutan outline yang benar (diisi persis dari urutan
+lib.outline.get_sections() saat seeding), jadi tidak perlu lagi
+join manual ke outline.py utk urutan tampil."""
 import io
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from docx import Document
 
+from lib.auth import require_led_access
 from lib.db import conn
-from lib.outline import get_sections
+from lib.context import get_dokumen_led
 
-router = APIRouter(prefix="/export", tags=["export"])
+router = APIRouter(prefix="/led-documents/{dokumen_id}/export", tags=["export"])
+
+
+def _require_dokumen(dokumen_id: str) -> dict:
+    doc = get_dokumen_led(dokumen_id)
+    if not doc:
+        raise HTTPException(404, "Dokumen LED tidak ditemukan")
+    return doc
 
 
 @router.get("")
-def export_docx(model: str = Query(..., description="Model whose drafts to export"),
-                only_approved: bool = Query(True)):
-    """Assemble drafts sesuai urutan outline -> .docx download."""
-    outline = get_sections()
-    section_ids = [s["id"] for s in outline]
-    titles = {s["id"]: s["title"] for s in outline}
-
+def export_docx(dokumen_id: str,
+                model: str = Query(..., description="Model whose drafts to export"),
+                only_approved: bool = Query(True),
+                _user=Depends(require_led_access)):
+    """Assemble drafts sesuai urutan_bab -> .docx download."""
+    doc_led = _require_dokumen(dokumen_id)
     with conn() as con:
         if only_approved:
             rows = con.execute(
-                "SELECT section_id, draft_text FROM drafts "
-                "WHERE model=? AND status='approved'", (model,)).fetchall()
+                """SELECT urutan_bab, judul_bab, konten_kerja FROM bab_dokumen
+                   WHERE dokumen_id=%s AND model=%s AND status='approved'
+                   ORDER BY urutan_bab""",
+                (dokumen_id, model)).fetchall()
         else:
             rows = con.execute(
-                "SELECT section_id, draft_text FROM drafts WHERE model=?",
-                (model,)).fetchall()
-    draft_map = {r["section_id"]: r["draft_text"] for r in rows}
+                """SELECT urutan_bab, judul_bab, konten_kerja FROM bab_dokumen
+                   WHERE dokumen_id=%s AND model=%s
+                   ORDER BY urutan_bab""",
+                (dokumen_id, model)).fetchall()
 
-    if not draft_map:
+    if not rows:
         raise HTTPException(404, "Belum ada draft untuk diekspor")
 
     doc = Document()
-    doc.add_heading("Laporan Evaluasi Diri Program Studi", level=0)
-    doc.add_paragraph(f"Generated via: {model}")
+    doc.add_heading(doc_led["judul"], level=0)
+    doc.add_paragraph(f"Tahun akademik: {doc_led['tahun_akademik']} · Generated via: {model}")
 
-    for sid in section_ids:
-        if sid not in draft_map:
+    for r in rows:
+        draft_text = (r["konten_kerja"] or {}).get("draft_text", "")
+        if not draft_text:
             continue
-        doc.add_heading(titles[sid], level=1)
-        for para in draft_map[sid].split("\n\n"):
+        doc.add_heading(r["judul_bab"], level=1)
+        for para in draft_text.split("\n\n"):
             para = para.strip()
             if para:
                 doc.add_paragraph(para)
@@ -51,7 +67,8 @@ def export_docx(model: str = Query(..., description="Model whose drafts to expor
     doc.save(buf)
     buf.seek(0)
 
-    fname = f"LED_{model.replace(':','_').replace('/','_')}.docx"
+    safe_judul = "".join(c if c.isalnum() else "_" for c in doc_led["judul"])[:60]
+    fname = f"LED_{safe_judul}_{model.replace(':','_').replace('/','_')}.docx"
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",

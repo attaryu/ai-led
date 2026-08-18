@@ -1,45 +1,54 @@
 import { useEffect } from "react";
+import { Routes, Route, useLocation, matchPath } from "react-router-dom";
 import { useStore } from "./lib/store.js";
 import { api } from "./lib/api.js";
-import TopBar from "./components/TopBar.jsx";
-import Outline from "./components/Outline.jsx";
-import DocumentPane from "./components/DocumentPane.jsx";
-import ChatPane from "./components/ChatPane.jsx";
+import Sidebar from "./components/Sidebar.jsx";
 import Toaster from "./components/Toaster.jsx";
+import LedListPage from "./pages/LedListPage.jsx";
+import LedEditorPage from "./pages/LedEditorPage.jsx";
+import DocumentsPage from "./pages/DocumentsPage.jsx";
+import DocumentDetailPage from "./pages/DocumentDetailPage.jsx";
+
+function AccessDenied() {
+  return (
+    <div className="flex-1 flex items-center justify-center bg-slate-50">
+      <p className="text-sm text-slate-500">Anda tidak memiliki akses ke halaman ini.</p>
+    </div>
+  );
+}
 
 export default function App() {
-  const model       = useStore((s) => s.model);
-  const setSections = useStore((s) => s.setSections);
-  const pushToast   = useStore((s) => s.pushToast);
+  const me = useStore((s) => s.me);
+  const meError = useStore((s) => s.meError);
+  const setMe = useStore((s) => s.setMe);
+  const setMeError = useStore((s) => s.setMeError);
 
   useEffect(() => {
-    api.listSections(model)
-      .then(setSections)
-      .catch((e) => {
-        console.error("listSections", e);
-        pushToast({
-          kind: "error",
-          title: "Gagal memuat outline",
-          message: e.message,
-        });
-      });
-  }, [model, setSections, pushToast]);
+    api.getMe().then(setMe).catch(() => setMeError());
+  }, [setMe, setMeError]);
+
+  // Fail-closed: sebelum /me termuat ATAU kalau gagal dimuat, anggap TIDAK
+  // punya akses LED (jangan tampilkan daftar LED dulu sebelum role dikonfirmasi).
+  const canSeeLed = !!me && me.role !== "ADMIN";
+
+  const location = useLocation();
+  // Sidebar navigasi disembunyikan saat masuk editor 1 dokumen LED, supaya
+  // editor terasa full-screen/fokus-menulis (tombol kembali ada di
+  // LedEditorPage.jsx sendiri).
+  const hideSidebar = !!matchPath("/led/:dokumenId", location.pathname);
 
   return (
-    <div className="h-screen flex flex-col bg-slate-100 text-slate-900">
-      <TopBar />
-      <div className="grid grid-cols-4 flex-1 overflow-hidden">
-        {/* Kiri: outline + dokumen (3/4) */}
-        <div className="col-span-3 grid grid-cols-[320px_1fr] overflow-hidden">
-          <Outline />
-          <DocumentPane />
-        </div>
-        {/* Kanan: chatbot (1/4) */}
-        <div className="col-span-1 border-l border-slate-200 bg-white overflow-hidden shadow-inner">
-          <ChatPane />
-        </div>
+    <div className="h-screen flex bg-slate-100 text-slate-900">
+      {!hideSidebar && <Sidebar />}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <Routes>
+          <Route path="/" element={canSeeLed ? <LedListPage /> : (me || meError) ? <AccessDenied /> : null} />
+          <Route path="/led/:dokumenId" element={canSeeLed ? <LedEditorPage /> : (me || meError) ? <AccessDenied /> : null} />
+          <Route path="/documents" element={<DocumentsPage />} />
+          <Route path="/documents/:id" element={<DocumentDetailPage />} />
+        </Routes>
+        <Toaster />
       </div>
-      <Toaster />
     </div>
   );
 }
