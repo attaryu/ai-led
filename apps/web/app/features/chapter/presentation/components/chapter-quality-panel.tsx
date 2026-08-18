@@ -1,19 +1,14 @@
-import { GaugeIcon, InfoIcon, WarningCircleIcon } from '@phosphor-icons/react';
+import { GaugeIcon, WarningCircleIcon } from '@phosphor-icons/react';
 
+import { MetricMeter } from '~/core/components/metric-meter';
 import { ScrollArea } from '~/core/components/ui/scroll-area';
 import { Select } from '~/core/components/ui/select';
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipTrigger,
-} from '~/core/components/ui/tooltip';
 import { formatRelativeTimeLong } from '~/core/lib/format-time';
 import { labelDraft } from '../../domain/entities/chapter-draft.entity';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import {
 	RAGAS_METRIK_INFO,
 	RAGAS_URUTAN,
-	type RagasScore,
 } from '../../domain/entities/ragas-score.entity';
 import { useChapterQuality } from '../hooks/use-chapter-quality';
 
@@ -96,12 +91,15 @@ export function ChapterQualityPanel({
 							{RAGAS_URUTAN.map((nama) => {
 								const baris = ragas.metrik.find((item) => item.metrik === nama);
 								if (!baris) return null;
+								const info = RAGAS_METRIK_INFO[nama];
 								return (
-									<KartuMetrik
+									<MetricMeter
 										key={nama}
-										nama={nama}
+										label={info.label}
+										diukur={info.diukur}
 										nilai={baris.nilai}
 										alasan={baris.alasan}
+										alasanLabel="Pada generate ini"
 									/>
 								);
 							})}
@@ -143,83 +141,6 @@ export function ChapterQualityPanel({
 					Metrik ini mengukur mutu kerja AI-nya, bukan kelayakan bab terhadap
 					kriteria akreditasi — itu ada di tab Rubrik.
 				</p>
-			</div>
-		</div>
-	);
-}
-
-/**
- * Satu metrik: nilai, bilah, apa yang diukur, dan alasan angkanya.
- *
- * Tanpa accordion — hanya ada tiga metrik, dan menyembunyikan penjelasannya di
- * balik klik justru mengembalikan masalah yang membuat tab ini perlu ada:
- * angka tanpa arti bagi siapa pun di luar tim RAG.
- */
-function KartuMetrik({
-	nama,
-	nilai,
-	alasan,
-}: {
-	nama: keyof typeof RAGAS_METRIK_INFO;
-	nilai: number;
-	alasan: string;
-}) {
-	const info = RAGAS_METRIK_INFO[nama];
-	const persen = Math.round(nilai * 100);
-
-	return (
-		<div className="space-y-1.5">
-			<div className="flex items-baseline justify-between gap-2">
-				<p className="flex min-w-0 items-center gap-1 text-xs font-medium">
-					<span className="truncate">{info.label}</span>
-
-					{/*
-					 * Definisi metriknya disembunyikan di balik ikon ini. Ia hanya perlu
-					 * dibaca sekali — sesudah paham apa itu "kesetiaan pada sumber",
-					 * mengulangnya di tiap kartu setiap kali tab dibuka hanya mendorong
-					 * temuan yang sebenarnya (alasan di bawah) keluar layar.
-					 *
-					 * `TooltipTrigger` merender tombol, jadi ia terjangkau papan tik dan
-					 * tooltipnya ikut terbuka saat difokus — bukan hover saja.
-					 */}
-					<Tooltip>
-						<TooltipTrigger
-							aria-label={`Apa yang diukur ${info.label}`}
-							className="shrink-0 rounded-full text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-						>
-							<InfoIcon className="size-3.5" />
-						</TooltipTrigger>
-						<TooltipContent side="left" className="leading-relaxed">
-							{info.diukur}
-						</TooltipContent>
-					</Tooltip>
-				</p>
-
-				<p className="shrink-0 text-sm font-semibold tabular-nums">
-					{nilai.toFixed(2)}
-				</p>
-			</div>
-
-			{/* Bilahnya sekadar `div`: satu bentuk sesederhana ini tidak memerlukan primitif sendiri. */}
-			<div
-				role="meter"
-				aria-label={info.label}
-				aria-valuenow={persen}
-				aria-valuemin={0}
-				aria-valuemax={100}
-				className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
-			>
-				<div
-					className="h-full rounded-full bg-primary"
-					style={{ width: `${persen}%` }}
-				/>
-			</div>
-
-			<div className="rounded-md bg-muted/60 p-2.5">
-				<p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-					Pada generate ini
-				</p>
-				<p className="mt-1 text-xs leading-relaxed">{alasan}</p>
 			</div>
 		</div>
 	);

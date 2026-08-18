@@ -15,6 +15,7 @@ import { ScrollArea } from '~/core/components/ui/scroll-area';
 import { Select } from '~/core/components/ui/select';
 import { formatRelativeTimeLong } from '~/core/lib/format-time';
 import { cn } from '~/core/lib/utils';
+import { AssessmentBabBanner } from '~/features/assessment/presentation/components/assessment-bab-banner';
 import { type ChapterScoreEntity } from '../../domain/entities/chapter-score.entity';
 import { labelDraft } from '../../domain/entities/chapter-draft.entity';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
@@ -77,8 +78,20 @@ export function ChapterRubricPanel({
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
 			<div className="shrink-0 space-y-2 px-5 pt-4 pb-2">
+				{/*
+				 * Skor resmi lebih dulu, simulasi menyusul di bawahnya. Urutannya
+				 * disengaja: yang masuk dokumen akreditasi adalah hasil Penilaian AMI
+				 * beserta koreksi Penjamin Mutu, sedangkan yang di bawah ini alat bantu
+				 * saat menulis. Merender diri sendiri `null` bila dokumennya belum
+				 * pernah dinilai atau bab ini memang tidak punya indikator.
+				 */}
+				<AssessmentBabBanner
+					ledProjectId={chapter.ledProjectId}
+					urutanBab={chapter.urutanBab}
+				/>
+
 				<div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
-					<p className="text-sm font-medium">Kriteria Rubrik</p>
+					<p className="text-sm font-medium">Simulasi Rubrik</p>
 					<span className="text-xs text-muted-foreground">
 						{kriteria.length === 0
 							? 'Tidak dinilai'

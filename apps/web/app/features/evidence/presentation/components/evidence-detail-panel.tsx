@@ -1,4 +1,3 @@
-import * as React from 'react';
 import {
 	ArrowClockwiseIcon,
 	CheckIcon,
@@ -9,6 +8,12 @@ import {
 
 import { Button } from '~/core/components/ui/button';
 import { Separator } from '~/core/components/ui/separator';
+import {
+	Sheet,
+	SheetBody,
+	SheetFooter,
+	SheetHeader,
+} from '~/core/components/ui/sheet';
 import { cn } from '~/core/lib/utils';
 import {
 	type EvidenceEntity,
@@ -61,15 +66,6 @@ export function EvidenceDetailPanel({
 	onDelete: (evidence: EvidenceEntity) => void;
 	onRetry: (evidence: EvidenceEntity) => void;
 }) {
-	React.useEffect(() => {
-		if (!evidence) return;
-		const onKeyDown = (event: KeyboardEvent) => {
-			if (event.key === 'Escape') onClose();
-		};
-		window.addEventListener('keydown', onKeyDown);
-		return () => window.removeEventListener('keydown', onKeyDown);
-	}, [evidence, onClose]);
-
 	if (!evidence) return null;
 
 	const { Icon: FileTypeIcon, className } = getFileVisual(evidence.tipeFile);
@@ -77,49 +73,30 @@ export function EvidenceDetailPanel({
 	const isFailed = evidence.status === 'GAGAL';
 
 	return (
-		<>
-			<div
-				className="fixed inset-0 z-40 bg-black/40"
-				onClick={onClose}
-				aria-hidden
-			/>
-
-			<aside
-				role="dialog"
-				aria-label={`Detail ${evidence.namaDokumen}`}
-				className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-border bg-background shadow-lg"
-			>
-				<div className="flex items-start justify-between gap-3 border-b border-border p-5">
-					<div className="flex min-w-0 items-start gap-3">
-						<FileTypeIcon
-							weight="fill"
-							className={cn('mt-0.5 size-8 shrink-0', className)}
-						/>
-						<div className="min-w-0">
-							<h3
-								className="font-heading font-semibold break-words"
-								title={evidence.namaDokumen}
-							>
-								{evidence.namaDokumen}
-							</h3>
-							<EvidenceStatusBadge
-								status={evidence.status}
-								className="mt-1.5"
-							/>
-						</div>
+		<Sheet
+			open
+			onClose={onClose}
+			label={`Detail ${evidence.namaDokumen}`}
+		>
+			<SheetHeader onClose={onClose}>
+				<div className="flex min-w-0 items-start gap-3">
+					<FileTypeIcon
+						weight="fill"
+						className={cn('mt-0.5 size-8 shrink-0', className)}
+					/>
+					<div className="min-w-0">
+						<h3
+							className="font-heading font-semibold break-words"
+							title={evidence.namaDokumen}
+						>
+							{evidence.namaDokumen}
+						</h3>
+						<EvidenceStatusBadge status={evidence.status} className="mt-1.5" />
 					</div>
-					<Button
-						variant="ghost"
-						size="icon-sm"
-						aria-label="Tutup detail"
-						onClick={onClose}
-						className="shrink-0 cursor-pointer"
-					>
-						<XIcon className="size-4" />
-					</Button>
 				</div>
+			</SheetHeader>
 
-				<div className="flex-1 overflow-y-auto p-5">
+			<SheetBody>
 					{isFailed && evidence.catatanGagal && (
 						<div className="mb-4 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
 							<WarningCircleIcon className="mt-0.5 size-4 shrink-0" />
@@ -199,33 +176,32 @@ export function EvidenceDetailPanel({
 							);
 						})}
 					</ol>
-				</div>
+			</SheetBody>
 
-				{(canDelete || (canRetry && isFailed)) && (
-					<div className="flex items-center justify-end gap-2 border-t border-border p-4">
-						{canRetry && isFailed && (
-							<Button
-								variant="outline"
-								onClick={() => onRetry(evidence)}
-								className="cursor-pointer gap-2"
-							>
-								<ArrowClockwiseIcon className="size-4" />
-								Coba proses lagi
-							</Button>
-						)}
-						{canDelete && (
-							<Button
-								variant="destructive"
-								onClick={() => onDelete(evidence)}
-								className="cursor-pointer gap-2"
-							>
-								<TrashIcon className="size-4" />
-								Hapus
-							</Button>
-						)}
-					</div>
-				)}
-			</aside>
-		</>
+			{(canDelete || (canRetry && isFailed)) && (
+				<SheetFooter className="flex items-center justify-end gap-2">
+					{canRetry && isFailed && (
+						<Button
+							variant="outline"
+							onClick={() => onRetry(evidence)}
+							className="cursor-pointer gap-2"
+						>
+							<ArrowClockwiseIcon className="size-4" />
+							Coba proses lagi
+						</Button>
+					)}
+					{canDelete && (
+						<Button
+							variant="destructive"
+							onClick={() => onDelete(evidence)}
+							className="cursor-pointer gap-2"
+						>
+							<TrashIcon className="size-4" />
+							Hapus
+						</Button>
+					)}
+				</SheetFooter>
+			)}
+		</Sheet>
 	);
 }

@@ -1,5 +1,9 @@
 import * as React from 'react';
-import { ListChecksIcon, NotePencilIcon } from '@phosphor-icons/react';
+import {
+	ListChecksIcon,
+	NotePencilIcon,
+	SealCheckIcon,
+} from '@phosphor-icons/react';
 import { Navigate, Outlet, useParams } from 'react-router';
 
 import { AppShell, type AppShellBreadcrumb } from '~/core/components/app-shell';
@@ -122,6 +126,19 @@ export function LedProjectWorkspaceLayout() {
 						path: `/led-projects/${projectId}`,
 						icon: ListChecksIcon,
 						end: true,
+					},
+					{
+						// Penilaian AMI ada di lapis ini — bukan di prodi, bukan pula di
+						// dalam editor — karena `AssessmentSession.dokumenId` menunjuk
+						// `DokumenLed`: satu sesi menilai satu dokumen utuh.
+						//
+						// Tanpa `end`: sesi yang dilihat dan tab yang aktif hidup di query
+						// string, jadi seluruh keadaan halaman ini tetap satu path yang
+						// sama — pencocokan persis tidak menambah apa pun, dan rute anak
+						// yang perlu dibedakan darinya memang tidak ada.
+						name: 'Penilaian AMI',
+						path: `/led-projects/${projectId}/assessment`,
+						icon: SealCheckIcon,
 					},
 					{
 						// Menuju bab default (§7.1) lewat `/editor/:projectId` alih-alih

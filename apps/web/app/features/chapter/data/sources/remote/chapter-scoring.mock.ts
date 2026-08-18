@@ -7,6 +7,14 @@
  * sebenarnya menilai `konten_kerja`/`konten_snapshot` terhadap tiap kriteria
  * dengan AI; yang tidak ditiru di sini sifat asinkronnya — yang asli mengantre
  * lewat Redis stream lalu di-poll.
+ *
+ * **Mesin penilainya dipakai bersama Penilaian AMI.** Tab Rubrik menilai satu bab
+ * terhadap indikator miliknya, Penilaian AMI menilai satu Dokumen LED terhadap
+ * seluruh indikator — tapi keduanya menjawab pertanyaan yang sama persis, dengan
+ * skala yang sama, atas tulisan yang sama. Dua penilai terpisah akan memberi dua
+ * angka berbeda untuk bab yang sama, dan tidak akan ada cara menjelaskan
+ * selisihnya kepada siapa pun. Karena itu {@link nilaiKriteria} di bawah
+ * diekspor, dan `assessment-run.mock.ts` memanggilnya alih-alih menyalinnya.
  */
 
 /** Cukup lama untuk memperlihatkan keadaan memuat, cukup pendek untuk dites. */
@@ -22,7 +30,7 @@ export type ScoreChapterResult = {
 	hasil: { kriteriaId: string; skorDidapat: number; justifikasi: string }[];
 };
 
-function delay(ms: number): Promise<void> {
+export function delay(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -35,8 +43,13 @@ function delay(ms: number): Promise<void> {
  * berubah. Penilai acak akan membuat janji itu bohong — menjalankan ulang pada
  * isi yang sama persis akan memberi angka berbeda, dan tidak ada cara
  * membedakannya dari kesalahan sungguhan.
+ *
+ * Untuk Penilaian AMI janji itu justru lebih penting lagi: koreksi Penjamin Mutu
+ * disimpan bersama skor mesin yang dikoreksinya, dan penanda "koreksi ini sudah
+ * basi" bekerja dengan membandingkan keduanya. Penilai acak akan membuat seluruh
+ * koreksi tampak basi setiap kali penilaian diulang.
  */
-function sidikJari(teks: string): number {
+export function sidikJari(teks: string): number {
 	let nilai = 0;
 	for (let i = 0; i < teks.length; i += 1) {
 		nilai = (nilai * 31 + teks.charCodeAt(i)) >>> 0;
@@ -45,11 +58,19 @@ function sidikJari(teks: string): number {
 }
 
 /** Teks murni dari HTML, supaya panjangnya mencerminkan tulisan, bukan markup. */
-function teksPolos(html: string): string {
+export function teksPolos(html: string): string {
 	return html
 		.replace(/<[^>]*>/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim();
+}
+
+/**
+ * Penanda kasar bahwa tulisannya merujuk berkas: hasil generate memang menyusun
+ * daftar nama berkasnya, dan nama berkas selalu berekstensi.
+ */
+export function menyebutBerkas(html: string): boolean {
+	return /\.(pdf|docx?|xlsx?|jpe?g|png)\b/i.test(html);
 }
 
 /**
@@ -59,25 +80,73 @@ function teksPolos(html: string): string {
  * `levelStandar()` di entitas kriteria, sehingga di layar kalimat itu muncul dua
  * kali — sekali sebagai alasan, sekali lagi di daftar level — dan bagian
  * "alasan" jadi tidak menjelaskan apa pun. Yang ditulis di sini menyebut kondisi
- * **bab ini**: seberapa panjang tulisannya dan apakah ia menyebut berkas
- * pendukung. Itulah yang akan dilakukan penilai sungguhan, dan itulah yang
- * membuat angkanya bisa ditindaklanjuti.
+ * **tulisan ini**: seberapa panjang dan apakah ia menyebut berkas pendukung.
+ * Itulah yang akan dilakukan penilai sungguhan, dan itulah yang membuat angkanya
+ * bisa ditindaklanjuti.
  */
-function justifikasi(skor: number, jumlahKata: number, menyebutBukti: boolean): string {
+function justifikasi(
+	skor: number,
+	jumlahKata: number,
+	menyebutBukti: boolean,
+): string {
 	const panjang = `${jumlahKata} kata`;
 
 	switch (skor) {
+		case 0:
+			return `Tidak ada tulisan yang bisa dinilai untuk kriteria ini (${panjang}).`;
 		case 1:
-			return `Tulisan bab baru ${panjang} dan belum memuat uraian yang bisa dinilai untuk kriteria ini.`;
+			return `Tulisan baru ${panjang} dan belum memuat uraian yang menjawab kriteria ini.`;
 		case 2:
 			return menyebutBukti
 				? `Uraiannya sudah ada (${panjang}) dan menyebut berkas pendukung, tapi isinya belum menjelaskan angka atau kondisi yang bisa ditelusuri.`
 				: `Uraiannya sudah ada (${panjang}), tapi belum satu pun berkas pendukung disebut sebagai dasar pernyataannya.`;
 		case 3:
-			return `Uraian sepanjang ${panjang} sudah bertumpu pada berkas pendukung yang dirujuk bab ini, tapi belum ditutup dengan rencana tindak lanjut.`;
+			return `Uraian sepanjang ${panjang} sudah bertumpu pada berkas pendukung yang dirujuk, tapi belum ditutup dengan rencana tindak lanjut.`;
 		default:
 			return `Uraian sepanjang ${panjang} lengkap, menyebut berkas pendukungnya, dan sudah sampai pada rencana tindak lanjut yang bisa diukur.`;
 	}
+}
+
+export type NilaiKriteriaHasil = {
+	skorDidapat: number;
+	justifikasi: string;
+	/** Jumlah kata teks polos, dipakai pemanggil untuk keterangan tambahan. */
+	jumlahKata: number;
+	menyebutBukti: boolean;
+};
+
+/**
+ * Menilai satu kriteria atas satu potong tulisan.
+ *
+ * `kunci` adalah apa pun yang membedakan kriteria ini dari yang lain (kode atau
+ * nomor indikator) — ia hanya masuk ke sidik jari supaya dua kriteria atas
+ * tulisan yang sama tidak selalu mendapat angka identik.
+ */
+export function nilaiKriteria(
+	konten: string,
+	kunci: string,
+	skorMaksimalKriteria: number,
+): NilaiKriteriaHasil {
+	const teks = teksPolos(konten);
+	const jumlahKata = teks === '' ? 0 : teks.split(' ').length;
+	const menyebutBukti = menyebutBerkas(konten);
+
+	// Tulisan yang lebih panjang cenderung dapat lebih tinggi — bukan penilaian
+	// sungguhan, tapi cukup untuk membuat angkanya bergerak masuk akal saat isinya
+	// berubah.
+	const bobotIsi = Math.min(3, Math.floor(teks.length / 320));
+	const goyangan = sidikJari(`${kunci}:${teks}`) % 2 === 0 ? 1 : 0;
+	const skorDidapat = Math.min(
+		skorMaksimalKriteria,
+		Math.max(0, bobotIsi + goyangan),
+	);
+
+	return {
+		skorDidapat,
+		justifikasi: justifikasi(skorDidapat, jumlahKata, menyebutBukti),
+		jumlahKata,
+		menyebutBukti,
+	};
 }
 
 export async function scoreChapterContent(
@@ -85,30 +154,18 @@ export async function scoreChapterContent(
 ): Promise<ScoreChapterResult> {
 	await delay(SCORING_DELAY_MS);
 
-	const teks = teksPolos(input.konten);
-	const jumlahKata = teks === '' ? 0 : teks.split(' ').length;
-	// Penanda kasar bahwa babnya merujuk berkas: hasil generate memang menyusun
-	// daftar nama berkasnya, dan nama berkas selalu berekstensi.
-	const menyebutBukti = /\.(pdf|docx?|xlsx?|jpe?g|png)\b/i.test(input.konten);
-
-	// Bab yang tulisannya lebih panjang cenderung dapat lebih tinggi — bukan
-	// penilaian sungguhan, tapi cukup untuk membuat angkanya bergerak masuk akal
-	// saat isi bab berubah.
-	const bobotIsi = Math.min(3, Math.floor(teks.length / 320));
-
 	return {
 		hasil: input.kriteria.map((kriteria) => {
-			const goyangan =
-				sidikJari(`${kriteria.kodeKriteria}:${teks}`) % 2 === 0 ? 1 : 0;
-			const skorDidapat = Math.min(
+			const dinilai = nilaiKriteria(
+				input.konten,
+				kriteria.kodeKriteria,
 				kriteria.skorMaksimal,
-				Math.max(1, bobotIsi + goyangan),
 			);
 
 			return {
 				kriteriaId: kriteria.id,
-				skorDidapat,
-				justifikasi: justifikasi(skorDidapat, jumlahKata, menyebutBukti),
+				skorDidapat: dinilai.skorDidapat,
+				justifikasi: dinilai.justifikasi,
 			};
 		}),
 	};
