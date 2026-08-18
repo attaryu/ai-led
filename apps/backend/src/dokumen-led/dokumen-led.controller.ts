@@ -46,6 +46,13 @@ export class DokumenLedController {
     return this.dokumenLedService.findAllForProgramStudi(programStudiId);
   }
 
+  /** Lintas prodi — Dashboard Utama (§4.0), notes attar.md #6. */
+  @Get('dokumen')
+  @Protected(...READ_ROLES)
+  findAllForTenant() {
+    return this.dokumenLedService.findAllForTenant();
+  }
+
   @Get('dokumen/:id')
   @Protected(...READ_ROLES)
   findOne(@Param('id') id: string) {

@@ -27,6 +27,11 @@ export const ledProjectRemoteSource = {
 		return apiFetch<BackendDokumenLed[]>(`/program-studi/${programStudiId}/dokumen`);
 	},
 
+	/** Lintas prodi, satu request — dipakai Dashboard Utama (§4.0). */
+	findAllForTenant(): Promise<BackendDokumenLed[]> {
+		return apiFetch<BackendDokumenLed[]>('/dokumen');
+	},
+
 	findById(id: string): Promise<BackendDokumenLed> {
 		return apiFetch<BackendDokumenLed>(`/dokumen/${id}`);
 	},

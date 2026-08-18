@@ -58,6 +58,24 @@ export class DokumenLedService {
     });
   }
 
+  /**
+   * Seluruh Dokumen LED tenant lintas prodi, dalam satu query — dipakai
+   * Dashboard Utama (notes attar.md #6) yang sebelumnya harus memuat semua
+   * prodi lebih dulu lalu menembak satu request per prodi.
+   */
+  async findAllForTenant() {
+    const { tenantId, role, programStudiId } = this.tenantContext.getOrThrow();
+    if (role === Role.PENYUSUN && !programStudiId) return [];
+
+    return this.prisma.dokumenLed.findMany({
+      where: {
+        programStudi: { tenantId },
+        ...(role === Role.PENYUSUN ? { programStudiId: programStudiId ?? undefined } : {}),
+      },
+      orderBy: { dibuatPada: 'desc' },
+    });
+  }
+
   async findOne(id: string) {
     const { tenantId } = this.tenantContext.getOrThrow();
     const dokumen = await this.prisma.dokumenLed.findFirst({

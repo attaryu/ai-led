@@ -63,18 +63,19 @@ function toEntity(row: BackendDokumenLed, studyProgramName: string): LedProjectE
 
 export const ledProjectRepository = {
 	/**
-	 * Lintas prodi — backend tidak punya endpoint daftar-semua-dokumen, jadi ini
-	 * memuat seluruh prodi lebih dulu lalu menggabungkan dokumen tiap prodi.
+	 * Lintas prodi, dua request tetap (dokumen + nama prodi), bukan 1+N —
+	 * `/dokumen` mengembalikan seluruh tenant sekaligus (notes attar.md #6).
 	 * Dijangkau hanya dari lapis tenant (§1), yang sudah menolak Penyusun —
 	 * backend sendiri akan menolak 403 bila Penyusun mencoba prodi lain.
 	 */
 	async findAll(): Promise<LedProjectEntity[]> {
-		const programs = await studyProgramRepository.findAll();
-		const rowsByProgram = await Promise.all(
-			programs.map((p) => ledProjectRemoteSource.findAllForProgramStudi(p.id)),
-		);
-		return programs.flatMap((p, i) =>
-			rowsByProgram[i].map((row) => toEntity(row, p.studyProgramName)),
+		const [rows, programs] = await Promise.all([
+			ledProjectRemoteSource.findAllForTenant(),
+			studyProgramRepository.findAll(),
+		]);
+		const namesById = new Map(programs.map((p) => [p.id, p.studyProgramName]));
+		return rows.map((row) =>
+			toEntity(row, namesById.get(row.programStudiId) ?? '(Prodi tidak diketahui)'),
 		);
 	},
 
