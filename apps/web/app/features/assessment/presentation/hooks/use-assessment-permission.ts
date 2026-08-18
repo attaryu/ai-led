@@ -37,7 +37,10 @@ export function useAssessmentPermission(
 	/** `studyProgramId` milik dokumennya — dibaca dari data, bukan dari URL. */
 	studyProgramId: string | undefined,
 ): AssessmentPermission {
-	const session = useSession();
+	// Halaman pemanggil sudah lewat `useRoleGuard` (lapis tenant/prodi), jadi saat
+	// hook ini jalan sesi sudah pasti selesai dipulihkan — `undefined` (pending)
+	// diperlakukan sama dengan `null` (belum login), bukan status ketiga di sini.
+	const session = useSession() ?? null;
 
 	if (!session || session.role === 'Admin') {
 		return { session, canRead: false, canRun: false, canCorrect: false };

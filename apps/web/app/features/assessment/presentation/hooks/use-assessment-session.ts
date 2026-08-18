@@ -60,7 +60,10 @@ export function useAssessmentSession({
 		async (sumber: AssessmentSource) => {
 			if (!izin.canRun || !izin.session || status === 'berjalan') return;
 
-			const konten = assessmentSessionRepository.rakitKonten(projectId, sumber);
+			const konten = await assessmentSessionRepository.rakitKonten(
+				projectId,
+				sumber,
+			);
 			if (konten.trim() === '') {
 				setStatus('gagal');
 				setPesanGagal(
@@ -117,13 +120,23 @@ export function useAssessmentSession({
 	 * terjadi. Dipulangkan dari hook ini supaya halaman tidak perlu memanggil
 	 * repository sendiri.
 	 */
-	const kontenSesi = React.useMemo(
-		() =>
-			sesiAktif
-				? assessmentSessionRepository.rakitKonten(projectId, sesiAktif.sumber)
-				: '',
-		[sesiAktif, projectId],
-	);
+	const [kontenSesi, setKontenSesi] = React.useState('');
+
+	React.useEffect(() => {
+		if (!sesiAktif) {
+			setKontenSesi('');
+			return;
+		}
+		let dibatalkan = false;
+		assessmentSessionRepository
+			.rakitKonten(projectId, sesiAktif.sumber)
+			.then((konten) => {
+				if (!dibatalkan) setKontenSesi(konten);
+			});
+		return () => {
+			dibatalkan = true;
+		};
+	}, [sesiAktif, projectId]);
 
 	return {
 		daftarSesi,

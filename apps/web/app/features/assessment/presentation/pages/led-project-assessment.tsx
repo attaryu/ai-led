@@ -50,9 +50,24 @@ type TabValue = (typeof TAB_VALID)[number];
  */
 export function LedProjectAssessment() {
 	const { projectId } = useParams<{ projectId: string }>();
-	const ledProject = projectId
-		? ledProjectRepository.findById(projectId)
-		: undefined;
+	const [ledProject, setLedProject] = React.useState<
+		LedProjectEntity | null | undefined
+	>(undefined);
+
+	React.useEffect(() => {
+		if (!projectId) {
+			setLedProject(null);
+			return;
+		}
+		setLedProject(undefined);
+		let cancelled = false;
+		ledProjectRepository.findById(projectId).then((found) => {
+			if (!cancelled) setLedProject(found ?? null);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [projectId]);
 
 	// Layout sudah menampilkan keadaan "tidak ditemukan" dan tidak merender
 	// halaman ini; cabang ini hanya penjaga bila rutenya dipakai di luar layout.

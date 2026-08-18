@@ -93,10 +93,9 @@ function buildSeedSessions(): AssessmentSessionEntity[] {
 }
 
 function buildSeedResults(): IndicatorResultEntity[] {
-	const konten = assessmentSessionRepository.rakitKonten(
-		SEED_DOKUMEN_ID,
-		SEED_SUMBER,
-	);
+	// Seed tidak memuat bab dokumen sungguhan lewat API — ia hanya demo statis,
+	// jadi isi tiruannya cukup dari mock berkas yang sama seperti sumber UNGGAHAN.
+	const konten = kontenTiruanDariBerkas(SEED_SUMBER.ledFileName ?? SEED_DOKUMEN_ID);
 
 	// Penilai yang sama persis dengan yang dipakai penilaian sungguhan — termasuk
 	// keyakinan dan rekomendasinya. Kalau seed menghitungnya sendiri, menekan
@@ -179,17 +178,20 @@ export const assessmentSessionRepository = {
 	 * adalah satu-satunya penanda bagian yang dipunya dokumen ini. Bab kosong
 	 * dilewati supaya panjang tulisan mencerminkan yang benar-benar ditulis.
 	 */
-	rakitKonten(projectId: string, sumber: AssessmentSource): string {
+	async rakitKonten(
+		projectId: string,
+		sumber: AssessmentSource,
+	): Promise<string> {
 		if (sumber.sumberLed === 'UNGGAHAN') {
 			return sumber.ledFileName
 				? kontenTiruanDariBerkas(sumber.ledFileName)
 				: '';
 		}
 
-		return chapterRepository
-			.findByProjectId(projectId)
+		const bab = await chapterRepository.findByProjectId(projectId);
+		return bab
 			.filter(hasKonten)
-			.map((bab) => `${bab.judulBab}\n${bab.kontenKerja ?? ''}`)
+			.map((b) => `${b.judulBab}\n${b.kontenKerja ?? ''}`)
 			.join('\n\n');
 	},
 

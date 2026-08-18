@@ -50,8 +50,8 @@ export function useAssessmentReadiness({
 	const [babTerisi, setBabTerisi] = React.useState(0);
 	const [totalBab, setTotalBab] = React.useState(0);
 
-	const muat = React.useCallback(() => {
-		const chapters = chapterRepository.findByProjectId(projectId);
+	const muat = React.useCallback(async () => {
+		const chapters = await chapterRepository.findByProjectId(projectId);
 		setTotalBab(chapters.length);
 		setBabTerisi(chapters.filter(hasKonten).length);
 
