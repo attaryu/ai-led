@@ -1,11 +1,7 @@
 """Tool: get_lkps_table — retrieve LKPS data by table reference string.
 
-LKPS (Laporan Kinerja Program Studi) is per-institution self-reported data,
-not shared reference material — unlike the rubric (agent.tools.rubric_tool),
-which genuinely is one shared national standard across institutions (same
-as `RubrikKriteria`/`RubrikLevel` in packages/db/schema.prisma having no
-tenantId at all). The registry below is keyed by (tenant_id, dokumen_id) so
-one institution's LKPS never answers another's query.
+LKPS is per-institution data (unlike the rubric, which is shared), so the
+registry is keyed by (tenant_id, dokumen_id).
 """
 
 from __future__ import annotations
@@ -31,10 +27,8 @@ def get_lkps_table(table_reference: str, max_rows: int = 30) -> str:
     Gunakan tool ini untuk mendapatkan data kuantitatif/statistik pendukung.
     Data dikembalikan dalam format markdown table.
     Parameter max_rows membatasi jumlah baris untuk menghindari context overload.
-
-    Tabel yang dicari (tenant_id, dokumen_id) diambil dari konteks run saat
-    ini (agent.context), BUKAN dari argumen tool.
     """
+    # tenant/dokumen dari context, bukan argumen tool.
     ctx = require_current_context()
     registry = _registries.get(ctx)
     if registry is None:

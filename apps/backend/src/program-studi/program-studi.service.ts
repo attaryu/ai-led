@@ -53,10 +53,8 @@ export class ProgramStudiService {
     await this.findOne(id);
     const { tenantId } = this.tenantContext.getOrThrow();
 
-    // Dicek lebih dulu, bukan dibiarkan jatuh ke P2003 di bawah: pesannya bisa
-    // menyebut jumlah Penyusun yang harus dipindahkan lebih dulu — lihat
-    // notes attar.md #2. FK-nya sendiri (`onDelete: Restrict`) tetap jadi
-    // penjaga terakhir kalau baris race lolos dari pengecekan ini.
+    // Dicek dulu supaya pesannya bisa menyebut jumlahnya; FK Restrict tetap
+    // jadi penjaga terakhir kalau ada race.
     const penyusunCount = await this.prisma.user.count({
       where: { programStudiId: id, role: Role.PENYUSUN },
     });

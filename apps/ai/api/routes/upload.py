@@ -6,20 +6,13 @@ POST /upload/lkps      — Upload LKPS Excel; loads LKPSRegistry and injects int
 POST /upload/laporan   — Upload Laporan_AK.xlsx; stores it for use by /assessment/start.
 GET  /upload/status    — Returns which files have been uploaded and LED indexing state.
 
-All files are saved to UPLOAD_DIR (default: data/uploads).
-LED indexing writes to CHROMA_PERSIST_DIR (default: data/chroma_db).
-Rubric cache is written to RUBRIC_CACHE_PATH (default: data/rubric_cache/matrix.json)
-— this one is NOT tenant-scoped: the AMI rubric is one shared national
-standard, the same as `RubrikKriteria`/`RubrikLevel` in
-packages/db/schema.prisma having no tenantId at all.
+Files save under UPLOAD_DIR/{tenant_id}/{dokumen_id}/, ChromaDB indexes
+into CHROMA_PERSIST_DIR. RUBRIC_CACHE_PATH (matrix) is NOT tenant-scoped —
+the AMI rubric is shared national reference data, same as RubrikKriteria
+having no tenantId in schema.prisma.
 
-Tenant/document scoping (`tenant_id`, `dokumen_id`): apps/ai has no
-authentication of its own — these are trusted as passed by the caller, which
-in the target architecture is NestJS (already authenticated the request
-before it ever reaches here). Every file is stored per (tenant_id,
-dokumen_id) instead of one fixed filename, so two institutions' — or two
-documents' — uploads never overwrite each other. See integration-plan.md at
-the repo root ("Isolasi Tenant & Multi-Dokumen") for why this exists.
+tenant_id/dokumen_id are trusted from the caller (apps/ai has no auth of
+its own) — see integration-plan.md at the repo root.
 """
 
 from __future__ import annotations
@@ -49,10 +42,7 @@ DocKey = tuple[str, str]  # (tenant_id, dokumen_id)
 
 
 def _path_segment(value: str) -> str:
-    """Reject path-traversal characters in caller-supplied ids used as directory
-    segments — these aren't validated against a real tenant/document table
-    here (apps/ai has no DB access to check), so this is the one guard that
-    matters: no `/`, `..`, or empty string."""
+    """Reject path-traversal characters — no /, .., or empty."""
     if not value or not re.fullmatch(r"[A-Za-z0-9_-]+", value):
         raise HTTPException(
             status_code=400,
@@ -71,10 +61,7 @@ def _led_filename(original_filename: str) -> str:
     return f"led{ext}"
 
 
-# ── In-process state (prototype-grade; resets on restart) ────────────────────
-# Keyed by (tenant_id, dokumen_id) — a bare global here would mean two
-# documents' upload/indexing progress overwrite each other's status, the
-# same class of bug the file-path and ChromaDB collection scoping fixes.
+# ── In-process state (prototype-grade; resets on restart), keyed per document ──
 
 _led_index_status: dict[DocKey, dict] = {}
 _matrix_status: dict = {"rubric_count": 0, "error": None}

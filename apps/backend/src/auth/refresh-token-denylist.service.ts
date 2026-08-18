@@ -4,12 +4,7 @@ import { requireEnv } from '../config/env';
 
 const KEY_PREFIX = 'auth:refresh:revoked:';
 
-/**
- * Rotasi refresh token butuh cara mencabut token lama sebelum kedaluwarsa
- * alaminya (7 hari) — lihat notes attar.md #1. Redis dipilih alih-alih tabel
- * baru karena `REDIS_URL` dan `ioredis` sudah dipakai BullMQ (jobs.module.ts);
- * TTL per-entri otomatis membersihkan diri, jadi tidak perlu job pembersih.
- */
+/** Redis (bukan tabel baru) — TTL per-entri otomatis bersih sendiri. */
 @Injectable()
 export class RefreshTokenDenylistService implements OnModuleDestroy {
   private readonly redis = new Redis(requireEnv('REDIS_URL'));

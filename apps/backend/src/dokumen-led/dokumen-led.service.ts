@@ -58,11 +58,7 @@ export class DokumenLedService {
     });
   }
 
-  /**
-   * Seluruh Dokumen LED tenant lintas prodi, dalam satu query — dipakai
-   * Dashboard Utama (notes attar.md #6) yang sebelumnya harus memuat semua
-   * prodi lebih dulu lalu menembak satu request per prodi.
-   */
+  /** Seluruh Dokumen LED tenant lintas prodi, satu query (bukan 1+N). */
   async findAllForTenant() {
     const { tenantId, role, programStudiId } = this.tenantContext.getOrThrow();
     if (role === Role.PENYUSUN && !programStudiId) return [];

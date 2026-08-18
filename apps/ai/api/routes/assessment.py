@@ -58,9 +58,8 @@ MAX_PARALLEL: int = int(os.environ.get("ASSESSMENT_MAX_PARALLEL", "5"))
 
 
 class StartAssessmentRequest(BaseModel):
-    # Diminta wajib (bukan default None) — tanpa ini, tools (search_led_evidence,
-    # get_lkps_table) tidak tahu dokumen tenant mana yang harus dicari. Lihat
-    # agent/context.py dan integration-plan.md.
+    # Wajib — tools (search_led_evidence, get_lkps_table) butuh ini via
+    # agent/context.py.
     tenant_id: str
     dokumen_id: str
     laporan_path: Optional[str] = None
@@ -68,11 +67,7 @@ class StartAssessmentRequest(BaseModel):
 
 
 class ResumeAssessmentRequest(BaseModel):
-    # Supabase (masih dipakai di sini, lihat db/supabase_client.py) tidak
-    # menyimpan tenant_id/dokumen_id sama sekali — makanya diminta lagi di
-    # sini, bukan dibaca ulang dari baris sesi. Migrasi ke Postgres monorepo
-    # (tracker "Lapis Akses Postgres dari Python") akan menghapus kebutuhan
-    # ini karena AssessmentSession di sana punya kolomnya.
+    # Supabase tidak simpan tenant_id/dokumen_id, jadi diminta ulang di sini.
     tenant_id: str
     dokumen_id: str
 
@@ -452,11 +447,8 @@ async def _process_single_indicator(
                 "error": None,
             }
 
-            # graph.invoke() runs in a real OS thread (run_in_executor), which
-            # does NOT inherit the calling coroutine's context by default —
-            # explicitly copying it is required for search_led_evidence/
-            # get_lkps_table (agent.context) to see the tenant/dokumen set
-            # just below. See agent/context.py docstring.
+            # run_in_executor doesn't inherit context by default — copy it
+            # explicitly so search_led_evidence/get_lkps_table see this.
             current_assessment_context.set(AssessmentContext(tenant_id, dokumen_id))
             ctx = contextvars.copy_context()
             result = await asyncio.get_event_loop().run_in_executor(

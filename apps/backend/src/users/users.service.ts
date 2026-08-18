@@ -21,16 +21,9 @@ export class UsersService {
     private readonly programStudi: ProgramStudiService,
   ) {}
 
-  /**
-   * `POST /users` (§2, notes attar.md #2) — Admin membuat PIMPINAN,
-   * PENJAMIN_MUTU, atau PENYUSUN. `tenantId` selalu dari token, tidak pernah
-   * dari body: berbeda dari `POST /auth/register`, endpoint ini tidak membuat
-   * Tenant baru.
-   */
+  /** Admin membuat PIMPINAN/PENJAMIN_MUTU/PENYUSUN; tenantId selalu dari token. */
   async create(dto: CreateUserDto) {
-    // Ditutup di titik pembuatannya: Penyusun tanpa prodi tidak punya satu
-    // pun halaman yang boleh ia buka (lapis tenant menolaknya, lapis prodi
-    // tidak punya prodi untuk dituju).
+    // Penyusun tanpa prodi tidak punya satu pun halaman yang boleh ia buka.
     if (dto.role === Role.PENYUSUN && !dto.programStudiId) {
       throw new BadRequestException(
         'Penyusun harus ditugaskan ke satu program studi',
@@ -65,12 +58,7 @@ export class UsersService {
     return toSafeUser(user);
   }
 
-  /**
-   * `PATCH /users/:id` (§2) — Pimpinan memindahkan seorang Penyusun ke prodi
-   * lain. Bukan cara mengaktifkan Penyusun yang belum punya prodi (itu
-   * wewenang `POST /users`, sekali di titik pembuatan) — lihat notes
-   * attar.md #2.
-   */
+  /** Pimpinan memindahkan seorang Penyusun ke prodi lain. */
   async move(id: string, dto: UpdateUserDto) {
     const { tenantId } = this.tenantContext.getOrThrow();
     const user = await this.prisma.user.findFirst({ where: { id, tenantId } });

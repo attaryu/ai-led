@@ -4,13 +4,8 @@ ChromaDB vector store for LED chunks.
 Uses a multilingual SentenceTransformer embedding model so Bahasa Indonesia
 queries are handled correctly.
 
-Scoping: one collection PER (tenant_id, dokumen_id) pair, not one shared
-global collection. This used to be a single fixed collection name that
-`index_led_chunks()` deleted and rebuilt on every upload — meaning at most
-one LED document could be indexed at a time, for the whole system,
-regardless of tenant. Re-indexing now only ever touches the one collection
-for the document being (re-)indexed; every other tenant's/document's data
-is untouched (tracker: "Isolasi Tenant & Multi-Dokumen di apps/ai").
+One collection per (tenant_id, dokumen_id) — used to be one shared
+collection, deleted and rebuilt on every upload.
 """
 
 from __future__ import annotations
@@ -43,13 +38,7 @@ def _get_ef() -> SentenceTransformerEmbeddingFunction:
 
 
 def collection_name(tenant_id: str, dokumen_id: str) -> str:
-    """Deterministic per-document collection name.
-
-    Chroma collection names must be 3-512 chars, alnum/./_/- only, and
-    start/end alphanumeric — tenant_id/dokumen_id (cuid strings) already
-    satisfy that, but a hash suffix is added anyway so this doesn't quietly
-    break if an id ever contains a character Chroma rejects.
-    """
+    """Deterministic per-document name, sanitized to Chroma's charset."""
     raw = f"led__{tenant_id}__{dokumen_id}"
     safe = re.sub(r"[^a-zA-Z0-9._-]", "_", raw)
     digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8]
@@ -85,17 +74,12 @@ def index_led_chunks(
     tenant_id: str,
     dokumen_id: str,
 ) -> None:
-    """Index one document's LED chunks into its own collection (idempotent —
-    deletes only THIS document's collection first, not the whole store).
+    """Index one document into its own collection (deletes only that
+    collection first, not the whole store).
 
-    Metadata stored per chunk:
-        tenant_id, dokumen_id (defense in depth — the collection is already
-        scoped by these, but stamping them too means a stray cross-collection
-        query would still come back empty/filterable rather than silently
-        returning another tenant's rows), page_start, page_end, para_start,
-        para_end, section_heading (empty string when None), char_start.
-        page_start/page_end are -1 for docx-sourced chunks; para_start/
-        para_end are -1 for pdf-sourced ones (see ingestion.led_chunker.LEDChunk).
+    Metadata per chunk: tenant_id, dokumen_id, page_start, page_end,
+    para_start, para_end, section_heading, char_start. page_start/page_end
+    are -1 for docx chunks; para_start/para_end are -1 for pdf chunks.
     """
     import logging
     import time
@@ -169,14 +153,8 @@ def search_led(
 ) -> list[dict]:
     """Search one document's LED chunks by semantic similarity.
 
-    Returns a list of dicts with keys:
-        text       – the chunk text
-        chunk_id   – UUID of the chunk
-        metadata   – dict {page_start, page_end, para_start, para_end, section_heading, char_start}
-        distance   – cosine distance (lower = more similar)
-
-    Returns [] (not an error) if this document was never indexed — that's a
-    normal "not ready yet" state, not a system failure.
+    Returns [{text, chunk_id, metadata, distance}], or [] if this document
+    was never indexed (not an error — just not ready yet).
     """
     client = get_chroma_client(persist_dir)
     name = collection_name(tenant_id, dokumen_id)

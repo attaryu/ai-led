@@ -1,24 +1,11 @@
-"""BullMQ worker consumer — tracker baris 17 (Week 3, AI Track).
+"""BullMQ worker consumer — tracker baris 17.
 
-Membaca ketiga antrean yang di-produksi `apps/backend/src/jobs` (nama antrean
-harus persis sama, lihat `queue-names.ts` di sana):
+Membaca generation-queue / assessment-queue / ingestion-queue (nama harus
+cocok dengan apps/backend/src/jobs/queue-names.ts). Handler masih stub —
+pipeline sungguhan menunggu Rencana Integrasi (integration-plan.md).
 
-    generation-queue   <- JobType.GENERASI_BAB
-    assessment-queue   <- JobType.ASSESSMENT_AMI
-    ingestion-queue    <- JobType.INGESTION_BUKTI_DUKUNG
-
-Sengaja BELUM menjalankan pipeline LangGraph/RAG sungguhan di sini — itu
-integrasi baris terpisah di tracker ("Rencana Integrasi", lihat
-integration-plan.md di root folder Work), yang butuh keputusan tenant-scoping
-& Postgres dulu (bukan Supabase) sebelum aman disambung ke data institusi
-sungguhan. Yang dibuktikan di berkas ini murni DoD baris 17 apa adanya:
-worker bisa mengklaim job dari Redis dan mengeksekusinya sampai selesai.
-
-Retry (3x, exponential backoff) sengaja TIDAK dikonfigurasi di sini — itu
-sudah disetel di sisi producer (`apps/backend/src/jobs/jobs.module.ts`
-`defaultJobOptions`), karena BullMQ menyimpan opsi itu di job-nya sendiri di
-Redis, jadi otomatis berlaku untuk worker bahasa apa pun tanpa perlu
-duplikasi konfigurasi di kedua sisi.
+Retry (3x, exponential backoff) disetel di producer (jobs.module.ts), bukan
+di sini — BullMQ menyimpannya di job-nya sendiri di Redis.
 """
 
 from __future__ import annotations
@@ -40,12 +27,7 @@ QUEUE_NAMES = ["generation-queue", "assessment-queue", "ingestion-queue"]
 
 
 async def process_job(job, token: str):
-    """Handler generik — mencatat penerimaan job lalu menandainya selesai.
-
-    Perutean per `job.name` (GENERASI_BAB / ASSESSMENT_AMI /
-    INGESTION_BUKTI_DUKUNG) disiapkan di sini supaya handler sungguhan tinggal
-    dicolokkan nanti tanpa mengubah struktur worker-nya.
-    """
+    """Log job, route by job.name, mark done."""
     logger.info(
         "job diterima: id=%s name=%s queue=%s payload=%s",
         job.id,

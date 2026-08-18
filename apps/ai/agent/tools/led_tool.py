@@ -24,11 +24,8 @@ def search_led_evidence(query: str, n_results: int = 5) -> str:
     strategi program studi yang melibatkan pemangku kepentingan internal
     eksternal".
     Mengembalikan top-N chunk teks dari LED beserta metadata halaman/paragraf.
-
-    Dokumen yang dicari (tenant_id, dokumen_id) diambil dari konteks run saat
-    ini (agent.context), BUKAN dari argumen tool — supaya model tidak pernah
-    punya jalan memilih dokumen tenant lain untuk dicari.
     """
+    # tenant/dokumen dari context, bukan argumen tool — model tidak boleh pilih sendiri.
     ctx = require_current_context()
     persist_dir = os.environ.get("CHROMA_PERSIST_DIR", "data/chroma_db")
     results = search_led(

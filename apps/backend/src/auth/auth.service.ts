@@ -27,7 +27,7 @@ export function toSafeUser(user: User) {
 interface IssuedTokens {
   accessToken: string;
   refreshToken: string;
-  /** Detik sampai accessToken kedaluwarsa — lihat notes attar.md #3. */
+  /** Detik sampai accessToken kedaluwarsa. */
   expiresIn: number;
   user: ReturnType<typeof toSafeUser>;
 }
@@ -93,9 +93,7 @@ export class AuthService {
       throw new UnauthorizedException('User tidak ditemukan');
     }
 
-    // Rotasi: token lama dicabut begitu dipakai, supaya salinan yang sempat
-    // bocor (ekstensi browser, komputer bersama, log proxy) tidak bisa dipakai
-    // lagi walau umur 7 harinya belum habis — notes attar.md #1.
+    // Rotasi: cabut token lama begitu dipakai, meski umur 7 harinya belum habis.
     await this.revokeToken(payload);
 
     return this.issueTokens(user);
