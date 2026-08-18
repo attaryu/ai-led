@@ -50,8 +50,10 @@ services:
       HF_HOME: /root/.cache/huggingface
       SENTENCE_TRANSFORMERS_HOME: /root/.cache/huggingface/sentence-transformers
       HF_HUB_DISABLE_XET: "1"
+      REDIS_URL: redis://redis:6379
     depends_on:
       - postgres
+      - redis
 
   web:
     build:

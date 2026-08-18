@@ -11,9 +11,17 @@ import { ASSESSMENT_QUEUE, GENERATION_QUEUE, INGESTION_QUEUE } from './queue-nam
 
 // BullMQ default job retention keeps every completed/failed job forever,
 // yang persis risiko "penumpukan memori Redis" di Temuan Kendala tracker.
+//
+// attempts/backoff (tracker row 17 DoD: "retry otomatis 3x attempt dengan
+// exponential backoff jika LLM rate-limit") disetel di sisi producer, bukan
+// consumer — BullMQ menyimpan job options di Redis saat job dibuat, jadi
+// worker di bahasa apa pun (Python di apps/ai) otomatis mengikutinya tanpa
+// perlu tahu apa-apa soal retry policy-nya sendiri.
 const defaultJobOptions = {
   removeOnComplete: { count: 1000 },
   removeOnFail: { count: 5000 },
+  attempts: 3,
+  backoff: { type: 'exponential' as const, delay: 5000 },
 };
 
 @Module({

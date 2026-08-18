@@ -485,7 +485,12 @@ model Job {
   createdByUserId String    @map("created_by_user_id")
   type            JobType
   queueName       String    @map("queue_name")
-  bullJobId       String    @unique @map("bull_job_id")
+  // BullMQ menomori job per-antrean (counter sendiri tiap queue), BUKAN
+  // global — job pertama di generation-queue dan job pertama di
+  // assessment-queue sama-sama dapat id "1". `@unique` tunggal di sini akan
+  // bentrok begitu ada lebih dari satu queue terpakai; unik yang benar
+  // adalah pasangan (queueName, bullJobId).
+  bullJobId       String    @map("bull_job_id")
   status          JobStatus @default(WAITING)
   progress        Int       @default(0)
   payload         Json
@@ -497,6 +502,7 @@ model Job {
   tenant    Tenant @relation(fields: [tenantId], references: [id])
   createdBy User   @relation(fields: [createdByUserId], references: [id])
 
+  @@unique([queueName, bullJobId])
   @@index([tenantId, status])
   @@map("jobs")
 }

@@ -29,6 +29,7 @@ dependencies = [
     "tabulate>=0.9",
     "ragas>=0.4",
     "langchain-openai>=0.1",
+    "bullmq>=3.0",
 ]
 
 [project.optional-dependencies]
