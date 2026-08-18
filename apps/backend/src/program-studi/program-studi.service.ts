@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@ai-led/db';
+import { Prisma, Role } from '@ai-led/db';
 import { PrismaService } from '../database/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { CreateProgramStudiDto } from './dto/create-program-studi.dto';
@@ -52,6 +52,20 @@ export class ProgramStudiService {
   async remove(id: string) {
     await this.findOne(id);
     const { tenantId } = this.tenantContext.getOrThrow();
+
+    // Dicek lebih dulu, bukan dibiarkan jatuh ke P2003 di bawah: pesannya bisa
+    // menyebut jumlah Penyusun yang harus dipindahkan lebih dulu — lihat
+    // notes attar.md #2. FK-nya sendiri (`onDelete: Restrict`) tetap jadi
+    // penjaga terakhir kalau baris race lolos dari pengecekan ini.
+    const penyusunCount = await this.prisma.user.count({
+      where: { programStudiId: id, role: Role.PENYUSUN },
+    });
+    if (penyusunCount > 0) {
+      throw new ConflictException(
+        `Program studi ini masih punya ${penyusunCount} Penyusun — pindahkan mereka ke prodi lain dulu sebelum menghapus`,
+      );
+    }
+
     try {
       await this.prisma.programStudi.delete({ where: { id, tenantId } });
     } catch (err) {

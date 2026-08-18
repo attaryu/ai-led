@@ -9,6 +9,7 @@ import { ProgramStudiModule } from './program-studi/program-studi.module';
 import { DokumenLedModule } from './dokumen-led/dokumen-led.module';
 import { BabDokumenModule } from './bab-dokumen/bab-dokumen.module';
 import { JobsModule } from './jobs/jobs.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { JobsModule } from './jobs/jobs.module';
     DokumenLedModule,
     BabDokumenModule,
     JobsModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

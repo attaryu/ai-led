@@ -134,8 +134,11 @@ model User {
   role           Role
   dibuatPada     DateTime @default(now()) @map("dibuat_pada")
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id])
-  programStudi ProgramStudi? @relation(fields: [programStudiId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  // `Restrict`, bukan default Prisma `SetNull` — lihat notes attar.md #2:
+  // "PENYUSUN tidak boleh ada tanpa prodi" tidak bisa ditegakkan bila hapus
+  // prodi diam-diam mengosongkan program_studi_id penghuninya.
+  programStudi ProgramStudi? @relation(fields: [programStudiId], references: [id], onDelete: Restrict)
 
   babDraftDibuat      BabDraft[]          @relation("BabDraftDibuatOleh")
   buktiDukungDiunggah BuktiDukung[]       @relation("BuktiDukungDiunggahOleh")
