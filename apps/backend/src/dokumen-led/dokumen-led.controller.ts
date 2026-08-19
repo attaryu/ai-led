@@ -8,11 +8,12 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@ai-led/db';
 import { Protected } from '../tenant/protected.decorator';
 import { DokumenLedService } from './dokumen-led.service';
 import { CreateDokumenLedDto } from './dto/create-dokumen-led.dto';
+import { TriggerAssessmentDto } from './dto/trigger-assessment.dto';
 import { UpdateDokumenLedDto } from './dto/update-dokumen-led.dto';
 
 // Nested under program-studi for creation/listing (needs parent context),
@@ -71,4 +72,17 @@ export class DokumenLedController {
   remove(@Param('id') id: string) {
     return this.dokumenLedService.remove(id);
   }
+
+  @Post('dokumen/:id/assessment')
+  @Protected(...WRITE_ROLES)
+  @ApiOperation({
+    summary: 'Trigger asesmen AMI untuk dokumen LED (Producer ASSESSMENT_AMI)',
+  })
+  triggerAssessment(
+    @Param('id') id: string,
+    @Body() dto?: TriggerAssessmentDto,
+  ) {
+    return this.dokumenLedService.triggerAssessment(id, dto);
+  }
 }
+

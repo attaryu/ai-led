@@ -4,10 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Role, StatusDokumen } from '@ai-led/db';
+import { JobType, Prisma, Role, StatusDokumen } from '@ai-led/db';
 import { PrismaService } from '../database/prisma.service';
+import { JobsService } from '../jobs/jobs.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { CreateDokumenLedDto } from './dto/create-dokumen-led.dto';
+import { TriggerAssessmentDto } from './dto/trigger-assessment.dto';
 import { UpdateDokumenLedDto } from './dto/update-dokumen-led.dto';
 
 @Injectable()
@@ -15,6 +17,7 @@ export class DokumenLedService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
+    private readonly jobsService: JobsService,
   ) {}
 
   // PENYUSUN is scoped to the single program studi they're assigned to;
@@ -105,4 +108,17 @@ export class DokumenLedService {
       throw err;
     }
   }
+
+  async triggerAssessment(id: string, dto?: TriggerAssessmentDto) {
+    const dokumen = await this.findOne(id);
+    const { tenantId } = this.tenantContext.getOrThrow();
+
+    return this.jobsService.enqueue(JobType.ASSESSMENT_AMI, {
+      dokumenId: dokumen.id,
+      tenantId,
+      programStudiId: dokumen.programStudiId,
+      indikatorList: dto?.indikatorList ?? [],
+    });
+  }
 }
+

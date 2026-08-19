@@ -1,5 +1,6 @@
-import { Role } from '@ai-led/db';
+import { JobType, Role } from '@ai-led/db';
 import { DokumenLedService } from './dokumen-led.service';
+import type { JobsService } from '../jobs/jobs.service';
 import type { TenantContextService } from '../tenant/tenant-context.service';
 
 function makeService(context: {
@@ -8,15 +9,22 @@ function makeService(context: {
   programStudiId: string | null;
 }) {
   const findMany = jest.fn().mockResolvedValue([]);
-  const prisma = { dokumenLed: { findMany } };
+  const findFirst = jest.fn().mockResolvedValue(null);
+  const prisma = {
+    dokumenLed: { findMany, findFirst },
+  };
   const tenantContext: Pick<TenantContextService, 'getOrThrow'> = {
     getOrThrow: jest.fn().mockReturnValue({ userId: 'u1', ...context }),
+  };
+  const jobsService: Pick<JobsService, 'enqueue'> = {
+    enqueue: jest.fn().mockResolvedValue({ id: 'job-1' }),
   };
   const service = new DokumenLedService(
     prisma as never,
     tenantContext as TenantContextService,
+    jobsService as JobsService,
   );
-  return { service, findMany };
+  return { service, findMany, findFirst, jobsService };
 }
 
 describe('DokumenLedService.findAllForTenant', () => {
@@ -59,5 +67,49 @@ describe('DokumenLedService.findAllForTenant', () => {
     await service.findAllForTenant();
     const call = findMany.mock.calls[0][0] as { where: Record<string, unknown> };
     expect(call.where).not.toHaveProperty('programStudiId');
+  });
+});
+
+describe('DokumenLedService.triggerAssessment', () => {
+  it('enqueues an ASSESSMENT_AMI job with correct payload when document exists', async () => {
+    const { service, findFirst, jobsService } = makeService({
+      tenantId: 't1',
+      role: Role.PENJAMIN_MUTU,
+      programStudiId: null,
+    });
+
+    findFirst.mockResolvedValue({
+      id: 'doc-123',
+      programStudiId: 'prodi-1',
+    });
+
+    const res = await service.triggerAssessment('doc-123', {
+      indikatorList: ['C.1.a'],
+    });
+
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { id: 'doc-123', programStudi: { tenantId: 't1' } },
+    });
+    expect(jobsService.enqueue).toHaveBeenCalledWith(JobType.ASSESSMENT_AMI, {
+      dokumenId: 'doc-123',
+      tenantId: 't1',
+      programStudiId: 'prodi-1',
+      indikatorList: ['C.1.a'],
+    });
+    expect(res).toEqual({ id: 'job-1' });
+  });
+
+  it('throws NotFoundException if document does not exist for tenant', async () => {
+    const { service, findFirst } = makeService({
+      tenantId: 't1',
+      role: Role.PENJAMIN_MUTU,
+      programStudiId: null,
+    });
+
+    findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.triggerAssessment('invalid-id'),
+    ).rejects.toThrow('Dokumen LED tidak ditemukan');
   });
 });
