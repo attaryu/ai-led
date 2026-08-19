@@ -5,7 +5,9 @@ import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
 import { Redis } from 'ioredis';
 import { requireEnv } from '../config/env';
+import { JobEventsService } from './job-events.service';
 import { JobsController } from './jobs.controller';
+import { JobsGateway } from './jobs.gateway';
 import { JobsService } from './jobs.service';
 import { ASSESSMENT_QUEUE, GENERATION_QUEUE, INGESTION_QUEUE } from './queue-names';
 
@@ -47,8 +49,8 @@ const defaultJobOptions = {
       { name: INGESTION_QUEUE, adapter: BullMQAdapter },
     ),
   ],
-  controllers: [JobsController],
-  providers: [JobsService],
+  controllers: [JobsController, JobsGateway],
+  providers: [JobsService, JobEventsService],
   exports: [JobsService],
 })
 export class JobsModule {}
