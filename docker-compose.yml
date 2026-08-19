@@ -1,6 +1,10 @@
 services:
   postgres:
-    image: postgres:16
+    # pgvector/pgvector:pg16 is upstream postgres:16 + the pgvector extension
+    # precompiled — drop-in compatible, same data directory format. Used for
+    # LED chunk embeddings (apps/ai/vectorstore/pgvector_store.py) alongside
+    # every other table Prisma owns.
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres

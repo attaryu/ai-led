@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import json
-import os
 
 from langchain_core.tools import tool
 
 from agent.context import require_current_context
-from vectorstore.chroma_store import search_led
+from vectorstore.pgvector_store import search_led
 
 
 @tool
@@ -27,10 +26,8 @@ def search_led_evidence(query: str, n_results: int = 5) -> str:
     """
     # tenant/dokumen dari context, bukan argumen tool — model tidak boleh pilih sendiri.
     ctx = require_current_context()
-    persist_dir = os.environ.get("CHROMA_PERSIST_DIR", "data/chroma_db")
     results = search_led(
         query=query,
-        persist_dir=persist_dir,
         tenant_id=ctx.tenant_id,
         dokumen_id=ctx.dokumen_id,
         n_results=n_results,

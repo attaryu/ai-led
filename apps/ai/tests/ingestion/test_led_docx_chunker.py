@@ -107,25 +107,7 @@ def test_chunk_overlap_creates_adjacent_coverage(chunks_with_prefix):
         )
 
 
-# ── 10 ─ ChromaDB integration ──────────────────────────────────────────────────
-def test_index_and_search_roundtrip(chunks_with_prefix, tmp_path):
-    """Index docx-sourced chunks into ChromaDB and verify search returns correct
-    structure, including the new para_start/para_end metadata fields."""
-    from vectorstore.chroma_store import _get_ef, index_led_chunks, search_led
-
-    try:
-        _get_ef()
-    except Exception as exc:
-        pytest.skip(f"SentenceTransformer model unavailable: {exc}")
-
-    persist_dir = str(tmp_path / "chroma_test_docx")
-    index_led_chunks(chunks_with_prefix, persist_dir)
-
-    results = search_led("visi misi program studi", persist_dir, n_results=3)
-    assert len(results) > 0, "Search returned no results"
-    for r in results:
-        meta = r["metadata"]
-        assert "para_start" in meta, f"metadata missing 'para_start': {meta}"
-        assert "para_end" in meta, f"metadata missing 'para_end': {meta}"
-        assert meta["page_start"] == -1
-        assert meta["para_start"] >= 0
+# Vector store index/search roundtrip (including the para_start/-1 vs.
+# page_start/-1 sentinel convention, which vectorstore.pgvector_store stores
+# as plain int columns with no pdf/docx-specific logic) moved to
+# tests/vectorstore/test_pgvector_store.py.

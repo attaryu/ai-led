@@ -43,7 +43,7 @@ def _load_indicators(nos: list[int]) -> list[_Indicator]:
 
 
 # Single-machine benchmark script, not a real tenant/document — fixed
-# identity so it keeps working now that lkps_tool/chroma_store are scoped
+# identity so it keeps working now that lkps_tool/pgvector_store are scoped
 # per (tenant_id, dokumen_id). See agent/context.py.
 _LOCAL_TENANT_ID = "benchmark"
 _LOCAL_DOKUMEN_ID = "benchmark"

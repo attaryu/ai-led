@@ -71,28 +71,7 @@ def test_chunk_overlap_creates_adjacent_coverage(chunks):
         )
 
 
-# ── 9 ─ ChromaDB integration ───────────────────────────────────────────────────
-def test_index_and_search_roundtrip(chunks, tmp_path):
-    """Index chunks into ChromaDB and verify search returns correct structure."""
-    from vectorstore.chroma_store import index_led_chunks, search_led, _get_ef
-
-    try:
-        _get_ef()  # smoke-test model load before committing to indexing
-    except Exception as exc:
-        pytest.skip(f"SentenceTransformer model unavailable: {exc}")
-
-    persist_dir = str(tmp_path / "chroma_test")
-    index_led_chunks(chunks, persist_dir)
-
-    results = search_led("visi misi program studi", persist_dir, n_results=3)
-    assert len(results) > 0, "Search returned no results"
-    for r in results:
-        assert "text" in r, f"Result missing 'text' key: {r.keys()}"
-        assert "chunk_id" in r, f"Result missing 'chunk_id' key: {r.keys()}"
-        assert "distance" in r, f"Result missing 'distance' key: {r.keys()}"
-        assert "metadata" in r, f"Result missing 'metadata' key: {r.keys()}"
-        meta = r["metadata"]
-        assert "page_start" in meta, f"metadata missing 'page_start': {meta}"
-        assert "page_end" in meta, f"metadata missing 'page_end': {meta}"
-        assert "section_heading" in meta, f"metadata missing 'section_heading': {meta}"
-        assert "char_start" in meta, f"metadata missing 'char_start': {meta}"
+# Vector store index/search roundtrip moved to
+# tests/vectorstore/test_pgvector_store.py — that's where the store lives
+# now (vectorstore.pgvector_store), and it covers tenant/document isolation
+# this file was never scoped for.

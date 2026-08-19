@@ -8,7 +8,13 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml .
-RUN pip install --no-cache-dir -e .
+# Cache mount, not --no-cache-dir: any pyproject.toml change (a version bump,
+# swapping one package) invalidates this whole layer, and without a cache
+# mount that means re-downloading every dependency from scratch — torch and
+# sentence-transformers alone are ~2GB. The mount persists across builds on
+# the same Docker daemon independent of layer invalidation, so only the
+# actually-changed packages get fetched.
+RUN --mount=type=cache,target=/root/.cache/pip pip install -e .
 
 # Pre-download embedding model so first-run indexing isn't blocked on a
 # slow / rate-limited HF Hub download (xet chunked protocol hangs on some networks).

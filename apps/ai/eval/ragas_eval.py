@@ -284,11 +284,10 @@ def _generate_synthetic_response(question: str, contexts: list[str], llm) -> str
 def build_eval_samples(
     n_indicators: int = 5,
     session_id: Optional[str] = None,
-    chroma_persist_dir: Optional[str] = None,
     reference_path: Optional[str] = None,
     # Single-machine eval tool, not a real tenant/document — defaults match
     # the "local" identity used by scripts/fetch_indicator_context.py, since
-    # chroma_store.search_led is now scoped per (tenant_id, dokumen_id).
+    # pgvector_store.search_led is scoped per (tenant_id, dokumen_id).
     tenant_id: str = "local",
     dokumen_id: str = "local",
     progress_cb=None,
@@ -299,15 +298,13 @@ def build_eval_samples(
     Args:
         n_indicators: How many indicators to evaluate (default 5 for speed).
         session_id:   If provided, read agent justifications from Supabase.
-        chroma_persist_dir: Override for ChromaDB path.
         reference_path: Path to a JSON file with actual ground-truth references.
             Format: [{"indicator_no": int, "reference": str}, ...].
             Falls back to synthetic generation for missing indicators.
     """
     from agent.tools.rubric_tool import _get_rubrics
-    from vectorstore.chroma_store import search_led
+    from vectorstore.pgvector_store import search_led
 
-    persist_dir = chroma_persist_dir or os.environ.get("CHROMA_PERSIST_DIR", "data/chroma_db")
     rubrics = _get_rubrics()
     llm = _build_ragas_llm()
 
@@ -357,7 +354,6 @@ def build_eval_samples(
         try:
             raw = search_led(
                 query=question,
-                persist_dir=persist_dir,
                 tenant_id=tenant_id,
                 dokumen_id=dokumen_id,
                 n_results=5,
@@ -401,7 +397,6 @@ def build_eval_samples(
 def run_ragas_evaluation(
     n_indicators: int = 5,
     session_id: Optional[str] = None,
-    chroma_persist_dir: Optional[str] = None,
     metrics_to_run: Optional[list[str]] = None,
     reference_path: Optional[str] = None,
     progress_cb=None,
@@ -411,7 +406,6 @@ def run_ragas_evaluation(
     Args:
         n_indicators:    Number of indicators to evaluate.
         session_id:      Optional Supabase session to read real justifications from.
-        chroma_persist_dir: Override ChromaDB path.
         metrics_to_run:  Subset of ALL_METRICS to run (default: all four).
         reference_path:  Path to JSON file with actual ground-truth references.
 
@@ -443,7 +437,6 @@ def run_ragas_evaluation(
     samples = build_eval_samples(
         n_indicators=n_indicators,
         session_id=session_id,
-        chroma_persist_dir=chroma_persist_dir,
         reference_path=reference_path,
         progress_cb=progress_cb,
     )

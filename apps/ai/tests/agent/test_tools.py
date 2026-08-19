@@ -230,7 +230,7 @@ def test_led_tool_returns_json(monkeypatch):
     """Returns valid JSON list on successful search."""
     from agent.tools import led_tool
 
-    def fake_search(query, persist_dir, tenant_id, dokumen_id, n_results):
+    def fake_search(query, tenant_id, dokumen_id, n_results):
         assert tenant_id == "tenant-x"
         assert dokumen_id == "doc-1"
         return [

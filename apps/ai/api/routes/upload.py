@@ -1,13 +1,14 @@
 """File upload API routes.
 
 POST /upload/matrix    — Upload Matriks Penilaian PDF; parses + caches to RUBRIC_CACHE_PATH.
-POST /upload/led       — Upload LED as .pdf or .docx; triggers background chunking + ChromaDB indexing.
+POST /upload/led       — Upload LED as .pdf or .docx; triggers background chunking + pgvector indexing.
 POST /upload/lkps      — Upload LKPS Excel; loads LKPSRegistry and injects into lkps_tool.
 POST /upload/laporan   — Upload Laporan_AK.xlsx; stores it for use by /assessment/start.
 GET  /upload/status    — Returns which files have been uploaded and LED indexing state.
 
-Files save under UPLOAD_DIR/{tenant_id}/{dokumen_id}/, ChromaDB indexes
-into CHROMA_PERSIST_DIR. RUBRIC_CACHE_PATH (matrix) is NOT tenant-scoped —
+Files save under UPLOAD_DIR/{tenant_id}/{dokumen_id}/, chunk embeddings go
+into Postgres (led_chunk_embeddings, DATABASE_URL). RUBRIC_CACHE_PATH
+(matrix) is NOT tenant-scoped —
 the AMI rubric is shared national reference data, same as RubrikKriteria
 having no tenantId in schema.prisma.
 
@@ -31,7 +32,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/upload", tags=["upload"])
 
 UPLOAD_DIR: str = os.environ.get("UPLOAD_DIR", "data/uploads")
-CHROMA_PERSIST_DIR: str = os.environ.get("CHROMA_PERSIST_DIR", "data/chroma_db")
 RUBRIC_CACHE_PATH: str = os.environ.get(
     "RUBRIC_CACHE_PATH", "data/rubric_cache/matrix.json"
 )
@@ -139,12 +139,12 @@ def _save_upload(file: UploadFile, dest_dir: str, filename: str) -> tuple[str, i
 
 
 def _index_led_background(led_path: str, tenant_id: str, dokumen_id: str) -> None:
-    """Chunk the LED file (.pdf or .docx) and index into ChromaDB. Runs in a
+    """Chunk the LED file (.pdf or .docx) and index into pgvector. Runs in a
     thread via BackgroundTasks."""
     key = (tenant_id, dokumen_id)
     _led_index_status[key] = {"state": "indexing", "chunk_count": 0, "error": None}
     try:
-        from vectorstore.chroma_store import index_led_chunks
+        from vectorstore.pgvector_store import index_led_chunks
 
         if led_path.lower().endswith(".docx"):
             from ingestion.led_docx_chunker import chunk_led_docx
@@ -153,18 +153,17 @@ def _index_led_background(led_path: str, tenant_id: str, dokumen_id: str) -> Non
             from ingestion.led_chunker import chunk_led_pdf
             chunks = chunk_led_pdf(led_path)
 
-        index_led_chunks(chunks, CHROMA_PERSIST_DIR, tenant_id, dokumen_id)
+        index_led_chunks(chunks, tenant_id, dokumen_id)
         _led_index_status[key] = {
             "state": "ready",
             "chunk_count": len(chunks),
             "error": None,
         }
         logger.info(
-            "LED indexed for tenant=%s dokumen=%s: %d chunks into %s",
+            "LED indexed for tenant=%s dokumen=%s: %d chunks",
             tenant_id,
             dokumen_id,
             len(chunks),
-            CHROMA_PERSIST_DIR,
         )
     except Exception as exc:
         logger.exception("LED indexing failed for tenant=%s dokumen=%s", tenant_id, dokumen_id)
@@ -261,8 +260,8 @@ async def upload_led(
     tenant_id: str = Form(...),
     dokumen_id: str = Form(...),
 ) -> LedUploadResponse:
-    """Upload one document's LED as .pdf or .docx. Indexing into its own
-    ChromaDB collection starts immediately in the background."""
+    """Upload one document's LED as .pdf or .docx. Chunk embedding into
+    Postgres (led_chunk_embeddings) starts immediately in the background."""
     if not file.filename or not file.filename.lower().endswith(LED_EXTENSIONS):
         raise HTTPException(
             status_code=400, detail="File must be a PDF (.pdf) or Word document (.docx)"

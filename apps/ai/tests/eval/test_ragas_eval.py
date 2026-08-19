@@ -98,7 +98,7 @@ def test_build_eval_samples_returns_correct_count():
     with (
         patch("agent.tools.rubric_tool._get_rubrics",
               return_value=[_fake_rubric(i) for i in range(1, 6)]),
-        patch("vectorstore.chroma_store.search_led", return_value=_fake_search_results(2)),
+        patch("vectorstore.pgvector_store.search_led", return_value=_fake_search_results(2)),
         patch("eval.ragas_eval._build_ragas_llm", return_value=fake_llm_wrapper),
     ):
         samples = build_eval_samples(n_indicators=3)
@@ -119,7 +119,7 @@ def test_build_eval_samples_uses_supabase_justification():
 
     with (
         patch("agent.tools.rubric_tool._get_rubrics", return_value=[_fake_rubric(1)]),
-        patch("vectorstore.chroma_store.search_led", return_value=_fake_search_results(1)),
+        patch("vectorstore.pgvector_store.search_led", return_value=_fake_search_results(1)),
         patch("eval.ragas_eval._build_ragas_llm", return_value=fake_llm_wrapper),
         patch("db.supabase_client.get_supabase", return_value=fake_sb),
     ):
@@ -146,7 +146,7 @@ def test_build_eval_samples_uses_actual_reference():
     try:
         with (
             patch("agent.tools.rubric_tool._get_rubrics", return_value=[_fake_rubric(1)]),
-            patch("vectorstore.chroma_store.search_led", return_value=_fake_search_results(1)),
+            patch("vectorstore.pgvector_store.search_led", return_value=_fake_search_results(1)),
             patch("eval.ragas_eval._build_ragas_llm", return_value=fake_llm_wrapper),
         ):
             samples = build_eval_samples(n_indicators=1, reference_path=ref_path)
@@ -177,7 +177,7 @@ def test_build_eval_samples_falls_back_when_ref_missing():
     try:
         with (
             patch("agent.tools.rubric_tool._get_rubrics", return_value=[_fake_rubric(1)]),
-            patch("vectorstore.chroma_store.search_led", return_value=_fake_search_results(1)),
+            patch("vectorstore.pgvector_store.search_led", return_value=_fake_search_results(1)),
             patch("eval.ragas_eval._build_ragas_llm", return_value=fake_llm_wrapper),
         ):
             samples = build_eval_samples(n_indicators=1, reference_path=ref_path)
@@ -195,7 +195,7 @@ def test_build_eval_samples_ignores_nonexistent_reference_path():
 
     with (
         patch("agent.tools.rubric_tool._get_rubrics", return_value=[_fake_rubric(1)]),
-        patch("vectorstore.chroma_store.search_led", return_value=_fake_search_results(1)),
+        patch("vectorstore.pgvector_store.search_led", return_value=_fake_search_results(1)),
         patch("eval.ragas_eval._build_ragas_llm", return_value=fake_llm_wrapper),
     ):
         # Should not raise even if path doesn't exist

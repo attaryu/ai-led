@@ -357,7 +357,7 @@ def test_index_led_background_sets_ready(tmp_path):
 
     with (
         patch("ingestion.led_chunker.chunk_led_pdf", return_value=fake_chunks),
-        patch("vectorstore.chroma_store.index_led_chunks"),
+        patch("vectorstore.pgvector_store.index_led_chunks"),
     ):
         import api.routes.upload as up
         up._index_led_background(str(tmp_path / "led.pdf"), "tenant-a", "doc-1")
@@ -383,7 +383,7 @@ def test_index_led_background_routes_docx_to_docx_chunker(tmp_path):
     with (
         patch("ingestion.led_docx_chunker.chunk_led_docx", return_value=fake_chunks) as mock_docx,
         patch("ingestion.led_chunker.chunk_led_pdf") as mock_pdf,
-        patch("vectorstore.chroma_store.index_led_chunks"),
+        patch("vectorstore.pgvector_store.index_led_chunks"),
     ):
         import api.routes.upload as up
         up._index_led_background(str(tmp_path / "led.docx"), "tenant-a", "doc-1")
@@ -405,7 +405,7 @@ def test_index_led_background_does_not_touch_other_documents(tmp_path):
 
     with (
         patch("ingestion.led_chunker.chunk_led_pdf", return_value=[MagicMock()] * 3),
-        patch("vectorstore.chroma_store.index_led_chunks"),
+        patch("vectorstore.pgvector_store.index_led_chunks"),
     ):
         up._index_led_background(str(tmp_path / "led.pdf"), "tenant-a", "doc-1")
 

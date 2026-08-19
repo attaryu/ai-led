@@ -10,16 +10,15 @@ Usage (inside container):
 from __future__ import annotations
 
 import json
-import os
 import sys
 from agent.context import AssessmentContext, current_assessment_context
 from agent.tools.lkps_tool import get_lkps_table, set_lkps_registry
 from ingestion.lkps_loader import load_lkps
-from vectorstore.chroma_store import search_led
+from vectorstore.pgvector_store import search_led
 
 # Single-machine dev/eval script, operating on whatever was last uploaded
 # locally — not a real tenant/document, just a fixed identity so it keeps
-# working now that chroma_store/lkps_tool are scoped per (tenant_id,
+# working now that pgvector_store/lkps_tool are scoped per (tenant_id,
 # dokumen_id). See agent/context.py.
 _LOCAL_CONTEXT = AssessmentContext(tenant_id="local", dokumen_id="local")
 
@@ -39,7 +38,6 @@ def _ensure_lkps():
 def _search_led(query: str, n: int = 5) -> list[dict]:
     results = search_led(
         query=query,
-        persist_dir="/app/data/chroma_db",
         tenant_id=_LOCAL_CONTEXT.tenant_id,
         dokumen_id=_LOCAL_CONTEXT.dokumen_id,
         n_results=n,

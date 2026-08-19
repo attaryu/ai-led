@@ -1,7 +1,8 @@
 """Tests for POST /assessment/start and GET /assessment/{session_id}/status, /results.
 
 All external I/O is mocked:
-- Supabase calls are patched at the function level (db.supabase_client.*)
+- Postgres calls are patched at the function level (db.postgres_client.* as
+  imported into api.routes.assessment)
 - build_graph / _run_assessment_pipeline are patched to avoid real LLM calls
 - excel.reader.read_indicator_rows is patched to return fake indicator rows
 - os.path.exists is patched so the route doesn't require a real file on disk
@@ -14,6 +15,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+
+TENANT_ID = "tenant-1"
+DOKUMEN_ID = "dokumen-1"
+USER_ID = "user-1"
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -51,11 +56,28 @@ def client(fake_indicators):
             yield c
 
 
+def _start_body(**overrides):
+    body = {
+        "tenant_id": TENANT_ID,
+        "dokumen_id": DOKUMEN_ID,
+        "created_by_user_id": USER_ID,
+        "laporan_path": "/fake/Laporan_AK.xlsx",
+    }
+    body.update(overrides)
+    return body
+
+
+def _resume_body(**overrides):
+    body = {"tenant_id": TENANT_ID, "dokumen_id": DOKUMEN_ID}
+    body.update(overrides)
+    return body
+
+
 # ── POST /assessment/start ────────────────────────────────────────────────────
 
 
 def test_start_returns_session_id(client):
-    resp = client.post("/assessment/start", json={"laporan_path": "/fake/Laporan_AK.xlsx"})
+    resp = client.post("/assessment/start", json=_start_body())
     assert resp.status_code == 200
     data = resp.json()
     assert "session_id" in data
@@ -65,11 +87,9 @@ def test_start_returns_session_id(client):
 def test_start_missing_file_returns_400():
     from main import app
 
-    with (
-        patch("api.routes.assessment.os.path.exists", return_value=False),
-    ):
+    with patch("api.routes.assessment.os.path.exists", return_value=False):
         with TestClient(app) as c:
-            resp = c.post("/assessment/start", json={"laporan_path": "/no/such/file.xlsx"})
+            resp = c.post("/assessment/start", json=_start_body(laporan_path="/no/such/file.xlsx"))
     assert resp.status_code == 400
 
 
@@ -81,7 +101,7 @@ def test_start_empty_indicators_returns_422():
         patch("api.routes.assessment.read_indicator_rows", return_value=[]),
     ):
         with TestClient(app) as c:
-            resp = c.post("/assessment/start", json={"laporan_path": "/fake/empty.xlsx"})
+            resp = c.post("/assessment/start", json=_start_body(laporan_path="/fake/empty.xlsx"))
     assert resp.status_code == 422
 
 
@@ -101,10 +121,7 @@ def test_start_custom_max_parallel(fake_indicators):
         patch("api.routes.assessment._run_assessment_pipeline", new=AsyncMock(side_effect=fake_pipeline)),
     ):
         with TestClient(app) as c:
-            resp = c.post(
-                "/assessment/start",
-                json={"laporan_path": "/fake/Laporan_AK.xlsx", "max_parallel": 3},
-            )
+            resp = c.post("/assessment/start", json=_start_body(max_parallel=3))
 
     assert resp.status_code == 200
     assert captured.get("max_parallel") == 3
@@ -117,7 +134,7 @@ def test_start_no_rubrics_available_returns_500():
 
     with patch("api.routes.assessment._get_rubrics", return_value=[]):
         with TestClient(app) as c:
-            resp = c.post("/assessment/start", json={})
+            resp = c.post("/assessment/start", json=_start_body(laporan_path=None))
 
     assert resp.status_code == 500
 
@@ -139,7 +156,7 @@ def test_start_without_laporan_path_uses_default_rubrics():
         patch("api.routes.assessment._run_assessment_pipeline", new=AsyncMock()),
     ):
         with TestClient(app) as c:
-            resp = c.post("/assessment/start", json={})
+            resp = c.post("/assessment/start", json=_start_body(laporan_path=None))
 
     assert resp.status_code == 200
     assert resp.json()["total_indicators"] == 2
@@ -151,7 +168,6 @@ def test_start_without_laporan_path_uses_default_rubrics():
 def _fake_session_row(**overrides):
     row = {
         "session_id": "sess-1",
-        "laporan_path": "/fake/Laporan_AK.xlsx",
         "status": "failed",
         "total_indicators": 3,
         "completed_indicators": 1,
@@ -164,27 +180,9 @@ def _fake_session_row(**overrides):
 def test_resume_session_not_found_returns_404():
     from main import app
 
-    fake_supabase = MagicMock()
-    fake_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = None
-
-    with patch("api.routes.assessment.get_supabase", return_value=fake_supabase):
+    with patch("api.routes.assessment.get_session", return_value=None):
         with TestClient(app) as c:
-            resp = c.post("/assessment/nonexistent/resume")
-
-    assert resp.status_code == 404
-
-
-def test_resume_supabase_raises_on_no_match_returns_404():
-    from main import app
-
-    fake_supabase = MagicMock()
-    fake_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect = (
-        Exception("PGRST116: 0 rows")
-    )
-
-    with patch("api.routes.assessment.get_supabase", return_value=fake_supabase):
-        with TestClient(app) as c:
-            resp = c.post("/assessment/nonexistent/resume")
+            resp = c.post("/assessment/nonexistent/resume", json=_resume_body())
 
     assert resp.status_code == 404
 
@@ -201,16 +199,13 @@ def test_resume_skips_already_done_indicators(fake_indicators):
     row3.kriteria = "Kerja Sama"
     all_indicators = fake_indicators + [row3]
 
-    fake_supabase = MagicMock()
-    fake_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = _fake_session_row()
-
     captured = {}
 
     async def fake_pipeline(**kwargs):
         captured.update(kwargs)
 
     with (
-        patch("api.routes.assessment.get_supabase", return_value=fake_supabase),
+        patch("api.routes.assessment.get_session", return_value=_fake_session_row()),
         patch("api.routes.assessment.os.path.exists", return_value=True),
         patch("api.routes.assessment.read_indicator_rows", return_value=all_indicators),
         patch("api.routes.assessment.get_completed_indicator_numbers", return_value={1}),
@@ -218,7 +213,7 @@ def test_resume_skips_already_done_indicators(fake_indicators):
         patch("api.routes.assessment._run_assessment_pipeline", new=AsyncMock(side_effect=fake_pipeline)),
     ):
         with TestClient(app) as c:
-            resp = c.post("/assessment/sess-1/resume")
+            resp = c.post("/assessment/sess-1/resume", json=_resume_body(laporan_path="/fake/Laporan_AK.xlsx"))
 
     assert resp.status_code == 200
     data = resp.json()
@@ -238,25 +233,20 @@ def test_resume_without_laporan_path_uses_default_rubrics():
     fake_rubric_a = MagicMock(); fake_rubric_a.no = 1; fake_rubric_a.kriteria = "K1"
     fake_rubric_b = MagicMock(); fake_rubric_b.no = 2; fake_rubric_b.kriteria = "K2"
 
-    fake_supabase = MagicMock()
-    fake_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = (
-        _fake_session_row(laporan_path="", total_indicators=2)
-    )
-
     captured = {}
 
     async def fake_pipeline(**kwargs):
         captured.update(kwargs)
 
     with (
-        patch("api.routes.assessment.get_supabase", return_value=fake_supabase),
+        patch("api.routes.assessment.get_session", return_value=_fake_session_row(total_indicators=2)),
         patch("api.routes.assessment._get_rubrics", return_value=[fake_rubric_a, fake_rubric_b]),
         patch("api.routes.assessment.get_completed_indicator_numbers", return_value=set()),
         patch("api.routes.assessment.update_session_status"),
         patch("api.routes.assessment._run_assessment_pipeline", new=AsyncMock(side_effect=fake_pipeline)),
     ):
         with TestClient(app) as c:
-            resp = c.post("/assessment/sess-1/resume")
+            resp = c.post("/assessment/sess-1/resume", json=_resume_body(laporan_path=None))
 
     assert resp.status_code == 200
     remaining_nos = {ind.indicator_no for ind in captured["indicators"]}
@@ -266,13 +256,8 @@ def test_resume_without_laporan_path_uses_default_rubrics():
 def test_resume_all_done_marks_completed_without_running_pipeline(fake_indicators):
     from main import app
 
-    fake_supabase = MagicMock()
-    fake_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = (
-        _fake_session_row(total_indicators=2)
-    )
-
     with (
-        patch("api.routes.assessment.get_supabase", return_value=fake_supabase),
+        patch("api.routes.assessment.get_session", return_value=_fake_session_row(total_indicators=2)),
         patch("api.routes.assessment.os.path.exists", return_value=True),
         patch("api.routes.assessment.read_indicator_rows", return_value=fake_indicators),
         patch("api.routes.assessment.get_completed_indicator_numbers", return_value={1, 2}),
@@ -280,7 +265,7 @@ def test_resume_all_done_marks_completed_without_running_pipeline(fake_indicator
         patch("api.routes.assessment._run_assessment_pipeline", new=AsyncMock()) as mock_pipeline,
     ):
         with TestClient(app) as c:
-            resp = c.post("/assessment/sess-1/resume")
+            resp = c.post("/assessment/sess-1/resume", json=_resume_body(laporan_path="/fake/Laporan_AK.xlsx"))
 
     assert resp.status_code == 200
     data = resp.json()
@@ -296,10 +281,7 @@ def test_resume_all_done_marks_completed_without_running_pipeline(fake_indicator
 def test_list_sessions_returns_empty_when_none():
     from main import app
 
-    fake_supabase = MagicMock()
-    fake_supabase.table.return_value.select.return_value.order.return_value.limit.return_value.execute.return_value.data = []
-
-    with patch("api.routes.assessment.get_supabase", return_value=fake_supabase):
+    with patch("api.routes.assessment.list_sessions_db", return_value=[]):
         with TestClient(app) as c:
             resp = c.get("/assessment/list")
 
@@ -308,31 +290,24 @@ def test_list_sessions_returns_empty_when_none():
 
 
 def test_list_sessions_computes_avg_score_per_session():
+    """list_sessions_db already computes avg_score via SQL join — the route
+    just needs to pass it through untouched."""
     from main import app
 
-    fake_supabase = MagicMock()
     sessions_data = [
         {
             "session_id": "s1", "status": "completed", "total_indicators": 2,
-            "completed_indicators": 2, "created_at": "2026-01-01", "updated_at": "2026-01-01",
-            "error": None,
+            "completed_indicators": 2, "created_at": None, "updated_at": None,
+            "error": None, "avg_score": 3.5,
         },
         {
             "session_id": "s2", "status": "running", "total_indicators": 1,
-            "completed_indicators": 0, "created_at": "2026-01-02", "updated_at": "2026-01-02",
-            "error": None,
+            "completed_indicators": 0, "created_at": None, "updated_at": None,
+            "error": None, "avg_score": None,
         },
     ]
-    scores_data = [
-        {"session_id": "s1", "score": 3.0},
-        {"session_id": "s1", "score": 4.0},
-        # s2 has no indicator_results rows at all yet.
-    ]
 
-    fake_supabase.table.return_value.select.return_value.order.return_value.limit.return_value.execute.return_value.data = sessions_data
-    fake_supabase.table.return_value.select.return_value.in_.return_value.execute.return_value.data = scores_data
-
-    with patch("api.routes.assessment.get_supabase", return_value=fake_supabase):
+    with patch("api.routes.assessment.list_sessions_db", return_value=sessions_data):
         with TestClient(app) as c:
             resp = c.get("/assessment/list")
 
@@ -343,50 +318,22 @@ def test_list_sessions_computes_avg_score_per_session():
     assert by_id["s2"]["avg_score"] is None
 
 
-def test_list_sessions_ignores_null_score_rows():
-    """A row with score=None (indicator errored, not yet scored) must not
-    crash the average computation or count toward it."""
-    from main import app
-
-    fake_supabase = MagicMock()
-    sessions_data = [
-        {
-            "session_id": "s1", "status": "running", "total_indicators": 2,
-            "completed_indicators": 2, "created_at": "2026-01-01", "updated_at": "2026-01-01",
-            "error": None,
-        },
-    ]
-    scores_data = [
-        {"session_id": "s1", "score": 2.0},
-        {"session_id": "s1", "score": None},
-    ]
-    fake_supabase.table.return_value.select.return_value.order.return_value.limit.return_value.execute.return_value.data = sessions_data
-    fake_supabase.table.return_value.select.return_value.in_.return_value.execute.return_value.data = scores_data
-
-    with patch("api.routes.assessment.get_supabase", return_value=fake_supabase):
-        with TestClient(app) as c:
-            resp = c.get("/assessment/list")
-
-    assert resp.status_code == 200
-    assert resp.json()[0]["avg_score"] == 2.0
-
-
 # ── GET /assessment/{session_id}/status ───────────────────────────────────────
 
 
 def test_status_returns_running():
     from main import app
 
-    fake_supabase = MagicMock()
-    fake_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
-        "session_id": "abc-123",
-        "status": "running",
-        "total_indicators": 78,
-        "completed_indicators": 10,
-        "error": None,
-    }
-
-    with patch("api.routes.assessment.get_supabase", return_value=fake_supabase):
+    with patch(
+        "api.routes.assessment.get_session",
+        return_value={
+            "session_id": "abc-123",
+            "status": "running",
+            "total_indicators": 78,
+            "completed_indicators": 10,
+            "error": None,
+        },
+    ):
         with TestClient(app) as c:
             resp = c.get("/assessment/abc-123/status")
 
@@ -399,27 +346,7 @@ def test_status_returns_running():
 def test_status_not_found_returns_404():
     from main import app
 
-    fake_supabase = MagicMock()
-    fake_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = None
-
-    with patch("api.routes.assessment.get_supabase", return_value=fake_supabase):
-        with TestClient(app) as c:
-            resp = c.get("/assessment/nonexistent/status")
-
-    assert resp.status_code == 404
-
-
-def test_status_supabase_raises_on_no_match_returns_404():
-    """Supabase-py's .single() raises (not just returns data=None) when zero
-    rows match — this is the realistic no-such-session path in production."""
-    from main import app
-
-    fake_supabase = MagicMock()
-    fake_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect = (
-        Exception("PGRST116: 0 rows")
-    )
-
-    with patch("api.routes.assessment.get_supabase", return_value=fake_supabase):
+    with patch("api.routes.assessment.get_session", return_value=None):
         with TestClient(app) as c:
             resp = c.get("/assessment/nonexistent/status")
 
@@ -456,6 +383,8 @@ async def test_process_single_indicator_success(fake_indicators):
             indicator=indicator,
             session_id="test-session",
             semaphore=semaphore,
+            tenant_id=TENANT_ID,
+            dokumen_id=DOKUMEN_ID,
         )
 
     assert result is True
@@ -483,6 +412,8 @@ async def test_process_single_indicator_handles_exception(fake_indicators):
             indicator=indicator,
             session_id="test-session",
             semaphore=semaphore,
+            tenant_id=TENANT_ID,
+            dokumen_id=DOKUMEN_ID,
         )
 
     assert result is False
@@ -498,17 +429,13 @@ async def test_process_single_indicator_handles_exception(fake_indicators):
 def test_results_returns_indicators_with_kriteria():
     from main import app
 
-    fake_supabase = MagicMock()
-    # session row
-    fake_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
+    session_row = {
         "session_id": "sess-1",
         "status": "completed",
         "total_indicators": 3,
         "completed_indicators": 3,
     }
-    # indicator_results rows — chained call, separate from .single()
-    rows_execute = MagicMock()
-    rows_execute.data = [
+    rows = [
         {
             "indicator_no": 1, "score": 3.0, "justification": "OK", "confidence": 0.9,
             "recommendation": "Tingkatkan dokumentasi.", "error": None,
@@ -522,14 +449,14 @@ def test_results_returns_indicators_with_kriteria():
             "recommendation": None, "error": None,
         },
     ]
-    fake_supabase.table.return_value.select.return_value.eq.return_value.order.return_value.execute.return_value = rows_execute
 
     fake_rubric_1 = MagicMock(); fake_rubric_1.no = 1; fake_rubric_1.kriteria = "K1"
     fake_rubric_2 = MagicMock(); fake_rubric_2.no = 2; fake_rubric_2.kriteria = "K2"
     fake_rubric_3 = MagicMock(); fake_rubric_3.no = 3; fake_rubric_3.kriteria = "K3"
 
     with (
-        patch("api.routes.assessment.get_supabase", return_value=fake_supabase),
+        patch("api.routes.assessment.get_session", return_value=session_row),
+        patch("api.routes.assessment.get_indicator_results", return_value=rows),
         patch("api.routes.assessment._get_rubrics", return_value=[fake_rubric_1, fake_rubric_2, fake_rubric_3]),
     ):
         with TestClient(app) as c:
@@ -550,26 +477,24 @@ def test_results_null_recommendation_row_does_not_crash():
     returned as null in the API response without raising an exception."""
     from main import app
 
-    fake_supabase = MagicMock()
-    fake_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
+    session_row = {
         "session_id": "sess-null",
         "status": "completed",
         "total_indicators": 1,
         "completed_indicators": 1,
     }
-    rows_execute = MagicMock()
-    rows_execute.data = [
+    rows = [
         {
             "indicator_no": 5, "score": 2.0, "justification": "Perlu perbaikan.",
             "confidence": 0.6, "recommendation": None, "error": None,
         },
     ]
-    fake_supabase.table.return_value.select.return_value.eq.return_value.order.return_value.execute.return_value = rows_execute
 
     fake_rubric = MagicMock(); fake_rubric.no = 5; fake_rubric.kriteria = "K5"
 
     with (
-        patch("api.routes.assessment.get_supabase", return_value=fake_supabase),
+        patch("api.routes.assessment.get_session", return_value=session_row),
+        patch("api.routes.assessment.get_indicator_results", return_value=rows),
         patch("api.routes.assessment._get_rubrics", return_value=[fake_rubric]),
     ):
         with TestClient(app) as c:
@@ -582,29 +507,10 @@ def test_results_null_recommendation_row_does_not_crash():
 
 
 def test_results_data_none_returns_404():
-    """The defensive `if not sess.data` fallback — distinct from .single()
-    raising — for a query that succeeds but returns no row."""
+    """No matching session row -> 404."""
     from main import app
 
-    fake_supabase = MagicMock()
-    fake_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = None
-
-    with patch("api.routes.assessment.get_supabase", return_value=fake_supabase):
-        with TestClient(app) as c:
-            resp = c.get("/assessment/nonexistent/results")
-
-    assert resp.status_code == 404
-
-
-def test_results_supabase_raises_on_no_match_returns_404():
-    from main import app
-
-    fake_supabase = MagicMock()
-    fake_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect = (
-        Exception("PGRST116: 0 rows")
-    )
-
-    with patch("api.routes.assessment.get_supabase", return_value=fake_supabase):
+    with patch("api.routes.assessment.get_session", return_value=None):
         with TestClient(app) as c:
             resp = c.get("/assessment/nonexistent/results")
 
@@ -630,6 +536,8 @@ async def test_run_assessment_pipeline_seeds_progress_from_initial_completed(fak
             session_id="sess-1",
             indicators=fake_indicators,  # 2 indicators
             max_parallel=5,
+            tenant_id=TENANT_ID,
+            dokumen_id=DOKUMEN_ID,
             initial_completed=1,
         )
 
@@ -656,6 +564,7 @@ async def test_run_assessment_pipeline_marks_failed_on_setup_exception():
     ):
         await _run_assessment_pipeline(
             session_id="sess-1", indicators=[], max_parallel=5,
+            tenant_id=TENANT_ID, dokumen_id=DOKUMEN_ID,
         )
 
     mock_update.assert_called_once()
