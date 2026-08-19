@@ -1,22 +1,27 @@
-FROM node:24-alpine AS development-dependencies-env
-COPY . /app
-WORKDIR /app
+# Build context is the repo root (not apps/web), same reason as
+# apps/backend/Dockerfile: apps/web is an npm workspace member, so its
+# lockfile is the root one, not a standalone copy.
+FROM node:24-alpine AS deps
+WORKDIR /repo
+COPY package.json package-lock.json ./
+COPY apps/web/package.json apps/web/package.json
 RUN npm ci
 
-FROM node:24-alpine AS production-dependencies-env
-COPY ./package.json package-lock.json /app/
-WORKDIR /app
-RUN npm ci --omit=dev
+FROM deps AS build
+COPY . .
+RUN npm run build --workspace apps/web
 
-FROM node:24-alpine AS build-env
-COPY . /app/
-COPY --from=development-dependencies-env /app/node_modules /app/node_modules
-WORKDIR /app
-RUN npm run build
+FROM node:24-alpine AS production-deps
+WORKDIR /repo
+COPY package.json package-lock.json ./
+COPY apps/web/package.json apps/web/package.json
+RUN npm ci --omit=dev --workspace apps/web
 
 FROM node:24-alpine
-COPY ./package.json package-lock.json /app/
-COPY --from=production-dependencies-env /app/node_modules /app/node_modules
-COPY --from=build-env /app/build /app/build
-WORKDIR /app
+WORKDIR /repo
+COPY --from=production-deps /repo/node_modules ./node_modules
+COPY --from=production-deps /repo/package.json ./package.json
+COPY --from=production-deps /repo/apps/web/package.json ./apps/web/package.json
+COPY --from=build /repo/apps/web/build ./apps/web/build
+WORKDIR /repo/apps/web
 CMD ["npm", "run", "start"]
