@@ -1,14 +1,18 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsInt, IsOptional } from 'class-validator';
 
 export class TriggerAssessmentDto {
+  // number, not a code string — matches indicator_no throughout the rest of
+  // the system (apps/ai/excel/reader.py's IndicatorRow, Prisma's
+  // IndicatorResult/ReasoningStep.indicatorNo). No alphanumeric indicator
+  // code scheme exists anywhere else to match against.
   @ApiPropertyOptional({
     description:
-      'Daftar kode/nama indikator yang akan dinilai (opsional, jika kosong akan menilai seluruh indikator)',
-    example: ['C.1.a', 'C.1.b'],
+      'Daftar nomor indikator yang akan dinilai (opsional; kosong/tidak diisi akan menilai seluruh indikator)',
+    example: [1, 2, 5],
   })
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
-  indikatorList?: string[];
+  @IsInt({ each: true })
+  indikatorList?: number[];
 }

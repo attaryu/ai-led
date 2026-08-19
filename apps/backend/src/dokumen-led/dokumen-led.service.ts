@@ -117,7 +117,9 @@ export class DokumenLedService {
       dokumenId: dokumen.id,
       tenantId,
       programStudiId: dokumen.programStudiId,
-      indikatorList: dto?.indikatorList ?? [],
+      // Omitted (not []) when unspecified — an empty array would read as
+      // "assess zero indicators" downstream, not "assess all of them".
+      indikatorList: dto?.indikatorList,
     });
   }
 }

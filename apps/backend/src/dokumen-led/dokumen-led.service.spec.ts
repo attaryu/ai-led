@@ -84,7 +84,7 @@ describe('DokumenLedService.triggerAssessment', () => {
     });
 
     const res = await service.triggerAssessment('doc-123', {
-      indikatorList: ['C.1.a'],
+      indikatorList: [1, 2],
     });
 
     expect(findFirst).toHaveBeenCalledWith({
@@ -94,9 +94,24 @@ describe('DokumenLedService.triggerAssessment', () => {
       dokumenId: 'doc-123',
       tenantId: 't1',
       programStudiId: 'prodi-1',
-      indikatorList: ['C.1.a'],
+      indikatorList: [1, 2],
     });
     expect(res).toEqual({ id: 'job-1' });
+  });
+
+  it('omits indikatorList (not []) when unspecified, so it reads as "assess all" downstream', async () => {
+    const { service, findFirst, jobsService } = makeService({
+      tenantId: 't1',
+      role: Role.PENJAMIN_MUTU,
+      programStudiId: null,
+    });
+
+    findFirst.mockResolvedValue({ id: 'doc-123', programStudiId: 'prodi-1' });
+
+    await service.triggerAssessment('doc-123');
+
+    const payload = (jobsService.enqueue as jest.Mock).mock.calls[0][1] as Record<string, unknown>;
+    expect(payload.indikatorList).toBeUndefined();
   });
 
   it('throws NotFoundException if document does not exist for tenant', async () => {
