@@ -8,6 +8,7 @@ build/
 .env
 .env.*
 !.env.example
+apps/backend/uploads/
 
 # Python (apps/ai)
 __pycache__/

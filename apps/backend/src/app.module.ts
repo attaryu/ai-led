@@ -10,6 +10,7 @@ import { DokumenLedModule } from './dokumen-led/dokumen-led.module';
 import { BabDokumenModule } from './bab-dokumen/bab-dokumen.module';
 import { JobsModule } from './jobs/jobs.module';
 import { UsersModule } from './users/users.module';
+import { BuktiDukungModule } from './bukti-dukung/bukti-dukung.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { UsersModule } from './users/users.module';
     BabDokumenModule,
     JobsModule,
     UsersModule,
+    BuktiDukungModule,
   ],
   controllers: [AppController],
   providers: [AppService],
