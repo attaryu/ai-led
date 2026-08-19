@@ -51,6 +51,7 @@ services:
       SENTENCE_TRANSFORMERS_HOME: /root/.cache/huggingface/sentence-transformers
       HF_HUB_DISABLE_XET: "1"
       REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_led?schema=public
     depends_on:
       - postgres
       - redis

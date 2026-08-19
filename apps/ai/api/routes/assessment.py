@@ -7,7 +7,7 @@ POST /assessment/start
     immediately so the caller can poll for status.
 
 GET /assessment/{session_id}/status
-    Returns current session status from Supabase.
+    Returns current session status from Postgres.
 
 GET /assessment/{session_id}/results
     Returns all per-indicator results (score, justification, confidence,
@@ -34,10 +34,12 @@ from pydantic import BaseModel
 from agent.context import AssessmentContext, current_assessment_context
 from agent.graph import build_graph_auto
 from agent.tools.rubric_tool import _get_rubrics
-from db.supabase_client import (
+from db.postgres_client import (
     create_session,
     get_completed_indicator_numbers,
-    get_supabase,
+    get_indicator_results,
+    get_session,
+    list_sessions as list_sessions_db,
     log_indicator_result,
     log_reasoning_step,
     update_session_status,
@@ -59,17 +61,26 @@ MAX_PARALLEL: int = int(os.environ.get("ASSESSMENT_MAX_PARALLEL", "5"))
 
 class StartAssessmentRequest(BaseModel):
     # Wajib — tools (search_led_evidence, get_lkps_table) butuh ini via
-    # agent/context.py.
+    # agent/context.py. created_by_user_id wajib juga: assessment_sessions
+    # (Postgres) punya FK NOT NULL ke users, beda dari Supabase yang dulu
+    # tidak tahu user sama sekali.
     tenant_id: str
     dokumen_id: str
+    created_by_user_id: str
     laporan_path: Optional[str] = None
     max_parallel: Optional[int] = None
 
 
 class ResumeAssessmentRequest(BaseModel):
-    # Supabase tidak simpan tenant_id/dokumen_id, jadi diminta ulang di sini.
+    # tenant_id/dokumen_id diminta ulang di sini karena tidak ada di baris
+    # sesi. laporan_path juga: assessment_sessions (Postgres) tidak punya
+    # kolom path mentah lagi (diganti laporan_bukti_dukung_id, FK ke modul
+    # BuktiDukung yang belum ada — tracker row 45), jadi path harus dikirim
+    # ulang oleh caller supaya resume tetap bisa re-derive indicator subset
+    # yang sama seperti /start.
     tenant_id: str
     dokumen_id: str
+    laporan_path: Optional[str] = None
 
 
 class StartAssessmentResponse(BaseModel):
@@ -180,14 +191,20 @@ async def start_assessment(
 
     If ``laporan_path`` is provided, the indicator subset is extracted from that
     Excel template. Otherwise, all 78 default indicators are evaluated.
-    Results are persisted to Supabase only — nothing is written back to Excel.
+    Results are persisted to Postgres only — nothing is written back to Excel.
     """
     indicators = _derive_indicators(body.laporan_path)
 
     session_id = str(uuid.uuid4())
     parallel = body.max_parallel or MAX_PARALLEL
 
-    create_session(session_id, body.laporan_path or "", len(indicators))
+    create_session(
+        session_id,
+        tenant_id=body.tenant_id,
+        dokumen_id=body.dokumen_id,
+        created_by_user_id=body.created_by_user_id,
+        total_indicators=len(indicators),
+    )
 
     background_tasks.add_task(
         _run_assessment_pipeline,
@@ -220,23 +237,11 @@ async def resume_assessment(
     row at all (never started, or in-flight when the process died) are
     (re-)processed, under the SAME session_id.
     """
-    try:
-        sess = (
-            get_supabase()
-            .table("assessment_sessions")
-            .select("*")
-            .eq("session_id", session_id)
-            .single()
-            .execute()
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}") from exc
-
-    if not sess.data:
+    sess = get_session(session_id)
+    if sess is None:
         raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
 
-    laporan_path = sess.data.get("laporan_path") or None
-    all_indicators = _derive_indicators(laporan_path)
+    all_indicators = _derive_indicators(body.laporan_path)
 
     done = get_completed_indicator_numbers(session_id)
     remaining = [ind for ind in all_indicators if ind.indicator_no not in done]
@@ -279,76 +284,29 @@ async def resume_assessment(
 @router.get("/list", response_model=list[SessionSummary])
 async def list_sessions(limit: int = 50) -> list[SessionSummary]:
     """List recent assessment sessions (newest first), with avg score per session."""
-    sb = get_supabase()
-
-    sessions_resp = (
-        sb.table("assessment_sessions")
-        .select("session_id, status, total_indicators, completed_indicators, created_at, updated_at, error")
-        .order("created_at", desc=True)
-        .limit(max(1, min(limit, 200)))
-        .execute()
-    )
-    sessions = sessions_resp.data or []
-    if not sessions:
-        return []
-
-    # Fetch avg scores per session in one query
-    ids = [s["session_id"] for s in sessions]
-    scores_resp = (
-        sb.table("indicator_results")
-        .select("session_id, score")
-        .in_("session_id", ids)
-        .execute()
-    )
-
-    avg_by_session: dict[str, float] = {}
-    counts: dict[str, int] = {}
-    for row in (scores_resp.data or []):
-        sid = row["session_id"]
-        sc = row.get("score")
-        if sc is None:
-            continue
-        avg_by_session[sid] = avg_by_session.get(sid, 0.0) + float(sc)
-        counts[sid] = counts.get(sid, 0) + 1
-
-    out: list[SessionSummary] = []
-    for s in sessions:
-        sid = s["session_id"]
-        avg = (avg_by_session.get(sid, 0.0) / counts[sid]) if counts.get(sid) else None
-        out.append(
-            SessionSummary(
-                session_id=sid,
-                status=s["status"],
-                total_indicators=s["total_indicators"],
-                completed_indicators=s["completed_indicators"],
-                created_at=s.get("created_at"),
-                updated_at=s.get("updated_at"),
-                avg_score=round(avg, 2) if avg is not None else None,
-                error=s.get("error"),
-            )
+    sessions = list_sessions_db(limit)
+    return [
+        SessionSummary(
+            session_id=s["session_id"],
+            status=s["status"],
+            total_indicators=s["total_indicators"],
+            completed_indicators=s["completed_indicators"],
+            created_at=s.get("created_at").isoformat() if s.get("created_at") else None,
+            updated_at=s.get("updated_at").isoformat() if s.get("updated_at") else None,
+            avg_score=round(s["avg_score"], 2) if s.get("avg_score") is not None else None,
+            error=s.get("error"),
         )
-    return out
+        for s in sessions
+    ]
 
 
 @router.get("/{session_id}/status", response_model=SessionStatusResponse)
 async def get_session_status(session_id: str) -> SessionStatusResponse:
     """Return the current status of an assessment session."""
-    try:
-        resp = (
-            get_supabase()
-            .table("assessment_sessions")
-            .select("*")
-            .eq("session_id", session_id)
-            .single()
-            .execute()
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}") from exc
-
-    if not resp.data:
+    row = get_session(session_id)
+    if row is None:
         raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
 
-    row = resp.data
     return SessionStatusResponse(
         session_id=row["session_id"],
         status=row["status"],
@@ -361,29 +319,11 @@ async def get_session_status(session_id: str) -> SessionStatusResponse:
 @router.get("/{session_id}/results", response_model=SessionResultsResponse)
 async def get_session_results(session_id: str) -> SessionResultsResponse:
     """Return all per-indicator results for a session, joined with rubric kriteria."""
-    sb = get_supabase()
-
-    try:
-        sess = (
-            sb.table("assessment_sessions")
-            .select("*")
-            .eq("session_id", session_id)
-            .single()
-            .execute()
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}") from exc
-
-    if not sess.data:
+    sess = get_session(session_id)
+    if sess is None:
         raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
 
-    rows_resp = (
-        sb.table("indicator_results")
-        .select("indicator_no, score, justification, confidence, recommendation, error")
-        .eq("session_id", session_id)
-        .order("indicator_no")
-        .execute()
-    )
+    rows = get_indicator_results(session_id)
 
     # Map indicator_no → kriteria for fast lookup
     kriteria_map: dict[int, str] = {r.no: r.kriteria for r in _get_rubrics()}
@@ -398,14 +338,14 @@ async def get_session_results(session_id: str) -> SessionResultsResponse:
             recommendation=row.get("recommendation"),
             error=row.get("error"),
         )
-        for row in (rows_resp.data or [])
+        for row in rows
     ]
 
     return SessionResultsResponse(
         session_id=session_id,
-        status=sess.data["status"],
-        total_indicators=sess.data["total_indicators"],
-        completed_indicators=sess.data["completed_indicators"],
+        status=sess["status"],
+        total_indicators=sess["total_indicators"],
+        completed_indicators=sess["completed_indicators"],
         results=items,
     )
 
@@ -423,9 +363,9 @@ async def _process_single_indicator(
     tenant_id: str,
     dokumen_id: str,
 ) -> bool:
-    """Run the LangGraph agent for one indicator and persist results to Supabase.
+    """Run the LangGraph agent for one indicator and persist results to Postgres.
 
-    Returns True on success, False on error (error is logged and stored in Supabase).
+    Returns True on success, False on error (error is logged and stored in Postgres).
     """
     async with semaphore:
         try:
