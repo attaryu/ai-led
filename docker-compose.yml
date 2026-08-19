@@ -39,9 +39,11 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_led?schema=public
       REDIS_URL: redis://redis:6379
+      AI_SERVICE_URL: http://ai:8000
     depends_on:
       - postgres
       - redis
+      - ai
 
   ai:
     build:

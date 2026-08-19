@@ -4,8 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Role } from '@ai-led/db';
+import { JobType, Prisma, Role } from '@ai-led/db';
 import { PrismaService } from '../database/prisma.service';
+import { JobsService } from '../jobs/jobs.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { CreateBabDokumenDto } from './dto/create-bab-dokumen.dto';
 import { UpdateBabDokumenDto } from './dto/update-bab-dokumen.dto';
@@ -16,6 +17,7 @@ export class BabDokumenService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
+    private readonly jobsService: JobsService,
   ) {}
 
   private assertProgramStudiScope(programStudiId: string): void {
@@ -113,6 +115,28 @@ export class BabDokumenService {
         kontenKerja: dto.kontenKerja as Prisma.InputJsonValue | undefined,
       },
     });
+  }
+
+  /** Enqueues GENERASI_BAB — apps/ai's worker does the actual RAG pipeline. */
+  async triggerGenerate(id: string) {
+    const { tenantId, userId } = this.tenantContext.getOrThrow();
+    const bab = await this.findOneScoped(id);
+    if (bab.terkunci) {
+      throw new ForbiddenException('Bab ini sedang terkunci untuk direview');
+    }
+
+    return this.jobsService.enqueue(JobType.GENERASI_BAB, {
+      babDokumenId: bab.id,
+      tenantId,
+      createdByUserId: userId,
+    });
+  }
+
+  /** Tenant/scope check for the chat proxy — same rules as everything else. */
+  async assertChatAccess(id: string): Promise<{ userId: string }> {
+    const { userId } = this.tenantContext.getOrThrow();
+    await this.findOneScoped(id);
+    return { userId };
   }
 
   /** PENYUSUN-only: mark ready for review. Controller restricts the role. */

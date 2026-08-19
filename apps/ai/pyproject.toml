@@ -30,6 +30,7 @@ dependencies = [
     "ragas>=0.4",
     "langchain-openai>=0.1",
     "bullmq>=3.0",
+    "markdown>=3.7",
 ]
 
 [project.optional-dependencies]

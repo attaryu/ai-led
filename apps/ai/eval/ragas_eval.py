@@ -28,10 +28,30 @@ import json
 import logging
 import os
 import re
+import sys
+import types
 from dataclasses import dataclass, field
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# ragas==0.4.3 unconditionally imports langchain_community.chat_models.vertexai
+# at `from ragas.llms.base import ...` time, but that submodule was dropped from
+# langchain-community 0.4.x (moved to the separate langchain-google-vertexai
+# package). We never select the vertexai provider, so a stub satisfies the
+# import without pulling in the real (heavy) GCP integration.
+if "langchain_community.chat_models.vertexai" not in sys.modules:
+    try:
+        import langchain_community.chat_models.vertexai  # noqa: F401
+    except ModuleNotFoundError:
+        _stub = types.ModuleType("langchain_community.chat_models.vertexai")
+
+        class ChatVertexAI:  # noqa: N801 — matches the real class name being stubbed
+            def __init__(self, *args, **kwargs):
+                raise RuntimeError("ChatVertexAI stub — VertexAI is not configured in this project")
+
+        _stub.ChatVertexAI = ChatVertexAI
+        sys.modules["langchain_community.chat_models.vertexai"] = _stub
 
 # Reasoning models emit <think>...</think> chain-of-thought blocks that must
 # be stripped before passing to RAGAS metric parsers (which expect clean JSON
@@ -507,3 +527,60 @@ def run_ragas_evaluation(
         "per_indicator": per_indicator,
         **get_active_llm_config(),
     }
+
+
+def score_single_sample(
+    question: str,
+    answer: str,
+    contexts: list[str],
+) -> dict[str, float]:
+    """Score one real (question, answer, retrieved contexts) triple —
+    faithfulness/answer_relevancy/context_precision only (the 3 metrics
+    GENERASI_BAB needs; no context_recall, which needs a reference answer
+    this call doesn't have). Unlike run_ragas_evaluation, this scores an
+    actual generation, not a synthetic AMI-indicator sample.
+    """
+    import warnings
+
+    from ragas import evaluate, EvaluationDataset
+    from ragas.dataset_schema import SingleTurnSample
+    from ragas.metrics import AnswerRelevancy, Faithfulness, LLMContextPrecisionWithoutReference
+
+    llm_wrapper = _build_ragas_llm()
+    emb_wrapper = _build_ragas_embeddings()
+
+    metrics = [
+        Faithfulness(llm=llm_wrapper),
+        AnswerRelevancy(llm=llm_wrapper, embeddings=emb_wrapper),
+        # Plain ContextPrecision needs a `reference` (ground-truth) column we
+        # don't have for real generations — this variant judges relevance
+        # against the response instead, same as this function's docstring says.
+        LLMContextPrecisionWithoutReference(llm=llm_wrapper),
+    ]
+    dataset = EvaluationDataset(samples=[
+        SingleTurnSample(
+            user_input=question,
+            retrieved_contexts=contexts if contexts else [""],
+            response=answer,
+        )
+    ])
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        result = evaluate(dataset=dataset, metrics=metrics)
+
+    # Stable output keys regardless of ragas's internal metric.name (e.g.
+    # LLMContextPrecisionWithoutReference.name isn't "context_precision").
+    output_keys = {
+        "faithfulness": Faithfulness,
+        "answer_relevancy": AnswerRelevancy,
+        "context_precision": LLMContextPrecisionWithoutReference,
+    }
+    result_df = result.to_pandas()
+    scores: dict[str, float] = {}
+    for key, metric_cls in output_keys.items():
+        col = next((m.name for m in metrics if isinstance(m, metric_cls)), None)
+        if col and col in result_df.columns:
+            val = result_df[col].iloc[0]
+            scores[key] = round(float(val), 4) if val == val else 0.0  # NaN guard
+    return scores

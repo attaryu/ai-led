@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.routes.assessment import router as assessment_router
+from api.routes.chat import router as chat_router
 from api.routes.eval import router as eval_router
 from api.routes.upload import router as upload_router
 
@@ -21,6 +22,7 @@ app.add_middleware(
 app.include_router(assessment_router)
 app.include_router(upload_router)
 app.include_router(eval_router)
+app.include_router(chat_router)
 
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(_STATIC_DIR):
