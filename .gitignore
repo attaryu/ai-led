@@ -22,7 +22,6 @@ htmlcov/
 .venv/
 *.egg-info/
 data/uploads/
-data/chroma_db/
 data/rubric_cache/
 data/led.db
 data/led.db-journal

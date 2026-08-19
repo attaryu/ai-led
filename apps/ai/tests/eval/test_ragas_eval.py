@@ -1,6 +1,6 @@
 """Unit tests for eval/ragas_eval.py and /eval/* endpoints.
 
-All LLM calls, ChromaDB, and Supabase I/O are mocked.
+All LLM calls, pgvector, and Supabase I/O are mocked.
 """
 
 from __future__ import annotations

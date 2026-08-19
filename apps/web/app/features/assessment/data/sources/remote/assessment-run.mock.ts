@@ -165,7 +165,7 @@ export async function runAssessment(
 /**
  * Isi tiruan untuk dokumen yang dinilai dari **unggahan PDF**, bukan dari editor.
  *
- * Yang asli mengekstrak teks PDF-nya lalu mengindeksnya ke ChromaDB
+ * Yang asli mengekstrak teks PDF-nya lalu mengindeksnya ke pgvector
  * (`POST /upload/led` di `apps/ai`). Di sini tidak ada teks untuk diekstrak, jadi
  * yang dibangkitkan sekadar penopang supaya penilaian tetap **deterministik per
  * berkas**: berkas dengan nama sama selalu memberi skor sama, berkas berbeda

@@ -61,7 +61,7 @@ class LEDChunk:
     # Paragraph-index position, populated only for chunks sourced from a
     # .docx LED (which has no physical pages). -1 = n/a, mirrors the
     # page_start/page_end "n/a" convention below rather than using None
-    # (keeps every field a plain int, which is what ChromaDB metadata needs).
+    # (keeps every field a plain int, which is what the pgvector columns need).
     para_start: int = -1
     para_end: int = -1
 

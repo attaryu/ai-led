@@ -1,6 +1,6 @@
 """Unit tests for /upload/* endpoints.
 
-All heavy I/O (ChromaDB indexing, PDF chunking, Excel loading) is mocked.
+All heavy I/O (pgvector indexing, PDF chunking, Excel loading) is mocked.
 
 Every endpoint except /upload/matrix (shared, not tenant-scoped — see
 api/routes/upload.py module docstring) now requires tenant_id/dokumen_id,
