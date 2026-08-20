@@ -9,8 +9,8 @@ import { JobType, OwnerTipe, Role, StatusEkstraksi } from '@ai-led/db';
 import { PrismaService } from '../database/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { JobsService } from '../jobs/jobs.service';
+import { StorageService } from '../storage/storage.service';
 import { CreateBuktiDukungDto } from './dto/create-bukti-dukung.dto';
-import { deleteBuktiDukungFile, saveBuktiDukungFile } from './bukti-dukung.storage';
 
 // docs/database.md §7 "Fitur terkait": PIMPINAN & PENJAMIN_MUTU boleh
 // upload/hapus di scope manapun; PENYUSUN cuma di prodi tempatnya
@@ -24,11 +24,20 @@ export class BuktiDukungService {
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
     private readonly jobsService: JobsService,
+    private readonly storage: StorageService,
   ) {}
 
-  async create(dto: CreateBuktiDukungDto, file: Express.Multer.File) {
+  async create(dto: CreateBuktiDukungDto) {
     const { tenantId, userId, role, programStudiId } =
       this.tenantContext.getOrThrow();
+
+    // `fileKey` datang dari klien (baris balasan /storage/presigned-upload) —
+    // dicek di sini juga, bukan cuma di StorageController, supaya baris
+    // BuktiDukung tidak pernah bisa dibuat menunjuk objek tenant lain
+    // walau lewat jalur yang berbeda.
+    if (!dto.fileKey.startsWith(`${tenantId}/`)) {
+      throw new ForbiddenException('fileKey ini bukan milik tenant Anda');
+    }
 
     if (dto.ownerTipe === OwnerTipe.PROGRAM_STUDI) {
       if (!dto.programStudiId) {
@@ -62,9 +71,12 @@ export class BuktiDukungService {
     });
 
     const id = randomUUID();
-    const scope = dto.ownerTipe === OwnerTipe.PROGRAM_STUDI ? dto.programStudiId! : 'tenant';
-    const fileUrl = await saveBuktiDukungFile(file.buffer, tenantId, scope, id, file.originalname);
-    const tipeFile = (file.originalname.split('.').pop() ?? '').toLowerCase();
+    // Membaca ulang dari R2, bukan mempercayai body request: gagal di sini
+    // (404) berarti klien belum benar-benar menyelesaikan PUT ke presigned
+    // URL-nya sebelum memanggil endpoint ini.
+    const { sizeBytes } = await this.storage.headObject(dto.fileKey);
+    const originalFileName = extractFileNameFromKey(dto.fileKey);
+    const tipeFile = (originalFileName.split('.').pop() ?? '').toLowerCase();
 
     const bukti = await this.prisma.buktiDukung.create({
       data: {
@@ -72,10 +84,10 @@ export class BuktiDukungService {
         ownerTipe: dto.ownerTipe,
         tenantId,
         programStudiId: dto.ownerTipe === OwnerTipe.PROGRAM_STUDI ? dto.programStudiId : null,
-        namaDokumen: dto.namaDokumen || file.originalname,
-        fileUrl,
+        namaDokumen: dto.namaDokumen || originalFileName,
+        fileUrl: dto.fileKey,
         tipeFile,
-        ukuranBytes: file.size,
+        ukuranBytes: sizeBytes,
         statusEkstraksi: StatusEkstraksi.MENUNGGU,
         diunggahOlehUserId: userId,
         diunggahOlehNama: user.namaLengkap,
@@ -85,7 +97,7 @@ export class BuktiDukungService {
     await this.jobsService.enqueue(JobType.INGESTION_BUKTI_DUKUNG, {
       buktiDukungId: bukti.id,
       tenantId,
-      fileUrl,
+      fileUrl: dto.fileKey,
       tipeFile,
     });
 
@@ -136,6 +148,26 @@ export class BuktiDukungService {
     }
 
     await this.prisma.buktiDukung.delete({ where: { id } });
-    await deleteBuktiDukungFile(bukti.fileUrl);
+    try {
+      await this.storage.deleteObject(bukti.fileUrl);
+    } catch {
+      // Objek sudah tidak ada (atau baris lama dari sebelum migrasi R2) —
+      // bukan alasan menggagalkan penghapusan barisnya.
+    }
   }
+}
+
+/**
+ * `{tenantId}/uploads/{uuid}-{fileName}` -> `{fileName}` (lihat
+ * storage.controller.ts). UUID `randomUUID()` selalu 36 karakter — dipotong
+ * dengan panjang tetap, bukan `indexOf('-')`, karena UUID sendiri penuh
+ * tanda hubung.
+ */
+const UUID_PREFIX_LENGTH = 36 + 1; // uuid + '-'
+
+function extractFileNameFromKey(key: string): string {
+  const afterSlash = key.slice(key.lastIndexOf('/') + 1);
+  return afterSlash.length > UUID_PREFIX_LENGTH
+    ? afterSlash.slice(UUID_PREFIX_LENGTH)
+    : afterSlash;
 }

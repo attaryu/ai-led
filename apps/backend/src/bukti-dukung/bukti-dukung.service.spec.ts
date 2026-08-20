@@ -3,14 +3,9 @@ import { OwnerTipe, Role } from '@ai-led/db';
 import { BuktiDukungService } from './bukti-dukung.service';
 import type { TenantContextService } from '../tenant/tenant-context.service';
 import type { JobsService } from '../jobs/jobs.service';
-import * as storage from './bukti-dukung.storage';
+import type { StorageService } from '../storage/storage.service';
 
-jest.mock('./bukti-dukung.storage', () => ({
-  saveBuktiDukungFile: jest.fn().mockResolvedValue('t1/tenant/bukti.txt'),
-  deleteBuktiDukungFile: jest.fn().mockResolvedValue(undefined),
-}));
-
-const FILE = { originalname: 'bukti.txt', size: 123, buffer: Buffer.from('x') } as Express.Multer.File;
+const FILE_KEY = 't1/uploads/00000000-0000-0000-0000-000000000000-bukti.txt';
 
 function makeService(context: {
   tenantId: string;
@@ -33,40 +28,52 @@ function makeService(context: {
   const jobsService: Pick<JobsService, 'enqueue'> = {
     enqueue: jest.fn().mockResolvedValue(undefined),
   };
+  const storage: Pick<StorageService, 'headObject' | 'deleteObject'> = {
+    headObject: jest.fn().mockResolvedValue({ sizeBytes: 123, contentType: 'text/plain' }),
+    deleteObject: jest.fn().mockResolvedValue(undefined),
+  };
   const service = new BuktiDukungService(
     prisma as never,
     tenantContext as TenantContextService,
     jobsService as JobsService,
+    storage as StorageService,
   );
-  return { service, prisma, jobsService };
+  return { service, prisma, jobsService, storage };
 }
 
 describe('BuktiDukungService.create', () => {
+  it('rejects a fileKey that does not belong to the caller tenant', async () => {
+    const { service } = makeService({ tenantId: 't1', role: Role.PENJAMIN_MUTU, programStudiId: null });
+    await expect(
+      service.create({ ownerTipe: OwnerTipe.TENANT, fileKey: 'other-tenant/uploads/x.txt' }),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
   it('rejects PROGRAM_STUDI without programStudiId', async () => {
     const { service } = makeService({ tenantId: 't1', role: Role.PENJAMIN_MUTU, programStudiId: null });
     await expect(
-      service.create({ ownerTipe: OwnerTipe.PROGRAM_STUDI }, FILE),
+      service.create({ ownerTipe: OwnerTipe.PROGRAM_STUDI, fileKey: FILE_KEY }),
     ).rejects.toThrow(BadRequestException);
   });
 
   it('rejects TENANT with a programStudiId set', async () => {
     const { service } = makeService({ tenantId: 't1', role: Role.PENJAMIN_MUTU, programStudiId: null });
     await expect(
-      service.create({ ownerTipe: OwnerTipe.TENANT, programStudiId: 'p1' }, FILE),
+      service.create({ ownerTipe: OwnerTipe.TENANT, programStudiId: 'p1', fileKey: FILE_KEY }),
     ).rejects.toThrow(BadRequestException);
   });
 
   it('rejects a PENYUSUN uploading at TENANT level', async () => {
     const { service } = makeService({ tenantId: 't1', role: Role.PENYUSUN, programStudiId: 'p1' });
     await expect(
-      service.create({ ownerTipe: OwnerTipe.TENANT }, FILE),
+      service.create({ ownerTipe: OwnerTipe.TENANT, fileKey: FILE_KEY }),
     ).rejects.toThrow(ForbiddenException);
   });
 
   it('rejects a PENYUSUN uploading to a prodi that is not their own', async () => {
     const { service } = makeService({ tenantId: 't1', role: Role.PENYUSUN, programStudiId: 'p1' });
     await expect(
-      service.create({ ownerTipe: OwnerTipe.PROGRAM_STUDI, programStudiId: 'p2' }, FILE),
+      service.create({ ownerTipe: OwnerTipe.PROGRAM_STUDI, programStudiId: 'p2', fileKey: FILE_KEY }),
     ).rejects.toThrow(ForbiddenException);
   });
 
@@ -74,28 +81,31 @@ describe('BuktiDukungService.create', () => {
     const { service, prisma } = makeService({ tenantId: 't1', role: Role.PENJAMIN_MUTU, programStudiId: null });
     prisma.programStudi.findFirst.mockResolvedValue(null);
     await expect(
-      service.create({ ownerTipe: OwnerTipe.PROGRAM_STUDI, programStudiId: 'p1' }, FILE),
+      service.create({ ownerTipe: OwnerTipe.PROGRAM_STUDI, programStudiId: 'p1', fileKey: FILE_KEY }),
     ).rejects.toThrow(NotFoundException);
   });
 
-  it('saves the file, creates the row, and enqueues INGESTION_BUKTI_DUKUNG', async () => {
-    const { service, prisma, jobsService } = makeService({
+  it('confirms the R2 object, creates the row, and enqueues INGESTION_BUKTI_DUKUNG', async () => {
+    const { service, prisma, jobsService, storage } = makeService({
       tenantId: 't1', role: Role.PENJAMIN_MUTU, programStudiId: null,
     });
     prisma.programStudi.findFirst.mockResolvedValue({ id: 'p1' });
 
-    const result = await service.create(
-      { ownerTipe: OwnerTipe.PROGRAM_STUDI, programStudiId: 'p1' },
-      FILE,
-    );
+    const result = await service.create({
+      ownerTipe: OwnerTipe.PROGRAM_STUDI,
+      programStudiId: 'p1',
+      fileKey: FILE_KEY,
+    });
 
-    expect(storage.saveBuktiDukungFile).toHaveBeenCalled();
+    expect(storage.headObject).toHaveBeenCalledWith(FILE_KEY);
     expect(prisma.buktiDukung.create).toHaveBeenCalled();
     expect(jobsService.enqueue).toHaveBeenCalledWith(
       'INGESTION_BUKTI_DUKUNG',
       expect.objectContaining({ tenantId: 't1' }),
     );
-    expect(result.fileUrl).toBe('t1/tenant/bukti.txt');
+    expect(result.fileUrl).toBe(FILE_KEY);
+    expect(result.namaDokumen).toBe('bukti.txt');
+    expect(result.ukuranBytes).toBe(123);
   });
 });
 
@@ -133,10 +143,10 @@ describe('BuktiDukungService.remove', () => {
   });
 
   it('allows a PENYUSUN to delete their own upload', async () => {
-    const { service, prisma } = makeService({ tenantId: 't1', role: Role.PENYUSUN, programStudiId: 'p1' });
+    const { service, prisma, storage } = makeService({ tenantId: 't1', role: Role.PENYUSUN, programStudiId: 'p1' });
     prisma.buktiDukung.findFirst.mockResolvedValue({ id: 'b1', diunggahOlehUserId: 'u1', fileUrl: 'x' });
     await service.remove('b1');
     expect(prisma.buktiDukung.delete).toHaveBeenCalledWith({ where: { id: 'b1' } });
-    expect(storage.deleteBuktiDukungFile).toHaveBeenCalledWith('x');
+    expect(storage.deleteObject).toHaveBeenCalledWith('x');
   });
 });

@@ -30,11 +30,6 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
-    volumes:
-      # Local BuktiDukung storage until Cloudflare R2 lands (tracker: R2
-      # Storage Module) — bukti-dukung.storage.ts is the one seam that swap
-      # touches.
-      - bukti_dukung_data:/repo/apps/backend/uploads/bukti-dukung
     env_file: apps/backend/.env
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_led?schema=public
@@ -86,4 +81,3 @@ secrets:
 volumes:
   postgres_data:
   redis_data:
-  bukti_dukung_data:

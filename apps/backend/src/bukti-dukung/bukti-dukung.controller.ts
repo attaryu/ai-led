@@ -1,18 +1,5 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Delete,
-  Get,
-  HttpCode,
-  Param,
-  Post,
-  Query,
-  UploadedFile,
-  UseInterceptors,
-} from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@ai-led/db';
 import { Protected } from '../tenant/protected.decorator';
 import { BuktiDukungService } from './bukti-dukung.service';
@@ -28,18 +15,16 @@ const BUKTI_DUKUNG_ROLES = [Role.PIMPINAN, Role.PENJAMIN_MUTU, Role.PENYUSUN];
 export class BuktiDukungController {
   constructor(private readonly buktiDukungService: BuktiDukungService) {}
 
+  /**
+   * File-nya sendiri sudah sampai ke R2 langsung dari browser sebelum ini
+   * dipanggil (POST /storage/presigned-upload lalu PUT langsung ke R2) —
+   * endpoint ini cuma mengonfirmasi & mencatat barisnya. Tidak ada lagi
+   * multipart/FileInterceptor di sini (tracker: Cloudflare R2 Storage Module).
+   */
   @Post()
   @Protected(...BUKTI_DUKUNG_ROLES)
-  @UseInterceptors(FileInterceptor('file'))
-  @ApiConsumes('multipart/form-data')
-  async create(
-    @Body() dto: CreateBuktiDukungDto,
-    @UploadedFile() file: Express.Multer.File,
-  ) {
-    if (!file) {
-      throw new BadRequestException('File wajib diunggah');
-    }
-    return this.buktiDukungService.create(dto, file);
+  async create(@Body() dto: CreateBuktiDukungDto) {
+    return this.buktiDukungService.create(dto);
   }
 
   @Get()

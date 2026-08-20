@@ -11,6 +11,7 @@ import { BabDokumenModule } from './bab-dokumen/bab-dokumen.module';
 import { JobsModule } from './jobs/jobs.module';
 import { UsersModule } from './users/users.module';
 import { BuktiDukungModule } from './bukti-dukung/bukti-dukung.module';
+import { StorageModule } from './storage/storage.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { BuktiDukungModule } from './bukti-dukung/bukti-dukung.module';
     JobsModule,
     UsersModule,
     BuktiDukungModule,
+    StorageModule,
   ],
   controllers: [AppController],
   providers: [AppService],

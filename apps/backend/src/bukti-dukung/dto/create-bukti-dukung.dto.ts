@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 import { OwnerTipe } from '@ai-led/db';
 
 export class CreateBuktiDukungDto {
@@ -17,4 +17,12 @@ export class CreateBuktiDukungDto {
   @IsString()
   @MaxLength(255)
   namaDokumen?: string;
+
+  // Kunci objek R2 dari POST /storage/presigned-upload — file-nya sendiri
+  // sudah sampai ke R2 langsung dari browser sebelum endpoint ini dipanggil
+  // (tracker: Cloudflare R2 Storage Module). Ukuran & tipe dibaca ulang dari
+  // R2 lewat HeadObject di service, bukan dipercaya dari body ini.
+  @IsString()
+  @IsNotEmpty()
+  fileKey!: string;
 }
