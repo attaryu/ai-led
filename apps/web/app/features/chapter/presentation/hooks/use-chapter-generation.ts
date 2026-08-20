@@ -108,14 +108,13 @@ export function useChapterGeneration({
 	>(() => new Set());
 
 	const muat = React.useCallback(() => {
-		setPustaka(evidenceRepository.findAvailableForStudyProgram(studyProgramId));
+		evidenceRepository.findAvailableForStudyProgram(studyProgramId).then(setPustaka);
 	}, [studyProgramId]);
 
-	// Ingestion bukti dukung berjalan di atas timer sungguhan (MENUNGGU →
-	// DIPROSES → SIAP), dan unggahan baru bisa datang dari tab lain. Tanpa
-	// langganan ini, berkas yang barusan selesai diproses akan tetap terlihat
-	// mati sampai halaman dimuat ulang. Pola yang sama dipakai
-	// `useEvidenceLibrary`.
+	// Ingestion bukti dukung berjalan async lewat job worker backend, dan
+	// unggahan baru bisa datang dari tab lain. Tanpa langganan ini, berkas
+	// yang barusan selesai diproses akan tetap terlihat mati sampai halaman
+	// dimuat ulang. Pola yang sama dipakai `useEvidenceLibrary`.
 	React.useEffect(() => {
 		muat();
 		window.addEventListener('storage-update', muat);

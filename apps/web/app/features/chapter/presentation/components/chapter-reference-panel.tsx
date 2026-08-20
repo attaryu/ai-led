@@ -46,7 +46,7 @@ export function ChapterReferencePanel({
 	studyProgramId: string;
 }) {
 	const { daftarDraft, lingkup, setLingkup, rujukan, jumlahHilang } =
-		useChapterReference({ chapter });
+		useChapterReference({ chapter, studyProgramId });
 
 	const punyaRiwayat = daftarDraft.length > 0;
 

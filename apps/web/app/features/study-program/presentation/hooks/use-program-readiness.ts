@@ -51,7 +51,7 @@ async function read(programId: string): Promise<ProgramReadiness> {
 	const chapterSummary = summarizeChapters(chapters);
 
 	const evidenceProdi = summarizeEvidence(
-		evidenceRepository.findOwnedByStudyProgram(programId),
+		await evidenceRepository.findOwnedByStudyProgram(programId),
 	);
 
 	return {

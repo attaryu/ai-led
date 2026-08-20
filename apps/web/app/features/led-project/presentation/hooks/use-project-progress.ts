@@ -35,8 +35,9 @@ async function read(
 		chapters,
 		summary: summarizeChapters(chapters),
 		attention: pickChaptersNeedingAttention(chapters),
-		buktiDukungTersedia:
-			evidenceRepository.findAvailableForStudyProgram(studyProgramId).length,
+		buktiDukungTersedia: (
+			await evidenceRepository.findAvailableForStudyProgram(studyProgramId)
+		).length,
 	};
 }
 

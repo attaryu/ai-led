@@ -80,12 +80,16 @@ export function EvidenceLibrary({
 		) {
 			return;
 		}
-		evidenceRepository.delete(evidence.id);
 		setSelectedId(null);
+		evidenceRepository.delete(evidence.id).catch((error: unknown) => {
+			alert(error instanceof Error ? error.message : 'Gagal menghapus berkas.');
+		});
 	}, []);
 
 	const handleRetry = React.useCallback((evidence: EvidenceEntity) => {
-		evidenceRepository.retryIngestion(evidence.id);
+		evidenceRepository.retryIngestion(evidence.id).catch((error: unknown) => {
+			alert(error instanceof Error ? error.message : 'Coba proses ulang gagal.');
+		});
 	}, []);
 
 	const columns = React.useMemo(

@@ -29,7 +29,13 @@ export type BarisRujukan = {
  * mana pun — padahal §8.1 sudah menunda penampilannya justru ke tab ini. Karena
  * itu lingkupnya bisa dipilih.
  */
-export function useChapterReference({ chapter }: { chapter: ChapterEntity }) {
+export function useChapterReference({
+	chapter,
+	studyProgramId,
+}: {
+	chapter: ChapterEntity;
+	studyProgramId: string;
+}) {
 	const [daftarDraft, setDaftarDraft] = React.useState<ChapterDraftEntity[]>([]);
 	const [pustaka, setPustaka] = React.useState<EvidenceEntity[]>([]);
 	/**
@@ -41,11 +47,8 @@ export function useChapterReference({ chapter }: { chapter: ChapterEntity }) {
 
 	/**
 	 * Riwayat checkpoint dibaca dari backend sungguhan (`chapter.id` di sini
-	 * adalah id `BabDokumen` sungguhan) — beda dari `pustaka` di bawah, yang
-	 * masih localStorage sampai Perpustakaan Bukti Dukung ikut disambungkan.
-	 * Selisih ini membuat setiap rujukan nyata untuk sementara tampil sebagai
-	 * "sudah dihapus" (`live === undefined`, lihat panelnya): bukan bug, cuma
-	 * belum ada yang bisa dicocokkan sampai pustakanya sendiri sungguhan.
+	 * adalah id `BabDokumen` sungguhan), sama seperti `pustaka` di bawah sejak
+	 * Perpustakaan Bukti Dukung disambungkan ke `/bukti-dukung`.
 	 *
 	 * `terakhirDisimpan` ikut jadi dependency di samping `id` — penanda
 	 * checkpoint baru mungkin lahir dari tab Generasi sebelahnya, sama seperti
@@ -67,11 +70,11 @@ export function useChapterReference({ chapter }: { chapter: ChapterEntity }) {
 	}, [chapter.id, chapter.terakhirDisimpan]);
 
 	const muatPustaka = React.useCallback(() => {
-		// Sekali `findAll`, bukan `findById` per baris: `findById` memanggil
-		// `findAll` di dalamnya, jadi sepuluh rujukan berarti sepuluh kali
-		// `JSON.parse` seluruh blob localStorage.
-		setPustaka(evidenceRepository.findAll());
-	}, []);
+		// Tenant + prodi bab ini sendiri — cakupan yang sama dengan
+		// `findAvailableForStudyProgram` di tab Generasi, karena rujukan bab
+		// hanya pernah datang dari salah satu dari dua sumber itu.
+		evidenceRepository.findAvailableForStudyProgram(studyProgramId).then(setPustaka);
+	}, [studyProgramId]);
 
 	// Berkas bisa dihapus atau statusnya berubah dari tab lain.
 	React.useEffect(() => {

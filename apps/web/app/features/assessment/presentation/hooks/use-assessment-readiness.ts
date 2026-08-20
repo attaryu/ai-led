@@ -58,15 +58,7 @@ export function useAssessmentReadiness({
 		// Hanya berkas prodi ini: LKPS adalah Laporan Kinerja **Program Studi**,
 		// jadi berkas milik tenant tidak pernah jadi kandidat yang benar walau
 		// kebetulan berupa Excel.
-		setBerkas(
-			evidenceRepository
-				.findAll()
-				.filter(
-					(item) =>
-						item.ownerTipe === 'PROGRAM_STUDI' &&
-						item.studyProgramId === studyProgramId,
-				),
-		);
+		setBerkas(await evidenceRepository.findOwnedByStudyProgram(studyProgramId));
 	}, [projectId, studyProgramId]);
 
 	React.useEffect(() => {

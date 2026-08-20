@@ -56,8 +56,8 @@ export function useEvidenceLibrary({
 	const sortDir = sorting[0] ? (sorting[0].desc ? 'desc' : 'asc') : undefined;
 
 	const load = React.useCallback(() => {
-		setPage(
-			evidenceRepository.findPaged({
+		evidenceRepository
+			.findPaged({
 				ownerTipe: level,
 				studyProgramId: studyProgramId ?? null,
 				q: globalFilter,
@@ -65,8 +65,8 @@ export function useEvidenceLibrary({
 				dir: sortDir,
 				page: pageIndex + 1,
 				limit: pageSize,
-			}),
-		);
+			})
+			.then(setPage);
 	}, [level, studyProgramId, globalFilter, sortId, sortDir, pageIndex, pageSize]);
 
 	// Halaman terakhir bisa jadi kosong setelah berkasnya dihapus, atau karena
