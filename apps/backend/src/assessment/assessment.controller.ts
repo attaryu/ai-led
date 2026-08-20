@@ -1,4 +1,14 @@
-import { Body, Controller, Get, ParseIntPipe, Param, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  ParseIntPipe,
+  Param,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@ai-led/db';
 import { Protected } from '../tenant/protected.decorator';
@@ -54,5 +64,15 @@ export class AssessmentController {
     @Body() dto: UpsertVerdictDto,
   ) {
     return this.assessmentService.upsertVerdict(dokumenId, dto);
+  }
+
+  @Delete('dokumen/:dokumenId/assessment-verdicts/:indikatorNo')
+  @Protected(Role.PENJAMIN_MUTU)
+  @HttpCode(204)
+  removeVerdict(
+    @Param('dokumenId') dokumenId: string,
+    @Param('indikatorNo', ParseIntPipe) indikatorNo: number,
+  ) {
+    return this.assessmentService.removeVerdict(dokumenId, indikatorNo);
   }
 }

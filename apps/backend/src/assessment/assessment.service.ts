@@ -18,11 +18,21 @@ export class AssessmentService {
     private readonly dokumenLedService: DokumenLedService,
   ) {}
 
+  // `createdBy.namaLengkap` di-include lewat relasi, bukan didenormalisasi
+  // ke kolom sendiri seperti BabDraft.dibuatOlehNama dkk — sesi ini
+  // dibaca lebih sering lewat join daripada ditulis, jadi satu query
+  // ekstra saat baca lebih murah daripada kolom kedua yang harus selalu
+  // ikut disetel Python (db/postgres_client.py::create_session).
+  private readonly includeCreatedByName = {
+    createdBy: { select: { namaLengkap: true } },
+  } as const;
+
   async findSessions(dokumenId: string) {
     await this.dokumenLedService.findOne(dokumenId); // isolasi tenant + 404
     return this.prisma.assessmentSession.findMany({
       where: { dokumenId },
       orderBy: { createdAt: 'desc' },
+      include: this.includeCreatedByName,
     });
   }
 
@@ -30,6 +40,7 @@ export class AssessmentService {
     const { tenantId } = this.tenantContext.getOrThrow();
     const session = await this.prisma.assessmentSession.findFirst({
       where: { id, tenantId },
+      include: this.includeCreatedByName,
     });
     if (!session) {
       throw new NotFoundException('Sesi penilaian tidak ditemukan');
@@ -111,6 +122,14 @@ export class AssessmentService {
       },
       create: { dokumenId, indikatorNo: dto.indikatorNo, ...shared },
       update: { ...shared, ditinjauPada: new Date() },
+    });
+  }
+
+  /** Mencabut keputusan — indikatornya kembali ke "Belum ditinjau". */
+  async removeVerdict(dokumenId: string, indikatorNo: number) {
+    await this.dokumenLedService.findOne(dokumenId);
+    await this.prisma.assessmentVerdict.deleteMany({
+      where: { dokumenId, indikatorNo },
     });
   }
 }
