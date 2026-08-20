@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsInt, IsOptional } from 'class-validator';
+import { LedSourceMode } from '@ai-led/db';
+import { IsArray, IsEnum, IsInt, IsOptional, IsString } from 'class-validator';
 
 export class TriggerAssessmentDto {
   // number, not a code string — matches indicator_no throughout the rest of
@@ -15,4 +16,27 @@ export class TriggerAssessmentDto {
   @IsArray()
   @IsInt({ each: true })
   indikatorList?: number[];
+
+  // Deskriptif saja — dicatat di assessment_sessions untuk ditampilkan,
+  // tidak mengubah cara agent mengambil bukti (selalu lewat pgvector
+  // search_led_evidence, lihat catatan di worker.py::_handle_assessment_ami).
+  @ApiPropertyOptional({ enum: LedSourceMode })
+  @IsOptional()
+  @IsEnum(LedSourceMode)
+  sumberLed?: LedSourceMode;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  ledFileName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  lkpsBuktiDukungId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  laporanBuktiDukungId?: string;
 }

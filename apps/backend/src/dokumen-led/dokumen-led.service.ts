@@ -124,6 +124,10 @@ export class DokumenLedService {
       // Omitted (not []) when unspecified — an empty array would read as
       // "assess zero indicators" downstream, not "assess all of them".
       indikatorList: dto?.indikatorList,
+      ...(dto?.sumberLed ? { sumberLed: dto.sumberLed } : {}),
+      ...(dto?.ledFileName ? { ledFileName: dto.ledFileName } : {}),
+      ...(dto?.lkpsBuktiDukungId ? { lkpsBuktiDukungId: dto.lkpsBuktiDukungId } : {}),
+      ...(dto?.laporanBuktiDukungId ? { laporanBuktiDukungId: dto.laporanBuktiDukungId } : {}),
     });
   }
 }

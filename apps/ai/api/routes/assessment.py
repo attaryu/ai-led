@@ -26,7 +26,7 @@ import logging
 import os
 import uuid
 from dataclasses import dataclass
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
@@ -445,11 +445,20 @@ async def _run_assessment_pipeline(
     tenant_id: str,
     dokumen_id: str,
     initial_completed: int = 0,
+    on_progress: Optional[Callable[[int, int], Awaitable[None]]] = None,
 ) -> None:
     """Background task: score all `indicators` and update session status when
     done. `indicators` may be a subset (resume) — `initial_completed` seeds
     the progress counter so /status reflects total session progress, not
-    just progress within this particular run."""
+    just progress within this particular run.
+
+    `on_progress(completed, total)` — optional, awaited after each indicator
+    finishes (success or logged error). Postgres (`completed_indicators`)
+    already carries progress for the polling /status route; this is the
+    second, separate channel a BullMQ job caller can wire to
+    job.updateProgress() for the SSE gateway (job-events.service.ts) to
+    forward live, without this module knowing BullMQ exists at all.
+    """
     try:
         ollama_client = create_ollama_client_from_env()
         graph = build_graph_auto(ollama_client)
@@ -467,6 +476,7 @@ async def _run_assessment_pipeline(
             for indicator in indicators
         ]
 
+        total = initial_completed + len(indicators)
         completed = initial_completed
         for coro in asyncio.as_completed(tasks):
             await coro
@@ -476,6 +486,8 @@ async def _run_assessment_pipeline(
                 status="running",
                 completed_indicators=completed,
             )
+            if on_progress is not None:
+                await on_progress(completed, total)
 
         update_session_status(
             session_id=session_id,

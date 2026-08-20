@@ -36,11 +36,22 @@ def create_session(
     dokumen_id: str,
     created_by_user_id: str,
     total_indicators: int,
+    laporan_bukti_dukung_id: Optional[str] = None,
+    sumber_led: str = "EDITOR",
+    led_file_name: Optional[str] = None,
+    lkps_bukti_dukung_id: Optional[str] = None,
 ) -> None:
     """Insert a new assessment_sessions row (status=RUNNING).
 
     session_id becomes the row's primary key directly — any unique string
     works as a Prisma `String @id`, it doesn't need to be cuid-shaped.
+
+    sumber_led/led_file_name/lkps_bukti_dukung_id are descriptive only —
+    they record what the caller *says* the LED material was, for display.
+    The agent's actual evidence retrieval (agent/tools/led_tool.py) always
+    searches the same pgvector-indexed chunks for this (tenant_id,
+    dokumen_id) regardless of this value; there's no code path that reads
+    BabDokumen.kontenKerja directly.
     """
     try:
         with _get_conn().cursor() as cur:
@@ -48,10 +59,22 @@ def create_session(
                 """
                 INSERT INTO assessment_sessions
                     (id, tenant_id, dokumen_id, created_by_user_id,
-                     total_indicators, completed_indicators, status, updated_at)
-                VALUES (%s, %s, %s, %s, %s, 0, 'RUNNING', now())
+                     laporan_bukti_dukung_id, sumber_led, led_file_name,
+                     lkps_bukti_dukung_id, total_indicators,
+                     completed_indicators, status, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'RUNNING', now())
                 """,
-                (session_id, tenant_id, dokumen_id, created_by_user_id, total_indicators),
+                (
+                    session_id,
+                    tenant_id,
+                    dokumen_id,
+                    created_by_user_id,
+                    laporan_bukti_dukung_id,
+                    sumber_led,
+                    led_file_name,
+                    lkps_bukti_dukung_id,
+                    total_indicators,
+                ),
             )
     except Exception:
         logger.exception("Failed to create session %s in Postgres", session_id)

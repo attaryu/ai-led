@@ -12,6 +12,7 @@ import { JobsModule } from './jobs/jobs.module';
 import { UsersModule } from './users/users.module';
 import { BuktiDukungModule } from './bukti-dukung/bukti-dukung.module';
 import { StorageModule } from './storage/storage.module';
+import { AssessmentModule } from './assessment/assessment.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { StorageModule } from './storage/storage.module';
     UsersModule,
     BuktiDukungModule,
     StorageModule,
+    AssessmentModule,
   ],
   controllers: [AppController],
   providers: [AppService],

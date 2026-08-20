@@ -369,7 +369,23 @@ async def _handle_assessment_ami(job) -> dict:
         dokumen_id=dokumen_id,
         created_by_user_id=user_id,
         total_indicators=len(indicators),
+        laporan_bukti_dukung_id=payload.get("laporanBuktiDukungId"),
+        sumber_led=payload.get("sumberLed", "EDITOR"),
+        led_file_name=payload.get("ledFileName"),
+        lkps_bukti_dukung_id=payload.get("lkpsBuktiDukungId"),
     )
+
+    # Ditangkap ke Postgres per indikator (update_session_status, di dalam
+    # _run_assessment_pipeline) sudah cukup buat GET status polling. Ini
+    # kanal kedua: BullMQ job.updateProgress() men-trigger event 'progress'
+    # asli yang diteruskan job-events.service.ts lewat SSE, biar Live
+    # Progress Panel-nya bergerak tiap indikator selesai, bukan cuma di
+    # awal/akhir job.
+    async def _report_progress(completed: int, total: int) -> None:
+        try:
+            await job.updateProgress({"completed": completed, "total": total})
+        except Exception:
+            logger.exception("Gagal mengirim progress job %s", job.id)
 
     max_parallel = int(os.environ.get("ASSESSMENT_MAX_PARALLEL", "5"))
     await _run_assessment_pipeline(
@@ -378,6 +394,7 @@ async def _handle_assessment_ami(job) -> dict:
         max_parallel=max_parallel,
         tenant_id=tenant_id,
         dokumen_id=dokumen_id,
+        on_progress=_report_progress,
     )
 
     sess = get_session(session_id)

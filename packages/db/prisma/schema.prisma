@@ -88,6 +88,12 @@ enum ChatRole {
   ASSISTANT
 }
 
+/// assessment-source.entity.ts::ledSourceModeEnum
+enum LedSourceMode {
+  EDITOR
+  UNGGAHAN
+}
+
 enum JobType {
   GENERASI_BAB
   ASSESSMENT_AMI
@@ -148,6 +154,7 @@ model User {
   chatMessages        ChatMessage[]
   jobsCreated         Job[]
   assessmentSessions  AssessmentSession[]
+  assessmentVerdicts  AssessmentVerdict[] @relation("AssessmentVerdictDitinjauOleh")
 
   @@index([tenantId])
   @@map("user")
@@ -191,6 +198,7 @@ model DokumenLed {
   programStudi       ProgramStudi        @relation(fields: [programStudiId], references: [id])
   babDokumen         BabDokumen[]
   assessmentSessions AssessmentSession[]
+  assessmentVerdicts AssessmentVerdict[]
   ledChunkEmbeddings LedChunkEmbedding[]
 
   @@index([programStudiId])
@@ -517,6 +525,11 @@ model AssessmentSession {
   dokumenId            String           @map("dokumen_id")
   createdByUserId      String           @map("created_by_user_id")
   laporanBuktiDukungId String?          @map("laporan_bukti_dukung_id")
+  /// Menambal celah yang dicatat assessment-source.entity.ts §12b: dari mana
+  /// bahan LED sesi ini berasal, dan (kalau UNGGAHAN) nama berkasnya.
+  sumberLed            LedSourceMode    @default(EDITOR) @map("sumber_led")
+  ledFileName          String?          @map("led_file_name")
+  lkpsBuktiDukungId    String?          @map("lkps_bukti_dukung_id")
   totalIndicators      Int              @map("total_indicators")
   completedIndicators  Int              @default(0) @map("completed_indicators")
   status               AssessmentStatus @default(RUNNING)
@@ -531,6 +544,10 @@ model AssessmentSession {
 
   indicatorResults IndicatorResult[]
   reasoningSteps   ReasoningStep[]
+  /// Verdict yang lahir SAAT sesi ini — bukan berarti verdict itu masih
+  /// "milik" sesi ini kalau dokumennya dinilai ulang lagi setelahnya, lihat
+  /// AssessmentVerdict.
+  verdictsDitinjauSaatSesiIni AssessmentVerdict[]
 
   @@index([tenantId, status])
   @@map("assessment_sessions")
@@ -569,6 +586,35 @@ model ReasoningStep {
 
   @@index([sessionId, indicatorNo])
   @@map("reasoning_steps")
+}
+
+/// Keputusan Penjamin Mutu atas satu indikator — celah yang dicatat
+/// `assessment-verdict.entity.ts` §12b sejak awal, ditambal di sini. Kunci
+/// (dokumenId, indikatorNo), BUKAN sessionId: keputusan menempel ke dokumen
+/// supaya bertahan melewati penilaian ulang (IndicatorResult kebijakannya
+/// main timpa) — sesiIdSaatDitinjau cuma keterangan kapan/dasar apa
+/// keputusan ini dibuat, bukan pemiliknya.
+model AssessmentVerdict {
+  id                    String   @id @default(cuid())
+  dokumenId             String   @map("dokumen_id")
+  indikatorNo           Int      @map("indikator_no")
+  skorFinal             Decimal  @db.Decimal(5, 2) @map("skor_final")
+  /// Wajib diisi FE saat mengoreksi, boleh kosong saat menyetujui apa adanya
+  /// — lihat assessment-verdict.entity.ts::catatanKoreksiSchema.
+  catatan               String?  @db.Text
+  /// null bila indikatornya gagal dinilai mesin saat itu.
+  skorMesinSaatDitinjau Decimal? @db.Decimal(5, 2) @map("skor_mesin_saat_ditinjau")
+  sesiIdSaatDitinjau    String   @map("sesi_id_saat_ditinjau")
+  ditinjauOlehUserId    String   @map("ditinjau_oleh_user_id")
+  ditinjauOlehNama      String   @map("ditinjau_oleh_nama")
+  ditinjauPada          DateTime @default(now()) @map("ditinjau_pada")
+
+  dokumen          DokumenLed        @relation(fields: [dokumenId], references: [id])
+  sesiSaatDitinjau AssessmentSession @relation(fields: [sesiIdSaatDitinjau], references: [id])
+  ditinjauOleh     User              @relation("AssessmentVerdictDitinjauOleh", fields: [ditinjauOlehUserId], references: [id])
+
+  @@unique([dokumenId, indikatorNo])
+  @@map("assessment_verdicts")
 }
 
 /// Produksi dari §18 — alat benchmark, diikat ke GenerationRun (bukan
