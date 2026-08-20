@@ -1,6 +1,10 @@
 /graphify-out/
 /.playwright-mcp/
 /docs/.*
+# Claude Code's own worktree checkouts/session state — local scratch, never
+# meant to be committed (this is what dumped ~300 untracked items into
+# source control before it was added here).
+/.claude/
 
 node_modules/
 dist/
