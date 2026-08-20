@@ -4,6 +4,7 @@ import {
 	CaretUpIcon,
 	CheckCircleIcon,
 	MinusCircleIcon,
+	SpinnerGapIcon,
 	UploadSimpleIcon,
 	WarningCircleIcon,
 	type Icon,
@@ -23,6 +24,7 @@ import { Select } from '~/core/components/ui/select';
 import { cn } from '~/core/lib/utils';
 import { EvidenceUploadDialog } from '~/features/evidence/presentation/components/evidence-upload-dialog';
 import { type EvidenceEntity } from '~/features/evidence/domain/entities/evidence.entity';
+import { uploadLedPdf } from '../../data/sources/remote/led-upload.remote-source';
 import {
 	type AssessmentReadiness,
 	type AssessmentSource,
@@ -55,6 +57,7 @@ export function AssessmentSourceCard({
 	setSumber,
 	kesiapan,
 	kandidat,
+	dokumenId,
 	studyProgramId,
 	studyProgramName,
 	uploader,
@@ -65,6 +68,8 @@ export function AssessmentSourceCard({
 	kesiapan: AssessmentReadiness;
 	/** Berkas tabular milik prodi yang bisa dipilih jadi LKPS / Laporan AK. */
 	kandidat: EvidenceEntity[];
+	/** Untuk mengaitkan unggahan PDF LED ke dokumen yang benar (R2 + indexing pgvector). */
+	dokumenId: string;
 	studyProgramId: string;
 	studyProgramName: string;
 	uploader: { userId: string; name: string };
@@ -159,6 +164,7 @@ export function AssessmentSourceCard({
 												sumber={sumber}
 												setSumber={setSumber}
 												inputRef={ledInputRef}
+												dokumenId={dokumenId}
 											/>
 										)}
 
@@ -238,59 +244,92 @@ function SumberLed({
 	sumber,
 	setSumber,
 	inputRef,
+	dokumenId,
 }: {
 	sumber: AssessmentSource;
 	setSumber: (sumber: AssessmentSource) => void;
 	inputRef: React.RefObject<HTMLInputElement | null>;
+	dokumenId: string;
 }) {
-	return (
-		<div className="flex flex-wrap items-center gap-2">
-			<Select
-				value={sumber.sumberLed}
-				onChange={(event) =>
-					setSumber({
-						...sumber,
-						sumberLed: event.target.value === 'UNGGAHAN' ? 'UNGGAHAN' : 'EDITOR',
-						// Nama berkas ikut dibuang saat kembali ke editor: menyimpannya
-						// membuat sesi berikutnya mengaku memakai unggahan yang sudah tidak
-						// dipilih lagi.
-						ledFileName:
-							event.target.value === 'UNGGAHAN' ? sumber.ledFileName : null,
-					})
-				}
-				aria-label="Sumber dokumen LED"
-				className="h-8 w-fit text-xs"
-			>
-				<option value="EDITOR">Dari editor</option>
-				<option value="UNGGAHAN">Dari unggahan PDF</option>
-			</Select>
+	const [mengunggah, setMengunggah] = React.useState(false);
+	const [galat, setGalat] = React.useState<string | null>(null);
 
-			{sumber.sumberLed === 'UNGGAHAN' && (
-				<>
-					<Button
-						type="button"
-						variant="outline"
-						size="sm"
-						onClick={() => inputRef.current?.click()}
-						className="cursor-pointer"
-					>
-						<UploadSimpleIcon />
-						{sumber.ledFileName ? 'Ganti berkas' : 'Pilih PDF'}
-					</Button>
-					<input
-						ref={inputRef}
-						type="file"
-						accept=".pdf"
-						className="hidden"
-						onChange={(event) => {
-							const file = event.target.files?.[0];
-							if (file) setSumber({ ...sumber, ledFileName: file.name });
-							// Direset supaya berkas yang sama bisa dipilih lagi setelah
-							// dibatalkan — sama seperti `evidence-upload-dialog.tsx`.
-							event.target.value = '';
+	return (
+		<div className="flex flex-col gap-1.5">
+			<div className="flex flex-wrap items-center gap-2">
+				<Select
+					value={sumber.sumberLed}
+					onChange={(event) =>
+						setSumber({
+							...sumber,
+							sumberLed: event.target.value === 'UNGGAHAN' ? 'UNGGAHAN' : 'EDITOR',
+							// Nama berkas ikut dibuang saat kembali ke editor: menyimpannya
+							// membuat sesi berikutnya mengaku memakai unggahan yang sudah tidak
+							// dipilih lagi.
+							ledFileName:
+								event.target.value === 'UNGGAHAN' ? sumber.ledFileName : null,
+						})
+					}
+					aria-label="Sumber dokumen LED"
+					className="h-8 w-fit text-xs"
+				>
+					<option value="EDITOR">Dari editor</option>
+					<option value="UNGGAHAN">Dari unggahan PDF</option>
+				</Select>
+
+				{sumber.sumberLed === 'UNGGAHAN' && (
+					<>
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							onClick={() => inputRef.current?.click()}
+							disabled={mengunggah}
+							className="cursor-pointer"
+						>
+							{mengunggah ? (
+								<SpinnerGapIcon className="animate-spin" />
+							) : (
+								<UploadSimpleIcon />
+							)}
+							{mengunggah
+								? 'Mengunggah…'
+								: sumber.ledFileName
+									? 'Ganti berkas'
+									: 'Pilih PDF'}
+						</Button>
+						<input
+							ref={inputRef}
+							type="file"
+							accept=".pdf"
+							className="hidden"
+							onChange={(event) => {
+								const file = event.target.files?.[0];
+								// Direset supaya berkas yang sama bisa dipilih lagi setelah
+								// dibatalkan — sama seperti `evidence-upload-dialog.tsx`.
+								event.target.value = '';
+								if (!file) return;
+
+								setGalat(null);
+								setMengunggah(true);
+								// PDF LED-nya sendiri sampai ke R2 langsung dari browser (presigned
+								// PUT), lalu dikonfirmasi lewat backend yang meneruskannya ke
+								// apps/ai untuk diekstraksi+diindeks pgvector — bukan sekadar
+								// mencatat nama filenya seperti sebelumnya.
+								uploadLedPdf(file, dokumenId)
+									.then(() => setSumber({ ...sumber, ledFileName: file.name }))
+									.catch(() =>
+										setGalat('Unggah PDF LED gagal. Periksa koneksi lalu coba lagi.'),
+									)
+									.finally(() => setMengunggah(false));
 						}}
 					/>
 				</>
+			)}
+			</div>
+
+			{galat && (
+				<p className="text-xs leading-relaxed text-destructive">{galat}</p>
 			)}
 		</div>
 	);

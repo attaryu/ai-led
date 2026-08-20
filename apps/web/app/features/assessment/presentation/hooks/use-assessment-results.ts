@@ -16,12 +16,9 @@ import { type AssessmentPermission } from './use-assessment-permission';
  * Tabel penilaian final untuk satu sesi: hasil mesin ditimpa keputusan Penjamin
  * Mutu, digabung dengan master indikator.
  *
- * **Keputusan dibaca per dokumen, hasil dibaca per sesi**, dan perbedaan itu
- * disengaja — itulah yang membuat keputusan bertahan saat penilaian diulang.
- * Sesi lama yang dibuka dari Riwayat pun menampilkan keputusan yang berlaku
- * sekarang, bukan keputusan "versi waktu itu": yang ditanyakan orang saat membuka
- * sesi lama adalah bagaimana angka mesin waktu itu dibandingkan keputusan yang
- * berlaku, dan penanda basi yang menjelaskan selisihnya.
+ * **Keputusan dibaca per dokumen, hasil dibaca per sesi** — itulah yang
+ * membuat keputusan bertahan saat penilaian diulang (lihat catatan yang sama
+ * di `assessment-verdict.repository.ts`).
  */
 export function useAssessmentResults({
 	projectId,
@@ -39,17 +36,19 @@ export function useAssessmentResults({
 
 	const sesiId = sesi?.id;
 
-	const muat = React.useCallback(() => {
-		setHasil(
-			sesiId ? assessmentSessionRepository.findResultsBySession(sesiId) : [],
-		);
-		setKeputusan(assessmentVerdictRepository.findByDokumenId(projectId));
+	const muat = React.useCallback(async () => {
+		const [hasilBaru, keputusanBaru] = await Promise.all([
+			sesiId
+				? assessmentSessionRepository.findResultsBySession(sesiId)
+				: Promise.resolve([]),
+			assessmentVerdictRepository.findByDokumenId(projectId),
+		]);
+		setHasil(hasilBaru);
+		setKeputusan(keputusanBaru);
 	}, [sesiId, projectId]);
 
 	React.useEffect(() => {
-		muat();
-		window.addEventListener('storage-update', muat);
-		return () => window.removeEventListener('storage-update', muat);
+		void muat();
 	}, [muat]);
 
 	/**
@@ -59,7 +58,6 @@ export function useAssessmentResults({
 	 * indikator yang gagal dinilai memang temuan. Kalau dokumen yang belum pernah
 	 * dinilai sama sekali ikut memakai aturan itu, kartu ringkasannya akan
 	 * mengumumkan delapan belas temuan sebelum satu pun penilaian dijalankan.
-	 * Daftar indikator yang seharusnya dinilai tetap ada di tab Matriks.
 	 */
 	const baris = React.useMemo(
 		() =>
@@ -73,37 +71,31 @@ export function useAssessmentResults({
 
 	/**
 	 * Menyimpan keputusan — menyetujui maupun mengoreksi lewat satu jalur.
-	 *
-	 * Skor mesin dan sesi asalnya diambil dari baris yang sedang dilihat, bukan
-	 * dari pemanggil: keduanya harus sepasang agar penanda basi bisa dipercaya.
+	 * `skorMesinSaatDitinjau`/`sesiIdSaatDitinjau` diisi backend dari sesi
+	 * terbaru dokumen ini, bukan dari sini — lihat assessment.service.ts.
 	 */
 	const simpanKeputusan = React.useCallback(
-		(input: { indikatorNo: number; skorFinal: number; catatan: string }) => {
-			if (!izin.canCorrect || !izin.session || !sesiId) return;
+		async (input: { indikatorNo: number; skorFinal: number; catatan: string }) => {
+			if (!izin.canCorrect || !sesiId) return;
 
-			const row = baris.find((item) => item.kriteria.no === input.indikatorNo);
-
-			assessmentVerdictRepository.upsert(
-				{
-					dokumenId: projectId,
-					indikatorNo: input.indikatorNo,
-					skorFinal: input.skorFinal,
-					catatan: input.catatan,
-					ditinjauOlehUserId: izin.session.userId,
-					ditinjauOlehNama: izin.session.namaLengkap,
-				},
-				{ skorMesin: row?.skorMesin ?? null, sesiId },
-			);
+			await assessmentVerdictRepository.upsert({
+				dokumenId: projectId,
+				indikatorNo: input.indikatorNo,
+				skorFinal: input.skorFinal,
+				catatan: input.catatan,
+			});
+			await muat();
 		},
-		[izin.canCorrect, izin.session, sesiId, projectId, baris],
+		[izin.canCorrect, sesiId, projectId, muat],
 	);
 
 	const cabutKeputusan = React.useCallback(
-		(indikatorNo: number) => {
+		async (indikatorNo: number) => {
 			if (!izin.canCorrect) return;
-			assessmentVerdictRepository.remove(projectId, indikatorNo);
+			await assessmentVerdictRepository.remove(projectId, indikatorNo);
+			await muat();
 		},
-		[izin.canCorrect, projectId],
+		[izin.canCorrect, projectId, muat],
 	);
 
 	return { baris, ringkasan, simpanKeputusan, cabutKeputusan };

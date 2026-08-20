@@ -19,18 +19,10 @@ export type AssessmentBabSummary = {
  * Skor final AMI untuk **satu bab**, dari sesi penilaian terakhir dokumennya.
  *
  * Ada supaya tab Rubrik di Editor Bab bisa menunjukkan angka yang sama dengan
- * halaman Penilaian AMI, bukan angka keduanya sendiri. Keduanya memakai master
- * indikator dan mesin skor yang sama; kalau tab Rubrik juga menyimpan hasilnya
- * sendiri, penyusun akan melihat satu angka di editor dan Penjamin Mutu melihat
- * angka lain untuk bab yang sama, tanpa ada cara menjelaskan selisihnya.
- *
- * Yang ditampilkan **skor final** — sudah termasuk koreksi Penjamin Mutu.
- * Itulah yang berlaku, dan menampilkan skor mesin di editor sementara dokumen
- * resmi menyebut angka lain akan membuat penyusun mengejar target yang salah.
+ * halaman Penilaian AMI, bukan angka keduanya sendiri.
  *
  * `null` bila dokumennya belum pernah dinilai atau bab ini memang tidak dinilai
- * indikator mana pun — dua keadaan yang sah, dan keduanya cukup dijawab dengan
- * tidak menampilkan apa-apa.
+ * indikator mana pun.
  */
 export function useAssessmentBabSummary(
 	ledProjectId: string,
@@ -40,29 +32,40 @@ export function useAssessmentBabSummary(
 		null,
 	);
 
-	const muat = React.useCallback(() => {
-		const kriteria = findKriteriaForBab(urutanBab);
-		const sesi = assessmentSessionRepository.findLatest(ledProjectId);
+	React.useEffect(() => {
+		let dibatalkan = false;
 
-		if (kriteria.length === 0 || !sesi || sesi.status !== 'COMPLETED') {
-			setRingkas(null);
-			return;
+		async function muat() {
+			const kriteria = findKriteriaForBab(urutanBab);
+			if (kriteria.length === 0) {
+				if (!dibatalkan) setRingkas(null);
+				return;
+			}
+
+			const sesiSemua = await assessmentSessionRepository.findByDokumenId(
+				ledProjectId,
+			);
+			const sesi = sesiSemua[0];
+			if (!sesi || sesi.status !== 'COMPLETED') {
+				if (!dibatalkan) setRingkas(null);
+				return;
+			}
+
+			const [hasil, keputusan] = await Promise.all([
+				assessmentSessionRepository.findResultsBySession(sesi.id),
+				assessmentVerdictRepository.findByDokumenId(ledProjectId),
+			]);
+			if (dibatalkan) return;
+
+			const baris = gabungPenilaian({ kriteria, hasil, keputusan });
+			setRingkas({ sesi, ringkasan: ringkasPenilaian(baris) });
 		}
 
-		const baris = gabungPenilaian({
-			kriteria,
-			hasil: assessmentSessionRepository.findResultsBySession(sesi.id),
-			keputusan: assessmentVerdictRepository.findByDokumenId(ledProjectId),
-		});
-
-		setRingkas({ sesi, ringkasan: ringkasPenilaian(baris) });
+		void muat();
+		return () => {
+			dibatalkan = true;
+		};
 	}, [ledProjectId, urutanBab]);
-
-	React.useEffect(() => {
-		muat();
-		window.addEventListener('storage-update', muat);
-		return () => window.removeEventListener('storage-update', muat);
-	}, [muat]);
 
 	return ringkas;
 }

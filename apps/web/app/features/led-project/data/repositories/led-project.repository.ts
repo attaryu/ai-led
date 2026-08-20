@@ -1,6 +1,4 @@
 import { ApiError } from '~/core/lib/api-client';
-import { assessmentSessionRepository } from '~/features/assessment/data/repositories/assessment-session.repository';
-import { assessmentVerdictRepository } from '~/features/assessment/data/repositories/assessment-verdict.repository';
 import { CHAPTER_TEMPLATE } from '~/features/chapter/data/repositories/chapter.repository';
 import { chapterRemoteSource } from '~/features/chapter/data/sources/remote/chapter.remote-source';
 import { studyProgramRepository } from '~/features/study-program/data/repositories/study-program.repository';
@@ -118,13 +116,11 @@ export const ledProjectRepository = {
 	},
 
 	async delete(id: string): Promise<void> {
+		// Sesi penilaian AMI & keputusan Penjamin Mutu sekarang baris Postgres
+		// sungguhan (AssessmentSession/AssessmentVerdict, FK ke dokumen_led) --
+		// dokumen yang masih punya riwayat penilaian akan ditolak server (FK
+		// constraint), sama seperti dokumen yang masih punya bab.
 		await ledProjectRemoteSource.remove(id);
-		// Fitur penilaian AMI masih murni mock/localStorage (belum ada modul
-		// backend-nya) — bab & dokumen sudah dihapus lewat cascade FK di server,
-		// tapi sesi penilaian dan keputusan Penjamin Mutu perlu dibersihkan
-		// manual di sini selama keduanya belum pindah ke API.
-		assessmentSessionRepository.deleteByDokumenId(id);
-		assessmentVerdictRepository.deleteByDokumenId(id);
 		window.dispatchEvent(new Event('storage-update'));
 	},
 

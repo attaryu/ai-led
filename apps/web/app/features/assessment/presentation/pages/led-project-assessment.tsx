@@ -106,7 +106,6 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 		daftarSesi,
 		sesiAktif,
 		melihatSesiTerbaru,
-		kontenSesi,
 		status,
 		pesanGagal,
 		jalankan,
@@ -125,11 +124,7 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 	const { baris, ringkasan, simpanKeputusan, cabutKeputusan } =
 		useAssessmentResults({ projectId: ledProject.id, sesi: sesiAktif, izin });
 
-	const kualitas = useAssessmentQuality({
-		sesi: sesiAktif,
-		izin,
-		konten: kontenSesi,
-	});
+	const kualitas = useAssessmentQuality({ sesi: sesiAktif, izin });
 
 	/**
 	 * Indikator yang sedang dibuka di laci, disimpan sebagai **nomor** bukan objek
@@ -259,6 +254,7 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 						setSumber={setSumber}
 						kesiapan={kesiapan}
 						kandidat={kandidat}
+						dokumenId={ledProject.id}
 						studyProgramId={ledProject.studyProgramId}
 						studyProgramName={ledProject.studyProgramName}
 						uploader={{

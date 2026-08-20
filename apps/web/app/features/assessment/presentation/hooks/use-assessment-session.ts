@@ -1,25 +1,41 @@
 import * as React from 'react';
 
-import {
-	findAllKriteria,
-	skorMaksimal,
-} from '~/features/chapter/domain/entities/rubric-criterion.entity';
+import { streamSse } from '~/core/lib/sse-client';
 import { assessmentSessionRepository } from '../../data/repositories/assessment-session.repository';
-import { runAssessment } from '../../data/sources/remote/assessment-run.mock';
 import { type AssessmentSessionEntity } from '../../domain/entities/assessment-session.entity';
 import { type AssessmentSource } from '../../domain/entities/assessment-source.entity';
 import { type AssessmentPermission } from './use-assessment-permission';
 
 export type StatusPenilaian = 'diam' | 'berjalan' | 'gagal';
 
+/** Bentuk event `GET jobs/:id/events` — sama dengan `use-chapter-generation.ts`.
+ * `progress` di sini objek `{completed, total}` (worker.py::_handle_assessment_ami). */
+type JobEvent = {
+	jobId: string;
+	status: 'progress' | 'completed' | 'failed';
+	progress?: unknown;
+	result?: { status: 'completed' | 'error'; sessionId?: string; error?: string };
+	error?: string;
+};
+
+function isProgressPayload(
+	value: unknown,
+): value is { completed: number; total: number } {
+	return (
+		typeof value === 'object' &&
+		value !== null &&
+		typeof (value as { completed?: unknown }).completed === 'number' &&
+		typeof (value as { total?: unknown }).total === 'number'
+	);
+}
+
 /**
  * Daftar sesi penilaian satu dokumen, sesi yang sedang dilihat, dan penjalanan
- * penilaian itu sendiri.
+ * penilaian itu sendiri — dipicu lewat job BullMQ (ASSESSMENT_AMI) sungguhan,
+ * mengikuti pola `useChapterGeneration`.
  *
  * Sesi yang dilihat hidup di URL (`?sesi=`), bukan di state: membuka satu baris
- * riwayat harus menghasilkan tautan yang bisa dikirim ke orang lain, dan
- * pertanyaan "kita sedang membahas hasil yang mana" adalah pertanyaan pertama
- * dalam setiap percakapan tentang penilaian.
+ * riwayat harus menghasilkan tautan yang bisa dikirim ke orang lain.
  */
 export function useAssessmentSession({
 	projectId,
@@ -36,21 +52,37 @@ export function useAssessmentSession({
 	);
 	const [status, setStatus] = React.useState<StatusPenilaian>('diam');
 	const [pesanGagal, setPesanGagal] = React.useState<string | null>(null);
+	/** Progres live dari SSE selagi job berjalan — ditumpangkan ke sesi yang
+	 * sedang dilihat supaya bar bergerak tanpa menunggu polling ulang. */
+	const [progresLive, setProgresLive] = React.useState<{
+		completed: number;
+		total: number;
+	} | null>(null);
 
-	const muat = React.useCallback(() => {
-		setDaftarSesi(assessmentSessionRepository.findByDokumenId(projectId));
+	const muat = React.useCallback(async () => {
+		try {
+			setDaftarSesi(await assessmentSessionRepository.findByDokumenId(projectId));
+		} catch {
+			setDaftarSesi([]);
+		}
 	}, [projectId]);
 
 	React.useEffect(() => {
-		muat();
-		window.addEventListener('storage-update', muat);
-		return () => window.removeEventListener('storage-update', muat);
+		void muat();
 	}, [muat]);
 
-	// Sesi yang ditunjuk URL tapi sudah tidak ada jatuh kembali ke yang terbaru,
-	// alih-alih menampilkan halaman kosong tanpa penjelasan.
-	const sesiAktif =
+	const sesiMentah =
 		daftarSesi.find((sesi) => sesi.id === sesiIdTerpilih) ?? daftarSesi[0];
+
+	const sesiAktif: AssessmentSessionEntity | undefined =
+		sesiMentah && progresLive && status === 'berjalan'
+			? {
+					...sesiMentah,
+					completedIndicators: progresLive.completed,
+					totalIndicators: progresLive.total,
+					status: 'RUNNING',
+				}
+			: sesiMentah;
 
 	/** Sesi terbaru yang sedang dilihat — hanya itu yang boleh dinilai ulang. */
 	const melihatSesiTerbaru =
@@ -58,91 +90,64 @@ export function useAssessmentSession({
 
 	const jalankan = React.useCallback(
 		async (sumber: AssessmentSource) => {
-			if (!izin.canRun || !izin.session || status === 'berjalan') return;
-
-			const konten = await assessmentSessionRepository.rakitKonten(
-				projectId,
-				sumber,
-			);
-			if (konten.trim() === '') {
-				setStatus('gagal');
-				setPesanGagal(
-					'Belum ada tulisan yang bisa dinilai. Isi bab di editor, atau unggah PDF LED bila dokumennya disusun di luar aplikasi.',
-				);
-				return;
-			}
+			if (!izin.canRun || status === 'berjalan') return;
 
 			setStatus('berjalan');
 			setPesanGagal(null);
-
-			const sesi = assessmentSessionRepository.create({
-				dokumenId: projectId,
-				sumber,
-				dijalankanOlehUserId: izin.session.userId,
-				dijalankanOlehNama: izin.session.namaLengkap,
-			});
+			setProgresLive(null);
 
 			try {
-				await runAssessment({
-					konten,
-					kriteria: findAllKriteria().map((kriteria) => ({
-						no: kriteria.no,
-						kodeKriteria: kriteria.kodeKriteria,
-						skorMaksimal: skorMaksimal(kriteria),
-						tipeSkor: kriteria.tipeSkor,
-					})),
-					onIndicator: (hasil) => {
-						assessmentSessionRepository.appendResult(sesi.id, hasil);
-					},
+				const job = await assessmentSessionRepository.trigger(projectId, {
+					sumberLed: sumber.sumberLed,
+					ledFileName: sumber.ledFileName ?? undefined,
+					lkpsBuktiDukungId: sumber.lkpsBuktiDukungId ?? undefined,
+					laporanBuktiDukungId: sumber.laporanBuktiDukungId ?? undefined,
 				});
 
-				assessmentSessionRepository.finish(sesi.id);
+				let hasilJob: JobEvent | null = null;
+				for await (const event of streamSse<JobEvent>(`/jobs/${job.id}/events`)) {
+					if (event.status === 'progress' && isProgressPayload(event.progress)) {
+						setProgresLive(event.progress);
+					}
+					if (event.status === 'completed' || event.status === 'failed') {
+						hasilJob = event;
+						break;
+					}
+				}
+
+				await muat();
+
+				if (
+					!hasilJob ||
+					hasilJob.status === 'failed' ||
+					hasilJob.result?.status === 'error'
+				) {
+					setStatus('gagal');
+					setPesanGagal(
+						hasilJob?.result?.error ??
+							hasilJob?.error ??
+							'Penilaian gagal diselesaikan. Periksa koneksi lalu jalankan ulang.',
+					);
+					return;
+				}
+
 				setStatus('diam');
 			} catch {
-				const pesan =
-					'Penilaian gagal diselesaikan. Periksa koneksi lalu jalankan ulang.';
-				// Sesinya ditandai gagal, bukan dihapus: hasil indikator yang telanjur
-				// selesai tetap fakta yang sah, dan sesi yang lenyap membuat pengguna
-				// mengira penilaiannya tidak pernah berjalan sama sekali.
-				assessmentSessionRepository.fail(sesi.id, pesan);
 				setStatus('gagal');
-				setPesanGagal(pesan);
+				setPesanGagal(
+					'Penilaian gagal diselesaikan. Periksa koneksi lalu jalankan ulang.',
+				);
+			} finally {
+				setProgresLive(null);
 			}
 		},
-		[izin.canRun, izin.session, status, projectId],
+		[izin.canRun, status, projectId, muat],
 	);
-
-	/**
-	 * Isi yang dinilai **sesi ini**, bukan isi yang akan dinilai berikutnya.
-	 *
-	 * Dirakit dari `sesiAktif.sumber`, bukan dari pilihan yang sedang tampil di
-	 * kartu Sumber: evaluasi RAGAS harus menggambarkan penilaian yang sudah
-	 * terjadi. Dipulangkan dari hook ini supaya halaman tidak perlu memanggil
-	 * repository sendiri.
-	 */
-	const [kontenSesi, setKontenSesi] = React.useState('');
-
-	React.useEffect(() => {
-		if (!sesiAktif) {
-			setKontenSesi('');
-			return;
-		}
-		let dibatalkan = false;
-		assessmentSessionRepository
-			.rakitKonten(projectId, sesiAktif.sumber)
-			.then((konten) => {
-				if (!dibatalkan) setKontenSesi(konten);
-			});
-		return () => {
-			dibatalkan = true;
-		};
-	}, [sesiAktif, projectId]);
 
 	return {
 		daftarSesi,
 		sesiAktif,
 		melihatSesiTerbaru,
-		kontenSesi,
 		status,
 		pesanGagal,
 		jalankan,

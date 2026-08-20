@@ -1,78 +1,43 @@
 import * as React from 'react';
 
-import { assessmentSessionRepository } from '../../data/repositories/assessment-session.repository';
-import { runAssessmentEval } from '../../data/sources/remote/assessment-eval.mock';
 import { type AssessmentSessionEntity } from '../../domain/entities/assessment-session.entity';
 import { type AssessmentPermission } from './use-assessment-permission';
 
 export type StatusEvaluasi = 'diam' | 'berjalan' | 'gagal';
 
 /**
- * Metrik RAGAS untuk satu sesi penilaian, beserta cara menghitungnya bila belum
- * ada.
+ * Metrik RAGAS untuk satu sesi penilaian AMI.
  *
- * **Hampir nol tombol.** Yang asli menghitung evaluasi begitu penilaian selesai,
- * jadi sesi yang sehat sudah datang dengan angkanya — sejalan dengan alasan yang
- * ditulis `chapter-quality-panel.tsx` untuk tab Kualitas AI yang sama sekali
- * tanpa tombol. Tombolnya di sini hanya muncul untuk sesi yang **belum** punya
- * metrik: tanpa itu, sesi lama yang lahir sebelum evaluasi ada tidak akan pernah
- * bisa dievaluasi sama sekali.
+ * **Belum ada backing-nya sama sekali** (docs §12b: celah yang sama seperti
+ * `AssessmentVerdict` sebelum tabelnya dibuat) — beda dari RAGAS per-bab di
+ * Editor Bab, yang sudah dihitung `worker.py::_handle_generasi_bab` dan
+ * ditulis ke `ragas_scores`. Tidak ada job/kolom manapun yang menghitung RAGAS
+ * di level sesi AMI. `kualitas` karena itu selalu `null`, dan menjalankan
+ * "evaluasi" di sini akan mengarang angka — jadi tombolnya melaporkan celah
+ * ini apa adanya, bukan diam-diam memakai data contoh.
  */
 export function useAssessmentQuality({
 	sesi,
 	izin,
-	/** Isi yang dinilai; ikut jadi sidik jari supaya angkanya deterministik. */
-	konten,
 }: {
 	sesi: AssessmentSessionEntity | undefined;
 	izin: AssessmentPermission;
-	konten: string;
 }) {
-	const [status, setStatus] = React.useState<StatusEvaluasi>('diam');
 	const [pesanGagal, setPesanGagal] = React.useState<string | null>(null);
 
-	const kualitas = sesi?.kualitas ?? null;
-	const sesiId = sesi?.id;
 	const sesiSelesai = sesi?.status === 'COMPLETED';
-
-	// Tombolnya hanya untuk sesi selesai yang belum punya angka: sesi yang masih
-	// berjalan belum punya justifikasi lengkap untuk dievaluasi, dan sesi gagal
-	// tidak akan pernah punya.
-	const bolehMengevaluasi =
-		izin.canRun && sesiSelesai && kualitas === null && status !== 'berjalan';
+	const bolehMengevaluasi = izin.canRun && sesiSelesai;
 
 	const jalankanEvaluasi = React.useCallback(async () => {
-		if (!bolehMengevaluasi || !sesiId) return;
-
-		setStatus('berjalan');
-		setPesanGagal(null);
-
-		try {
-			const hasil = await runAssessmentEval({
-				sesiId,
-				indikatorNos: assessmentSessionRepository
-					.findResultsBySession(sesiId)
-					.filter((baris) => baris.error === null)
-					.map((baris) => baris.indikatorNo),
-				konten,
-			});
-
-			assessmentSessionRepository.setKualitas(sesiId, {
-				...hasil,
-				dihitungPada: new Date().toISOString(),
-			});
-			setStatus('diam');
-		} catch {
-			setStatus('gagal');
-			setPesanGagal(
-				'Evaluasi gagal diselesaikan. Periksa koneksi lalu coba lagi.',
-			);
-		}
-	}, [bolehMengevaluasi, sesiId, konten]);
+		if (!bolehMengevaluasi) return;
+		setPesanGagal(
+			'Evaluasi kualitas RAGAS untuk sesi Penilaian AMI belum tersedia — belum ada pipeline yang menghitungnya.',
+		);
+	}, [bolehMengevaluasi]);
 
 	return {
-		kualitas,
-		status,
+		kualitas: null,
+		status: 'diam' as StatusEvaluasi,
 		pesanGagal,
 		bolehMengevaluasi,
 		sesiSelesai,
