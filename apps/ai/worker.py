@@ -1,9 +1,9 @@
 """BullMQ worker consumer — tracker baris 17.
 
 Membaca generation-queue / assessment-queue / ingestion-queue (nama harus
-cocok dengan apps/backend/src/jobs/queue-names.ts). GENERASI_BAB
-diimplementasikan sungguhan; ASSESSMENT_AMI & INGESTION_BUKTI_DUKUNG masih
-stub (masing-masing tracker row sendiri).
+cocok dengan apps/backend/src/jobs/queue-names.ts). GENERASI_BAB &
+ASSESSMENT_AMI diimplementasikan sungguhan; INGESTION_BUKTI_DUKUNG masih
+stub (tracker row sendiri).
 
 Retry (3x, exponential backoff) disetel di producer (jobs.module.ts), bukan
 di sini — BullMQ menyimpannya di job-nya sendiri di Redis.
@@ -308,9 +308,91 @@ async def _handle_simulasi_skor(job) -> dict:
 
 
 async def _handle_assessment_ami(job) -> dict:
-    # TODO(tracker baris 24, Week 5 + Rencana Integrasi): panggil agent/graph.py
-    # setelah isolasi tenant & lapis akses Postgres beres — lihat integration-plan.md.
-    return {"status": "received", "handler": "ASSESSMENT_AMI (belum diimplementasikan)"}
+    """Menilai seluruh (atau sebagian, lewat `indikatorList`) indikator AMI
+    untuk satu Dokumen LED lewat agent LangGraph yang sudah ada
+    (agent/graph.py) — worker ini cuma pemicunya. Konkurensi, resume, isolasi
+    galat per indikator, dan penulisan Postgres semuanya sudah dibangun di
+    `api.routes.assessment._run_assessment_pipeline`; dipakai ulang persis,
+    bukan ditulis ulang.
+
+    LKPS: `lkps_tool.py` meng-cache registrinya di memori proses, diisi lewat
+    `POST /upload/lkps` yang berjalan di proses `main.py` (uvicorn) — proses
+    worker ini terpisah dan mulai dengan cache kosong. Dimuat ulang di sini
+    dari berkas yang sama (`UPLOAD_DIR/{tenant_id}/{dokumen_id}/lkps.xlsx`)
+    sebelum pipeline jalan, kalau berkasnya ada.
+
+    Rubrik: `rubric_tool.py::_get_rubrics()` masih cache proses tunggal, satu
+    matriks untuk semua tenant (bukan per dokumen) — celah pra-ada, dicatat
+    di tracker, bukan diperbaiki di sini.
+    """
+    import uuid
+
+    from agent.tools.lkps_tool import set_lkps_registry
+    from agent.tools.rubric_tool import _get_rubrics
+    from api.routes.assessment import _run_assessment_pipeline, _SimpleIndicator
+    from api.routes.upload import _doc_dir
+    from db.postgres_client import create_session, get_session
+    from ingestion.lkps_loader import load_lkps
+
+    payload = job.data
+    dokumen_id = payload["dokumenId"]
+    tenant_id = payload["tenantId"]
+    user_id = payload["createdByUserId"]
+    indikator_list = payload.get("indikatorList")
+
+    lkps_path = os.path.join(_doc_dir(tenant_id, dokumen_id), "lkps.xlsx")
+    if os.path.exists(lkps_path):
+        try:
+            set_lkps_registry(tenant_id, dokumen_id, load_lkps(lkps_path))
+        except Exception:
+            logger.exception(
+                "Gagal memuat ulang LKPS untuk tenant=%s dokumen=%s", tenant_id, dokumen_id
+            )
+
+    rubrics = _get_rubrics()
+    wanted = set(indikator_list) if indikator_list else None
+    indicators = [
+        _SimpleIndicator(indicator_no=r.no, kriteria=r.kriteria)
+        for r in rubrics
+        if wanted is None or r.no in wanted
+    ]
+    if not indicators:
+        return {
+            "status": "error",
+            "error": "Tidak ada indikator yang bisa dinilai (rubrik kosong, atau indikatorList tidak cocok dengan rubrik yang ada)",
+        }
+
+    session_id = str(uuid.uuid4())
+    create_session(
+        session_id,
+        tenant_id=tenant_id,
+        dokumen_id=dokumen_id,
+        created_by_user_id=user_id,
+        total_indicators=len(indicators),
+    )
+
+    max_parallel = int(os.environ.get("ASSESSMENT_MAX_PARALLEL", "5"))
+    await _run_assessment_pipeline(
+        session_id=session_id,
+        indicators=indicators,
+        max_parallel=max_parallel,
+        tenant_id=tenant_id,
+        dokumen_id=dokumen_id,
+    )
+
+    sess = get_session(session_id)
+    if sess is None or sess["status"] != "completed":
+        return {
+            "status": "error",
+            "sessionId": session_id,
+            "error": (sess or {}).get("error") or "Sesi asesmen tidak selesai dengan bersih",
+        }
+    return {
+        "status": "completed",
+        "sessionId": session_id,
+        "totalIndicators": sess["total_indicators"],
+        "completedIndicators": sess["completed_indicators"],
+    }
 
 
 async def _handle_ingestion_bukti_dukung(job) -> dict:

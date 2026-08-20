@@ -111,12 +111,16 @@ export class DokumenLedService {
 
   async triggerAssessment(id: string, dto?: TriggerAssessmentDto) {
     const dokumen = await this.findOne(id);
-    const { tenantId } = this.tenantContext.getOrThrow();
+    const { tenantId, userId } = this.tenantContext.getOrThrow();
 
     return this.jobsService.enqueue(JobType.ASSESSMENT_AMI, {
       dokumenId: dokumen.id,
       tenantId,
       programStudiId: dokumen.programStudiId,
+      // Required — assessment_sessions.created_by_user_id is a NOT NULL FK
+      // (db/postgres_client.py::create_session), unlike the old Supabase
+      // tables which had no user concept at all.
+      createdByUserId: userId,
       // Omitted (not []) when unspecified — an empty array would read as
       // "assess zero indicators" downstream, not "assess all of them".
       indikatorList: dto?.indikatorList,
