@@ -118,7 +118,7 @@ export class BabDokumenService {
   }
 
   /** Enqueues GENERASI_BAB — apps/ai's worker does the actual RAG pipeline. */
-  async triggerGenerate(id: string) {
+  async triggerGenerate(id: string, prompt?: string) {
     const { tenantId, userId } = this.tenantContext.getOrThrow();
     const bab = await this.findOneScoped(id);
     if (bab.terkunci) {
@@ -129,6 +129,7 @@ export class BabDokumenService {
       babDokumenId: bab.id,
       tenantId,
       createdByUserId: userId,
+      ...(prompt ? { prompt } : {}),
     });
   }
 

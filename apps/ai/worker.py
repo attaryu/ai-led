@@ -58,11 +58,13 @@ def _build_generasi_prompt(
     rubric: list[dict],
     checklist: list[str],
     chunks: list[dict],
+    user_prompt: str | None = None,
 ) -> str:
     pedoman_text = "\n".join(f"- {p['judul_poin']}: {p['isi_teks'][:500]}" for p in pedoman) or "(tidak ada pedoman spesifik tersedia)"
     rubric_text = "\n".join(f"- {r['kode_kriteria']}: {r['deskripsi'][:300]}" for r in rubric) or "(tidak ada rubrik spesifik tersedia)"
     checklist_text = "\n".join(f"- {c}" for c in checklist)
     evidence_text = "\n\n".join(f"[Bukti {i+1}] {c['text'][:800]}" for i, c in enumerate(chunks)) or "(tidak ada bukti dari dokumen LED yang ditemukan)"
+    arahan_text = f"\n\nARAHAN TAMBAHAN DARI PENGGUNA:\n{user_prompt}" if user_prompt else ""
 
     return f"""Anda menulis draf Bab "{judul_bab}" untuk Laporan Evaluasi Diri (LED) akreditasi.
 
@@ -76,7 +78,7 @@ CHECKLIST FAKTA YANG HARUS DIPENUHI:
 {checklist_text}
 
 BUKTI DARI DOKUMEN LED:
-{evidence_text}
+{evidence_text}{arahan_text}
 
 Tulis draf bab dalam format Markdown, berdasarkan bukti di atas. Jangan mengarang data yang tidak ada di BUKTI. Gunakan heading, paragraf, dan daftar poin sesuai kebutuhan."""
 
@@ -126,7 +128,9 @@ async def _handle_generasi_bab(job) -> dict:
     chunks = await asyncio.to_thread(search_led, query, bab["tenant_id"], bab["dokumen_id"], n_results=5)
 
     # 3. LLM call, then Markdown -> HTML.
-    prompt = _build_generasi_prompt(bab["judul_bab"], pedoman, rubric, checklist, chunks)
+    prompt = _build_generasi_prompt(
+        bab["judul_bab"], pedoman, rubric, checklist, chunks, payload.get("prompt")
+    )
     llm = build_plain_llm()
     response = await llm.ainvoke(prompt)
     markdown_text = response.content
@@ -145,15 +149,19 @@ async def _handle_generasi_bab(job) -> dict:
         ragas_scores = {}
 
     # Persist: BabDraft (checkpoint) -> overwrite BabDokumen active state.
+    # kontenKerja uses {format:'html', body} — the shape apps/web's
+    # chapterRepository.toEntityFromBackend already expects; `markdown` rides
+    # along for chat.py's context building, which the frontend ignores.
+    konten = {"format": "html", "body": html, "markdown": markdown_text}
     user_nama = get_user_nama(user_id)
     draft = create_bab_draft(
         bab_id,
         user_id,
         user_nama,
-        konten_snapshot={"html": html, "markdown": markdown_text},
+        konten_snapshot=konten,
         referensi_chunk_ids=[c["chunk_id"] for c in chunks],
     )
-    update_bab_dokumen_aktif(bab_id, {"html": html, "markdown": markdown_text}, draft["id"])
+    update_bab_dokumen_aktif(bab_id, konten, draft["id"])
     create_generation_run(
         bab_draft_id=draft["id"],
         model=getattr(llm, "model", getattr(llm, "model_name", "unknown")),

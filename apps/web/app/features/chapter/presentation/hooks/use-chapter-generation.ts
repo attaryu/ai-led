@@ -1,18 +1,24 @@
 import * as React from 'react';
 
+import { streamSse } from '~/core/lib/sse-client';
 import { evidenceRepository } from '~/features/evidence/data/repositories/evidence.repository';
 import {
 	type EvidenceEntity,
 	type EvidenceStatus,
 } from '~/features/evidence/domain/entities/evidence.entity';
 import { studyProgramRepository } from '~/features/study-program/data/repositories/study-program.repository';
-import { chapterDraftRepository } from '../../data/repositories/chapter-draft.repository';
 import { chapterRepository } from '../../data/repositories/chapter.repository';
-import { generateChapterContent } from '../../data/sources/remote/chapter-generation.mock';
-import { type BuktiDukungRef } from '../../domain/entities/bukti-dukung-ref.entity';
-import { type RagasScore } from '../../domain/entities/ragas-score.entity';
+import { chapterRemoteSource } from '../../data/sources/remote/chapter.remote-source';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import { type ChapterPermission } from './use-chapter-permission';
+
+/** Bentuk event `GET jobs/:id/events` — lihat `job-events.service.ts::JobUpdate`. */
+type JobEvent = {
+	jobId: string;
+	status: 'progress' | 'completed' | 'failed';
+	result?: { status: 'completed' | 'error'; versi?: number; error?: string };
+	error?: string;
+};
 
 /**
  * Hanya bukti dukung yang isinya sudah terekstraksi boleh jadi konteks AI
@@ -82,19 +88,12 @@ export function useChapterGeneration({
 	const [pesanGagal, setPesanGagal] = React.useState<string | null>(null);
 	const [digenerateAt, setDigenerateAt] = React.useState<string | null>(null);
 	/**
-	 * Bahan generate terakhir, disimpan supaya hasilnya bisa diamankan jadi
-	 * checkpoint bersumber `AI` (§8.2 — tetap satu klik user, bukan otomatis).
-	 *
-	 * Hidup di sini, bukan di `useChapterDraft`, karena inilah satu-satunya tempat
-	 * `referensiChunkIds` pernah ada: begitu tab berganti atau generate diulang, ia
-	 * hilang bersama hasil lamanya, dan memang seharusnya begitu.
+	 * Versi `BabDraft` dari generate terakhir. Beda dari draf percobaan
+	 * (`chapterDraftRepository`, tab Draft): worker GENERASI_BAB **selalu**
+	 * membuat checkpoint sendiri tiap generate selesai (bukan opsional lewat
+	 * tombol "simpan sebagai draft" seperti dulu) — nomor versinya diambil
+	 * langsung dari hasil job, bukan dari aksi pengguna berikutnya.
 	 */
-	const [hasilTerakhir, setHasilTerakhir] = React.useState<{
-		buktiDukung: BuktiDukungRef[];
-		referensiChunkIds: string[];
-		ragas: RagasScore | null;
-	} | null>(null);
-	/** Versi checkpoint yang lahir dari hasil terakhir; `null` selama belum disimpan. */
 	const [versiTersimpan, setVersiTersimpan] = React.useState<number | null>(null);
 
 	/**
@@ -275,6 +274,21 @@ export function useChapterGeneration({
 		[terpilih, dasar],
 	);
 
+	/**
+	 * Memicu GENERASI_BAB sungguhan (Producer NestJS -> Worker FastAPI) lalu
+	 * menunggu selesainya lewat `GET jobs/:id/events` (`streamSse`). Bukan lagi
+	 * `generateChapterContent` (mock) + `chapterRepository.applyGenerate`
+	 * (localStorage) — `chapter.id` di sini adalah id `BabDokumen` sungguhan,
+	 * dan `applyGenerate` hanya menulis ke larik data contoh yang tidak
+	 * memuatnya sama sekali (lihat catatan migrasi di `chapter.repository.ts`).
+	 *
+	 * Pemilihan bukti dukung & prompt tambahan: prompt sudah ikut terkirim ke
+	 * worker (lihat `worker.py::_build_generasi_prompt`), tapi pemilihan bukti
+	 * dukung **belum** — worker menjalankan pencarian bukti LED sendiri lewat
+	 * pgvector, bukan menyaring dari `terpilih`. Daftarnya tetap ditampilkan
+	 * sebagai konteks yang relevan buat penyusun, bukan kontrol yang benar-benar
+	 * mengarahkan generate — celah ini dicatat di tracker, bukan ditutupi diam-diam.
+	 */
 	const jalankanGenerate =
 		React.useCallback(async (): Promise<HasilGenerate | null> => {
 			if (!enabled || status === 'berjalan' || terpilih.size === 0) return null;
@@ -282,57 +296,49 @@ export function useChapterGeneration({
 			setStatus('berjalan');
 			setPesanGagal(null);
 
-			const buktiTerpilih = pustaka.filter((bukti) => terpilih.has(bukti.id));
-			// Nama dan tipe dibekukan di sini, saat berkasnya masih ada — itulah yang
-			// membuat tab Rujukan tetap bisa menyebutnya kalau kelak dihapus.
-			const rujukan: BuktiDukungRef[] = buktiTerpilih.map((bukti) => ({
-				id: bukti.id,
-				namaDokumen: bukti.namaDokumen,
-				tipeFile: bukti.tipeFile,
-			}));
-
 			try {
-				const { html, referensiChunkIds, ragas } = await generateChapterContent({
-					judulBab: chapter.judulBab,
-					urutanBab: chapter.urutanBab,
-					buktiDukung: rujukan,
-					prompt,
-				});
+				const job = await chapterRemoteSource.generate(
+					chapter.id,
+					prompt.trim() || undefined,
+				);
 
-				const diperbarui = chapterRepository.applyGenerate(chapter.id, {
-					kontenKerja: html,
-					buktiDukung: rujukan,
-					ragas,
-				});
+				let hasilJob: JobEvent | null = null;
+				for await (const event of streamSse<JobEvent>(`/jobs/${job.id}/events`)) {
+					if (event.status === 'completed' || event.status === 'failed') {
+						hasilJob = event;
+						break;
+					}
+				}
 
-				// Satu-satunya alasan repository menolak: bab dikunci dari tempat lain
-				// selagi generate berjalan (§12.2).
-				if (!diperbarui) {
+				if (
+					!hasilJob ||
+					hasilJob.status === 'failed' ||
+					hasilJob.result?.status === 'error'
+				) {
 					setStatus('gagal');
 					setPesanGagal(
-						'Bab ini dikunci Penjamin Mutu saat generate berjalan, jadi hasilnya tidak disimpan.',
+						hasilJob?.result?.error ??
+							hasilJob?.error ??
+							'Generate gagal diselesaikan. Periksa koneksi lalu coba lagi.',
 					);
 					return null;
 				}
 
+				const diperbarui = await chapterRepository.refreshFromBackend(chapter.id);
+
 				setStatus('diam');
 				setDigenerateAt(diperbarui.terakhirDisimpan);
-				// Pilihan ini kini yang tercatat di babnya, jadi ia jadi titik nol
-				// baru — pencentangan sesudah ini yang terhitung "baru".
-				setDasar(new Set(diperbarui.buktiDukung.map((ref) => ref.id)));
-				// Catatan bukti yang gugur milik pemulihan pilihan lama; sesudah
-				// generate baru ia tidak lagi menjelaskan apa pun.
+				// Pilihan ini yang dipilih penyusun untuk generate ini, jadi ia jadi
+				// titik nol baru buat "batalkan yang baru" walau backend belum
+				// benar-benar menyaring dari pilihan ini (lihat catatan di atas).
+				setDasar(new Set(terpilih));
 				setJumlahGugur(0);
-				setHasilTerakhir({
-					buktiDukung: diperbarui.buktiDukung,
-					referensiChunkIds,
-					// Dibaca balik dari baris yang tersimpan, bukan dari `ragas` di atas:
-					// yang di sana belum punya `dihitungPada`, yang distempel repository.
-					ragas: diperbarui.ragas,
-				});
-				// Hasil ini belum diamankan; tawarannya muncul lagi.
-				setVersiTersimpan(null);
-				return { html, chapter: diperbarui };
+				// Worker sudah membuat checkpoint (BabDraft) sendiri tiap generate
+				// selesai — versinya langsung dari hasil job, tidak menunggu klik
+				// tambahan seperti draf manual dulu.
+				setVersiTersimpan(hasilJob.result?.versi ?? null);
+
+				return { html: diperbarui.kontenKerja ?? '', chapter: diperbarui };
 			} catch {
 				setStatus('gagal');
 				setPesanGagal(
@@ -340,40 +346,7 @@ export function useChapterGeneration({
 				);
 				return null;
 			}
-		}, [enabled, status, terpilih, pustaka, chapter, prompt]);
-
-	/**
-	 * Mengamankan hasil generate terakhir jadi checkpoint bersumber `AI`
-	 * (docs/application_flow.md §8.2).
-	 *
-	 * Tetap satu klik user, bukan otomatis tiap generate selesai — §8.2 melarang
-	 * yang kedua, dan riwayat akan cepat penuh oleh percobaan generate kalau
-	 * dibiarkan berjalan sendiri. Yang di-snapshot adalah `kontenKerja` bab, bukan
-	 * HTML yang beredar di memori: `applyGenerate` sudah menuliskannya, jadi
-	 * membacanya kembali menjamin arsipnya sama persis dengan yang tersimpan.
-	 */
-	const simpanSebagaiDraft = React.useCallback(() => {
-		if (!enabled || !izin.session || !hasilTerakhir || versiTersimpan !== null) {
-			return;
-		}
-
-		const bab = chapterRepository.findById(chapter.id);
-		if (!bab?.kontenKerja) return;
-
-		const dibuat = chapterDraftRepository.create({
-			chapterId: bab.id,
-			label: null,
-			kontenSnapshot: bab.kontenKerja,
-			sumber: 'AI',
-			buktiDukung: hasilTerakhir.buktiDukung,
-			referensiChunkIds: hasilTerakhir.referensiChunkIds,
-			ragas: hasilTerakhir.ragas,
-			dibuatOlehUserId: izin.session.userId,
-			dibuatOlehNama: izin.session.namaLengkap,
-		});
-
-		setVersiTersimpan(dibuat.versi);
-	}, [enabled, izin.session, hasilTerakhir, versiTersimpan, chapter.id]);
+		}, [enabled, status, terpilih, chapter, prompt]);
 
 	return {
 		daftar,
@@ -399,9 +372,11 @@ export function useChapterGeneration({
 		pesanGagal,
 		digenerateAt,
 		jalankanGenerate,
-		/** `true` bila ada hasil generate yang belum diamankan jadi checkpoint. */
-		bisaSimpanDraft: hasilTerakhir !== null && versiTersimpan === null,
+		// Worker membuat checkpoint sendiri tiap generate (lihat `jalankanGenerate`
+		// di atas) — tidak pernah ada hasil yang "belum diamankan" menunggu klik
+		// tambahan, jadi tombolnya tidak pernah perlu tampil.
+		bisaSimpanDraft: false,
 		versiTersimpan,
-		simpanSebagaiDraft,
+		simpanSebagaiDraft: () => {},
 	};
 }

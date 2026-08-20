@@ -333,6 +333,21 @@ export const chapterRepository = {
 	},
 
 	/**
+	 * Bab satu-satunya, dibaca ulang dari backend — dipakai sesudah GENERASI_BAB
+	 * selesai (tab Generasi). Beda dari {@link findById}: itu baca `localStorage`
+	 * (data contoh), ini baca sumber sesungguhnya, jadi `chapter.id` di sini
+	 * **harus** id `BabDokumen` sungguhan, bukan id contoh lokal.
+	 *
+	 * Tidak menulis ke `localStorage` maupun memanggil `notify()` — pemanggil
+	 * (hook) yang memegang hasilnya lewat state React, mengikuti pola yang sama
+	 * dengan `findByProjectId`.
+	 */
+	async refreshFromBackend(id: string): Promise<ChapterEntity> {
+		const row = await chapterRemoteSource.findOne(id);
+		return toEntityFromBackend(row);
+	},
+
+	/**
 	 * Satu bab, dibaca ulang dari penyimpanan.
 	 *
 	 * Dipakai saat isi bab yang **paling mutakhir** dibutuhkan di luar alur render

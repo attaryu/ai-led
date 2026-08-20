@@ -21,6 +21,23 @@ export type CreateBabPayload = {
 	judulBab: string;
 };
 
+/** Baris `Job` (Prisma) sebagaimana dikembalikan `POST bab/:id/generate`. */
+export type BackendJob = {
+	id: string;
+	queueName: string;
+	bullJobId: string;
+	status: 'WAITING' | 'ACTIVE' | 'COMPLETED' | 'FAILED';
+};
+
+/** Hasil job GENERASI_BAB yang sudah selesai — lihat `worker.py::_handle_generasi_bab`. */
+export type GenerasiBabResult = {
+	status: 'completed' | 'error';
+	babDraftId?: string;
+	versi?: number;
+	ragasScores?: Record<string, number>;
+	error?: string;
+};
+
 export const chapterRemoteSource = {
 	findAllForDokumen(dokumenId: string): Promise<BackendBabDokumen[]> {
 		return apiFetch<BackendBabDokumen[]>(`/dokumen/${dokumenId}/bab`);
@@ -35,6 +52,14 @@ export const chapterRemoteSource = {
 		return apiFetch<BackendBabDokumen>(`/dokumen/${dokumenId}/bab`, {
 			method: 'POST',
 			body: payload,
+		});
+	},
+
+	/** Memicu GENERASI_BAB (Producer NestJS -> Worker FastAPI). */
+	generate(id: string, prompt?: string): Promise<BackendJob> {
+		return apiFetch<BackendJob>(`/bab/${id}/generate`, {
+			method: 'POST',
+			body: prompt ? { prompt } : {},
 		});
 	},
 };

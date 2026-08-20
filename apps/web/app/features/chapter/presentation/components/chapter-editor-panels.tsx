@@ -5,6 +5,7 @@ import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import { type HasilPulih } from '../hooks/use-chapter-draft';
 import { type HasilGenerate } from '../hooks/use-chapter-generation';
 import { type ChapterPermission } from '../hooks/use-chapter-permission';
+import { ChapterChatPanel } from './chapter-chat-panel';
 import { ChapterDraftPanel } from './chapter-draft-panel';
 import { ChapterGenerationPanel } from './chapter-generation-panel';
 import { ChapterQualityPanel } from './chapter-quality-panel';
@@ -34,6 +35,7 @@ export const PANEL_TABS = [
 	{ value: 'rujukan', label: 'Rujukan' },
 	{ value: 'rubrik', label: 'Rubrik' },
 	{ value: 'skor', label: 'Kualitas AI' },
+	{ value: 'chat', label: 'Chat' },
 	// Ditaruh paling akhir: ia bukan alat menyusun melainkan keadaan bab, dan
 	// ditengok sesudah pekerjaannya — bukan sambil mengerjakan.
 	{ value: 'review', label: 'Review' },
@@ -141,6 +143,13 @@ export function ChapterEditorPanels({
 				className="flex min-h-0 flex-1 flex-col overflow-hidden"
 			>
 				<ChapterQualityPanel chapter={chapter} savedAt={savedAt} />
+			</TabsContent>
+
+			<TabsContent
+				value="chat"
+				className="flex min-h-0 flex-1 flex-col overflow-hidden"
+			>
+				<ChapterChatPanel chapter={chapter} izin={izin} />
 			</TabsContent>
 
 			<TabsContent

@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   Body,
   Controller,
   Delete,
@@ -17,6 +18,7 @@ import { Protected } from '../tenant/protected.decorator';
 import { BabDokumenService } from './bab-dokumen.service';
 import { ChatMessageDto } from './dto/chat-message.dto';
 import { CreateBabDokumenDto } from './dto/create-bab-dokumen.dto';
+import { GenerateBabDto } from './dto/generate-bab.dto';
 import { UpdateBabDokumenDto } from './dto/update-bab-dokumen.dto';
 import { ReviewStatusDto } from './dto/review-status.dto';
 
@@ -65,8 +67,8 @@ export class BabDokumenController {
   @ApiOperation({
     summary: 'Trigger generasi konten AI untuk bab (Producer GENERASI_BAB)',
   })
-  generate(@Param('id') id: string) {
-    return this.babDokumenService.triggerGenerate(id);
+  generate(@Param('id') id: string, @Body() dto: GenerateBabDto) {
+    return this.babDokumenService.triggerGenerate(id, dto.prompt);
   }
 
   /**
@@ -125,6 +127,30 @@ export class BabDokumenController {
     } finally {
       res.end();
     }
+  }
+
+  /**
+   * Plain JSON passthrough to apps/ai's GET /chat/:id/history — frontend
+   * never talks to apps/ai directly (same rule as the stream above).
+   */
+  @Get('bab/:id/chat/history')
+  @Protected(...WRITE_ROLES)
+  async chatHistory(@Param('id') id: string) {
+    await this.babDokumenService.assertChatAccess(id);
+    const aiServiceUrl = requireEnv('AI_SERVICE_URL');
+
+    let upstream: globalThis.Response;
+    try {
+      upstream = await fetch(`${aiServiceUrl}/chat/${id}/history`);
+    } catch {
+      throw new BadGatewayException('AI service tidak dapat dihubungi');
+    }
+
+    if (!upstream.ok) {
+      throw new BadGatewayException('Gagal memuat riwayat chat dari AI service');
+    }
+
+    return upstream.json();
   }
 
   @Post('bab/:id/submit-review')
