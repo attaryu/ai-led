@@ -4,15 +4,8 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Protected } from '../tenant/protected.decorator';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { RequestUploadUrlDto } from './dto/request-upload-url.dto';
+import { sanitizeFileName } from './storage-key.util';
 import { StorageService } from './storage.service';
-
-// Keeps R2 object keys readable and collision-free without leaking the
-// original filename's exact characters into the key itself (spaces,
-// unicode, etc. all fine in an R2 key, but keeping it boring avoids any
-// surprises with tools that assume URL-safe keys).
-function sanitizeFileName(name: string): string {
-  return name.replace(/[^A-Za-z0-9._-]/g, '_');
-}
 
 @ApiTags('storage')
 @ApiBearerAuth()

@@ -1,16 +1,23 @@
 import {
+  BadGatewayException,
   ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { JobType, Prisma, Role, StatusDokumen } from '@ai-led/db';
+import { requireEnv } from '../config/env';
 import { PrismaService } from '../database/prisma.service';
 import { JobsService } from '../jobs/jobs.service';
+import { extractFileNameFromKey } from '../storage/storage-key.util';
+import { StorageService } from '../storage/storage.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
+import { ConfirmLedUploadDto } from './dto/confirm-led-upload.dto';
 import { CreateDokumenLedDto } from './dto/create-dokumen-led.dto';
 import { TriggerAssessmentDto } from './dto/trigger-assessment.dto';
 import { UpdateDokumenLedDto } from './dto/update-dokumen-led.dto';
+
+const LED_EXTENSIONS = ['.pdf', '.docx'];
 
 @Injectable()
 export class DokumenLedService {
@@ -18,6 +25,7 @@ export class DokumenLedService {
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
     private readonly jobsService: JobsService,
+    private readonly storage: StorageService,
   ) {}
 
   // PENYUSUN is scoped to the single program studi they're assigned to;
@@ -129,6 +137,54 @@ export class DokumenLedService {
       ...(dto?.lkpsBuktiDukungId ? { lkpsBuktiDukungId: dto.lkpsBuktiDukungId } : {}),
       ...(dto?.laporanBuktiDukungId ? { laporanBuktiDukungId: dto.laporanBuktiDukungId } : {}),
     });
+  }
+
+  /**
+   * PDF LED sudah sampai ke R2 langsung dari browser (POST
+   * /storage/presigned-upload lalu PUT ke R2) — di sini cuma mengambil
+   * baliknya dari R2 lalu meneruskannya sebagai multipart ke apps/ai's
+   * POST /upload/led, yang mengerjakan ekstraksi+indexing pgvector-nya
+   * sendiri, tidak berubah sama sekali. Frontend tidak pernah bicara
+   * langsung ke apps/ai, aturan yang sama dengan proxy chat SSE.
+   */
+  async confirmLedUpload(id: string, dto: ConfirmLedUploadDto) {
+    const dokumen = await this.findOne(id);
+    const { tenantId } = this.tenantContext.getOrThrow();
+
+    if (!dto.fileKey.startsWith(`${tenantId}/`)) {
+      throw new ForbiddenException('fileKey ini bukan milik tenant Anda');
+    }
+
+    const fileName = extractFileNameFromKey(dto.fileKey);
+    if (!LED_EXTENSIONS.some((ext) => fileName.toLowerCase().endsWith(ext))) {
+      throw new ConflictException('Berkas LED harus PDF (.pdf) atau Word (.docx)');
+    }
+
+    const { bytes, contentType } = await this.storage.getObjectBytes(dto.fileKey);
+
+    const aiServiceUrl = requireEnv('AI_SERVICE_URL');
+    const form = new FormData();
+    form.append('tenant_id', tenantId);
+    form.append('dokumen_id', dokumen.id);
+    form.append(
+      // `new Uint8Array(bytes)` copies into a fresh ArrayBuffer — Buffer's
+      // own type is ArrayBufferLike (could be a SharedArrayBuffer), which
+      // Blob's BlobPart type doesn't accept.
+      'file',
+      new Blob([new Uint8Array(bytes)], { type: contentType ?? 'application/octet-stream' }),
+      fileName,
+    );
+
+    let upstream: globalThis.Response;
+    try {
+      upstream = await fetch(`${aiServiceUrl}/upload/led`, { method: 'POST', body: form });
+    } catch {
+      throw new BadGatewayException('AI service tidak dapat dihubungi');
+    }
+    if (!upstream.ok) {
+      throw new BadGatewayException('Gagal mengunggah LED ke AI service');
+    }
+    return upstream.json();
   }
 }
 

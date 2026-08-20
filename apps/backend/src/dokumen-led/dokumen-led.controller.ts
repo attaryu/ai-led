@@ -12,6 +12,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@ai-led/db';
 import { Protected } from '../tenant/protected.decorator';
 import { DokumenLedService } from './dokumen-led.service';
+import { ConfirmLedUploadDto } from './dto/confirm-led-upload.dto';
 import { CreateDokumenLedDto } from './dto/create-dokumen-led.dto';
 import { TriggerAssessmentDto } from './dto/trigger-assessment.dto';
 import { UpdateDokumenLedDto } from './dto/update-dokumen-led.dto';
@@ -83,6 +84,18 @@ export class DokumenLedController {
     @Body() dto?: TriggerAssessmentDto,
   ) {
     return this.dokumenLedService.triggerAssessment(id, dto);
+  }
+
+  @Post('dokumen/:id/led-upload')
+  @Protected(...WRITE_ROLES)
+  @ApiOperation({
+    summary: 'Confirms an R2 upload as this dokumen\'s LED and forwards it to apps/ai for indexing',
+  })
+  confirmLedUpload(
+    @Param('id') id: string,
+    @Body() dto: ConfirmLedUploadDto,
+  ) {
+    return this.dokumenLedService.confirmLedUpload(id, dto);
   }
 }
 

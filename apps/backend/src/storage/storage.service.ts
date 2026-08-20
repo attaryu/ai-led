@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { Readable } from 'node:stream';
 import {
   DeleteObjectCommand,
   GetObjectCommand,
@@ -75,5 +76,22 @@ export class StorageService {
 
   async deleteObject(key: string): Promise<void> {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+  }
+
+  /**
+   * Reads an object's bytes server-side (not a presigned URL) — used to
+   * proxy an already-uploaded file to apps/ai (LED upload) without the
+   * browser ever talking to apps/ai directly, same rule as the chat SSE
+   * proxy.
+   */
+  async getObjectBytes(key: string): Promise<{ bytes: Buffer; contentType: string | null }> {
+    const res = await this.client.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+    const chunks: Buffer[] = [];
+    for await (const chunk of res.Body as Readable) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return { bytes: Buffer.concat(chunks), contentType: res.ContentType ?? null };
   }
 }

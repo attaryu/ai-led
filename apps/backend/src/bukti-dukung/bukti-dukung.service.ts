@@ -9,6 +9,7 @@ import { JobType, OwnerTipe, Role, StatusEkstraksi } from '@ai-led/db';
 import { PrismaService } from '../database/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { JobsService } from '../jobs/jobs.service';
+import { extractFileNameFromKey } from '../storage/storage-key.util';
 import { StorageService } from '../storage/storage.service';
 import { CreateBuktiDukungDto } from './dto/create-bukti-dukung.dto';
 
@@ -155,19 +156,4 @@ export class BuktiDukungService {
       // bukan alasan menggagalkan penghapusan barisnya.
     }
   }
-}
-
-/**
- * `{tenantId}/uploads/{uuid}-{fileName}` -> `{fileName}` (lihat
- * storage.controller.ts). UUID `randomUUID()` selalu 36 karakter — dipotong
- * dengan panjang tetap, bukan `indexOf('-')`, karena UUID sendiri penuh
- * tanda hubung.
- */
-const UUID_PREFIX_LENGTH = 36 + 1; // uuid + '-'
-
-function extractFileNameFromKey(key: string): string {
-  const afterSlash = key.slice(key.lastIndexOf('/') + 1);
-  return afterSlash.length > UUID_PREFIX_LENGTH
-    ? afterSlash.slice(UUID_PREFIX_LENGTH)
-    : afterSlash;
 }
