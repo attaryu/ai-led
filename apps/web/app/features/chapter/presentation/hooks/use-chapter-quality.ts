@@ -1,6 +1,6 @@
 import * as React from 'react';
 
-import { chapterDraftRepository } from '../../data/repositories/chapter-draft.repository';
+import { chapterDraftRemoteSource } from '../../data/sources/remote/chapter-draft.remote-source';
 import { type ChapterDraftEntity } from '../../domain/entities/chapter-draft.entity';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import { ragasBasi } from '../../domain/entities/ragas-score.entity';
@@ -39,15 +39,28 @@ export function useChapterQuality({
 	const [daftarDraft, setDaftarDraft] = React.useState<ChapterDraftEntity[]>([]);
 	const [lingkup, setLingkup] = React.useState<string>('aktif');
 
-	const muat = React.useCallback(() => {
-		setDaftarDraft(chapterDraftRepository.findByChapterId(chapter.id));
-	}, [chapter.id]);
-
+	/**
+	 * `chapter.id` di sini adalah id `BabDokumen` sungguhan — lihat catatan
+	 * migrasi di `chapter-draft.remote-source.ts`. `terakhirDisimpan` ikut jadi
+	 * dependency, bukan cuma `id`: itulah penanda checkpoint baru mungkin lahir
+	 * dari tab Generasi sebelahnya (`@updatedAt` ikut bergerak tiap generate
+	 * menulis checkpoint) — tanpa ini daftarnya cuma segar sesudah bab dibuka
+	 * ulang.
+	 */
 	React.useEffect(() => {
-		muat();
-		window.addEventListener('storage-update', muat);
-		return () => window.removeEventListener('storage-update', muat);
-	}, [muat]);
+		let dibatalkan = false;
+		chapterDraftRemoteSource
+			.findByChapterId(chapter.id)
+			.then((drafts) => {
+				if (!dibatalkan) setDaftarDraft(drafts);
+			})
+			.catch(() => {
+				if (!dibatalkan) setDaftarDraft([]);
+			});
+		return () => {
+			dibatalkan = true;
+		};
+	}, [chapter.id, chapter.terakhirDisimpan]);
 
 	const draftTerpilih = daftarDraft.find((draft) => draft.id === lingkup);
 	const lingkupEfektif = lingkup !== 'aktif' && !draftTerpilih ? 'aktif' : lingkup;

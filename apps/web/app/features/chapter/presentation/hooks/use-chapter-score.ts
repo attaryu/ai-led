@@ -1,21 +1,56 @@
 import * as React from 'react';
 
-import { chapterDraftRepository } from '../../data/repositories/chapter-draft.repository';
-import { chapterScoreRepository } from '../../data/repositories/chapter-score.repository';
-import { scoreChapterContent } from '../../data/sources/remote/chapter-scoring.mock';
+import { streamSse } from '~/core/lib/sse-client';
+import { mapHasilSkor } from '../../data/backend-mappers';
+import { mapBabDraft } from '../../data/sources/remote/chapter-draft.remote-source';
+import { chapterRemoteSource } from '../../data/sources/remote/chapter.remote-source';
 import {
 	ringkasSkor,
 	type ChapterScoreEntity,
 } from '../../domain/entities/chapter-score.entity';
 import { type ChapterDraftEntity } from '../../domain/entities/chapter-draft.entity';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
-import {
-	findKriteriaForBab,
-	skorMaksimal,
-} from '../../domain/entities/rubric-criterion.entity';
+import { type RubricCriterion } from '../../domain/entities/rubric-criterion.entity';
 import { type ChapterPermission } from './use-chapter-permission';
 
 export type StatusSimulasi = 'diam' | 'berjalan' | 'gagal';
+
+/** Bentuk event `GET jobs/:id/events` — sama dengan yang dipakai `use-chapter-generation.ts`. */
+type JobEvent = {
+	jobId: string;
+	status: 'progress' | 'completed' | 'failed';
+	result?: { status: 'completed' | 'error'; error?: string };
+	error?: string;
+};
+
+/**
+ * Bab tidak dinilai kriteria rubrik apa pun sengaja tetap array kosong, bukan
+ * `undefined` — docs/database.md §10 menyatakan itu keadaan yang sah, bukan
+ * kegagalan pemuatan (lihat panelnya).
+ */
+function mapKriteria(row: {
+	id: string;
+	kodeKriteria: string;
+	deskripsi: string;
+	level: { skor: number; deskripsi: string }[];
+}): RubricCriterion {
+	return {
+		id: row.id,
+		// Field di bawah ini tidak dipakai `chapter-rubric-panel.tsx` sama sekali
+		// (lihat isi accordion-nya) — Postgres `RubrikKriteria` sungguhan tidak
+		// punya kolomnya (beda dari data contoh `rubric-criterion.entity.ts`,
+		// yang dibuat lebih kaya dari yang pernah dipakai), jadi diisi placeholder
+		// yang jujur alih-alih mengarang.
+		no: 0,
+		kriteria: '',
+		tipeSkor: 'kualitatif',
+		tabelLkps: [],
+		kodeKriteria: row.kodeKriteria,
+		deskripsi: row.deskripsi,
+		levelSkor: row.level,
+		urutanBab: [],
+	};
+}
 
 /**
  * Isi tab Rubrik: kriteria LAM Teknik untuk bab ini, hasil simulasi skornya, dan
@@ -26,6 +61,12 @@ export type StatusSimulasi = 'diam' | 'berjalan' | 'gagal';
  * kaki tab yang membuka modal; dropdown dipilih supaya pertanyaan yang sama
  * ("lihat milik checkpoint mana") dijawab dengan kontrol yang sama di dua tab
  * bersebelahan.
+ *
+ * `hasilAktif` dipegang sendiri (bukan langsung dibaca dari `chapter` prop)
+ * karena simulasi SIMULASI_SKOR tidak mengubah `kontenKerja` bab — parent
+ * (`chapter-editor.tsx`) tidak punya alasan menyegarkan `chapter` untuknya, dan
+ * memaksanya begitu hanya untuk satu tab ini menambah pergerakan yang tidak
+ * perlu di tempat lain.
  */
 export function useChapterScore({
 	chapter,
@@ -42,47 +83,70 @@ export function useChapterScore({
 	lingkup: string;
 	setLingkup: (lingkup: string) => void;
 }) {
+	const [kriteria, setKriteria] = React.useState<RubricCriterion[]>([]);
 	const [daftarDraft, setDaftarDraft] = React.useState<ChapterDraftEntity[]>([]);
-	const [semuaHasil, setSemuaHasil] = React.useState<ChapterScoreEntity[]>([]);
+	/** Hasil per checkpoint, diambil dari `hasilSkorKriteria` mentah tiap `BabDraft`. */
+	const [hasilPerDraft, setHasilPerDraft] = React.useState<
+		Map<string, ChapterScoreEntity[]>
+	>(new Map());
+	const [hasilAktif, setHasilAktif] = React.useState<ChapterScoreEntity[]>(
+		chapter.hasilSkorKriteriaAktif,
+	);
 	const [status, setStatus] = React.useState<StatusSimulasi>('diam');
 	const [pesanGagal, setPesanGagal] = React.useState<string | null>(null);
 
 	const muat = React.useCallback(() => {
-		setDaftarDraft(chapterDraftRepository.findByChapterId(chapter.id));
-		// Sekali baca lalu disaring di memori, bukan `findByTarget` per lingkup:
-		// tiap panggilan repository membaca ulang seluruh blob localStorage.
-		setSemuaHasil(chapterScoreRepository.findAll());
-	}, [chapter.id]);
+		chapterRemoteSource
+			.findRubrik(chapter.id)
+			.then((rows) => setKriteria(rows.map(mapKriteria)))
+			.catch(() => setKriteria([]));
 
+		chapterRemoteSource
+			.findDrafts(chapter.id)
+			.then((rows) => {
+				setDaftarDraft(rows.map(mapBabDraft));
+				setHasilPerDraft(
+					new Map(rows.map((row) => [row.id, mapHasilSkor(row.hasilSkorKriteria)])),
+				);
+			})
+			.catch(() => {
+				setDaftarDraft([]);
+				setHasilPerDraft(new Map());
+			});
+		// `terakhirDisimpan` ikut jadi dependency di samping `id` — penanda
+		// checkpoint baru mungkin lahir dari tab Generasi sebelahnya, sama seperti
+		// `useChapterQuality`/`useChapterReference`.
+	}, [chapter.id, chapter.terakhirDisimpan]);
+
+	React.useEffect(muat, [muat]);
+
+	// `chapter` (jadi `hasilSkorKriteriaAktif`-nya) berganti tiap generate ulang
+	// dari tab sebelahnya — susul di sini juga, bukan cuma dari `muatUlangAktif`
+	// di bawah, supaya simulasi lama tidak sisa nempel di kontribusi bab yang
+	// sudah ditimpa isinya.
 	React.useEffect(() => {
-		muat();
-		window.addEventListener('storage-update', muat);
-		return () => window.removeEventListener('storage-update', muat);
-	}, [muat]);
+		setHasilAktif(chapter.hasilSkorKriteriaAktif);
+	}, [chapter.hasilSkorKriteriaAktif]);
+
+	const muatUlangAktif = React.useCallback(() => {
+		chapterRemoteSource
+			.findOne(chapter.id)
+			.then((row) => setHasilAktif(mapHasilSkor(row.hasilSkorKriteria)))
+			.catch(() => {});
+	}, [chapter.id]);
 
 	const draftTerpilih = daftarDraft.find((draft) => draft.id === lingkup);
 	// Lingkup yang menunjuk checkpoint yang sudah tidak ada jatuh kembali ke aktif,
 	// alih-alih menampilkan daftar kosong tanpa penjelasan.
 	const lingkupEfektif = lingkup !== 'aktif' && !draftTerpilih ? 'aktif' : lingkup;
 
-	/** Kriteria dicocokkan lewat **nomor bab**, bukan id bab (database.md §11). */
-	const kriteria = React.useMemo(
-		() => findKriteriaForBab(chapter.urutanBab),
-		[chapter.urutanBab],
-	);
-
 	const hasil = React.useMemo(() => {
-		const perKriteria = new Map<string, ChapterScoreEntity>();
-		for (const baris of semuaHasil) {
-			const cocok =
-				lingkupEfektif === 'aktif'
-					? baris.targetTipe === 'BAB_AKTIF' && baris.babId === chapter.id
-					: baris.targetTipe === 'BAB_DRAFT' &&
-						baris.babDraftId === lingkupEfektif;
-			if (cocok) perKriteria.set(baris.kriteriaId, baris);
-		}
-		return perKriteria;
-	}, [semuaHasil, lingkupEfektif, chapter.id]);
+		const baris =
+			lingkupEfektif === 'aktif'
+				? hasilAktif
+				: (hasilPerDraft.get(lingkupEfektif) ?? []);
+		return new Map(baris.map((item) => [item.kriteriaId, item]));
+	}, [lingkupEfektif, hasilAktif, hasilPerDraft]);
 
 	const ringkasan = React.useMemo(
 		() => ringkasSkor([...hasil.values()], kriteria),
@@ -97,7 +161,7 @@ export function useChapterScore({
 	const bolehMenjalankan = izin.canEdit && kriteria.length > 0;
 
 	const jalankanSimulasi = React.useCallback(async () => {
-		if (!bolehMenjalankan || !izin.session || status === 'berjalan') return;
+		if (!bolehMenjalankan || status === 'berjalan') return;
 
 		const konten =
 			lingkupEfektif === 'aktif'
@@ -116,26 +180,38 @@ export function useChapterScore({
 		setPesanGagal(null);
 
 		try {
-			const { hasil: dinilai } = await scoreChapterContent({
-				konten,
-				kriteria: kriteria.map((item) => ({
-					id: item.id,
-					kodeKriteria: item.kodeKriteria,
-					skorMaksimal: skorMaksimal(item),
-				})),
-			});
-
-			chapterScoreRepository.replaceForTarget(
-				lingkupEfektif === 'aktif' ? 'BAB_AKTIF' : 'BAB_DRAFT',
-				lingkupEfektif === 'aktif' ? chapter.id : lingkupEfektif,
-				dinilai.map((baris) => ({
-					kriteriaId: baris.kriteriaId,
-					skorDidapat: baris.skorDidapat,
-					justifikasi: baris.justifikasi,
-					dijalankanOlehUserId: izin.session!.userId,
-					dijalankanOlehNama: izin.session!.namaLengkap,
-				})),
+			const job = await chapterRemoteSource.simulateScore(
+				chapter.id,
+				lingkupEfektif === 'aktif' ? undefined : lingkupEfektif,
 			);
+
+			let hasilJob: JobEvent | null = null;
+			for await (const event of streamSse<JobEvent>(`/jobs/${job.id}/events`)) {
+				if (event.status === 'completed' || event.status === 'failed') {
+					hasilJob = event;
+					break;
+				}
+			}
+
+			if (
+				!hasilJob ||
+				hasilJob.status === 'failed' ||
+				hasilJob.result?.status === 'error'
+			) {
+				setStatus('gagal');
+				setPesanGagal(
+					hasilJob?.result?.error ??
+						hasilJob?.error ??
+						'Simulasi gagal diselesaikan. Periksa koneksi lalu coba lagi.',
+				);
+				return;
+			}
+
+			if (lingkupEfektif === 'aktif') {
+				muatUlangAktif();
+			} else {
+				muat();
+			}
 
 			setStatus('diam');
 		} catch {
@@ -146,12 +222,13 @@ export function useChapterScore({
 		}
 	}, [
 		bolehMenjalankan,
-		izin.session,
 		status,
 		lingkupEfektif,
-		chapter,
+		chapter.id,
+		chapter.kontenKerja,
 		draftTerpilih,
-		kriteria,
+		muat,
+		muatUlangAktif,
 	]);
 
 	return {

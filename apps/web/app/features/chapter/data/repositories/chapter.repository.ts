@@ -6,6 +6,12 @@ import {
 	chapterSchema,
 	type ChapterEntity,
 } from '../../domain/entities/chapter.entity';
+import {
+	mapBuktiDukungRef,
+	mapHasilSkor,
+	mapKontenBody,
+	mapRagas,
+} from '../backend-mappers';
 import { chapterLocalSource } from '../sources/local/chapter-local.source';
 import {
 	chapterRemoteSource,
@@ -20,16 +26,13 @@ import { chapterScoreRepository } from './chapter-score.repository';
  * konvensi yang sudah diantisipasi komentar `ChapterEntity.kontenKerja` —
  * bentuk lain (termasuk `{}` kosong) dibaca sebagai "belum ada isi".
  *
- * `buktiDukung`/`ragas` selalu kosong: keduanya relasi terpisah di backend
- * (`BuktiDukungBab`, `RagasScore`) yang belum di-`include` layanan manapun di
- * Week 2 — akan terisi begitu Editor Bab (Week 4) benar-benar membacanya.
+ * `buktiDukung`/`ragas`/`hasilSkorKriteriaAktif` terisi dari relasi yang
+ * di-`include` `bab-dokumen.service.ts::findOne` (`BuktiDukungBab`,
+ * `RagasScore`, `HasilSkorKriteria`) — kosong pada hasil `findAllForDokumen`,
+ * yang tidak meng-include-nya (dipakai ringkasan progres, bukan Editor Bab).
  */
 function toEntityFromBackend(row: BackendBabDokumen): ChapterEntity {
-	const konten = row.kontenKerja;
-	const kontenKerja =
-		typeof konten === 'object' && konten !== null && typeof konten.body === 'string'
-			? konten.body
-			: null;
+	const kontenKerja = mapKontenBody(row.kontenKerja);
 
 	return {
 		id: row.id,
@@ -44,8 +47,9 @@ function toEntityFromBackend(row: BackendBabDokumen): ChapterEntity {
 		catatanPada: row.catatanPada,
 		diajukanReviewPada: row.diajukanReviewPada,
 		terakhirDisimpan: row.terakhirDisimpan,
-		buktiDukung: [],
-		ragas: null,
+		buktiDukung: mapBuktiDukungRef(row.buktiDukungBab),
+		ragas: mapRagas(row.ragasScores?.[0]),
+		hasilSkorKriteriaAktif: mapHasilSkor(row.hasilSkorKriteria),
 	};
 }
 
@@ -98,6 +102,7 @@ function buildEmptyChapters(ledProjectId: string): ChapterEntity[] {
 		// Bab kosong belum pernah digenerate, jadi belum ada mutu jawaban AI yang
 		// bisa dinilai. Sama untuk bab contoh yang isinya ditulis tangan di seed.
 		ragas: null,
+		hasilSkorKriteriaAktif: [],
 	}));
 }
 

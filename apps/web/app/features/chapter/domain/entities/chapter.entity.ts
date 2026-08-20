@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { buktiDukungRefSchema } from './bukti-dukung-ref.entity';
+import { chapterScoreSchema } from './chapter-score.entity';
 import { ragasScoreSchema } from './ragas-score.entity';
 
 /**
@@ -85,6 +86,12 @@ export const chapterSchema = z.object({
 	 * penggunanya.
 	 */
 	ragas: ragasScoreSchema.nullable().default(null),
+	/**
+	 * Hasil simulasi rubrik untuk kondisi aktif bab ini (`targetTipe = 'BAB_AKTIF'`,
+	 * tab Rubrik). Sama alasannya dengan `ragas`: ditimpa tiap simulasi ulang, dan
+	 * `.default([])` supaya baris lama tanpa kolom ini tetap lolos `findAll`.
+	 */
+	hasilSkorKriteriaAktif: z.array(chapterScoreSchema).default([]),
 });
 
 export type ChapterEntity = z.infer<typeof chapterSchema>;

@@ -88,10 +88,58 @@ export class BabDokumenService {
     });
   }
 
+  /**
+   * `buktiDukungBab`/`ragasScores`/`hasilSkorKriteria` (semuanya lingkup
+   * BAB_AKTIF) di-include di sini, bukan di `findOneScoped` — method itu
+   * dipakai tiap pengecekan izin di bawah, dan sebagian besar pemanggilnya
+   * (`update`, `triggerGenerate`, dst.) tidak pernah membaca ketiganya.
+   */
   async findOne(id: string) {
-    const { dokumen, ...bab } = await this.findOneScoped(id);
+    const { tenantId } = this.tenantContext.getOrThrow();
+    const bab = await this.prisma.babDokumen.findFirst({
+      where: { id, dokumen: { programStudi: { tenantId } } },
+      include: {
+        dokumen: { select: { programStudiId: true } },
+        buktiDukungBab: true,
+        ragasScores: { orderBy: { dihitungPada: 'desc' }, take: 1 },
+        hasilSkorKriteria: { where: { targetTipe: 'BAB_AKTIF' } },
+      },
+    });
+    if (!bab) {
+      throw new NotFoundException('Bab dokumen tidak ditemukan');
+    }
+    this.assertProgramStudiScope(bab.dokumen.programStudiId);
+
+    const { dokumen, ...rest } = bab;
     void dokumen;
-    return bab;
+    return rest;
+  }
+
+  /** Riwayat checkpoint bab ini — tab Draft/Rujukan/Kualitas AI/Rubrik. */
+  async findDrafts(id: string) {
+    await this.findOneScoped(id);
+    return this.prisma.babDraft.findMany({
+      where: { babId: id },
+      orderBy: { versi: 'desc' },
+      include: {
+        buktiDukungDraft: true,
+        ragasScores: true,
+        hasilSkorKriteria: true,
+      },
+    });
+  }
+
+  /**
+   * Kriteria rubrik LAM Teknik yang menilai bab ini, dicocokkan lewat
+   * `urutanBab` — bukan FK ke `BabDokumen.id` (database.md §11).
+   */
+  async findRubrik(id: string) {
+    const bab = await this.findOneScoped(id);
+    const rows = await this.prisma.rubrikKriteriaBab.findMany({
+      where: { urutanBab: bab.urutanBab },
+      include: { kriteria: { include: { level: { orderBy: { skor: 'desc' } } } } },
+    });
+    return rows.map((row) => row.kriteria);
   }
 
   /** Content edit (judulBab / kontenKerja) - the autosave path. */
@@ -130,6 +178,35 @@ export class BabDokumenService {
       tenantId,
       createdByUserId: userId,
       ...(prompt ? { prompt } : {}),
+    });
+  }
+
+  /**
+   * Enqueues SIMULASI_SKOR — worker menilai isi bab (atau salah satu
+   * checkpoint-nya) terhadap kriteria rubrik LAM Teknik. Tanpa `babDraftId`
+   * berarti menilai kondisi aktif.
+   */
+  async triggerSimulateScore(id: string, babDraftId?: string) {
+    const { tenantId, userId } = this.tenantContext.getOrThrow();
+    const bab = await this.findOneScoped(id);
+    if (bab.terkunci) {
+      throw new ForbiddenException('Bab ini sedang terkunci untuk direview');
+    }
+
+    if (babDraftId) {
+      const draft = await this.prisma.babDraft.findFirst({
+        where: { id: babDraftId, babId: id },
+      });
+      if (!draft) {
+        throw new NotFoundException('Checkpoint tidak ditemukan');
+      }
+    }
+
+    return this.jobsService.enqueue(JobType.SIMULASI_SKOR, {
+      babDokumenId: bab.id,
+      tenantId,
+      createdByUserId: userId,
+      ...(babDraftId ? { babDraftId } : {}),
     });
   }
 

@@ -15,4 +15,7 @@ export const QUEUE_NAME_BY_JOB_TYPE: Record<JobType, string> = {
   [JobType.GENERASI_BAB]: GENERATION_QUEUE,
   [JobType.ASSESSMENT_AMI]: ASSESSMENT_QUEUE,
   [JobType.INGESTION_BUKTI_DUKUNG]: INGESTION_QUEUE,
+  // Sama-sama pekerjaan LLM atas satu bab seperti GENERASI_BAB, bukan
+  // pekerjaan baru yang butuh antrean/worker terpisah.
+  [JobType.SIMULASI_SKOR]: GENERATION_QUEUE,
 };

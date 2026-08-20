@@ -1,6 +1,53 @@
 import { apiFetch } from '~/core/lib/api-client';
 
-/** Bentuk baris Prisma `BabDokumen` sebagaimana dikembalikan `/dokumen/:id/bab` dan `/bab/:id`. */
+/** Baris Prisma `BuktiDukungBab` — kondisi aktif, ditimpa tiap generate ulang. */
+export type BackendBuktiDukungBab = {
+	id: string;
+	buktiDukungId: string;
+	namaDokumen: string;
+	tipeFile: string;
+};
+
+/** Baris Prisma `BuktiDukungDraft` — permanen, menempel ke satu checkpoint. */
+export type BackendBuktiDukungDraft = {
+	id: string;
+	buktiDukungId: string;
+	namaDokumen: string;
+	tipeFile: string;
+};
+
+/** Baris Prisma `RagasScore`. */
+export type BackendRagasScore = {
+	id: string;
+	targetTipe: 'BAB_AKTIF' | 'BAB_DRAFT';
+	babId: string | null;
+	babDraftId: string | null;
+	/** `Record<RagasMetrik, number>` — lihat `worker.py::score_single_sample`. */
+	metrik: Record<string, number>;
+	jumlahChunk: number;
+	dihitungPada: string;
+};
+
+/** Baris Prisma `HasilSkorKriteria`. */
+export type BackendHasilSkorKriteria = {
+	id: string;
+	kriteriaId: string;
+	targetTipe: 'BAB_AKTIF' | 'BAB_DRAFT';
+	babId: string | null;
+	babDraftId: string | null;
+	skorDidapat: number;
+	justifikasi: string | null;
+	dijalankanOlehUserId: string;
+	dijalankanOlehNama: string;
+	dijalankanPada: string;
+};
+
+/**
+ * Bentuk baris Prisma `BabDokumen` sebagaimana dikembalikan `/dokumen/:id/bab`
+ * dan `/bab/:id`. `buktiDukungBab`/`ragasScores`/`hasilSkorKriteria` hanya
+ * di-`include` oleh `/bab/:id` (lihat `bab-dokumen.service.ts::findOne`) —
+ * karenanya opsional di sini, dan kosong pada hasil `/dokumen/:id/bab`.
+ */
 export type BackendBabDokumen = {
 	id: string;
 	dokumenId: string;
@@ -14,6 +61,45 @@ export type BackendBabDokumen = {
 	catatanPada: string | null;
 	diajukanReviewPada: string | null;
 	terakhirDisimpan: string;
+	buktiDukungBab?: BackendBuktiDukungBab[];
+	/** Diurutkan terbaru dulu, dipotong ke satu baris — lihat `findOne`. */
+	ragasScores?: BackendRagasScore[];
+	/** Sudah disaring `targetTipe = 'BAB_AKTIF'` oleh backend. */
+	hasilSkorKriteria?: BackendHasilSkorKriteria[];
+};
+
+/** Baris Prisma `BabDraft` — checkpoint, dikembalikan `GET bab/:id/drafts`. */
+export type BackendBabDraft = {
+	id: string;
+	babId: string;
+	dibuatOlehUserId: string;
+	versi: number;
+	label: string | null;
+	kontenSnapshot: Record<string, unknown>;
+	sumber: 'AI' | 'MANUAL';
+	/** Comma-separated di Postgres (`@db.Text`) — lihat `chapter-draft.remote-source.ts`. */
+	referensiChunkIds: string | null;
+	dibuatOlehNama: string;
+	dibuatPada: string;
+	buktiDukungDraft: BackendBuktiDukungDraft[];
+	ragasScores: BackendRagasScore[];
+	hasilSkorKriteria: BackendHasilSkorKriteria[];
+};
+
+/** Baris Prisma `RubrikLevel`. */
+export type BackendRubrikLevel = {
+	id: string;
+	kriteriaId: string;
+	skor: number;
+	deskripsi: string;
+};
+
+/** Baris Prisma `RubrikKriteria`, dikembalikan `GET bab/:id/rubrik`. */
+export type BackendRubrikKriteria = {
+	id: string;
+	kodeKriteria: string;
+	deskripsi: string;
+	level: BackendRubrikLevel[];
 };
 
 export type CreateBabPayload = {
@@ -21,7 +107,7 @@ export type CreateBabPayload = {
 	judulBab: string;
 };
 
-/** Baris `Job` (Prisma) sebagaimana dikembalikan `POST bab/:id/generate`. */
+/** Baris `Job` (Prisma) sebagaimana dikembalikan `POST bab/:id/generate` dan `.../simulasi-skor`. */
 export type BackendJob = {
 	id: string;
 	queueName: string;
@@ -60,6 +146,24 @@ export const chapterRemoteSource = {
 		return apiFetch<BackendJob>(`/bab/${id}/generate`, {
 			method: 'POST',
 			body: prompt ? { prompt } : {},
+		});
+	},
+
+	/** Riwayat checkpoint bab ini, terbaru dulu — tab Draft/Rujukan/Kualitas AI/Rubrik. */
+	findDrafts(id: string): Promise<BackendBabDraft[]> {
+		return apiFetch<BackendBabDraft[]>(`/bab/${id}/drafts`);
+	},
+
+	/** Kriteria rubrik LAM Teknik yang menilai bab ini. */
+	findRubrik(id: string): Promise<BackendRubrikKriteria[]> {
+		return apiFetch<BackendRubrikKriteria[]>(`/bab/${id}/rubrik`);
+	},
+
+	/** Memicu SIMULASI_SKOR. Tanpa `babDraftId` berarti menilai kondisi aktif. */
+	simulateScore(id: string, babDraftId?: string): Promise<BackendJob> {
+		return apiFetch<BackendJob>(`/bab/${id}/simulasi-skor`, {
+			method: 'POST',
+			body: babDraftId ? { babDraftId } : {},
 		});
 	},
 };

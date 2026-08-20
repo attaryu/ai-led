@@ -31,6 +31,7 @@ export class JobsService {
   private queueFor(type: JobType): Queue {
     switch (type) {
       case JobType.GENERASI_BAB:
+      case JobType.SIMULASI_SKOR:
         return this.generationQueue;
       case JobType.ASSESSMENT_AMI:
         return this.assessmentQueue;

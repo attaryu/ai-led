@@ -40,6 +40,8 @@ async def process_job(job, token: str):
 
     if job.name == "GENERASI_BAB":
         result = await _handle_generasi_bab(job)
+    elif job.name == "SIMULASI_SKOR":
+        result = await _handle_simulasi_skor(job)
     elif job.name == "ASSESSMENT_AMI":
         result = await _handle_assessment_ami(job)
     elif job.name == "INGESTION_BUKTI_DUKUNG":
@@ -183,6 +185,126 @@ async def _handle_generasi_bab(job) -> dict:
         "versi": draft["versi"],
         "ragasScores": ragas_scores,
     }
+
+
+def _build_simulasi_skor_prompt(
+    judul_bab: str,
+    konten: str,
+    kriteria: list[dict],
+) -> str:
+    kriteria_text = "\n\n".join(
+        f"- {k['kode_kriteria']}: {k['deskripsi']}\n"
+        + "\n".join(f"  Skor {lvl['skor']}: {lvl['deskripsi']}" for lvl in k["level"])
+        for k in kriteria
+    )
+
+    return f"""Anda menilai kelayakan isi Bab "{judul_bab}" terhadap kriteria rubrik akreditasi LAM Teknik berikut.
+
+KRITERIA DAN TINGKAT PENILAIANNYA:
+{kriteria_text}
+
+ISI BAB YANG DINILAI:
+{konten[:6000]}
+
+Untuk SETIAP kriteria di atas, pilih SATU skor yang paling sesuai dengan isi bab (cocokkan dengan deskripsi tiap tingkat), dan tulis justifikasi singkat yang merujuk isi bab. Jangan menilai kriteria yang tidak tercantum di atas, dan jangan mengarang isi yang tidak ada di bab.
+
+Balas HANYA dengan JSON berbentuk:
+{{"skor": [{{"kode_kriteria": "...", "skor": <angka>, "justifikasi": "..."}}]}}"""
+
+
+async def _handle_simulasi_skor(job) -> dict:
+    """Menilai isi bab (kondisi aktif, atau salah satu checkpoint bila
+    `babDraftId` disertakan) terhadap kriteria rubrik LAM Teknik yang berlaku
+    untuk nomor bab ini (RubrikKriteriaBab, dicocokkan lewat urutan_bab —
+    lihat db/generation_client.py::get_rubrik_for_bab).
+
+    Menimpa (bukan menumpuk) HasilSkorKriteria untuk target yang dipilih —
+    sama seperti seluruh state aktif lain di schema.prisma.
+    """
+    from agent.reasoning_graph import _extract_json
+    from db.generation_client import (
+        get_bab_dokumen,
+        get_bab_draft,
+        get_rubrik_for_bab,
+        get_rubrik_levels,
+        get_user_nama,
+        replace_hasil_skor_kriteria,
+    )
+    from llm.chat_model import build_plain_llm
+
+    payload = job.data
+    bab_id = payload["babDokumenId"]
+    user_id = payload["createdByUserId"]
+    bab_draft_id = payload.get("babDraftId")
+
+    bab = get_bab_dokumen(bab_id)
+    if bab is None:
+        return {"status": "error", "error": f"BabDokumen {bab_id} tidak ditemukan"}
+
+    if bab_draft_id:
+        draft = get_bab_draft(bab_draft_id)
+        if draft is None or draft["bab_id"] != bab_id:
+            return {"status": "error", "error": f"Checkpoint {bab_draft_id} tidak ditemukan"}
+        snapshot = draft["konten_snapshot"]
+        konten = snapshot.get("body", "") if isinstance(snapshot, dict) else ""
+        target_tipe = "BAB_DRAFT"
+    else:
+        snapshot = bab["konten_kerja"]
+        konten = snapshot.get("body", "") if isinstance(snapshot, dict) else ""
+        target_tipe = "BAB_AKTIF"
+
+    if not konten.strip():
+        return {"status": "error", "error": "Belum ada tulisan yang bisa dinilai untuk lingkup yang dipilih"}
+
+    kriteria = get_rubrik_for_bab(bab["urutan_bab"])
+    if not kriteria:
+        return {"status": "error", "error": f"Bab {bab['urutan_bab']} tidak dinilai kriteria rubrik apa pun"}
+
+    levels_by_kriteria = get_rubrik_levels([k["id"] for k in kriteria])
+    for k in kriteria:
+        k["level"] = levels_by_kriteria.get(k["id"], [])
+
+    prompt = _build_simulasi_skor_prompt(bab["judul_bab"], konten, kriteria)
+    llm = build_plain_llm()
+    response = await llm.ainvoke(prompt)
+    parsed = _extract_json(response.content)
+    dinilai = parsed.get("skor") if isinstance(parsed, dict) else None
+    if not isinstance(dinilai, list):
+        return {"status": "error", "error": "Model tidak mengembalikan hasil penilaian yang bisa dibaca"}
+
+    kode_ke_id = {k["kode_kriteria"]: k["id"] for k in kriteria}
+    skor_valid = {k["id"]: {lvl["skor"] for lvl in k["level"]} for k in kriteria}
+
+    rows = []
+    for item in dinilai:
+        if not isinstance(item, dict):
+            continue
+        kriteria_id = kode_ke_id.get(item.get("kode_kriteria"))
+        skor = item.get("skor")
+        if kriteria_id is None or skor not in skor_valid.get(kriteria_id, set()):
+            continue
+        rows.append(
+            {
+                "kriteria_id": kriteria_id,
+                "skor_didapat": skor,
+                "justifikasi": item.get("justifikasi") or "",
+            }
+        )
+
+    if not rows:
+        return {"status": "error", "error": "Model tidak menghasilkan skor yang valid untuk kriteria manapun"}
+
+    user_nama = get_user_nama(user_id)
+    hasil = replace_hasil_skor_kriteria(
+        target_tipe,
+        bab_id=bab_id if target_tipe == "BAB_AKTIF" else None,
+        bab_draft_id=bab_draft_id if target_tipe == "BAB_DRAFT" else None,
+        rows=rows,
+        dijalankan_oleh_user_id=user_id,
+        dijalankan_oleh_nama=user_nama,
+    )
+
+    return {"status": "completed", "jumlahDinilai": len(hasil)}
 
 
 async def _handle_assessment_ami(job) -> dict:

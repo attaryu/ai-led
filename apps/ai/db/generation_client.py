@@ -79,6 +79,88 @@ def get_rubrik_for_bab(urutan_bab: int) -> list[dict]:
         return [dict(r) for r in cur.fetchall()]
 
 
+def get_rubrik_levels(kriteria_ids: list[str]) -> dict[str, list[dict]]:
+    """RubrikLevel rows (skor 4..0) for a set of criteria, grouped by kriteria_id."""
+    if not kriteria_ids:
+        return {}
+    with get_conn().cursor() as cur:
+        cur.execute(
+            "SELECT kriteria_id, skor, deskripsi FROM rubrik_level WHERE kriteria_id = ANY(%s) ORDER BY skor DESC",
+            (kriteria_ids,),
+        )
+        by_kriteria: dict[str, list[dict]] = {}
+        for row in cur.fetchall():
+            by_kriteria.setdefault(row["kriteria_id"], []).append(
+                {"skor": row["skor"], "deskripsi": row["deskripsi"]}
+            )
+    return by_kriteria
+
+
+def get_bab_draft(bab_draft_id: str) -> Optional[dict]:
+    """Return {id, bab_id, konten_snapshot}, or None."""
+    with get_conn().cursor() as cur:
+        cur.execute(
+            "SELECT id, bab_id, konten_snapshot FROM bab_draft WHERE id = %s",
+            (bab_draft_id,),
+        )
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def replace_hasil_skor_kriteria(
+    target_tipe: str,
+    bab_id: Optional[str],
+    bab_draft_id: Optional[str],
+    rows: list[dict],
+    dijalankan_oleh_user_id: str,
+    dijalankan_oleh_nama: str,
+) -> list[dict]:
+    """Delete existing HasilSkorKriteria for this exact target, insert fresh
+    rows — "main timpa" semantics matching every other active-state field in
+    this schema (see BabDokumen.kontenKerja, BuktiDukungBab). Re-running the
+    simulation for the same scope replaces its previous result, not appends.
+
+    rows: [{kriteria_id, skor_didapat, justifikasi}].
+    """
+    with get_conn().cursor() as cur:
+        if target_tipe == "BAB_AKTIF":
+            cur.execute(
+                "DELETE FROM hasil_skor_kriteria WHERE bab_id = %s AND target_tipe = 'BAB_AKTIF'",
+                (bab_id,),
+            )
+        else:
+            cur.execute(
+                "DELETE FROM hasil_skor_kriteria WHERE bab_draft_id = %s AND target_tipe = 'BAB_DRAFT'",
+                (bab_draft_id,),
+            )
+
+        inserted = []
+        for row in rows:
+            row_id = str(uuid.uuid4())
+            cur.execute(
+                """
+                INSERT INTO hasil_skor_kriteria
+                    (id, kriteria_id, target_tipe, bab_id, bab_draft_id, skor_didapat,
+                     justifikasi, dijalankan_oleh_user_id, dijalankan_oleh_nama)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (
+                    row_id,
+                    row["kriteria_id"],
+                    target_tipe,
+                    bab_id,
+                    bab_draft_id,
+                    row["skor_didapat"],
+                    row.get("justifikasi"),
+                    dijalankan_oleh_user_id,
+                    dijalankan_oleh_nama,
+                ),
+            )
+            inserted.append(dict(cur.fetchone()))
+    return inserted
+
+
 def create_bab_draft(
     bab_id: str,
     dibuat_oleh_user_id: str,

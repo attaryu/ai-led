@@ -19,6 +19,7 @@ import { BabDokumenService } from './bab-dokumen.service';
 import { ChatMessageDto } from './dto/chat-message.dto';
 import { CreateBabDokumenDto } from './dto/create-bab-dokumen.dto';
 import { GenerateBabDto } from './dto/generate-bab.dto';
+import { SimulateScoreDto } from './dto/simulate-score.dto';
 import { UpdateBabDokumenDto } from './dto/update-bab-dokumen.dto';
 import { ReviewStatusDto } from './dto/review-status.dto';
 
@@ -69,6 +70,28 @@ export class BabDokumenController {
   })
   generate(@Param('id') id: string, @Body() dto: GenerateBabDto) {
     return this.babDokumenService.triggerGenerate(id, dto.prompt);
+  }
+
+  @Get('bab/:id/drafts')
+  @Protected(...READ_ROLES)
+  findDrafts(@Param('id') id: string) {
+    return this.babDokumenService.findDrafts(id);
+  }
+
+  @Get('bab/:id/rubrik')
+  @Protected(...READ_ROLES)
+  findRubrik(@Param('id') id: string) {
+    return this.babDokumenService.findRubrik(id);
+  }
+
+  @Post('bab/:id/simulasi-skor')
+  @Protected(...WRITE_ROLES)
+  @HttpCode(202)
+  @ApiOperation({
+    summary: 'Trigger simulasi skor rubrik untuk bab (Producer SIMULASI_SKOR)',
+  })
+  simulateScore(@Param('id') id: string, @Body() dto: SimulateScoreDto) {
+    return this.babDokumenService.triggerSimulateScore(id, dto.babDraftId);
   }
 
   /**

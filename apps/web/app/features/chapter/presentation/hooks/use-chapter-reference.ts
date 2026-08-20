@@ -2,7 +2,7 @@ import * as React from 'react';
 
 import { evidenceRepository } from '~/features/evidence/data/repositories/evidence.repository';
 import { type EvidenceEntity } from '~/features/evidence/domain/entities/evidence.entity';
-import { chapterDraftRepository } from '../../data/repositories/chapter-draft.repository';
+import { chapterDraftRemoteSource } from '../../data/sources/remote/chapter-draft.remote-source';
 import { type BuktiDukungRef } from '../../domain/entities/bukti-dukung-ref.entity';
 import { type ChapterDraftEntity } from '../../domain/entities/chapter-draft.entity';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
@@ -39,22 +39,46 @@ export function useChapterReference({ chapter }: { chapter: ChapterEntity }) {
 	 */
 	const [lingkup, setLingkup] = React.useState<string>('aktif');
 
-	const muat = React.useCallback(() => {
-		setDaftarDraft(chapterDraftRepository.findByChapterId(chapter.id));
+	/**
+	 * Riwayat checkpoint dibaca dari backend sungguhan (`chapter.id` di sini
+	 * adalah id `BabDokumen` sungguhan) — beda dari `pustaka` di bawah, yang
+	 * masih localStorage sampai Perpustakaan Bukti Dukung ikut disambungkan.
+	 * Selisih ini membuat setiap rujukan nyata untuk sementara tampil sebagai
+	 * "sudah dihapus" (`live === undefined`, lihat panelnya): bukan bug, cuma
+	 * belum ada yang bisa dicocokkan sampai pustakanya sendiri sungguhan.
+	 *
+	 * `terakhirDisimpan` ikut jadi dependency di samping `id` — penanda
+	 * checkpoint baru mungkin lahir dari tab Generasi sebelahnya, sama seperti
+	 * `useChapterQuality`.
+	 */
+	React.useEffect(() => {
+		let dibatalkan = false;
+		chapterDraftRemoteSource
+			.findByChapterId(chapter.id)
+			.then((drafts) => {
+				if (!dibatalkan) setDaftarDraft(drafts);
+			})
+			.catch(() => {
+				if (!dibatalkan) setDaftarDraft([]);
+			});
+		return () => {
+			dibatalkan = true;
+		};
+	}, [chapter.id, chapter.terakhirDisimpan]);
+
+	const muatPustaka = React.useCallback(() => {
 		// Sekali `findAll`, bukan `findById` per baris: `findById` memanggil
 		// `findAll` di dalamnya, jadi sepuluh rujukan berarti sepuluh kali
 		// `JSON.parse` seluruh blob localStorage.
 		setPustaka(evidenceRepository.findAll());
-	}, [chapter.id]);
+	}, []);
 
-	// Berkas bisa dihapus atau statusnya berubah dari tab lain, dan checkpoint
-	// bisa lahir dari tab Draft maupun Generasi — semuanya menyiarkan lewat event
-	// yang sama.
+	// Berkas bisa dihapus atau statusnya berubah dari tab lain.
 	React.useEffect(() => {
-		muat();
-		window.addEventListener('storage-update', muat);
-		return () => window.removeEventListener('storage-update', muat);
-	}, [muat]);
+		muatPustaka();
+		window.addEventListener('storage-update', muatPustaka);
+		return () => window.removeEventListener('storage-update', muatPustaka);
+	}, [muatPustaka]);
 
 	const draftTerpilih = daftarDraft.find((draft) => draft.id === lingkup);
 	// Lingkup yang menunjuk checkpoint yang sudah tidak ada — hanya mungkin lewat

@@ -92,6 +92,7 @@ enum JobType {
   GENERASI_BAB
   ASSESSMENT_AMI
   INGESTION_BUKTI_DUKUNG
+  SIMULASI_SKOR
 }
 
 enum JobStatus {
