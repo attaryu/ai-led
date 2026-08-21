@@ -12,7 +12,7 @@ const JEDA_DIAM_MS = 800;
  */
 const PLAFON_MS = 5000;
 
-export type AutosaveStatus = 'diam' | 'menyimpan' | 'tersimpan';
+export type AutosaveStatus = 'diam' | 'menyimpan' | 'tersimpan' | 'gagal';
 
 export type ChapterAutosave = {
 	status: AutosaveStatus;
@@ -77,6 +77,10 @@ export function useChapterAutosave({
 	 * merender dengan `chapterId` baru lalu menjalankan cleanup efek yang lama.
 	 * Kalau fungsi ini mengambil id dari ref yang sudah ikut diperbarui, tulisan
 	 * bab lama akan tersimpan menimpa bab baru — kehilangan data yang senyap.
+	 *
+	 * `PATCH bab/:id` async, jadi buffer (`kontenRef`) baru dikosongkan setelah
+	 * requestnya selesai — kalau gagal (bukan terkunci), buffer dipegang dan
+	 * dicoba lagi biar ketikan tidak hilang.
 	 */
 	const tulisUntuk = React.useCallback(
 		(idTujuan: string, alasan: 'jeda' | 'flush') => {
@@ -88,36 +92,38 @@ export function useChapterAutosave({
 			const konten = kontenRef.current;
 			if (konten === null || !enabledRef.current) return;
 
-			kontenRef.current = null;
-			kotorSejakRef.current = null;
+			if (idTujuan === chapterId) setStatus('menyimpan');
 
-			const tersimpan = chapterRepository.updateKonten(idTujuan, konten);
-			// `undefined` berarti repository menolak — bab dikunci dari tempat lain
-			// di sela ketikan. Diamkan: memaksakan tulisan justru melanggar §12.2,
-			// dan spanduk kunci akan muncul saat halamannya dibaca ulang.
-			if (!tersimpan) return;
+			void chapterRepository.updateKonten(idTujuan, konten).then(
+				(tersimpan) => {
+					kontenRef.current = null;
+					kotorSejakRef.current = null;
 
-			// Indikator hanya boleh bergerak untuk bab yang sedang dilihat. Saat
-			// simpanan ini milik bab yang baru saja ditinggalkan, babnya sudah
-			// tidak di layar dan menyentuh state di sini hanya akan menyalakan
-			// "Tersimpan" palsu di bab yang baru dibuka.
-			if (idTujuan === chapterId) {
-				setSavedAt(tersimpan.terakhirDisimpan);
-				setStatus('tersimpan');
-			}
+					// `undefined` = bab terkunci dari tempat lain. Diamkan, §12.2.
+					if (!tersimpan) return;
 
-			// Siarkan hanya saat ada fakta yang bisa dilihat orang lain berubah:
-			// status bab di Daftar Isi dan di dashboard hanya bergerak saat bab
-			// beralih antara kosong dan terisi. Menyiarkan tiap simpanan akan
-			// memaksa seluruh pelanggan `storage-update` membaca ulang localStorage
-			// tiap beberapa ketikan, demi status yang berubah paling banyak sekali
-			// per sesi. Saat flush disiarkan juga, karena di situlah pengguna
-			// meninggalkan bab dan tampilan lain sebentar lagi terpasang.
-			const terisi = hasKonten(tersimpan);
-			if (alasan === 'flush' || terisi !== terisiRef.current) {
-				terisiRef.current = terisi;
-				chapterRepository.notify();
-			}
+					// Hanya bab yang sedang dilihat yang boleh gerak.
+					if (idTujuan === chapterId) {
+						setSavedAt(tersimpan.terakhirDisimpan);
+						setStatus('tersimpan');
+					}
+
+					// Siarkan hanya saat kosong<->terisi berubah, atau saat flush.
+					const terisi = hasKonten(tersimpan);
+					if (alasan === 'flush' || terisi !== terisiRef.current) {
+						terisiRef.current = terisi;
+						chapterRepository.notify();
+					}
+				},
+				() => {
+					// Jaringan/backend bermasalah, bukan terkunci — buffer dipegang, coba lagi.
+					if (idTujuan === chapterId) setStatus('gagal');
+					timerRef.current = window.setTimeout(
+						() => tulisRef.current(idTujuan, alasan),
+						JEDA_DIAM_MS,
+					);
+				},
+			);
 		},
 		[chapterId],
 	);
@@ -180,7 +186,10 @@ export function useChapterAutosave({
 	 * ke bab yang memang sedang dibuka saat efeknya dipasang — lihat alasan
 	 * panjangnya di {@link tulisUntuk}. `pagehide` dipilih ketimbang
 	 * `beforeunload` karena ia juga menyala di perangkat mobile dan saat halaman
-	 * masuk bfcache; tulisannya localStorage yang sinkron, jadi selalu tuntas.
+	 * masuk bfcache.
+	 *
+	 * ponytail: lewat `fetch`, bukan localStorage sinkron — tab yang benar-benar
+	 * ditutup bisa memutus request sebelum tuntas. Upgrade: sendBeacon endpoint.
 	 */
 	React.useEffect(() => {
 		const onPageHide = () => tulisRef.current(chapterId, 'flush');

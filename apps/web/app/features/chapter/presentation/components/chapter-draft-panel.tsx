@@ -80,8 +80,8 @@ export function ChapterDraftPanel({
 	 */
 	const [labelTerbuka, setLabelTerbuka] = React.useState(false);
 
-	function handlePulihkan(draft: ChapterDraftEntity) {
-		const hasil = pulihkan(draft);
+	async function handlePulihkan(draft: ChapterDraftEntity) {
+		const hasil = await pulihkan(draft);
 		if (hasil) onRestored(hasil);
 	}
 

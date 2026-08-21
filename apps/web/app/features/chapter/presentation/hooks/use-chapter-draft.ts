@@ -108,7 +108,7 @@ export function useChapterDraft({
 	}, [izin.canEdit, izin.session, sibuk, ambilSnapshot, label]);
 
 	const pulihkan = React.useCallback(
-		(draft: ChapterDraftEntity): HasilPulih | null => {
+		async (draft: ChapterDraftEntity): Promise<HasilPulih | null> => {
 			if (!izin.canEdit || sibuk) return null;
 
 			// Peringatannya menyebut akibat, bukan sekadar "yakin?" — mengikuti
@@ -127,12 +127,10 @@ export function useChapterDraft({
 			setStatus('memulihkan');
 			setPesanGagal(null);
 
-			const diperbarui = chapterRepository.restoreFromDraft(chapter.id, {
-				id: draft.id,
-				kontenSnapshot: draft.kontenSnapshot,
-				buktiDukung: draft.buktiDukung,
-				ragas: draft.ragas,
-			});
+			const diperbarui = await chapterRepository.restoreFromDraft(
+				chapter.id,
+				draft.kontenSnapshot,
+			);
 
 			setStatus('diam');
 

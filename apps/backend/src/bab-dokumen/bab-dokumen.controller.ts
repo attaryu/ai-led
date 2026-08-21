@@ -22,6 +22,7 @@ import { GenerateBabDto } from './dto/generate-bab.dto';
 import { SimulateScoreDto } from './dto/simulate-score.dto';
 import { UpdateBabDokumenDto } from './dto/update-bab-dokumen.dto';
 import { ReviewStatusDto } from './dto/review-status.dto';
+import { SubmitReviewDto } from './dto/submit-review.dto';
 
 // Same role split as DokumenLedController: ADMIN has zero access, PIMPINAN
 // read-only, PENJAMIN_MUTU/PENYUSUN full content rights (minus the review
@@ -179,8 +180,8 @@ export class BabDokumenController {
   @Post('bab/:id/submit-review')
   @Protected(Role.PENYUSUN)
   @HttpCode(200)
-  submitForReview(@Param('id') id: string) {
-    return this.babDokumenService.submitForReview(id);
+  submitForReview(@Param('id') id: string, @Body() dto: SubmitReviewDto) {
+    return this.babDokumenService.submitForReview(id, dto);
   }
 
   @Patch('bab/:id/review-status')

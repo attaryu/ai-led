@@ -107,6 +107,16 @@ export type CreateBabPayload = {
 	judulBab: string;
 };
 
+export type UpdateBabPayload = {
+	judulBab?: string;
+	kontenKerja?: Record<string, unknown>;
+};
+
+export type ReviewStatusPayload = {
+	terkunci?: boolean;
+	catatanPenjaminMutu?: string | null;
+};
+
 /** Baris `Job` (Prisma) sebagaimana dikembalikan `POST bab/:id/generate` dan `.../simulasi-skor`. */
 export type BackendJob = {
 	id: string;
@@ -165,5 +175,34 @@ export const chapterRemoteSource = {
 			method: 'POST',
 			body: babDraftId ? { babDraftId } : {},
 		});
+	},
+
+	/** Autosave & edit judul. 403 saat bab terkunci, atau (Penyusun) sedang diajukan review. */
+	update(id: string, payload: UpdateBabPayload): Promise<BackendBabDokumen> {
+		return apiFetch<BackendBabDokumen>(`/bab/${id}`, {
+			method: 'PATCH',
+			body: payload,
+		});
+	},
+
+	/** Ajukan review Penyusun; `diajukan: false` membatalkan (tombol "Batalkan Pengajuan"). */
+	submitForReview(id: string, diajukan = true): Promise<BackendBabDokumen> {
+		return apiFetch<BackendBabDokumen>(`/bab/${id}/submit-review`, {
+			method: 'POST',
+			body: { diajukan },
+		});
+	},
+
+	/** Penjamin Mutu: kunci/buka bab dan/atau tulis catatan review. */
+	setReviewStatus(id: string, payload: ReviewStatusPayload): Promise<BackendBabDokumen> {
+		return apiFetch<BackendBabDokumen>(`/bab/${id}/review-status`, {
+			method: 'PATCH',
+			body: payload,
+		});
+	},
+
+	/** Penjamin Mutu: hapus bab. */
+	remove(id: string): Promise<void> {
+		return apiFetch<void>(`/bab/${id}`, { method: 'DELETE' });
 	},
 };

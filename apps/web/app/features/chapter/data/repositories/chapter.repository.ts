@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
+import { ApiError } from '~/core/lib/api-client';
 import { type BuktiDukungRef } from '../../domain/entities/bukti-dukung-ref.entity';
-import { type RagasScore } from '../../domain/entities/ragas-score.entity';
 import {
 	chapterSchema,
 	type ChapterEntity,
@@ -11,6 +11,7 @@ import {
 	mapHasilSkor,
 	mapKontenBody,
 	mapRagas,
+	toKontenBody,
 } from '../backend-mappers';
 import { chapterLocalSource } from '../sources/local/chapter-local.source';
 import {
@@ -351,211 +352,71 @@ export const chapterRepository = {
 	},
 
 	/**
-	 * Satu bab, dibaca ulang dari penyimpanan.
-	 *
-	 * Dipakai saat isi bab yang **paling mutakhir** dibutuhkan di luar alur render
-	 * — misal tepat sebelum checkpoint diambil, sesudah autosave disiram. Prop
-	 * `chapter` yang beredar di komponen dibaca sekali saat render dan bisa
-	 * tertinggal dari ketikan terakhir.
+	 * Autosave: `PATCH bab/:id` (§7.2). 403 (terkunci/diajukan review) dibalas
+	 * `undefined`, sama seperti versi localStorage dulu. Error lain dilempar
+	 * ulang — `useChapterAutosave` yang mencoba lagi.
 	 */
-	findById(chapterId: string): ChapterEntity | undefined {
-		return this.findAll().find((chapter) => chapter.id === chapterId);
-	},
-
-	/**
-	 * Autosave Editor Bab: menimpa `kontenKerja` sekaligus mencap
-	 * `terakhirDisimpan` (§7.2). Keduanya satu operasi karena stempel waktu tidak
-	 * punya arti lepas dari isi yang menyebabkannya — pemanggil tidak boleh bisa
-	 * memperbarui yang satu tanpa yang lain.
-	 *
-	 * Sengaja **tidak** memanggil `notify()`. Fungsi ini dipanggil berkali-kali
-	 * per menit selama pengguna mengetik, sedangkan penyiarannya hanya berguna
-	 * saat status bab berubah; menyiarkan tiap simpanan akan memaksa seluruh
-	 * pelanggan `storage-update` membaca ulang localStorage tiap beberapa
-	 * ketikan. `useChapterAutosave` yang memutuskan kapan menyiarkan.
-	 *
-	 * Bab `terkunci` ditolak diam-diam sebagai jaring pengaman terakhir §12.2:
-	 * UI sudah mematikan editornya, tapi aturan itu tidak boleh hanya hidup di
-	 * lapis tampilan — simpanan yang telanjur terjadwal saat bab dikunci dari tab
-	 * lain harus ikut tertahan di sini.
-	 *
-	 * Mengembalikan barisnya yang terbaru (bukan `void`) supaya pemanggil dapat
-	 * stempel waktu persisnya tanpa membaca ulang penyimpanan.
-	 */
-	updateKonten(
+	async updateKonten(
 		chapterId: string,
 		kontenKerja: string,
-	): ChapterEntity | undefined {
-		const all = this.findAll();
-		const target = all.find((chapter) => chapter.id === chapterId);
-		if (!target || target.terkunci) return undefined;
-
-		const updated: ChapterEntity = {
-			...target,
-			kontenKerja,
-			terakhirDisimpan: new Date().toISOString(),
-		};
-		this.save(
-			all.map((chapter) => (chapter.id === chapterId ? updated : chapter)),
-		);
-		return updated;
+	): Promise<ChapterEntity | undefined> {
+		try {
+			const row = await chapterRemoteSource.update(chapterId, {
+				kontenKerja: toKontenBody(kontenKerja),
+			});
+			return toEntityFromBackend(row);
+		} catch (err) {
+			if (err instanceof ApiError && err.status === 403) return undefined;
+			throw err;
+		}
 	},
 
 	/**
-	 * Memulihkan bab ke salah satu checkpoint (docs/application_flow.md §8.1).
+	 * Restore checkpoint (§8.1) lewat `PATCH bab/:id`, sama seperti autosave.
 	 *
-	 * Menimpa kondisi aktif dari luar editor, jadi menolak bab terkunci (§12.2)
-	 * dan menyiarkan.
-	 *
-	 * `buktiDukung` **ikut dipulihkan**, dan ini melampaui docs: pasal
-	 * "Restore ke checkpoint lama" di docs/database.md hanya menyebut
-	 * `konten_kerja` + `checkpoint_aktif_id`. Alasannya, kalau bukti dukungnya
-	 * ditinggal apa adanya, `BUKTI_DUKUNG_BAB` akan menyatakan konten aktif
-	 * disusun dari berkas yang sudah tidak ada hubungannya dengan tulisan yang
-	 * barusan dipulihkan — tab Rujukan (§11.1) akan salah sejak hari pertama ia
-	 * dibangun. Arsip checkpointnya sendiri tidak tersentuh: yang dibaca di sini
-	 * salinan, bukan sumbernya.
+	 * ponytail: hanya `kontenKerja` ditulis balik — DTO backend belum bisa
+	 * restore `checkpointAktifId`/`buktiDukung`/`ragas`. Tab Rujukan/Kualitas AI
+	 * jadi tetap pakai punya kondisi aktif lama. Upgrade: endpoint restore khusus.
 	 */
-	restoreFromDraft(
+	async restoreFromDraft(
 		chapterId: string,
-		draft: {
-			id: string;
-			kontenSnapshot: string;
-			buktiDukung: BuktiDukungRef[];
-			ragas: RagasScore | null;
-		},
-	): ChapterEntity | undefined {
-		const all = this.findAll();
-		const target = all.find((chapter) => chapter.id === chapterId);
-		if (!target || target.terkunci) return undefined;
-
-		const updated: ChapterEntity = {
-			...target,
-			kontenKerja: draft.kontenSnapshot,
-			buktiDukung: draft.buktiDukung,
-			// Ikut dipulihkan dengan alasan yang sama seperti bukti dukungnya: isi
-			// aktif kini isi checkpoint itu, jadi penilaian mutunya memang miliknya.
-			ragas: draft.ragas,
-			checkpointAktifId: draft.id,
-			terakhirDisimpan: new Date().toISOString(),
-		};
-		this.save(
-			all.map((chapter) => (chapter.id === chapterId ? updated : chapter)),
-		);
-		this.notify();
-		return updated;
+		kontenSnapshot: string,
+	): Promise<ChapterEntity | undefined> {
+		try {
+			const row = await chapterRemoteSource.update(chapterId, {
+				kontenKerja: toKontenBody(kontenSnapshot),
+			});
+			return toEntityFromBackend(row);
+		} catch (err) {
+			if (err instanceof ApiError && err.status === 403) return undefined;
+			throw err;
+		}
 	},
 
-	/**
-	 * Kunci review Penjamin Mutu (§12.2).
-	 *
-	 * **Sengaja tidak memeriksa `terkunci`**, berbeda dari `updateKonten` dan
-	 * `restoreFromDraft` di atas. Yang diblokir §12.2 adalah
-	 * perubahan isi bab, bukan perubahan kuncinya sendiri — kalau metode ini ikut
-	 * menolak, bab yang sudah terkunci tidak akan pernah bisa dibuka lagi.
-	 *
-	 * Haknya juga tidak diperiksa di sini melainkan di `useChapterPermission`,
-	 * mengikuti pola `canEdit` yang menjaga autosave: repository ini tidak tahu
-	 * apa-apa soal session.
-	 */
-	setTerkunci(chapterId: string, terkunci: boolean): ChapterEntity | undefined {
-		const all = this.findAll();
-		const target = all.find((chapter) => chapter.id === chapterId);
-		if (!target) return undefined;
-
-		const updated: ChapterEntity = {
-			...target,
-			terkunci,
-			// Mengunci berarti reviewnya dimulai, jadi antreannya selesai. Saat
-			// membuka kunci nilainya sudah `null` sejak dikunci, jadi baris ini aman
-			// untuk kedua arah.
-			diajukanReviewPada: terkunci ? null : target.diajukanReviewPada,
-		};
-		this.save(
-			all.map((chapter) => (chapter.id === chapterId ? updated : chapter)),
-		);
-		// Wajib disiarkan, tidak seperti `updateKonten` yang sengaja diam: kunci
-		// menggerakkan tiga kartu KPI "Kesiapan Review" sekaligus badge tabel bab.
-		this.notify();
-		return updated;
+	/** Kunci review Penjamin Mutu (§12.2) — `PATCH bab/:id/review-status`. Error dilempar apa adanya, tombol klik sengaja. */
+	async setTerkunci(chapterId: string, terkunci: boolean): Promise<ChapterEntity> {
+		const row = await chapterRemoteSource.setReviewStatus(chapterId, { terkunci });
+		return toEntityFromBackend(row);
 	},
 
-	/**
-	 * Catatan review Penjamin Mutu (§12.2), terpisah dari kuncinya.
-	 *
-	 * Dipisah karena keduanya punya ritme yang berbeda: bab dikunci sekali,
-	 * sedangkan catatannya bisa ditulis dan direvisi berkali-kali — termasuk
-	 * sebelum kuncinya dipasang sama sekali.
-	 *
-	 * Sama seperti `setTerkunci`, **tidak memeriksa `terkunci`**: justru bab yang
-	 * sedang terkunci itulah yang sedang direview dan paling butuh catatan.
-	 */
-	setCatatanPenjaminMutu(
+	/** Catatan review PM, endpoint sama dengan `setTerkunci`. Catatan kosong -> `null`, bukan `""`. */
+	async setCatatanPenjaminMutu(
 		chapterId: string,
 		catatan: string | null,
-		oleh: { namaLengkap: string },
-	): ChapterEntity | undefined {
-		const all = this.findAll();
-		const target = all.find((chapter) => chapter.id === chapterId);
-		if (!target) return undefined;
-
-		// Catatan kosong berarti dicabut, bukan disimpan sebagai string kosong:
-		// `pickChaptersNeedingAttention` menandai bab bercatatan lewat kebenaran
-		// nilainya, jadi "" akan membuat bab itu menetap di Perlu Perhatian tanpa
-		// alasan yang bisa dibaca siapa pun.
+	): Promise<ChapterEntity> {
 		const isi = catatan?.trim() ? catatan.trim() : null;
-
-		const updated: ChapterEntity = {
-			...target,
+		const row = await chapterRemoteSource.setReviewStatus(chapterId, {
 			catatanPenjaminMutu: isi,
-			// Penulis dan waktunya ikut dicabut bersama catatannya — atribusi tanpa
-			// catatan tidak menerangkan apa pun.
-			catatanOlehNama: isi ? oleh.namaLengkap : null,
-			catatanPada: isi ? new Date().toISOString() : null,
-			// Memberi catatan berarti umpan balik sudah turun dan bolanya kembali ke
-			// Penyusun, jadi antreannya selesai. **Mencabut** catatan tidak: itu
-			// bukan umpan balik, dan bab yang sedang mengantre harus tetap mengantre.
-			diajukanReviewPada: isi ? null : target.diajukanReviewPada,
-		};
-
-		this.save(
-			all.map((chapter) => (chapter.id === chapterId ? updated : chapter)),
-		);
-		// Catatan menggerakkan panel Perlu Perhatian §6.1.
-		this.notify();
-		return updated;
+		});
+		return toEntityFromBackend(row);
 	},
 
-	/**
-	 * Pengajuan review oleh Penyusun.
-	 *
-	 * Kembarannya `setTerkunci`, dengan mekanisme sama dan pemegang kunci berbeda:
-	 * pengajuan membekukan seluruh **Penyusun** (termasuk yang mengajukan) dan
-	 * hanya Penyusun yang bisa mencabutnya, sedangkan `terkunci` membekukan semua
-	 * orang dan hanya Penjamin Mutu yang bisa membukanya.
-	 *
-	 * Pembersihannya tidak ada di sini melainkan di dua metode di atas: antrean
-	 * hangus begitu Penjamin Mutu merespons.
-	 */
-	setDiajukanReview(
+	/** Ajukan/batalkan review Penyusun — `POST bab/:id/submit-review`, `diajukan: false` untuk batal. */
+	async setDiajukanReview(
 		chapterId: string,
 		diajukan: boolean,
-	): ChapterEntity | undefined {
-		const all = this.findAll();
-		const target = all.find((chapter) => chapter.id === chapterId);
-		if (!target) return undefined;
-
-		const updated: ChapterEntity = {
-			...target,
-			diajukanReviewPada: diajukan ? new Date().toISOString() : null,
-		};
-
-		this.save(
-			all.map((chapter) => (chapter.id === chapterId ? updated : chapter)),
-		);
-		// Pengajuan menggerakkan badge tabel Progres per Bab dan hint kartu
-		// "Kesiapan Review" di tiga dashboard.
-		this.notify();
-		return updated;
+	): Promise<ChapterEntity> {
+		const row = await chapterRemoteSource.submitForReview(chapterId, diajukan);
+		return toEntityFromBackend(row);
 	},
 };

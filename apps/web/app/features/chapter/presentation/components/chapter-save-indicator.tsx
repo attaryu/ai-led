@@ -37,6 +37,14 @@ export function ChapterSaveIndicator({
 		);
 	}
 
+	if (status === 'gagal') {
+		return (
+			<span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-3 py-1 text-xs font-medium text-red-700 dark:bg-red-950 dark:text-red-400">
+				Gagal menyimpan, mencoba lagi…
+			</span>
+		);
+	}
+
 	if (!savedAt) {
 		return (
 			<span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">

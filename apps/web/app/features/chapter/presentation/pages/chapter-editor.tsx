@@ -312,9 +312,9 @@ function ChapterEditorWorkspace({
 	 *
 	 * Dipakai dua jalur yang bentuknya sama persis: hasil generate (§12.1) dan
 	 * pemulihan checkpoint (§8.1). Keduanya sudah menulis sendiri ke repository —
-	 * `applyGenerate` dan `restoreFromDraft` — jadi yang tersisa cuma menyusulkan
-	 * kanvas dan merapikan autosave. Sengaja satu fungsi: dua salinan dari urutan
-	 * di bawah pasti akan menyimpang, dan menyimpangnya senyap.
+	 * jadi yang tersisa cuma menyusulkan kanvas dan merapikan autosave. Sengaja
+	 * satu fungsi: dua salinan dari urutan di bawah pasti akan menyimpang, dan
+	 * menyimpangnya senyap.
 	 *
 	 * `emitUpdate: false` bukan pilihan gaya. Sejak Tiptap v3, `setContent`
 	 * memancarkan update secara bawaan — tanpa mematikannya, `onUpdate` di atas
@@ -337,19 +337,18 @@ function ChapterEditorWorkspace({
 	/**
 	 * Isi bab yang **benar-benar terkini**, untuk checkpoint di tab Draft.
 	 *
-	 * `flush()` lebih dulu, dan urutannya mengikat: ia menulis simpanan tertunda ke
-	 * localStorage secara sinkron, jadi pembacaan sesudahnya pasti memuat ketikan
-	 * terakhir. Tanpa itu, checkpoint yang dibuat sedetik sesudah mengetik akan
-	 * mengarsipkan isi sebelum ketikan tersebut.
-	 *
-	 * Dibaca ulang dari repository, bukan dari `babTerkini`: state itu hanya
-	 * bergerak saat generate atau restore, sedangkan autosave menulis langsung ke
-	 * penyimpanan tanpa melewatinya.
+	 * Dibaca langsung dari editor (bukan dari repository — autosave sekarang
+	 * async, jadi flush tidak lagi sinkron), plus `flush()` supaya isi ini juga
+	 * ikut ter-autosave ke backend.
 	 */
 	const ambilSnapshot = React.useCallback(() => {
 		autosave.flush();
-		return chapterRepository.findById(chapter.id);
-	}, [autosave, chapter.id]);
+		if (!editor) return undefined;
+		return {
+			...babTerkini,
+			kontenKerja: editor.isEmpty ? '' : editor.getHTML(),
+		};
+	}, [autosave, editor, babTerkini]);
 
 	return (
 		<div className="flex h-screen flex-col overflow-hidden bg-background">

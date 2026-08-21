@@ -29,6 +29,11 @@ export function mapKontenBody(konten: unknown): string | null {
 		: null;
 }
 
+/** Kebalikan {@link mapKontenBody} — dipakai menulis `kontenKerja` lewat `PATCH bab/:id`. */
+export function toKontenBody(html: string): { format: 'html'; body: string } {
+	return { format: 'html', body: html };
+}
+
 export function mapBuktiDukungRef(
 	rows: BackendBuktiDukungBab[] | BackendBuktiDukungDraft[] | undefined,
 ): BuktiDukungRef[] {

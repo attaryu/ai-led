@@ -1,5 +1,6 @@
 import * as React from 'react';
 
+import { ApiError } from '~/core/lib/api-client';
 import { chapterRepository } from '../../data/repositories/chapter.repository';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import { type ChapterPermission } from './use-chapter-permission';
@@ -43,33 +44,30 @@ export function useChapterReview(
 
 	const boleh = izin.canReview && Boolean(izin.session);
 
-	// Satu-satunya sebab penolakan repository adalah babnya sudah tidak ada —
-	// terhapus bersama dokumennya dari tab lain sementara editor masih terbuka.
 	const susulkan = React.useCallback(
-		(diperbarui: ChapterEntity | undefined) => {
-			if (!diperbarui) {
-				setPesanGagal('Bab ini sudah tidak ada. Muat ulang halaman.');
-				return;
+		async (aksi: () => Promise<ChapterEntity>) => {
+			try {
+				const diperbarui = await aksi();
+				setPesanGagal(null);
+				onReviewed(diperbarui);
+			} catch (err) {
+				setPesanGagal(
+					err instanceof ApiError ? err.message : 'Gagal menyimpan perubahan.',
+				);
 			}
-			setPesanGagal(null);
-			onReviewed(diperbarui);
 		},
 		[onReviewed],
 	);
 
 	const toggleKunci = React.useCallback(() => {
 		if (!izin.canReview) return;
-		susulkan(chapterRepository.setTerkunci(chapter.id, !chapter.terkunci));
+		void susulkan(() => chapterRepository.setTerkunci(chapter.id, !chapter.terkunci));
 	}, [chapter.id, chapter.terkunci, izin.canReview, susulkan]);
 
 	const simpanCatatan = React.useCallback(
 		(catatan: string) => {
 			if (!izin.canReview || !izin.session) return;
-			susulkan(
-				chapterRepository.setCatatanPenjaminMutu(chapter.id, catatan, {
-					namaLengkap: izin.session.namaLengkap,
-				}),
-			);
+			void susulkan(() => chapterRepository.setCatatanPenjaminMutu(chapter.id, catatan));
 		},
 		[chapter.id, izin.canReview, izin.session, susulkan],
 	);
@@ -77,7 +75,7 @@ export function useChapterReview(
 	const ajukanReview = React.useCallback(
 		(diajukan: boolean) => {
 			if (!izin.canSubmitReview) return;
-			susulkan(chapterRepository.setDiajukanReview(chapter.id, diajukan));
+			void susulkan(() => chapterRepository.setDiajukanReview(chapter.id, diajukan));
 		},
 		[chapter.id, izin.canSubmitReview, susulkan],
 	);

@@ -11,6 +11,7 @@ import { TenantContextService } from '../tenant/tenant-context.service';
 import { CreateBabDokumenDto } from './dto/create-bab-dokumen.dto';
 import { UpdateBabDokumenDto } from './dto/update-bab-dokumen.dto';
 import { ReviewStatusDto } from './dto/review-status.dto';
+import { SubmitReviewDto } from './dto/submit-review.dto';
 
 @Injectable()
 export class BabDokumenService {
@@ -217,18 +218,22 @@ export class BabDokumenService {
     return { userId };
   }
 
-  /** PENYUSUN-only: mark ready for review. Controller restricts the role. */
-  async submitForReview(id: string) {
+  /** PENYUSUN-only: mark ready for review, or cancel it (dto.diajukan = false). */
+  async submitForReview(id: string, dto: SubmitReviewDto = {}) {
+    const diajukan = dto.diajukan ?? true;
     const bab = await this.findOneScoped(id);
     if (bab.terkunci) {
       throw new ForbiddenException('Bab ini sedang terkunci untuk direview');
     }
-    if (bab.diajukanReviewPada) {
+    if (diajukan && bab.diajukanReviewPada) {
       throw new ConflictException('Bab ini sudah diajukan untuk review');
+    }
+    if (!diajukan && !bab.diajukanReviewPada) {
+      throw new ConflictException('Bab ini belum diajukan untuk review');
     }
     return this.prisma.babDokumen.update({
       where: { id },
-      data: { diajukanReviewPada: new Date() },
+      data: { diajukanReviewPada: diajukan ? new Date() : null },
     });
   }
 
