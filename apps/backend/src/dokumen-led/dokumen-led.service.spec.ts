@@ -94,6 +94,7 @@ describe('DokumenLedService.triggerAssessment', () => {
       dokumenId: 'doc-123',
       tenantId: 't1',
       programStudiId: 'prodi-1',
+      createdByUserId: 'u1',
       indikatorList: [1, 2],
     });
     expect(res).toEqual({ id: 'job-1' });
