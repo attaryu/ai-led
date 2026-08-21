@@ -1,5 +1,11 @@
 import os
 
+from dotenv import load_dotenv
+
+# No-op under Docker (env_file already populates os.environ) — fills the gap
+# for native/local runs; nothing here ever called this before (see worker.py).
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse

@@ -31,6 +31,9 @@ dependencies = [
     "langchain-openai>=0.1",
     "bullmq>=3.0",
     "markdown>=3.7",
+    "beautifulsoup4>=4.12",
+    "boto3>=1.34",
+    "mineru[core]>=2.0",
 ]
 
 [project.optional-dependencies]

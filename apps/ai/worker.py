@@ -1,10 +1,8 @@
 """BullMQ worker consumer — tracker baris 17.
 
 Membaca generation-queue / assessment-queue / ingestion-queue (nama harus
-cocok dengan apps/backend/src/jobs/queue-names.ts). GENERASI_BAB &
-ASSESSMENT_AMI diimplementasikan sungguhan; INGESTION_BUKTI_DUKUNG cuma
-menandai SIAP tanpa ekstraksi/embedding beneran (lihat ponytail-comment
-di handler-nya, tracker row sendiri).
+cocok dengan apps/backend/src/jobs/queue-names.ts). GENERASI_BAB,
+ASSESSMENT_AMI, & INGESTION_BUKTI_DUKUNG semua diimplementasikan sungguhan.
 
 Retry (3x, exponential backoff) disetel di producer (jobs.module.ts), bukan
 di sini — BullMQ menyimpannya di job-nya sendiri di Redis.
@@ -19,6 +17,11 @@ import signal
 import time
 
 from bullmq import Worker
+from dotenv import load_dotenv
+
+# No-op under Docker (env_file already populates os.environ) — fills the gap
+# for native/local runs, which never had a loader anywhere for this process.
+load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -414,21 +417,55 @@ async def _handle_assessment_ami(job) -> dict:
 
 
 async def _handle_ingestion_bukti_dukung(job) -> dict:
-    # ponytail: cuma menandai SIAP, tidak ada chunking/embedding beneran —
-    # ingestion/*.py yang ada semuanya khusus Dokumen LED (chunk_led_pdf dkk),
-    # belum ada pipeline generik untuk tipe file Bukti Dukung (pdf/doc/xls/jpg/
-    # png). Ini menutup "menunggu ekstraksi selamanya" di UI; bukti dukung
-    # belum bisa dicari lewat search_led_evidence. Upgrade: bangun chunking +
-    # index pgvector kalau fitur pencarian AI atas bukti dukung dibutuhkan.
+    """Download dari R2, chunk + embed (ingestion/evidence_pipeline.py),
+    index ke bukti_dukung_chunk_embeddings, lalu tandai status.
+
+    Menangkap semua exception di sini dan selalu berakhir SIAP/GAGAL —
+    tidak pernah membiarkan barisnya nyangkut di MENUNGGU, pelajaran yang
+    sama dengan stub yang digantikan handler ini.
+
+    ponytail: belum ada tool agent yang membaca bukti_dukung_chunk_embeddings
+    ini — search_led_evidence yang sudah ada mencari isi Dokumen LED sendiri,
+    BUKAN Bukti Dukung, dua hal beda meski namanya mirip. Upgrade: tool baru
+    (mis. search_bukti_dukung) + daftarkan ke agent/graph.py kalau fitur
+    "AI baca bukti dukung saat generate" dibutuhkan.
+    """
+    import tempfile
+    from pathlib import Path
+
     from db.connection import get_conn
+    from db.r2_client import download_to
+    from ingestion.evidence_pipeline import UnsupportedFileError, process_file
+    from vectorstore.pgvector_evidence_store import index_evidence_chunks
 
     bukti_dukung_id = job.data["buktiDukungId"]
-    with get_conn().cursor() as cur:
-        cur.execute(
-            "UPDATE bukti_dukung SET status_ekstraksi = 'SIAP' WHERE id = %s",
-            (bukti_dukung_id,),
-        )
-    return {"status": "completed", "buktiDukungId": bukti_dukung_id}
+    tenant_id = job.data["tenantId"]
+    file_url = job.data["fileUrl"]
+
+    def _set_status(status: str, catatan: str | None) -> None:
+        with get_conn().cursor() as cur:
+            cur.execute(
+                "UPDATE bukti_dukung SET status_ekstraksi = %s, catatan_gagal = %s WHERE id = %s",
+                (status, catatan, bukti_dukung_id),
+            )
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="evidence_ingest_") as tmp:
+            work_dir = Path(tmp)
+            local_path = work_dir / Path(file_url).name
+            download_to(file_url, local_path)
+            chunks = process_file(local_path, work_dir)
+            index_evidence_chunks(chunks, tenant_id, bukti_dukung_id)
+    except UnsupportedFileError as e:
+        _set_status("GAGAL", str(e))
+        return {"status": "unsupported", "buktiDukungId": bukti_dukung_id, "reason": str(e)}
+    except Exception as e:
+        logger.exception("Ingestion gagal untuk bukti_dukung %s", bukti_dukung_id)
+        _set_status("GAGAL", str(e)[:500])
+        return {"status": "error", "buktiDukungId": bukti_dukung_id, "reason": str(e)}
+
+    _set_status("SIAP", None)
+    return {"status": "completed", "buktiDukungId": bukti_dukung_id, "chunks": len(chunks)}
 
 
 async def main() -> None:

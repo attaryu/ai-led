@@ -3,8 +3,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# libgl1/libglib2.0-0: opencv-python (mineru[core] dependency) needs these,
+# fails with "libGL.so.1: cannot open shared object file" otherwise.
 RUN apt-get update && apt-get install -y \
     poppler-utils \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml .
