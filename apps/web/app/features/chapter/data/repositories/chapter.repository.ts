@@ -17,8 +17,6 @@ import {
 	chapterRemoteSource,
 	type BackendBabDokumen,
 } from '../sources/remote/chapter.remote-source';
-import { chapterDraftRepository } from './chapter-draft.repository';
-import { chapterScoreRepository } from './chapter-score.repository';
 
 /**
  * `kontenKerja` backend adalah `Json` bebas bentuk (default `{}` saat bab
@@ -404,65 +402,10 @@ export const chapterRepository = {
 	},
 
 	/**
-	 * Hasil generate AI (docs/application_flow.md §12.1): menimpa `kontenKerja`
-	 * **sekaligus** mencatat ulang bukti dukung yang dipakai.
-	 *
-	 * Sengaja bukan perluasan {@link updateKonten}. Yang itu jalur autosave —
-	 * dipanggil puluhan kali per menit dan karena itu dengan sadar tidak
-	 * menyiarkan apa pun. Generate kebalikannya: jarang, dan sekali jalan ia
-	 * mengubah dua fakta yang dibaca tampilan di luar editor — jumlah bukti
-	 * dukung terpakai di KPI dashboard (`summarizeChapters`) dan status bab di
-	 * Daftar Isi. Keduanya harus segar begitu generate selesai, jadi di sini
-	 * `notify()` justru wajib.
-	 *
-	 * Isi dan daftar buktinya satu operasi karena §12.1 memang menuliskannya
-	 * begitu: baris `BUKTI_DUKUNG_BAB` diperbarui mengikuti pilihan yang dipakai
-	 * generate ini. Bab yang sudah lebih dulu terkunci ditolak diam-diam, sama
-	 * seperti {@link updateKonten}.
-	 */
-	applyGenerate(
-		chapterId: string,
-		input: {
-			kontenKerja: string;
-			buktiDukung: BuktiDukungRef[];
-			/** Tanpa `dihitungPada`: distempel di sini, lihat alasannya di bawah. */
-			ragas: Omit<RagasScore, 'dihitungPada'>;
-		},
-	): ChapterEntity | undefined {
-		const all = this.findAll();
-		const target = all.find((chapter) => chapter.id === chapterId);
-		if (!target || target.terkunci) return undefined;
-
-		// Satu stempel dipakai keduanya. Kalau `dihitungPada` diambil dari `new Date()`
-		// yang berbeda, ia bisa berselisih beberapa milidetik dari `terakhirDisimpan`
-		// dan penanda "isi sudah berubah sejak dinilai" menyala palsu sejak awal.
-		const sekarang = new Date().toISOString();
-
-		const updated: ChapterEntity = {
-			...target,
-			kontenKerja: input.kontenKerja,
-			buktiDukung: input.buktiDukung,
-			ragas: { ...input.ragas, dihitungPada: sekarang },
-			// Generate menulis isi yang sama sekali baru, jadi tidak ada lagi
-			// checkpoint yang jadi basisnya. Tanpa pembersihan ini, checkpoint yang
-			// terakhir dipulihkan akan terus mengaku sebagai basis isi bab padahal
-			// tulisannya sudah diganti seluruhnya.
-			checkpointAktifId: null,
-			terakhirDisimpan: sekarang,
-		};
-		this.save(
-			all.map((chapter) => (chapter.id === chapterId ? updated : chapter)),
-		);
-		this.notify();
-		return updated;
-	},
-
-	/**
 	 * Memulihkan bab ke salah satu checkpoint (docs/application_flow.md §8.1).
 	 *
-	 * Bentuknya sengaja sama persis dengan {@link applyGenerate} — keduanya
-	 * menimpa kondisi aktif dari luar editor, jadi keduanya menolak bab terkunci
-	 * (§12.2) dan keduanya menyiarkan.
+	 * Menimpa kondisi aktif dari luar editor, jadi menolak bab terkunci (§12.2)
+	 * dan menyiarkan.
 	 *
 	 * `buktiDukung` **ikut dipulihkan**, dan ini melampaui docs: pasal
 	 * "Restore ke checkpoint lama" di docs/database.md hanya menyebut
@@ -506,8 +449,8 @@ export const chapterRepository = {
 	/**
 	 * Kunci review Penjamin Mutu (§12.2).
 	 *
-	 * **Sengaja tidak memeriksa `terkunci`**, berbeda dari `updateKonten`,
-	 * `applyGenerate`, dan `restoreFromDraft` di atas. Yang diblokir §12.2 adalah
+	 * **Sengaja tidak memeriksa `terkunci`**, berbeda dari `updateKonten` dan
+	 * `restoreFromDraft` di atas. Yang diblokir §12.2 adalah
 	 * perubahan isi bab, bukan perubahan kuncinya sendiri — kalau metode ini ikut
 	 * menolak, bab yang sudah terkunci tidak akan pernah bisa dibuka lagi.
 	 *
@@ -614,26 +557,5 @@ export const chapterRepository = {
 		// "Kesiapan Review" di tiga dashboard.
 		this.notify();
 		return updated;
-	},
-
-	/** Dipanggil saat Dokumen LED dihapus supaya babnya tidak jadi sampah. */
-	deleteByProjectId(ledProjectId: string): void {
-		const all = this.findAll();
-		const dibuang = all.filter(
-			(chapter) => chapter.ledProjectId === ledProjectId,
-		);
-
-		// Checkpoint dan hasil skor menempel ke bab, bukan ke dokumen, jadi keduanya
-		// tidak ikut terbawa oleh penyaringan di bawah dan harus dibersihkan
-		// sendiri.
-		const babIds = dibuang.map((chapter) => chapter.id);
-		const draftIds = babIds.flatMap((babId) =>
-			chapterDraftRepository.findByChapterId(babId).map((draft) => draft.id),
-		);
-
-		chapterScoreRepository.deleteByTargets(babIds, draftIds);
-		chapterDraftRepository.deleteByChapterIds(babIds);
-
-		this.save(all.filter((chapter) => chapter.ledProjectId !== ledProjectId));
 	},
 };

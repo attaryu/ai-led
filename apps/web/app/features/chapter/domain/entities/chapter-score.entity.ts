@@ -12,8 +12,7 @@ import { skorMaksimal, type RubricCriterion } from './rubric-criterion.entity';
  *
  * Kebijakan penyimpanannya "main timpa", sama seperti `kontenKerja` dan
  * `BUKTI_DUKUNG_BAB`: menjalankan ulang simulasi untuk target yang sama
- * **mengganti** baris lamanya, tidak menumpuk riwayat berlapis. Yang menegakkan
- * itu `chapterScoreRepository.replaceForTarget`.
+ * **mengganti** baris lamanya, tidak menumpuk riwayat berlapis.
  */
 export const chapterScoreTargetEnum = z.enum(['BAB_AKTIF', 'BAB_DRAFT']);
 export type ChapterScoreTarget = z.infer<typeof chapterScoreTargetEnum>;

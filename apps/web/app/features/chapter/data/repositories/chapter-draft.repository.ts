@@ -262,19 +262,4 @@ export const chapterDraftRepository = {
 		this.notify();
 		return dibuat;
 	},
-
-	/**
-	 * Pembersihan berantai saat **seluruh Dokumen LED** dihapus — bukan pintu
-	 * belakang untuk larangan §8.1 di atas.
-	 *
-	 * Bedanya bukan permainan kata: yang dilarang §8.1 adalah membuang satu
-	 * checkpoint sementara dokumennya masih hidup dan masih merujuknya. Begitu
-	 * dokumennya sendiri tidak ada, tidak ada lagi yang bisa dirujuk, dan
-	 * meninggalkan barisnya hanya membuat sampah di penyimpanan. Alasan yang sama
-	 * dipakai `chapterRepository.deleteByProjectId` terhadap babnya.
-	 */
-	deleteByChapterIds(chapterIds: string[]): void {
-		const dibuang = new Set(chapterIds);
-		this.save(this.findAll().filter((draft) => !dibuang.has(draft.chapterId)));
-	},
 };
