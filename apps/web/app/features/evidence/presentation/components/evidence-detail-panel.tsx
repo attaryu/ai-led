@@ -34,10 +34,13 @@ const ingestionSteps: { status: EvidenceStatus; label: string }[] = [
 	{ status: 'SIAP', label: 'Siap dipakai sebagai konteks AI' },
 ];
 
+// SIAP satu angka lewat index terakhir (bukan `2`) — supaya `index < currentStep`
+// di bawah menandai KETIGA langkah selesai, bukan cuma dua dan menyisakan
+// langkah terakhir tampak "sedang aktif" padahal prosesnya sudah tuntas.
 const stepOrder: Record<EvidenceStatus, number> = {
 	MENUNGGU: 0,
 	DIPROSES: 1,
-	SIAP: 2,
+	SIAP: ingestionSteps.length,
 	GAGAL: 1,
 };
 

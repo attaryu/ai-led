@@ -2,8 +2,9 @@
 
 Membaca generation-queue / assessment-queue / ingestion-queue (nama harus
 cocok dengan apps/backend/src/jobs/queue-names.ts). GENERASI_BAB &
-ASSESSMENT_AMI diimplementasikan sungguhan; INGESTION_BUKTI_DUKUNG masih
-stub (tracker row sendiri).
+ASSESSMENT_AMI diimplementasikan sungguhan; INGESTION_BUKTI_DUKUNG cuma
+menandai SIAP tanpa ekstraksi/embedding beneran (lihat ponytail-comment
+di handler-nya, tracker row sendiri).
 
 Retry (3x, exponential backoff) disetel di producer (jobs.module.ts), bukan
 di sini — BullMQ menyimpannya di job-nya sendiri di Redis.
@@ -413,8 +414,21 @@ async def _handle_assessment_ami(job) -> dict:
 
 
 async def _handle_ingestion_bukti_dukung(job) -> dict:
-    # TODO: panggil ingestion/*.py setelah modul BuktiDukung NestJS ada.
-    return {"status": "received", "handler": "INGESTION_BUKTI_DUKUNG (belum diimplementasikan)"}
+    # ponytail: cuma menandai SIAP, tidak ada chunking/embedding beneran —
+    # ingestion/*.py yang ada semuanya khusus Dokumen LED (chunk_led_pdf dkk),
+    # belum ada pipeline generik untuk tipe file Bukti Dukung (pdf/doc/xls/jpg/
+    # png). Ini menutup "menunggu ekstraksi selamanya" di UI; bukti dukung
+    # belum bisa dicari lewat search_led_evidence. Upgrade: bangun chunking +
+    # index pgvector kalau fitur pencarian AI atas bukti dukung dibutuhkan.
+    from db.connection import get_conn
+
+    bukti_dukung_id = job.data["buktiDukungId"]
+    with get_conn().cursor() as cur:
+        cur.execute(
+            "UPDATE bukti_dukung SET status_ekstraksi = 'SIAP' WHERE id = %s",
+            (bukti_dukung_id,),
+        )
+    return {"status": "completed", "buktiDukungId": bukti_dukung_id}
 
 
 async def main() -> None:
