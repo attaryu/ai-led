@@ -55,7 +55,7 @@ export function ChapterDraftPanel({
 }: {
 	chapter: ChapterEntity;
 	izin: ChapterPermission;
-	ambilSnapshot: () => ChapterEntity | undefined;
+	ambilSnapshot: () => Promise<ChapterEntity | undefined>;
 	/** Dipanggil setelah pemulihan tersimpan; halaman editor yang mendorongnya ke Tiptap. */
 	onRestored: (hasil: HasilPulih) => void;
 	/** Berpindah ke tab Rubrik dengan checkpoint ini terpilih (§8.1). */

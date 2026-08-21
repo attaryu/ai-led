@@ -20,8 +20,14 @@ export type ChapterAutosave = {
 	savedAt: string | null;
 	/** Dipanggil dari `onUpdate` Tiptap. Murah: hanya menaruh nilai di ref. */
 	markDirty: (konten: string) => void;
-	/** Menulis sekarang juga bila masih ada perubahan tertunda. */
-	flush: () => void;
+	/**
+	 * Menulis sekarang juga bila masih ada perubahan tertunda. `true` bila
+	 * kontennya sudah tersimpan di backend sesudah ini selesai (termasuk saat
+	 * tidak ada yang tertunda); `false` bila ditolak/gagal — pemanggil yang
+	 * butuh kepastian isi sudah sampai backend (mis. sebelum bikin checkpoint)
+	 * wajib `await` dan cek balikannya.
+	 */
+	flush: () => Promise<boolean>;
 	/**
 	 * Mengakui tulisan yang sudah tersimpan **dari luar editor** — sejauh ini
 	 * hanya hasil Generate (§12.1), yang menulis sendiri ke repository lalu
@@ -83,24 +89,24 @@ export function useChapterAutosave({
 	 * dicoba lagi biar ketikan tidak hilang.
 	 */
 	const tulisUntuk = React.useCallback(
-		(idTujuan: string, alasan: 'jeda' | 'flush') => {
+		(idTujuan: string, alasan: 'jeda' | 'flush'): Promise<boolean> => {
 			if (timerRef.current !== null) {
 				window.clearTimeout(timerRef.current);
 				timerRef.current = null;
 			}
 
 			const konten = kontenRef.current;
-			if (konten === null || !enabledRef.current) return;
+			if (konten === null || !enabledRef.current) return Promise.resolve(true);
 
 			if (idTujuan === chapterId) setStatus('menyimpan');
 
-			void chapterRepository.updateKonten(idTujuan, konten).then(
+			return chapterRepository.updateKonten(idTujuan, konten).then(
 				(tersimpan) => {
 					kontenRef.current = null;
 					kotorSejakRef.current = null;
 
 					// `undefined` = bab terkunci dari tempat lain. Diamkan, §12.2.
-					if (!tersimpan) return;
+					if (!tersimpan) return false;
 
 					// Hanya bab yang sedang dilihat yang boleh gerak.
 					if (idTujuan === chapterId) {
@@ -114,14 +120,16 @@ export function useChapterAutosave({
 						terisiRef.current = terisi;
 						chapterRepository.notify();
 					}
+					return true;
 				},
 				() => {
 					// Jaringan/backend bermasalah, bukan terkunci — buffer dipegang, coba lagi.
 					if (idTujuan === chapterId) setStatus('gagal');
 					timerRef.current = window.setTimeout(
-						() => tulisRef.current(idTujuan, alasan),
+						() => void tulisRef.current(idTujuan, alasan),
 						JEDA_DIAM_MS,
 					);
+					return false;
 				},
 			);
 		},
@@ -149,7 +157,7 @@ export function useChapterAutosave({
 			const jeda = Math.max(0, Math.min(JEDA_DIAM_MS, sisaPlafon));
 
 			timerRef.current = window.setTimeout(
-				() => tulisRef.current(chapterId, 'jeda'),
+				() => void tulisRef.current(chapterId, 'jeda'),
 				jeda,
 			);
 		},
@@ -192,12 +200,12 @@ export function useChapterAutosave({
 	 * ditutup bisa memutus request sebelum tuntas. Upgrade: sendBeacon endpoint.
 	 */
 	React.useEffect(() => {
-		const onPageHide = () => tulisRef.current(chapterId, 'flush');
+		const onPageHide = () => void tulisRef.current(chapterId, 'flush');
 		window.addEventListener('pagehide', onPageHide);
 
 		return () => {
 			window.removeEventListener('pagehide', onPageHide);
-			tulisRef.current(chapterId, 'flush');
+			void tulisRef.current(chapterId, 'flush');
 
 			// Buffer dan jadwal milik bab ini tidak boleh menyeberang ke bab
 			// berikutnya. Setelah flush di atas keduanya sudah kosong untuk jalur

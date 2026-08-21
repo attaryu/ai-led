@@ -337,17 +337,17 @@ function ChapterEditorWorkspace({
 	/**
 	 * Isi bab yang **benar-benar terkini**, untuk checkpoint di tab Draft.
 	 *
-	 * Dibaca langsung dari editor (bukan dari repository — autosave sekarang
-	 * async, jadi flush tidak lagi sinkron), plus `flush()` supaya isi ini juga
-	 * ikut ter-autosave ke backend.
+	 * `kontenKerja` dibaca langsung dari editor. Backend menulis checkpoint dari
+	 * `kontenKerja` bab saat itu di server, jadi `flush()` di-`await` dulu supaya
+	 * backend sudah punya ketikan terakhir sebelum checkpoint dibuat — gagal
+	 * flush berarti `undefined`, jangan checkpoint isi yang belum tentu sampai.
 	 */
-	const ambilSnapshot = React.useCallback(() => {
-		autosave.flush();
+	const ambilSnapshot = React.useCallback(async () => {
 		if (!editor) return undefined;
-		return {
-			...babTerkini,
-			kontenKerja: editor.isEmpty ? '' : editor.getHTML(),
-		};
+		const kontenKerja = editor.isEmpty ? '' : editor.getHTML();
+		const tersimpan = await autosave.flush();
+		if (!tersimpan) return undefined;
+		return { ...babTerkini, kontenKerja };
 	}, [autosave, editor, babTerkini]);
 
 	return (

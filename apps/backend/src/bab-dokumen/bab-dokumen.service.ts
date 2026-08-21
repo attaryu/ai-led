@@ -9,6 +9,7 @@ import { PrismaService } from '../database/prisma.service';
 import { JobsService } from '../jobs/jobs.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { CreateBabDokumenDto } from './dto/create-bab-dokumen.dto';
+import { CreateBabDraftDto } from './dto/create-bab-draft.dto';
 import { UpdateBabDokumenDto } from './dto/update-bab-dokumen.dto';
 import { ReviewStatusDto } from './dto/review-status.dto';
 import { SubmitReviewDto } from './dto/submit-review.dto';
@@ -142,6 +143,51 @@ export class BabDokumenService {
         ragasScores: true,
         hasilSkorKriteria: true,
       },
+    });
+  }
+
+  /**
+   * Checkpoint manual — tombol "Simpan Draft" tab Draft Editor Bab (§8.1).
+   * `versi` dan `buktiDukungDraft` disalin dari kondisi bab saat ini.
+   *
+   * ponytail: baca-lalu-tulis `versi`, bukan increment atomik — cukup untuk
+   * satu Penyusun per bab yang jadi kasus normal; race dua klik simultan
+   * gagal keras lewat `@@unique([babId, versi])`, bukan korup diam-diam.
+   */
+  async createDraft(id: string, dto: CreateBabDraftDto) {
+    const { userId } = this.tenantContext.getOrThrow();
+    const bab = await this.findOneScoped(id);
+
+    const [user, buktiDukungBab, terakhir] = await Promise.all([
+      this.prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { namaLengkap: true },
+      }),
+      this.prisma.buktiDukungBab.findMany({ where: { babDokumenId: id } }),
+      this.prisma.babDraft.aggregate({
+        where: { babId: id },
+        _max: { versi: true },
+      }),
+    ]);
+
+    return this.prisma.babDraft.create({
+      data: {
+        babId: id,
+        dibuatOlehUserId: userId,
+        dibuatOlehNama: user.namaLengkap,
+        versi: (terakhir._max.versi ?? 0) + 1,
+        label: dto.label?.trim() || null,
+        kontenSnapshot: bab.kontenKerja as Prisma.InputJsonValue,
+        sumber: 'MANUAL',
+        buktiDukungDraft: {
+          create: buktiDukungBab.map((row) => ({
+            buktiDukungId: row.buktiDukungId,
+            namaDokumen: row.namaDokumen,
+            tipeFile: row.tipeFile,
+          })),
+        },
+      },
+      include: { buktiDukungDraft: true, ragasScores: true, hasilSkorKriteria: true },
     });
   }
 

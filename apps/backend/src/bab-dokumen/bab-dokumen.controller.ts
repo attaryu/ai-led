@@ -18,6 +18,7 @@ import { Protected } from '../tenant/protected.decorator';
 import { BabDokumenService } from './bab-dokumen.service';
 import { ChatMessageDto } from './dto/chat-message.dto';
 import { CreateBabDokumenDto } from './dto/create-bab-dokumen.dto';
+import { CreateBabDraftDto } from './dto/create-bab-draft.dto';
 import { GenerateBabDto } from './dto/generate-bab.dto';
 import { SimulateScoreDto } from './dto/simulate-score.dto';
 import { UpdateBabDokumenDto } from './dto/update-bab-dokumen.dto';
@@ -84,6 +85,12 @@ export class BabDokumenController {
   @Protected(...READ_ROLES)
   findDrafts(@Param('id') id: string) {
     return this.babDokumenService.findDrafts(id);
+  }
+
+  @Post('bab/:id/drafts')
+  @Protected(...WRITE_ROLES)
+  createDraft(@Param('id') id: string, @Body() dto: CreateBabDraftDto) {
+    return this.babDokumenService.createDraft(id, dto);
   }
 
   @Get('bab/:id/rubrik')

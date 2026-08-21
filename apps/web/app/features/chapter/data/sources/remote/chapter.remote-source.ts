@@ -169,6 +169,14 @@ export const chapterRemoteSource = {
 		return apiFetch<BackendBabDraft[]>(`/bab/${id}/drafts`);
 	},
 
+	/** Checkpoint manual — tombol "Simpan Draft" tab Draft. */
+	createDraft(id: string, label: string | null): Promise<BackendBabDraft> {
+		return apiFetch<BackendBabDraft>(`/bab/${id}/drafts`, {
+			method: 'POST',
+			body: label ? { label } : {},
+		});
+	},
+
 	/** Kriteria rubrik LAM Teknik yang menilai bab ini. */
 	findRubrik(id: string): Promise<BackendRubrikKriteria[]> {
 		return apiFetch<BackendRubrikKriteria[]>(`/bab/${id}/rubrik`);

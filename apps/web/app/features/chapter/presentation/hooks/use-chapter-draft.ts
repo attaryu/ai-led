@@ -44,7 +44,7 @@ export function useChapterDraft({
 	 * yang dibuat sedetik sesudah mengetik akan memuat isi **sebelum** ketikan
 	 * tersebut — checkpoint yang berbohong tentang apa yang diamankannya.
 	 */
-	ambilSnapshot: () => ChapterEntity | undefined;
+	ambilSnapshot: () => Promise<ChapterEntity | undefined>;
 }) {
 	const [daftar, setDaftar] = React.useState<ChapterDraftEntity[]>([]);
 	const [label, setLabel] = React.useState('');
@@ -52,7 +52,7 @@ export function useChapterDraft({
 	const [pesanGagal, setPesanGagal] = React.useState<string | null>(null);
 
 	const muat = React.useCallback(() => {
-		setDaftar(chapterDraftRepository.findByChapterId(chapter.id));
+		chapterDraftRepository.findByChapterId(chapter.id).then(setDaftar);
 	}, [chapter.id]);
 
 	// Checkpoint bisa lahir dari tab Generasi ("Simpan sebagai draft") maupun dari
@@ -66,17 +66,16 @@ export function useChapterDraft({
 
 	const sibuk = status !== 'diam';
 
-	const simpanCheckpoint = React.useCallback(() => {
-		if (!izin.canEdit || !izin.session || sibuk) return;
+	const simpanCheckpoint = React.useCallback(async () => {
+		if (!izin.canEdit || sibuk) return;
 
 		setStatus('menyimpan');
 		setPesanGagal(null);
 
-		const bab = ambilSnapshot();
+		const bab = await ambilSnapshot();
 
-		// §7.3/§8.1: checkpoint pertama baru mungkin sesudah bab punya isi. Dicek di
-		// sini, bukan hanya lewat tombol yang mati, karena isinya bisa dikosongkan
-		// pengguna di antara render terakhir dan klik.
+		// §7.3/§8.1: checkpoint pertama baru mungkin sesudah bab punya isi, dan
+		// flush di `ambilSnapshot` bisa saja ditolak (bab dikunci dari tempat lain).
 		if (!bab || !hasKonten(bab)) {
 			setStatus('diam');
 			setPesanGagal(
@@ -85,27 +84,18 @@ export function useChapterDraft({
 			return;
 		}
 
-		chapterDraftRepository.create({
-			chapterId: bab.id,
-			label: label.trim() === '' ? null : label.trim(),
-			kontenSnapshot: bab.kontenKerja ?? '',
-			sumber: 'MANUAL',
-			buktiDukung: bab.buktiDukung,
-			// Ikut disalin bukan karena `sumber`-nya, melainkan karena isi yang
-			// di-snapshot memang pernah dinilai: checkpoint manual dari tulisan yang
-			// tadinya digenerate mewarisi skornya secara sah, dan yang ditulis tangan
-			// otomatis `null` tanpa perlu aturan tambahan.
-			ragas: bab.ragas,
-			// Checkpoint manual tidak lahir dari retrieval, jadi tidak punya rujukan
-			// chunk. Yang mengisinya hanya jalur generate di tab Generasi.
-			referensiChunkIds: [],
-			dibuatOlehUserId: izin.session.userId,
-			dibuatOlehNama: izin.session.namaLengkap,
-		});
-
-		setLabel('');
-		setStatus('diam');
-	}, [izin.canEdit, izin.session, sibuk, ambilSnapshot, label]);
+		try {
+			await chapterDraftRepository.create({
+				chapterId: bab.id,
+				label: label.trim() === '' ? null : label.trim(),
+			});
+			setLabel('');
+		} catch {
+			setPesanGagal('Gagal menyimpan checkpoint. Coba lagi.');
+		} finally {
+			setStatus('diam');
+		}
+	}, [izin.canEdit, sibuk, ambilSnapshot, label]);
 
 	const pulihkan = React.useCallback(
 		async (draft: ChapterDraftEntity): Promise<HasilPulih | null> => {

@@ -62,7 +62,7 @@ export function ChapterEditorPanels({
 	studyProgramId: string;
 	izin: ChapterPermission;
 	onGenerated: (hasil: HasilGenerate) => void;
-	ambilSnapshot: () => ChapterEntity | undefined;
+	ambilSnapshot: () => Promise<ChapterEntity | undefined>;
 	onRestored: (hasil: HasilPulih) => void;
 	/** Bab sesudah kunci/catatan review ditulis; isinya tidak ikut berubah. */
 	onReviewed: (diperbarui: ChapterEntity) => void;
