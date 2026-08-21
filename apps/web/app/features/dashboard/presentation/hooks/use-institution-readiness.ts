@@ -31,32 +31,33 @@ function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
  *
  * Sengaja tidak memakai ulang `useProgramReadiness` dalam perulangan: hook itu
  * bertanya per prodi (`findByStudyProgramId`, `findOwnedByStudyProgram`,
- * `findPenyusunByStudyProgramId`), dan tiap pertanyaan itu membaca lalu
- * mem-parse **seluruh** koleksi dari localStorage. Untuk N prodi itu berarti N
- * kali parse tiap koleksi, tiap render, tiap `storage-update` — pekerjaan yang
- * tumbuh linear padahal datanya sama persis.
+ * `findPenyusunByStudyProgramId`), dan tiap pertanyaan itu membaca **seluruh**
+ * koleksi. Untuk N prodi itu berarti N kali baca tiap koleksi, tiap render,
+ * tiap `storage-update` — pekerjaan yang tumbuh linear padahal datanya sama
+ * persis.
  *
  * Aturan hitungnya tetap yang sama; yang berbeda hanya berapa kali datanya
  * dibaca.
  */
 async function read(): Promise<InstitutionReadiness> {
-	// `userRepository` masih mock lokal (belum ada endpoint backend-nya — lihat
-	// catatan migrasi tracker), jadi tetap sinkron. `.catch(() => [])` menjaga
-	// dashboard tetap tampil kalau viewer bukan Pimpinan/Penjamin Mutu (satu-
-	// satunya yang boleh baca level tenant untuk evidence — lihat `bukti-dukung.
-	// service.ts::findAll`) walau halaman ini biasanya cuma dibuka mereka.
-	const [programs, projects, chapters, evidences]: [
+	// `.catch(() => [])` di evidence/users menjaga dashboard tetap tampil kalau
+	// viewer bukan role yang boleh baca level tenant untuk keduanya (evidence:
+	// Pimpinan/Penjamin Mutu, lihat `bukti-dukung.service.ts::findAll`; users:
+	// Admin/Pimpinan, lihat `UsersController.findAll`) walau halaman ini
+	// biasanya cuma dibuka mereka.
+	const [programs, projects, chapters, evidences, users]: [
 		Awaited<ReturnType<typeof studyProgramRepository.findAll>>,
 		LedProjectEntity[],
 		ChapterEntity[],
 		EvidenceEntity[],
+		UserEntity[],
 	] = await Promise.all([
 		studyProgramRepository.findAll(),
 		ledProjectRepository.findAll(),
 		chapterRepository.findAll(),
 		evidenceRepository.findAllTenant().catch(() => []),
+		userRepository.findAll().catch(() => []),
 	]);
-	const users: UserEntity[] = userRepository.findAll();
 
 	return buildInstitutionReadiness({
 		programs,

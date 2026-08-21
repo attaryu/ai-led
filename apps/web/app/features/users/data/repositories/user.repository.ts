@@ -1,102 +1,20 @@
-import { type UserEntity } from '../../domain/entities/user.entity';
-import { userLocalSource } from '../sources/local/user-local.source';
-
-const initialUsers: UserEntity[] = [
-	{
-		id: '1',
-		namaLengkap: 'Ahmad Fauzi',
-		email: 'ahmad.fauzi@univ.ac.id',
-		role: 'Penjamin Mutu',
-		studyProgramId: null,
-		studyProgramName: null,
-		createdAt: '2026-07-29T10:00:00.000Z',
-	},
-	{
-		id: '2',
-		namaLengkap: 'Siti Rahmawati',
-		email: 'siti.rahma@univ.ac.id',
-		role: 'Penyusun',
-		studyProgramId: '1',
-		studyProgramName: 'Teknik Informatika',
-		createdAt: '2026-07-29T10:10:00.000Z',
-	},
-	{
-		id: '3',
-		namaLengkap: 'Prof. Dr. Ir. H. Bambang',
-		email: 'bambang.rektor@univ.ac.id',
-		role: 'Pimpinan',
-		studyProgramId: null,
-		studyProgramName: null,
-		createdAt: '2026-07-29T10:20:00.000Z',
-	},
-	{
-		id: '4',
-		namaLengkap: 'Dewi Lestari',
-		email: 'dewi.admin@univ.ac.id',
-		role: 'Admin',
-		studyProgramId: null,
-		studyProgramName: null,
-		createdAt: '2026-07-29T10:30:00.000Z',
-	},
-	{
-		id: '5',
-		namaLengkap: 'Budi Santoso',
-		email: 'budi.santoso@univ.ac.id',
-		role: 'Penyusun',
-		studyProgramId: '1',
-		studyProgramName: 'Teknik Informatika',
-		createdAt: '2026-07-29T10:40:00.000Z',
-	},
-	{
-		id: '6',
-		namaLengkap: 'Nurul Hidayah',
-		email: 'nurul.hidayah@univ.ac.id',
-		role: 'Penyusun',
-		studyProgramId: '2',
-		studyProgramName: 'Sistem Informasi',
-		createdAt: '2026-07-29T10:50:00.000Z',
-	},
-];
+import { toUserEntity, ROLE_TO_BACKEND } from '../backend-mappers';
+import { type UserEntity, type UserRole } from '../../domain/entities/user.entity';
+import { userRemoteSource } from '../sources/remote/user.remote-source';
 
 export const userRepository = {
-	findAll(): UserEntity[] {
-		const stored = userLocalSource.getAll();
-		if (!stored) {
-			this.save(initialUsers);
-			return initialUsers;
-		}
-		try {
-			return JSON.parse(stored);
-		} catch (e) {
-			this.save(initialUsers);
-			return initialUsers;
-		}
-	},
-
-	save(users: UserEntity[]): void {
-		userLocalSource.setAll(JSON.stringify(users));
-	},
-
-	/**
-	 * Event yang sama dengan fitur lain supaya daftar yang terpasang ikut segar.
-	 *
-	 * Sengaja terpisah dari `save`: `findAll` ikut memanggil `save` saat menyemai
-	 * data awal, dan menyiarkan perubahan dari jalur baca berarti pembacaan saat
-	 * render bisa memicu `setState` komponen lain di tengah render.
-	 */
+	/** Event yang sama dengan fitur lain supaya daftar yang terpasang ikut segar. */
 	notify(): void {
 		window.dispatchEvent(new Event('storage-update'));
 	},
 
-	delete(id: string): void {
-		const users = this.findAll();
-		const updated = users.filter((u) => u.id !== id);
-		this.save(updated);
-		this.notify();
+	async findAll(): Promise<UserEntity[]> {
+		const rows = await userRemoteSource.findAll();
+		return rows.map(toUserEntity);
 	},
 
-	findById(id: string): UserEntity | undefined {
-		return this.findAll().find((u) => u.id === id);
+	async findById(id: string): Promise<UserEntity | undefined> {
+		return (await this.findAll()).find((u) => u.id === id);
 	},
 
 	/**
@@ -106,16 +24,60 @@ export const userRepository = {
 	 * pernah punya `studyProgramId` terisi (docs/database.md §2), jadi
 	 * "anggota prodi" dan "Penyusun prodi" adalah pertanyaan yang sama.
 	 */
-	findPenyusunByStudyProgramId(studyProgramId: string): UserEntity[] {
-		return this.findAll().filter(
+	async findPenyusunByStudyProgramId(studyProgramId: string): Promise<UserEntity[]> {
+		return (await this.findAll()).filter(
 			(u) => u.role === 'Penyusun' && u.studyProgramId === studyProgramId,
 		);
 	},
 
-	update(id: string, data: Partial<UserEntity>): void {
-		const users = this.findAll();
-		const updated = users.map((u) => (u.id === id ? { ...u, ...data } : u));
-		this.save(updated);
+	/** Admin-only di backend — lihat `UsersService.create`. */
+	async create(input: {
+		namaLengkap: string;
+		email: string;
+		password: string;
+		role: UserRole;
+		studyProgramId: string | null;
+	}): Promise<UserEntity> {
+		const row = await userRemoteSource.create({
+			namaLengkap: input.namaLengkap,
+			email: input.email,
+			password: input.password,
+			role: ROLE_TO_BACKEND[input.role],
+			programStudiId: input.studyProgramId ?? undefined,
+		});
+		this.notify();
+		return toUserEntity(row);
+	},
+
+	/**
+	 * Admin boleh mengisi field manapun (edit profil penuh); Pimpinan hanya
+	 * boleh mengisi `studyProgramId` (§4.2) — field lain ditolak backend dengan
+	 * 403. Lihat `UsersService.update`.
+	 */
+	async update(
+		id: string,
+		data: {
+			namaLengkap?: string;
+			email?: string;
+			password?: string;
+			role?: UserRole;
+			studyProgramId?: string | null;
+		},
+	): Promise<UserEntity> {
+		const row = await userRemoteSource.update(id, {
+			namaLengkap: data.namaLengkap,
+			email: data.email,
+			password: data.password,
+			role: data.role ? ROLE_TO_BACKEND[data.role] : undefined,
+			programStudiId: data.studyProgramId ?? undefined,
+		});
+		this.notify();
+		return toUserEntity(row);
+	},
+
+	/** Admin-only di backend. Menolak (409) kalau user masih punya data terkait. */
+	async delete(id: string): Promise<void> {
+		await userRemoteSource.remove(id);
 		this.notify();
 	},
 };

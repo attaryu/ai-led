@@ -59,7 +59,7 @@ async function read(programId: string): Promise<ProgramReadiness> {
 		arsip,
 		chapterSummary,
 		evidenceProdi,
-		penyusun: userRepository.findPenyusunByStudyProgramId(programId),
+		penyusun: await userRepository.findPenyusunByStudyProgramId(programId),
 	};
 }
 

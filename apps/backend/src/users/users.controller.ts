@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@ai-led/db';
 import { Protected } from '../tenant/protected.decorator';
@@ -18,9 +18,22 @@ export class UsersController {
     return this.usersService.create(dto);
   }
 
+  @Get()
+  @Protected(Role.ADMIN, Role.PIMPINAN)
+  findAll() {
+    return this.usersService.findAll();
+  }
+
   @Patch(':id')
-  @Protected(Role.PIMPINAN)
-  move(@Param('id') id: string, @Body() dto: UpdateUserDto) {
-    return this.usersService.move(id, dto);
+  @Protected(Role.ADMIN, Role.PIMPINAN)
+  update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
+    return this.usersService.update(id, dto);
+  }
+
+  @Delete(':id')
+  @Protected(Role.ADMIN)
+  @HttpCode(204)
+  remove(@Param('id') id: string) {
+    return this.usersService.remove(id);
   }
 }

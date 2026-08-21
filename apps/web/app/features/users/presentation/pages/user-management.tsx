@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useNavigate } from 'react-router';
 import { PlusIcon } from '@phosphor-icons/react';
 
+import { ApiError } from '~/core/lib/api-client';
 import { Button } from '~/core/components/ui/button';
 import { DataTable } from '~/core/components/ui/data-table';
 import { useDataTableState } from '~/core/hooks/use-data-table-state';
@@ -14,7 +15,7 @@ export function UserManagement() {
 	const [users, setUsers] = React.useState<UserEntity[]>([]);
 
 	const loadData = React.useCallback(() => {
-		setUsers(userRepository.findAll());
+		userRepository.findAll().then(setUsers);
 	}, []);
 
 	React.useEffect(() => {
@@ -25,12 +26,22 @@ export function UserManagement() {
 		};
 	}, [loadData]);
 
-	const handleDelete = React.useCallback((id: string) => {
-		if (confirm('Apakah Anda yakin ingin menghapus User ini?')) {
-			userRepository.delete(id);
-			loadData();
-		}
-	}, [loadData]);
+	const handleDelete = React.useCallback(
+		async (id: string) => {
+			if (!confirm('Apakah Anda yakin ingin menghapus User ini?')) return;
+			try {
+				await userRepository.delete(id);
+				loadData();
+			} catch (e) {
+				alert(
+					e instanceof ApiError
+						? e.message
+						: 'Gagal menghapus user.',
+				);
+			}
+		},
+		[loadData],
+	);
 
 	const handleEdit = React.useCallback((id: string) => {
 		navigate(`/dashboard/users/${id}/edit`);

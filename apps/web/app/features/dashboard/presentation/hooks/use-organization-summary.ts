@@ -16,7 +16,7 @@ export type OrganizationSummary = {
 
 async function read(): Promise<OrganizationSummary> {
 	const programs = await studyProgramRepository.findAll();
-	const users = userRepository.findAll();
+	const users = await userRepository.findAll();
 
 	const userPerRole = Object.fromEntries(
 		userRoleEnum.options.map((role) => [role, 0]),

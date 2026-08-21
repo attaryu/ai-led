@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate } from 'react-router';
 import { ArrowLeftIcon } from '@phosphor-icons/react';
 
+import { ApiError } from '~/core/lib/api-client';
 import { Button } from '~/core/components/ui/button';
 import { Input } from '~/core/components/ui/input';
 import { Select } from '~/core/components/ui/select';
@@ -24,27 +25,20 @@ import {
 	createUserSchema,
 	type CreateUserDto,
 } from '../../domain/dtos/create-user.dto';
-import {
-	userRoleEnum,
-	type UserEntity,
-} from '../../domain/entities/user.entity';
+import { userRoleEnum } from '../../domain/entities/user.entity';
+import { userRepository } from '../../data/repositories/user.repository';
 import type { StudyProgramEntity } from '../../../study-program/domain/entities/study-program.entity';
+import { studyProgramRepository } from '../../../study-program/data/repositories/study-program.repository';
 
 export function CreateUser() {
 	const navigate = useNavigate();
 	const [studyPrograms, setStudyPrograms] = React.useState<
 		StudyProgramEntity[]
 	>([]);
+	const [formError, setFormError] = React.useState<string | null>(null);
 
 	React.useEffect(() => {
-		const stored = localStorage.getItem('study_program_data');
-		if (stored) {
-			try {
-				setStudyPrograms(JSON.parse(stored));
-			} catch (e) {
-				console.error(e);
-			}
-		}
+		studyProgramRepository.findAll().then(setStudyPrograms);
 	}, []);
 
 	const {
@@ -77,37 +71,20 @@ export function CreateUser() {
 		}
 	}, [selectedRole, studyPrograms, setValue]);
 
-	const onSubmit = (data: CreateUserDto) => {
-		const selectedProgramObj =
-			data.role === 'Penyusun' && data.studyProgramId
-				? studyPrograms.find((p) => p.id === data.studyProgramId)
-				: null;
-
-		const newUser: UserEntity = {
-			id: Date.now().toString(),
-			namaLengkap: data.namaLengkap,
-			email: data.email,
-			role: data.role,
-			studyProgramId: data.role === 'Penyusun' ? data.studyProgramId : null,
-			studyProgramName: selectedProgramObj
-				? selectedProgramObj.studyProgramName
-				: null,
-			createdAt: new Date().toISOString(),
-		};
-
-		const storedUsers = localStorage.getItem('user_data');
-		let usersList: UserEntity[] = [];
-		if (storedUsers) {
-			try {
-				usersList = JSON.parse(storedUsers);
-			} catch (e) {
-				console.error(e);
-			}
+	const onSubmit = async (data: CreateUserDto) => {
+		setFormError(null);
+		try {
+			await userRepository.create({
+				namaLengkap: data.namaLengkap,
+				email: data.email,
+				password: data.password,
+				role: data.role,
+				studyProgramId: data.role === 'Penyusun' ? (data.studyProgramId ?? null) : null,
+			});
+			navigate('/dashboard/users');
+		} catch (e) {
+			setFormError(e instanceof ApiError ? e.message : 'Gagal menyimpan pengguna.');
 		}
-
-		usersList.push(newUser);
-		localStorage.setItem('user_data', JSON.stringify(usersList));
-		navigate('/dashboard/users');
 	};
 
 	return (
@@ -139,6 +116,9 @@ export function CreateUser() {
 				</CardHeader>
 				<CardContent>
 					<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+						{formError && (
+							<p className="text-sm text-destructive">{formError}</p>
+						)}
 						<FieldGroup>
 							<Field data-invalid={!!errors.namaLengkap}>
 								<FieldLabel htmlFor="namaLengkap">Nama Lengkap</FieldLabel>

@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate, useParams } from 'react-router';
 import { ArrowLeftIcon } from '@phosphor-icons/react';
 
+import { ApiError } from '~/core/lib/api-client';
 import { Button } from '~/core/components/ui/button';
 import { Input } from '~/core/components/ui/input';
 import { Select } from '~/core/components/ui/select';
@@ -37,17 +38,19 @@ export function EditUser() {
 	const { userId } = useParams<{ userId: string }>();
 	const [studyPrograms, setStudyPrograms] = React.useState<StudyProgramEntity[]>([]);
 	const [user, setUser] = React.useState<UserEntity | null>(null);
+	const [formError, setFormError] = React.useState<string | null>(null);
 
 	React.useEffect(() => {
 		studyProgramRepository.findAll().then(setStudyPrograms);
 		if (userId) {
-			const found = userRepository.findById(userId);
-			if (found) {
-				setUser(found);
-			} else {
-				alert('User tidak ditemukan!');
-				navigate('/dashboard/users');
-			}
+			userRepository.findById(userId).then((found) => {
+				if (found) {
+					setUser(found);
+				} else {
+					alert('User tidak ditemukan!');
+					navigate('/dashboard/users');
+				}
+			});
 		}
 	}, [userId, navigate]);
 
@@ -102,26 +105,22 @@ export function EditUser() {
 		}
 	}, [selectedRole, studyPrograms, setValue, user]);
 
-	const onSubmit = (data: UpdateUserDto) => {
+	const onSubmit = async (data: UpdateUserDto) => {
 		if (!userId) return;
+		setFormError(null);
 
-		const selectedProgramObj =
-			data.role === 'Penyusun' && data.studyProgramId
-				? studyPrograms.find((p) => p.id === data.studyProgramId)
-				: null;
-
-		const updatedFields: Partial<UserEntity> = {
-			namaLengkap: data.namaLengkap,
-			email: data.email,
-			role: data.role,
-			studyProgramId: data.role === 'Penyusun' ? data.studyProgramId : null,
-			studyProgramName: selectedProgramObj
-				? selectedProgramObj.studyProgramName
-				: null,
-		};
-
-		userRepository.update(userId, updatedFields);
-		navigate('/dashboard/users');
+		try {
+			await userRepository.update(userId, {
+				namaLengkap: data.namaLengkap,
+				email: data.email,
+				role: data.role,
+				studyProgramId: data.role === 'Penyusun' ? (data.studyProgramId ?? null) : null,
+				password: data.showPasswordChange ? data.password : undefined,
+			});
+			navigate('/dashboard/users');
+		} catch (e) {
+			setFormError(e instanceof ApiError ? e.message : 'Gagal menyimpan perubahan.');
+		}
 	};
 
 	if (!user) {
@@ -158,6 +157,9 @@ export function EditUser() {
 				</CardHeader>
 				<CardContent>
 					<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+						{formError && (
+							<p className="text-sm text-destructive">{formError}</p>
+						)}
 						<FieldGroup>
 							<Field data-invalid={!!errors.namaLengkap}>
 								<FieldLabel htmlFor="namaLengkap">Nama Lengkap</FieldLabel>
