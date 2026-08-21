@@ -1,0 +1,88 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [dev-v1]
+  pull_request:
+    branches: [dev-v1]
+
+jobs:
+  test:
+    name: Lint & Unit Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install monorepo dependencies
+        run: npm ci
+
+      # Backend tests import the generated Prisma client (@ai-led/db) —
+      # same step apps/backend/Dockerfile runs before building.
+      - name: Generate Prisma client
+        run: npm run generate --workspace packages/db
+
+      - name: Run apps/backend tests
+        run: npm run test --workspace apps/backend
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: apps/ai/pyproject.toml
+
+      - name: Install apps/ai dependencies
+        working-directory: apps/ai
+        run: pip install -e ".[dev]"
+
+      - name: Run apps/ai tests
+        working-directory: apps/ai
+        run: pytest
+
+  docker-build:
+    name: Docker Build & Caching
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - service: backend
+            context: .
+            dockerfile: apps/backend/Dockerfile
+          - service: web
+            context: .
+            dockerfile: apps/web/Dockerfile
+          - service: ai
+            context: ./apps/ai
+            dockerfile: apps/ai/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build-only (push: false) — no registry credentials required. Each
+      # service gets its own cache scope so the 3 parallel matrix builds
+      # don't clobber each other's GHA cache entries. apps/ai is the one
+      # that matters most here: the pip layer (torch/sentence-transformers)
+      # and the pre-downloaded HF embedding model are both cached, so an
+      # unrelated code change doesn't re-trigger either download.
+      - name: Build ${{ matrix.service }} image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: false
+          secrets: |
+            hf_token=${{ secrets.HF_TOKEN }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
