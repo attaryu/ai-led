@@ -40,23 +40,22 @@ function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
  * dibaca.
  */
 async function read(): Promise<InstitutionReadiness> {
-	const [programs, projects]: [
+	// `userRepository` masih mock lokal (belum ada endpoint backend-nya — lihat
+	// catatan migrasi tracker), jadi tetap sinkron. `.catch(() => [])` menjaga
+	// dashboard tetap tampil kalau viewer bukan Pimpinan/Penjamin Mutu (satu-
+	// satunya yang boleh baca level tenant untuk evidence — lihat `bukti-dukung.
+	// service.ts::findAll`) walau halaman ini biasanya cuma dibuka mereka.
+	const [programs, projects, chapters, evidences]: [
 		Awaited<ReturnType<typeof studyProgramRepository.findAll>>,
 		LedProjectEntity[],
+		ChapterEntity[],
+		EvidenceEntity[],
 	] = await Promise.all([
 		studyProgramRepository.findAll(),
 		ledProjectRepository.findAll(),
+		chapterRepository.findAll(),
+		evidenceRepository.findAllTenant().catch(() => []),
 	]);
-	// `chapterRepository`/`userRepository` masih mock lokal (belum ada endpoint
-	// backend-nya — lihat catatan migrasi di masing-masing repository), jadi
-	// tetap sinkron. `evidenceRepository` sudah backend sungguhan; `.catch(() =>
-	// [])` menjaga dashboard tetap tampil kalau viewer bukan Pimpinan/Penjamin
-	// Mutu (satu-satunya yang boleh baca level tenant — lihat `bukti-dukung.
-	// service.ts::findAll`) walau halaman ini biasanya cuma dibuka mereka.
-	const chapters: ChapterEntity[] = chapterRepository.findAll();
-	const evidences: EvidenceEntity[] = await evidenceRepository
-		.findAllTenant()
-		.catch(() => []);
 	const users: UserEntity[] = userRepository.findAll();
 
 	return buildInstitutionReadiness({

@@ -139,6 +139,11 @@ export const chapterRemoteSource = {
 		return apiFetch<BackendBabDokumen[]>(`/dokumen/${dokumenId}/bab`);
 	},
 
+	/** Lintas prodi — Dashboard Utama KPI. */
+	findAllForTenant(): Promise<BackendBabDokumen[]> {
+		return apiFetch<BackendBabDokumen[]>('/bab');
+	},
+
 	findOne(id: string): Promise<BackendBabDokumen> {
 		return apiFetch<BackendBabDokumen>(`/bab/${id}`);
 	},

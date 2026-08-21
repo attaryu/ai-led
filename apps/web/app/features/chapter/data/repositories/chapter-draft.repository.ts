@@ -186,7 +186,7 @@ const initialDrafts: ChapterDraftEntity[] = [
 ];
 
 export const chapterDraftRepository = {
-	/** Divalidasi saat dibaca, dengan alasan yang sama seperti `chapterRepository.findAll`. */
+	/** Divalidasi saat dibaca — bentuk barisnya pernah berubah, JSON lama lolos parse tanpa melempar. */
 	findAll(): ChapterDraftEntity[] {
 		const stored = chapterDraftLocalSource.getAll();
 		if (!stored) {

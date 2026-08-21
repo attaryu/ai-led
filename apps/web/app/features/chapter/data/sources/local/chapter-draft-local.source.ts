@@ -1,4 +1,4 @@
-/** Bernomor dengan alasan yang sama seperti `chapter-local.source.ts`. */
+/** `_v2`: bentuk barisnya pernah berubah, key lama sengaja ditinggal biar tidak lolos parse ke bentuk baru. */
 export const chapterDraftLocalSource = {
 	getAll(): string | null {
 		return localStorage.getItem('chapter_draft_data_v2');

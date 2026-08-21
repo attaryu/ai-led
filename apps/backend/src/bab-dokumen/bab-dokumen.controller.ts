@@ -51,6 +51,13 @@ export class BabDokumenController {
     return this.babDokumenService.findAllForDokumen(dokumenId);
   }
 
+  /** Lintas prodi — Dashboard Utama KPI. */
+  @Get('bab')
+  @Protected(...READ_ROLES)
+  findAllForTenant() {
+    return this.babDokumenService.findAllForTenant();
+  }
+
   @Get('bab/:id')
   @Protected(...READ_ROLES)
   findOne(@Param('id') id: string) {

@@ -89,6 +89,21 @@ export class BabDokumenService {
     });
   }
 
+  /** Lintas prodi — Dashboard Utama KPI, mirrors DokumenLedService.findAllForTenant. */
+  async findAllForTenant() {
+    const { tenantId, role, programStudiId } = this.tenantContext.getOrThrow();
+    if (role === Role.PENYUSUN && !programStudiId) return [];
+
+    return this.prisma.babDokumen.findMany({
+      where: {
+        dokumen: {
+          programStudi: { tenantId },
+          ...(role === Role.PENYUSUN ? { programStudiId: programStudiId ?? undefined } : {}),
+        },
+      },
+    });
+  }
+
   /**
    * `buktiDukungBab`/`ragasScores`/`hasilSkorKriteria` (semuanya lingkup
    * BAB_AKTIF) di-include di sini, bukan di `findOneScoped` — method itu
