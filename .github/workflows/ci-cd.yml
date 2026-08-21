@@ -70,6 +70,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # apps/ai's image pulls in mineru's ML stack (torch/opencv/paddleocr) —
+      # big enough to fill the default ~14GB free on a GitHub-hosted runner
+      # mid-build. Preinstalled toolchains we don't use free up room first.
+      - name: Free disk space
+        if: matrix.service == 'ai'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker image prune -af
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 

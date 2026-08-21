@@ -41,6 +41,9 @@ services:
       - ai
 
   ai:
+    # Shared `image:` with ai-worker below — same code/deps, only the CMD
+    # differs, so one build serves both instead of two ~identical images.
+    image: ai-led-ai:local
     build:
       context: ./apps/ai
       secrets:
@@ -61,6 +64,28 @@ services:
     depends_on:
       - postgres
       - redis
+
+  # BullMQ consumer (GENERASI_BAB, ASSESSMENT_AMI, INGESTION_BUKTI_DUKUNG) —
+  # previously only ever run manually (`python worker.py`) outside Docker, so
+  # none of those job types actually processed in a deployed environment.
+  ai-worker:
+    image: ai-led-ai:local
+    command: ["python", "worker.py"]
+    restart: unless-stopped
+    volumes:
+      - ./apps/ai/data:/app/data
+    env_file: apps/ai/.env
+    environment:
+      DATA_DIR: /app/data
+      HF_HOME: /root/.cache/huggingface
+      SENTENCE_TRANSFORMERS_HOME: /root/.cache/huggingface/sentence-transformers
+      HF_HUB_DISABLE_XET: "1"
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_led?schema=public
+    depends_on:
+      - postgres
+      - redis
+      - ai
 
   web:
     build:
