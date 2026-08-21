@@ -205,7 +205,14 @@ def test_judge_runs_after_parse_output_and_lowers_confidence_when_ungrounded():
     import json
     from langchain_core.messages import AIMessage
     from llm.ollama_client import OllamaClient
+    from agent.context import AssessmentContext, current_assessment_context
     from agent.graph import build_graph
+
+    # search_led_evidence reads (tenant_id, dokumen_id) from agent.context —
+    # see agent/context.py. This is the only test in this module that reaches
+    # that tool, so the context is set locally rather than via a module-wide
+    # autouse fixture (test_tools.py's pattern for the tools that all need it).
+    token = current_assessment_context.set(AssessmentContext("tenant-x", "doc-1"))
 
     rubric_tool_call = AIMessage(
         content="",
@@ -240,21 +247,24 @@ def test_judge_runs_after_parse_output_and_lowers_confidence_when_ungrounded():
 
     fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
 
-    with (
-        patch("agent.graph._build_llm", return_value=fake_llm),
-        patch("agent.graph.build_judge_llm", return_value=fake_judge_llm),
-        patch("agent.tools.rubric_tool._get_rubrics", return_value=[]),
-        patch(
-            "agent.tools.led_tool.search_led",
-            return_value=[{
-                "text": "Visi misi disusun lewat rapat pimpinan.",
-                "metadata": {"page_start": 12, "page_end": 12, "para_start": -1, "para_end": -1, "section_heading": ""},
-                "distance": 0.1,
-            }],
-        ),
-    ):
-        graph = build_graph(fake_client)
-        result = graph.invoke(_make_state(), config={"recursion_limit": 60})
+    try:
+        with (
+            patch("agent.graph._build_llm", return_value=fake_llm),
+            patch("agent.graph.build_judge_llm", return_value=fake_judge_llm),
+            patch("agent.tools.rubric_tool._get_rubrics", return_value=[]),
+            patch(
+                "agent.tools.led_tool.search_led",
+                return_value=[{
+                    "text": "Visi misi disusun lewat rapat pimpinan.",
+                    "metadata": {"page_start": 12, "page_end": 12, "para_start": -1, "para_end": -1, "section_heading": ""},
+                    "distance": 0.1,
+                }],
+            ),
+        ):
+            graph = build_graph(fake_client)
+            result = graph.invoke(_make_state(), config={"recursion_limit": 60})
+    finally:
+        current_assessment_context.reset(token)
 
     assert result["final_score"] == 3.0
     assert result["judge_verdict"]["grounded"] is False
