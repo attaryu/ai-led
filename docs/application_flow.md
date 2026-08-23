@@ -924,6 +924,16 @@ Bagian ini mencatat hal-hal yang belum diputuskan/dibahas tuntas, untuk didiskus
 
 5. **Export dokumen LED** — fitur ekspor (kemungkinan ke Word/PDF) disebutkan ada, tapi detail mekanismenya belum dibahas sama sekali (format, apakah per bab atau seluruh dokumen, styling, dsb) — dilupakan dulu sesuai kesepakatan, dibahas belakangan.
 
+   > **Catatan — yang sudah ada: ekspor *hasil penilaian*, bukan dokumen LED-nya.** Halaman Penilaian AMI kini punya tombol **Unduh PDF** di kepalanya. Yang diekspor tabel hasil per indikator: **No, Kriteria, Skor, Justifikasi, Rekomendasi, Confidence** — A4 tegak, dipenggal otomatis antar halaman, dengan kop berisi universitas, prodi, dokumen, tahun akademik, waktu penilaian, siapa yang menjalankan, dan sumber LED-nya, ditambah baris ringkasan skor.
+   >
+   > Tiga keputusan yang menempel padanya:
+   >
+   > - **Selalu seluruh indikator, urut nomor** — tidak mengikuti saringan dan pengurutan di daftar. Saringan itu keadaan tampilan yang sengaja tidak masuk URL, dan pembaca yang menerima PDF berisi empat baris tidak punya cara tahu bahwa yang lain disaring.
+   > - **Kolom Skor berisi skor final**, yakni angka yang berlaku termasuk koreksi Penjamin Mutu, bertanda `*` bila dikoreksi beserta catatan kakinya. Justifikasi, rekomendasi, dan confidence tetap milik AI — dan catatan kakinya menyatakan itu, supaya satu baris tidak terbaca seolah AI yang memberi angka hasil koreksi.
+   > - **Dibangkitkan di peramban, tanpa backend** (`jspdf` + `jspdf-autotable`, diimpor dinamis di `presentation/utils/assessment-pdf.ts`). Seluruh bahannya memang sudah ada di memori halaman. Fontnya Helvetica bawaan PDF, bukan DM Sans milik aplikasi.
+   >
+   > Ekspor **dokumen LED** — isi babnya — tetap belum ada, dan pasal ini masih berlaku sepenuhnya untuk itu.
+
 6. **Validasi perubahan status dokumen** — saat ini murni manual tanpa syarat. Apakah ke depannya perlu ditambah validasi (misal tidak bisa set `SELESAI` jika masih ada bab yang belum `terkunci`)?
 
 7. **Menghapus bukti dukung yang sedang dipakai suatu bab** — bukti dukung bisa sedang tercatat di `BUKTI_DUKUNG_BAB` (kondisi aktif) maupun `BUKTI_DUKUNG_DRAFT` (checkpoint permanen, jejak audit akreditasi). Apakah penghapusan diblokir selama masih dirujuk, atau tetap diizinkan dengan rujukan yang jadi menggantung? Untuk sekarang UI hanya memperingatkan lewat dialog konfirmasi.

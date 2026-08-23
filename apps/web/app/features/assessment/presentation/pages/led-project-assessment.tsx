@@ -1,6 +1,7 @@
 import * as React from 'react';
 import {
 	ClipboardTextIcon,
+	FilePdfIcon,
 	PencilSimpleIcon,
 	SealCheckIcon,
 	WarningCircleIcon,
@@ -8,6 +9,7 @@ import {
 import { useParams, useSearchParams } from 'react-router';
 
 import { PlaceholderPage } from '~/core/components/placeholder-page';
+import { Button } from '~/core/components/ui/button';
 import { StatCard } from '~/core/components/ui/stat-card';
 import {
 	Tabs,
@@ -17,8 +19,10 @@ import {
 } from '~/core/components/ui/tabs';
 import { ledProjectRepository } from '~/features/led-project/data/repositories/led-project.repository';
 import { type LedProjectEntity } from '~/features/led-project/domain/entities/led-project.entity';
+import { useActiveTenant } from '~/features/tenant/presentation/hooks/use-active-tenant';
 import { type PenilaianFinalRow } from '../../domain/entities/assessment-session.entity';
 import { AssessmentDetailSheet } from '../components/assessment-detail-sheet';
+import { AssessmentDownloadDialog } from '../components/assessment-download-dialog';
 import { AssessmentHistoryList } from '../components/assessment-history-list';
 import { AssessmentQualityPanel } from '../components/assessment-quality-panel';
 import { AssessmentResultList } from '../components/assessment-result-list';
@@ -134,6 +138,9 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 		[],
 	);
 
+	const [unduhTerbuka, setUnduhTerbuka] = React.useState(false);
+	const tenant = useActiveTenant();
+
 	const posisiDibuka = urutanTampil.findIndex(
 		(row) => row.kriteria.no === indikatorDibuka,
 	);
@@ -160,13 +167,35 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 
 	return (
 		<div className="flex flex-col gap-6">
-			<div>
-				<h2 className="font-heading text-2xl font-bold tracking-tight">
-					Penilaian AMI
-				</h2>
-				<p className="text-sm text-muted-foreground">
-					Penilaian akreditasi otomatis untuk {ledProject.judul}.
-				</p>
+			<div className="flex flex-wrap items-start justify-between gap-4">
+				<div>
+					<h2 className="font-heading text-2xl font-bold tracking-tight">
+						Penilaian AMI
+					</h2>
+					<p className="text-sm text-muted-foreground">
+						Penilaian akreditasi otomatis untuk {ledProject.judul}.
+					</p>
+				</div>
+
+				{/*
+				 * Di kepala halaman, bukan di dalam tab Penilaian: yang diunduh seluruh
+				 * indikator, jadi tombolnya tidak boleh terasa milik satu tab saja.
+				 *
+				 * Disembunyikan — bukan dimatikan — saat belum ada sesi, mengikuti §1
+				 * dan tombol jalankan di `AssessmentRunPanel`. Tanpa sesi, `baris`
+				 * kosong dan yang terunduh cuma kop tanpa satu baris pun.
+				 */}
+				{sesiAktif !== undefined && baris.length > 0 && (
+					<Button
+						type="button"
+						variant="outline"
+						onClick={() => setUnduhTerbuka(true)}
+						className="shrink-0 cursor-pointer"
+					>
+						<FilePdfIcon />
+						Unduh PDF
+					</Button>
+				)}
 			</div>
 
 			<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -321,6 +350,27 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 					if (rowDibuka) cabutKeputusan(rowDibuka.kriteria.no);
 				}}
 			/>
+
+			{/*
+			 * Dirender hanya saat terbuka, bukan disembunyikan lewat prop `open`:
+			 * membangkitkan PDF adalah pekerjaan yang tidak boleh berjalan untuk
+			 * dialog yang belum diminta siapa pun, dan efek di dalamnya memang
+			 * dipicu oleh pemasangan komponennya.
+			 */}
+			{unduhTerbuka && sesiAktif !== undefined && (
+				<AssessmentDownloadDialog
+					open={unduhTerbuka}
+					onOpenChange={setUnduhTerbuka}
+					input={{
+						baris,
+						ringkasan,
+						sesi: sesiAktif,
+						ledProject,
+						namaUniversitas: tenant.universityName,
+						melihatSesiTerbaru,
+					}}
+				/>
+			)}
 		</div>
 	);
 }
