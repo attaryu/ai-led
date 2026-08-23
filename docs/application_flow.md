@@ -237,7 +237,7 @@ Dua kartu, diberi label kerangka waktunya sendiri supaya tidak terbaca sebagai u
 
 Mengikuti alasan yang sama dengan §5.1f dan §6.1 — kolom yang selalu berisi "—" hanya menambah derau:
 
-- **Ringkasan skor rubrik per prodi** — diminta PRD §3.8 ("skor rata-rata per prodi"), tapi `RUBRIK_KRITERIA`/`HASIL_SKOR_KRITERIA` belum ada. Masuk bersama Simulasi Skor (§9).
+- **Ringkasan skor rubrik per prodi** — diminta PRD §3.8 ("skor rata-rata per prodi"). Sumbernya kini Penilaian AMI, bukan simulasi skor bab yang sudah dihapus (§9): angka per prodi berarti merata-ratakan sesi penilaian seluruh Dokumen LED-nya, dan itu baru bermakna setelah lebih dari satu dokumen pernah dinilai.
 - **Grafik tren antar penyusunan** — baru bermakna setelah ada beberapa penyusunan dengan skor.
 - **Siapa sedang menyunting** — datanya hidup di Redis (§13), bukan di basis data.
 
@@ -461,7 +461,7 @@ Tiga nilai yang menggerakkan halaman ini semuanya dihitung saat render:
 
 Mengikuti alasan yang sama dengan §6.1 — kolom yang selalu berisi "—" hanya menambah derau:
 
-- **Ringkasan skor rubrik prodi** — `RUBRIK_KRITERIA`/`HASIL_SKOR_KRITERIA` belum ada. Masuk bersama Simulasi Skor (§9).
+- **Ringkasan skor rubrik prodi** — sumbernya kini Penilaian AMI, bukan simulasi skor bab yang sudah dihapus (§9); menunggu ada beberapa Dokumen LED yang sudah dinilai supaya rata-ratanya berarti.
 - **Data kuantitatif LKPS** — model datanya masih Pertanyaan Terbuka #3.
 - **Grafik tren antar penyusunan** — baru bermakna setelah ada beberapa penyusunan dengan skor; sampai itu, bar persentase sudah cukup.
 
@@ -553,7 +553,7 @@ Halaman tersusun dari tiga bagian, dari atas ke bawah:
 
 Klik judul bab → masuk ke **Editor Bab** di `/editor/:projectId/:chapterId` (§7). Yang ditautkan judulnya, bukan seluruh baris: baris yang hanya bereaksi pada klik tidak bisa dicapai lewat keyboard dan tidak punya alamat untuk dibuka di tab baru. Bab yang terkunci tetap ditautkan — §12.2 memblokir aksi ubah, bukan membaca.
 
-**Menyusul**: ringkasan skor rubrik per bab belum ditampilkan karena `RUBRIK_KRITERIA`/`HASIL_SKOR_KRITERIA` belum ada — kolom yang selalu berisi "—" hanya menambah derau. Masuk bersamaan dengan fitur Simulasi Skor (§9). Begitu pula indikator "siapa sedang menyunting": datanya hidup di Redis (§13), bukan di basis data, jadi menunggu backend.
+**Menyusul**: ringkasan skor rubrik per bab belum ditampilkan di tabel ini — kolom yang selalu berisi "—" hanya menambah derau. Sumbernya kini Penilaian AMI, bukan simulasi skor bab yang sudah dihapus (§9), dan skor AMI per bab sudah bisa dilihat dari tab Review di Editor Bab. Begitu pula indikator "siapa sedang menyunting": datanya hidup di Redis (§13), bukan di basis data, jadi menunggu backend.
 
 ### 6.1a Status bab adalah turunan, bukan kolom
 
@@ -613,7 +613,7 @@ Tampilan mengikuti konsep dua-sidebar ala Figma:
 └────────────┴─────────────────────────────┴──────────────────────┘
 ```
 
-> **Catatan — penamaan dan urutan tab.** Bagian ini semula menulis "Generate | Rujukan | Rubrik | Skor | Draft". Yang dipakai sekarang: **"Generate" jadi "Generasi"** supaya seluruh label berbahasa Indonesia, **Draft naik ke urutan kedua** karena ia pasangan langsung dari hasil generate, dan **"Skor" jadi "Kualitas AI"** karena nama lamanya tertukar rasanya dengan "Rubrik" — justru tab itu yang menampilkan skor 1–4 beserta totalnya, sedangkan yang ini mengukur mutu kerja AI-nya (§10.1). Urutan tampilnya kini **Draft | Generasi | Rujukan | Rubrik | Kualitas AI**. Isi pasal 8–12 di bawah tidak berubah, hanya label dan urutannya. Satu-satunya sumber urutan dan label di kode ada di `PANEL_TABS` (`features/chapter/presentation/components/chapter-editor-panels.tsx`); `value` tiap tab tetap memakai nama lamanya karena ia kunci internal.
+> **Catatan — penamaan dan urutan tab.** Bagian ini semula menulis "Generate | Rujukan | Rubrik | Skor | Draft". Yang dipakai sekarang: **"Generate" jadi "Generasi"** supaya seluruh label berbahasa Indonesia, **Draft naik ke urutan kedua** karena ia pasangan langsung dari hasil generate, dan **"Skor" jadi "Kualitas AI"** karena nama lamanya tertukar rasanya dengan "Rubrik" — justru tab itu yang menampilkan skor 1–4 beserta totalnya, sedangkan yang ini mengukur mutu kerja AI-nya (§10.1). Urutan tampilnya kini **Draft | Generasi | Rujukan | Kualitas AI | Review** — tab **Review** menyusul sesudah catatan ini ditulis (keadaan bab: kunci dan catatan Penjamin Mutu, ditaruh paling akhir karena ia bukan alat menyusun), dan tab **Rubrik** kemudian dihapus (§9). Isi pasal 8–12 di bawah tidak berubah, hanya label dan urutannya. Satu-satunya sumber urutan dan label di kode ada di `PANEL_TABS` (`features/chapter/presentation/components/chapter-editor-panels.tsx`); `value` tiap tab tetap memakai nama lamanya karena ia kunci internal.
 >
 > **Catatan — serialisasi `konten_kerja`.** Editor menulis **string HTML**, bukan JSON ProseMirror, walau docs/database.md menyebut kolomnya `jsonb` (kolom JSON nanti tinggal memuat `{ format: 'html', body: '<p>…</p>' }`). Alasannya bab yang lahir sebelum editor ada — termasuk seluruh data contoh — berisi kalimat biasa: sebagai HTML ia dibungkus jadi paragraf tanpa kode migrasi apa pun, sedangkan `JSON.parse` akan melempar dan memaksa cabang penyelamat permanen di tiap tempat baca.
 
@@ -705,6 +705,16 @@ Tampilan mengikuti konsep dua-sidebar ala Figma:
 > - **"Lihat skor" di menu tab Draft (§8.1) akhirnya dipasang**, tapi **berpindah ke tab Rubrik dengan checkpoint itu terpilih**, bukan membuka modal. Hasil akhirnya sama — breakdown yang sama, tanpa mengubah apa pun — dan skornya mendarat di tempat yang memang menjelaskan kriterianya.
 > - **Bab tanpa kriteria menyatakan dirinya begitu.** database.md §10 memang menyebut bab tanpa baris `RUBRIK_KRITERIA_BAB` otomatis tidak punya hasil skor; tampilannya harus membedakan itu dari kegagalan memuat data.
 > - **Penilaiannya masih tiruan** di `features/chapter/data/sources/remote/chapter-scoring.mock.ts`, dan **deterministik** — skor diturunkan dari isi konten, bukan diacak. Penilai acak akan membuat janji "skor checkpoint tidak berubah kecuali di-run ulang" jadi bohong, karena menjalankan ulang pada `konten_snapshot` yang sama persis akan memberi angka berbeda.
+
+> **Catatan — tab Rubrik dihapus dari produk.** Ditulis sesudah kedua catatan di atas, dan menggantikan hasilnya, bukan pasal §9.1–§9.3 yang tetap dibiarkan utuh sebagai catatan keputusan.
+>
+> **Yang pergi:** tab Rubrik di sidebar kanan beserta tombol "Jalankan Simulasi", seluruh penulisan `HASIL_SKOR_KRITERIA` dari frontend (`chapter-score.entity.ts`, repository, dan sumber lokalnya dihapus), dan item **"Lihat skor"** di menu tab Draft — satu-satunya alasan item itu ada adalah membuka tab ini dengan checkpoint terpilih, jadi ia ikut pergi bersama tujuannya. Sidebar kanan kini lima tab: **Draft | Generasi | Rujukan | Kualitas AI | Review**.
+>
+> **Yang tinggal:** `RUBRIK_KRITERIA` beserta deskripsi tiap level skor tetap jadi master data di `rubric-criterion.entity.ts` — pembacanya sekarang Penilaian AMI. Mesin penilainya juga tetap di `chapter-scoring.mock.ts` dan tetap deterministik; hanya pembungkus `scoreChapterContent()` yang dibuang, sedangkan `nilaiKriteria()` dipanggil `assessment-run.mock.ts`. Skor final AMI **per bab** tetap terlihat dari dalam editor lewat pita di **tab Review** (`assessment-bab-banner.tsx`), murni baca, dengan tautan ke halaman Penilaian AMI.
+>
+> **Kenapa:** dua angka resmi untuk bab yang sama, dan tidak ada cara menjelaskan selisihnya. Simulasi di editor memakai indikator dan mesin skor yang sama dengan Penilaian AMI, tapi menilai satu bab atas isinya saat itu, sementara yang masuk dokumen akreditasi adalah hasil AMI beserta koreksi Penjamin Mutu. Penyusun bisa mengejar angka simulasinya sampai penuh dan tetap mendapati penilaian resmi bab yang sama menyebut angka lain — sesuatu yang pita di §9 sendiri sudah dipasang untuk menambal. Menyisakan satu angka yang benar-benar berlaku lebih jujur daripada menerangkan dua.
+>
+> Catatan di atas (`§8.1`, `§9`) sengaja **tidak** disunting: keduanya mencatat keputusan yang memang pernah diambil, dan menulis ulangnya akan menghapus jejak kenapa fitur ini pernah ada.
 
 ---
 
@@ -886,6 +896,8 @@ Kedua lapis ini **independen** dan bisa aktif bersamaan (misal bab sedang di-loc
 | Ulangi ekstraksi bukti dukung yang gagal       | ❌              | ✅              | ✅              | ✅ (prodinya)              |
 
 _\* Admin hanya bisa membuat user, belum tentu punya kemampuan assign ke prodi — perlu dikonfirmasi ulang bila ada kebutuhan lanjutan._
+
+> **Catatan desain — baris "Jalankan simulasi skor (Rubrik)" tidak berlaku lagi.** Tab Rubrik dihapus dari produk (§9), jadi tidak ada lagi aksi yang diatur baris itu. Barisnya sengaja dibiarkan alih-alih dihapus, sama seperti §9.1–§9.3 yang tetap utuh. Penggantinya baris **"Jalankan Penilaian AMI"** dengan pembagian yang sama persis (`PENJAMIN_MUTU` dan `PENYUSUN` menjalankan, `PIMPINAN` read-only) ditambah satu hak yang tidak pernah ada di simulasi: **mengoreksi skor mesin**, yang hanya dipegang `PENJAMIN_MUTU` — menjalankan penilaian itu memeriksa pekerjaan sendiri, sedangkan mengubah angkanya menyatakan vonis. Penilaian AMI sendiri belum punya pasalnya di berkas ini (lihat catatan §9).
 
 > **Catatan desain — dua baris bukti dukung yang ditetapkan menyusul.** Baris "Hapus bukti dukung" dan "Ulangi ekstraksi" tidak ada di matriks awal. PRD hanya menyebut penghapusan dilakukan "pengguna berwenang" tanpa merinci siapa. Keputusannya: `PIMPINAN`/`PENJAMIN_MUTU` boleh menghapus apa pun di cakupannya karena keduanya memang beroperasi di level tenant, sedangkan `PENYUSUN` dibatasi pada unggahannya sendiri — cukup untuk membereskan salah unggah, tanpa memberinya kuasa menghapus bukti yang dipakai prodi secara keseluruhan. Mengulang ekstraksi tidak menghapus apa pun dan tidak mengubah isi berkas, jadi haknya disamakan dengan hak unggah di lapis bersangkutan.
 

@@ -10,7 +10,6 @@ import { ChapterGenerationPanel } from './chapter-generation-panel';
 import { ChapterQualityPanel } from './chapter-quality-panel';
 import { ChapterReferencePanel } from './chapter-reference-panel';
 import { ChapterReviewPanel } from './chapter-review-panel';
-import { ChapterRubricPanel } from './chapter-rubric-panel';
 
 /**
  * Tab sidebar kanan Editor Bab.
@@ -20,10 +19,12 @@ import { ChapterRubricPanel } from './chapter-rubric-panel';
  * supaya seluruh label berbahasa Indonesia, dan "Draft" naik ke urutan kedua
  * karena ia pasangan langsung dari hasil generate.
  *
- * **"Skor" tampil sebagai "Kualitas AI".** Nama lamanya tertukar rasanya dengan
- * "Rubrik" — justru tab itu yang menampilkan skor 1–4 beserta totalnya, sedangkan
- * tab ini mengukur mutu kerja AI-nya (§10.1). `value`-nya tetap `'skor'` karena ia
- * dipakai sebagai kunci di beberapa tempat dan tidak pernah dilihat pengguna.
+ * **"Skor" tampil sebagai "Kualitas AI".** Nama lamanya menyatakan terlalu
+ * banyak: yang diukur tab ini mutu kerja AI-nya, bukan kelayakan isi bab
+ * terhadap kriteria akreditasi (§10.1) — dan kelayakan itulah yang orang duga
+ * saat membaca "Skor" di dokumen akreditasi. Yang menjawabnya kini Penilaian
+ * AMI, di luar editor. `value`-nya tetap `'skor'` karena ia dipakai sebagai
+ * kunci di beberapa tempat dan tidak pernah dilihat pengguna.
  *
  * Satu-satunya sumber urutan dan label, dipakai bersama oleh daftar tab di baris
  * toolbar dan panel-panel di sidebar kanan.
@@ -32,7 +33,6 @@ export const PANEL_TABS = [
 	{ value: 'draft', label: 'Draft' },
 	{ value: 'generasi', label: 'Generasi' },
 	{ value: 'rujukan', label: 'Rujukan' },
-	{ value: 'rubrik', label: 'Rubrik' },
 	{ value: 'skor', label: 'Kualitas AI' },
 	// Ditaruh paling akhir: ia bukan alat menyusun melainkan keadaan bab, dan
 	// ditengok sesudah pekerjaannya — bukan sambil mengerjakan.
@@ -49,9 +49,6 @@ export function ChapterEditorPanels({
 	ambilSnapshot,
 	onRestored,
 	onReviewed,
-	onLihatSkor,
-	lingkupSkor,
-	setLingkupSkor,
 	savedAt,
 	lebar,
 	handleProps,
@@ -64,13 +61,6 @@ export function ChapterEditorPanels({
 	onRestored: (hasil: HasilPulih) => void;
 	/** Bab sesudah kunci/catatan review ditulis; isinya tidak ikut berubah. */
 	onReviewed: (diperbarui: ChapterEntity) => void;
-	onLihatSkor: (draftId: string) => void;
-	/**
-	 * Lingkup tab Rubrik, dipegang halaman editor supaya menu "Lihat skor" di tab
-	 * Draft bisa mengarahkannya sekaligus berpindah tab (§8.1).
-	 */
-	lingkupSkor: string;
-	setLingkupSkor: (lingkup: string) => void;
 	/** Stempel simpan terakhir dari autosave; dipakai tab Kualitas AI. */
 	savedAt: string | null;
 	/** Lebar hasil seretan; menggantikan `w-80` yang dulu tetap. */
@@ -98,7 +88,6 @@ export function ChapterEditorPanels({
 					izin={izin}
 					ambilSnapshot={ambilSnapshot}
 					onRestored={onRestored}
-					onLihatSkor={onLihatSkor}
 				/>
 			</TabsContent>
 
@@ -121,18 +110,6 @@ export function ChapterEditorPanels({
 				<ChapterReferencePanel
 					chapter={chapter}
 					studyProgramId={studyProgramId}
-				/>
-			</TabsContent>
-
-			<TabsContent
-				value="rubrik"
-				className="flex min-h-0 flex-1 flex-col overflow-hidden"
-			>
-				<ChapterRubricPanel
-					chapter={chapter}
-					izin={izin}
-					lingkup={lingkupSkor}
-					setLingkup={setLingkupSkor}
 				/>
 			</TabsContent>
 

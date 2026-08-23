@@ -440,7 +440,9 @@ Ini adalah bagian dari "arsip" satu checkpoint — memungkinkan user melihat kem
 `RUBRIK_KRITERIA` adalah **master data global** yang berisi daftar kriteria penilaian resmi LAM Teknik. Karena seluruh tenant memakai skema akreditasi yang sama (fokus LAM Teknik), tabel ini tidak terikat ke tenant mana pun — diisi sekali (di-*seed* saat development) dan dipakai bersama oleh semua universitas.
 
 ### Konteks pengguna
-User (Penjamin Mutu atau Penyusun) tidak mengelola tabel ini langsung — mereka hanya melihat hasilnya lewat fitur "Simulasi Skor" di editor bab. Daftar kriteria di sini yang menentukan berapa banyak butir penilaian akan muncul saat simulasi dijalankan untuk suatu bab.
+User (Penjamin Mutu atau Penyusun) tidak mengelola tabel ini langsung — mereka hanya melihat hasilnya lewat penilaian yang dijalankan atas dokumennya. Daftar kriteria di sini yang menentukan berapa banyak butir penilaian akan muncul.
+
+> **Catatan — pembacanya kini Penilaian AMI.** Kalimat di atas semula menyebut fitur "Simulasi Skor" di editor bab; tab itu sudah dihapus (`docs/application_flow.md §9`). Tabelnya sendiri tidak berubah sedikit pun dan justru makin sentral: Penilaian AMI menilai satu Dokumen LED terhadap **seluruh** kriteria di sini, dan Editor Bab menyaringnya lewat `RUBRIK_KRITERIA_BAB` hanya untuk menampilkan skor AMI bab yang sedang ditulis (tab Review, murni baca).
 
 ### Kolom
 
@@ -453,7 +455,7 @@ User (Penjamin Mutu atau Penyusun) tidak mengelola tabel ini langsung — mereka
 
 > **Celah yang ditemukan saat tab Rubrik dibangun — `level_skor` belum ada.**
 >
-> `docs/application_flow.md §9.1` menuntut tab Rubrik menampilkan tiap kriteria "**dengan deskripsi tiap level skor**", tapi tabel di atas tidak punya tempat untuk menyimpannya: yang ada hanya bunyi kriteria dan angka tertingginya. Tanpa data itu, penyusun cuma melihat "3 dari 4" tanpa tahu apa yang membedakan skor 3 dari skor 4 — padahal justru itu gunanya rubrik.
+> `docs/application_flow.md §9.1` menuntut tiap kriteria ditampilkan "**dengan deskripsi tiap level skor**", tapi tabel di atas tidak punya tempat untuk menyimpannya: yang ada hanya bunyi kriteria dan angka tertingginya. Tanpa data itu, penyusun cuma melihat "3 dari 4" tanpa tahu apa yang membedakan skor 3 dari skor 4 — padahal justru itu gunanya rubrik. Tab Rubrik-nya sendiri sudah dihapus, tapi celah ini **tetap berlaku**: Penilaian AMI menampilkan level skor yang sama di rincian tiap indikator, dan yang menuntutnya sekarang fitur itu.
 >
 > Implementasinya menambahkan **`level_skor`**, satu baris per level: `{ skor: int, deskripsi: text }`. Di kode ia jadi larik pada `RubricCriterion` (`features/chapter/domain/entities/rubric-criterion.entity.ts`); saat pindah ke basis data ia wajar jadi tabel `RUBRIK_LEVEL` tersendiri (`kriteria_id`, `skor`, `deskripsi`), sejajar dengan pemecahan `PANDUAN_REFERENSI` → `PANDUAN_DETAIL`.
 >
@@ -536,6 +538,8 @@ Tabel ini murni infrastruktur di balik layar — menentukan kriteria mana saja y
 
 ### Konteks pengguna
 Inilah yang benar-benar ditampilkan ke user di halaman editor bab: breakdown skor per kriteria beserta total (dihitung *on-the-fly* dengan menjumlah baris-baris terkait, tidak disimpan sebagai field agregat terpisah). Hanya `PENJAMIN_MUTU` dan `PENYUSUN` yang bisa menjalankan simulasi; `PIMPINAN` hanya bisa melihat hasilnya (read-only).
+
+> **Catatan — frontend tidak lagi menulis tabel ini.** Tab Rubrik yang mengisinya sudah dihapus (`docs/application_flow.md §9`), berikut seluruh lapis datanya di frontend. Tabelnya tetap tinggal di `packages/db/prisma/schema.prisma` dan pasal ini tetap berlaku sebagai rancangan, tapi bentuk yang hidup sekarang adalah hasil **Penilaian AMI** — satu baris per indikator per sesi penilaian, menempel ke `DokumenLed` dan bukan ke bab atau checkpoint. Selisih bentuk itu belum diselaraskan; lihat "Catatan Integrasi" di kaki berkas ini.
 
 ### Kolom
 

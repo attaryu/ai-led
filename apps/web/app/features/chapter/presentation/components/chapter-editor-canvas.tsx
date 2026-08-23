@@ -9,7 +9,7 @@ import {
 
 /**
  * Ikon dan kalimat lanjutan tiap alasan; frasa pembukanya dari `frasaBlokir`
- * supaya spanduk ini dan kaki tab Draft/Generasi/Rubrik menyebut sebab yang sama
+ * supaya spanduk ini dan kaki tab Draft/Generasi menyebut sebab yang sama
  * persis. `Record` menjadikan alasan baru compile error, bukan kalimat keliru.
  */
 const spandukBlokir: Record<AlasanBlokir, { icon: Icon; lanjutan: string }> = {

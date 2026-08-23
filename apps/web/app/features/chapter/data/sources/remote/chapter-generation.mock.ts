@@ -73,15 +73,14 @@ function sidikJari(teks: string): number {
 /**
  * Metrik RAGAS tiruan.
  *
- * **Deterministik**, sama seperti simulasi rubrik dan dengan alasan yang sama:
- * skor ini ikut disalin ke checkpoint yang isinya permanen, jadi nilai acak akan
- * membuat arsip yang sama dibaca berbeda tiap kali.
+ * **Deterministik**, sama seperti mesin skor indikator dan dengan alasan yang
+ * sama: skor ini ikut disalin ke checkpoint yang isinya permanen, jadi nilai
+ * acak akan membuat arsip yang sama dibaca berbeda tiap kali.
  *
  * `alasan` tiap metrik menyebut kondisi nyata generate ini — berapa potongan
  * sumber yang dipakai, apakah hasilnya mengutip nama berkas — **bukan** mengulang
  * definisi metriknya. Definisi hidup di `RAGAS_METRIK_INFO`, dan menuliskannya
- * dua kali membuat bagian "alasan" tidak menambah apa pun, kesalahan yang sudah
- * terjadi sekali di tab Rubrik.
+ * dua kali membuat bagian "alasan" tidak menambah apa pun.
  */
 function hitungRagas(
 	html: string,

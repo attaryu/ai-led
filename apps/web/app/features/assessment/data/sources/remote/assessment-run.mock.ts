@@ -20,10 +20,10 @@ import { type RubricScoreType } from '~/features/chapter/domain/entities/rubric-
  * yang berjalan serempak tidak terlihat dari sisi ini sama sekali.
  *
  * **Mesin skornya bukan milik berkas ini.** Ia memanggil `nilaiKriteria()` dari
- * mock skor bab — alasannya ditulis di sana: tab Rubrik dan Penilaian AMI
- * menjawab pertanyaan yang sama atas tulisan yang sama, jadi dua penilai
- * terpisah hanya akan menghasilkan dua angka yang selisihnya tidak bisa
- * dijelaskan kepada siapa pun.
+ * `chapter-scoring.mock.ts`, tempat master indikator yang dinilainya juga
+ * tinggal. Penilai yang disalin ke sini akan menyimpang dari daftar kriterianya
+ * cepat atau lambat, dan selisih angkanya tidak akan bisa dijelaskan kepada
+ * siapa pun.
  */
 
 /** Jeda per indikator. Cukup untuk melihat progres bergerak, cukup pendek untuk dites. */

@@ -8,7 +8,6 @@ import {
 } from '../../domain/entities/chapter.entity';
 import { chapterLocalSource } from '../sources/local/chapter-local.source';
 import { chapterDraftRepository } from './chapter-draft.repository';
-import { chapterScoreRepository } from './chapter-score.repository';
 
 /**
  * Struktur bab standar LED LAM-Teknik, dipakai sebagai cetakan setiap kali
@@ -580,15 +579,10 @@ export const chapterRepository = {
 			(chapter) => chapter.ledProjectId === ledProjectId,
 		);
 
-		// Checkpoint dan hasil skor menempel ke bab, bukan ke dokumen, jadi keduanya
-		// tidak ikut terbawa oleh penyaringan di bawah dan harus dibersihkan
-		// sendiri.
+		// Checkpoint menempel ke bab, bukan ke dokumen, jadi ia tidak ikut terbawa
+		// oleh penyaringan di bawah dan harus dibersihkan sendiri.
 		const babIds = dibuang.map((chapter) => chapter.id);
-		const draftIds = babIds.flatMap((babId) =>
-			chapterDraftRepository.findByChapterId(babId).map((draft) => draft.id),
-		);
 
-		chapterScoreRepository.deleteByTargets(babIds, draftIds);
 		chapterDraftRepository.deleteByChapterIds(babIds);
 
 		this.save(all.filter((chapter) => chapter.ledProjectId !== ledProjectId));

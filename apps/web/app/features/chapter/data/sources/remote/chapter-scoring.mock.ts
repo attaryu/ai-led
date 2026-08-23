@@ -1,5 +1,5 @@
 /**
- * Tiruan sisi jaringan untuk simulasi skor rubrik
+ * Mesin penilai tiruan untuk indikator LAM Teknik
  * (docs/application_flow.md §9, docs/architecture.md §"RAG Pipeline").
  *
  * Ini **satu-satunya berkas yang perlu diganti** saat backend siap, mengikuti
@@ -8,27 +8,14 @@
  * dengan AI; yang tidak ditiru di sini sifat asinkronnya — yang asli mengantre
  * lewat Redis stream lalu di-poll.
  *
- * **Mesin penilainya dipakai bersama Penilaian AMI.** Tab Rubrik menilai satu bab
- * terhadap indikator miliknya, Penilaian AMI menilai satu Dokumen LED terhadap
- * seluruh indikator — tapi keduanya menjawab pertanyaan yang sama persis, dengan
- * skala yang sama, atas tulisan yang sama. Dua penilai terpisah akan memberi dua
- * angka berbeda untuk bab yang sama, dan tidak akan ada cara menjelaskan
- * selisihnya kepada siapa pun. Karena itu {@link nilaiKriteria} di bawah
- * diekspor, dan `assessment-run.mock.ts` memanggilnya alih-alih menyalinnya.
+ * **Letaknya di `chapter/`, pemakainya Penilaian AMI.** Dulu berkas ini melayani
+ * simulasi skor di tab Rubrik Editor Bab; tab itu sudah dihapus, dan yang
+ * tersisa memanggilnya adalah `assessment-run.mock.ts` beserta
+ * `assessment-eval.mock.ts`. Ia tetap tinggal di sini karena fitur `chapter`
+ * yang memiliki domain rubriknya — `rubric-criterion.entity.ts`, master
+ * indikator yang dibaca kedua fitur — dan memindahkannya hanya akan memisahkan
+ * mesin skor dari daftar kriteria yang dinilainya.
  */
-
-/** Cukup lama untuk memperlihatkan keadaan memuat, cukup pendek untuk dites. */
-export const SCORING_DELAY_MS = 2400;
-
-export type ScoreChapterInput = {
-	/** HTML `kontenKerja` atau `kontenSnapshot` yang dinilai. */
-	konten: string;
-	kriteria: { id: string; kodeKriteria: string; skorMaksimal: number }[];
-};
-
-export type ScoreChapterResult = {
-	hasil: { kriteriaId: string; skorDidapat: number; justifikasi: string }[];
-};
 
 export function delay(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
@@ -146,27 +133,5 @@ export function nilaiKriteria(
 		justifikasi: justifikasi(skorDidapat, jumlahKata, menyebutBukti),
 		jumlahKata,
 		menyebutBukti,
-	};
-}
-
-export async function scoreChapterContent(
-	input: ScoreChapterInput,
-): Promise<ScoreChapterResult> {
-	await delay(SCORING_DELAY_MS);
-
-	return {
-		hasil: input.kriteria.map((kriteria) => {
-			const dinilai = nilaiKriteria(
-				input.konten,
-				kriteria.kodeKriteria,
-				kriteria.skorMaksimal,
-			);
-
-			return {
-				kriteriaId: kriteria.id,
-				skorDidapat: dinilai.skorDidapat,
-				justifikasi: dinilai.justifikasi,
-			};
-		}),
 	};
 }

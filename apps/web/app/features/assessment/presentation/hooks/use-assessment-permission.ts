@@ -16,8 +16,8 @@ import { useSession } from '~/features/auth/presentation/hooks/use-session';
  * | Penyusun (prodinya) | ya | ya | — |
  *
  * **Penyusun boleh menjalankan, tidak boleh mengoreksi.** Menjalankan penilaian
- * itu memeriksa pekerjaan sendiri — hal yang sama yang sudah ia lakukan lewat tab
- * Rubrik, hanya untuk seluruh dokumen sekaligus. Mengubah angkanya lain perkara:
+ * itu memeriksa pekerjaan sendiri, dan tidak mengubah apa pun selain angka yang
+ * dihitung mesin atas tulisannya. Mengubah angkanya lain perkara:
  * itu menyatakan vonis yang menggantikan hitungan mesin, dan sejalan dengan
  * `canReview` §12.2 hanya Penjamin Mutu yang memegangnya.
  *

@@ -74,9 +74,8 @@ export function persenProgres(sesi: AssessmentSessionEntity): number {
  * Mutu yang berlaku atasnya.
  *
  * `skorFinal` **diturunkan, tidak disimpan** — hasil mesin ditimpa keputusan.
- * Alasannya sama dengan yang sudah ditulis `ringkasSkor()` untuk skor bab: kolom
- * agregat yang bisa dihitung dari fakta yang ada akan jadi kebenaran kedua yang
- * bisa menyimpang, dan di sini menyimpangnya berarti dokumen resmi menyebut
+ * Kolom agregat yang bisa dihitung dari fakta yang ada akan jadi kebenaran kedua
+ * yang bisa menyimpang, dan di sini menyimpangnya berarti dokumen resmi menyebut
  * angka yang tidak sama dengan yang dilihat orang di layar.
  *
  * **`statusTinjau` dan `perluDiperiksa` dua hal berbeda, dan penamaannya sengaja
@@ -226,7 +225,6 @@ export type RingkasanPenilaian = {
  * Bedanya terasa saat matriks bertambah setelah penilaian terakhir dijalankan:
  * memakai seluruh indikator akan membuat rata-ratanya ikut turun sendiri padahal
  * dokumennya tidak berubah — angka yang bergerak tanpa ada yang menggerakkannya.
- * Aturan ini sengaja sama dengan `ringkasSkor()` di fitur chapter.
  */
 export function ringkasPenilaian(
 	baris: PenilaianFinalRow[],

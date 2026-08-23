@@ -16,8 +16,9 @@ import { useChapterQuality } from '../hooks/use-chapter-quality';
  * Isi tab "Kualitas AI" — metrik RAGAS untuk hasil generate
  * (docs/application_flow.md §10).
  *
- * Tabnya semula bernama "Skor", dan itu tertukar rasanya: "Rubrik" justru yang
- * menampilkan skor 1–4 beserta totalnya. Nama barunya menyebut apa yang diukur.
+ * Tabnya semula bernama "Skor", dan itu menyatakan terlalu banyak: di dokumen
+ * akreditasi "skor" berarti kelayakan isi terhadap kriteria, bukan mutu kerja
+ * AI. Nama barunya menyebut apa yang benar-benar diukur.
  *
  * **Nol tombol.** §10.1 dan §12.1 menyatakan skor ini dihitung otomatis begitu
  * generate selesai, tanpa pemicu manual — yang mengisinya tab Generasi, dan tab
@@ -132,14 +133,16 @@ export function ChapterQualityPanel({
 				)}
 
 				{/*
-				 * §10.1: tab ini menilai kualitas jawaban AI, bukan kelayakan akreditasi
-				 * — itulah yang membedakannya dari tab Rubrik. Pembacanya berhak tahu
-				 * tanpa harus membuka dokumentasi, apalagi karena dua tab bersebelahan
-				 * sama-sama menampilkan angka.
+				 * §10.1: tab ini menilai kualitas jawaban AI, bukan kelayakan
+				 * akreditasi. Pembacanya berhak tahu tanpa harus membuka dokumentasi —
+				 * angka di dokumen akreditasi hampir selalu dibaca sebagai kelayakan,
+				 * dan yang menjawab itu Penilaian AMI di luar editor. Skor finalnya
+				 * untuk bab ini ada di tab Review.
 				 */}
 				<p className="text-xs leading-relaxed text-muted-foreground">
 					Metrik ini mengukur mutu kerja AI-nya, bukan kelayakan bab terhadap
-					kriteria akreditasi — itu ada di tab Rubrik.
+					kriteria akreditasi — itu ada di Penilaian AMI, dan skor final bab ini
+					ditampilkan di tab Review.
 				</p>
 			</div>
 		</div>
