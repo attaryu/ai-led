@@ -20,7 +20,6 @@ import { type LedProjectEntity } from '~/features/led-project/domain/entities/le
 import { type PenilaianFinalRow } from '../../domain/entities/assessment-session.entity';
 import { AssessmentDetailSheet } from '../components/assessment-detail-sheet';
 import { AssessmentHistoryList } from '../components/assessment-history-list';
-import { AssessmentMatrixView } from '../components/assessment-matrix-view';
 import { AssessmentQualityPanel } from '../components/assessment-quality-panel';
 import { AssessmentResultList } from '../components/assessment-result-list';
 import { AssessmentRunPanel } from '../components/assessment-run-panel';
@@ -32,7 +31,7 @@ import { useAssessmentResults } from '../hooks/use-assessment-results';
 import { useAssessmentSession } from '../hooks/use-assessment-session';
 import { formatSkor } from '../utils/assessment-format';
 
-const TAB_VALID = ['penilaian', 'matriks', 'kualitas', 'riwayat'] as const;
+const TAB_VALID = ['penilaian', 'kualitas', 'riwayat'] as const;
 type TabValue = (typeof TAB_VALID)[number];
 
 /**
@@ -42,7 +41,7 @@ type TabValue = (typeof TAB_VALID)[number];
  * adalah foreign key ke `DokumenLed`, jadi lingkupnya sudah tertulis di bentuk
  * datanya: bukan per prodi (Dashboard Prodi), bukan pula per bab (Editor Bab).
  *
- * Empat tab, bukan empat menu sidebar seperti prototipe. Keempatnya menjawab
+ * Tiga tab, bukan tiga menu sidebar seperti prototipe. Ketiganya menjawab
  * pertanyaan tentang **dokumen yang sama**, dan menaikkannya jadi menu sederajat
  * akan menyatakan bahwa masing-masing berdiri sendiri — padahal Riwayat tanpa
  * konteks dokumen tidak berarti apa pun, dan Kualitas Penilaian selalu tentang
@@ -233,7 +232,6 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 			>
 				<TabsList variant="line">
 					<TabsTrigger value="penilaian">Penilaian</TabsTrigger>
-					<TabsTrigger value="matriks">Matriks</TabsTrigger>
 					<TabsTrigger value="kualitas">Kualitas Penilaian</TabsTrigger>
 					<TabsTrigger value="riwayat">Riwayat</TabsTrigger>
 				</TabsList>
@@ -276,10 +274,6 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 						onBuka={(row) => setIndikatorDibuka(row.kriteria.no)}
 						onDaftarTampilBerubah={setUrutanTampil}
 					/>
-				</TabsContent>
-
-				<TabsContent value="matriks" className="pt-2">
-					<AssessmentMatrixView />
 				</TabsContent>
 
 				<TabsContent value="kualitas" className="pt-2">
