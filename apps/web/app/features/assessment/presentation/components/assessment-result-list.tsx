@@ -17,7 +17,7 @@ import { AssessmentResultRow } from './assessment-result-row';
  * Penyaring daftar — status peninjauan plus satu penanda risiko.
  *
  * `perlu-diperiksa` sengaja berdiri sejajar dengan ketiga status walau jenisnya
- * berbeda (dugaan mesin, bukan fakta pekerjaan): keduanya sama-sama menjawab
+ * berbeda (dugaan AI, bukan fakta pekerjaan): keduanya sama-sama menjawab
  * "tunjukkan yang mana saja", dan memisahkannya jadi dua deret kontrol hanya
  * menambah yang harus dipelajari.
  */

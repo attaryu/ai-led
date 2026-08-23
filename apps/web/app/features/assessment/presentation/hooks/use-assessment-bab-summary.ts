@@ -25,7 +25,7 @@ export type AssessmentBabSummary = {
  * tanpa ada cara menjelaskan selisihnya.
  *
  * Yang ditampilkan **skor final** — sudah termasuk koreksi Penjamin Mutu.
- * Itulah yang berlaku, dan menampilkan skor mesin di editor sementara dokumen
+ * Itulah yang berlaku, dan menampilkan skor AI di editor sementara dokumen
  * resmi menyebut angka lain akan membuat penyusun mengejar target yang salah.
  *
  * `null` bila dokumennya belum pernah dinilai atau bab ini memang tidak dinilai

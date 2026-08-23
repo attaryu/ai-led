@@ -17,8 +17,8 @@ import { useSession } from '~/features/auth/presentation/hooks/use-session';
  *
  * **Penyusun boleh menjalankan, tidak boleh mengoreksi.** Menjalankan penilaian
  * itu memeriksa pekerjaan sendiri, dan tidak mengubah apa pun selain angka yang
- * dihitung mesin atas tulisannya. Mengubah angkanya lain perkara:
- * itu menyatakan vonis yang menggantikan hitungan mesin, dan sejalan dengan
+ * dihitung AI atas tulisannya. Mengubah angkanya lain perkara:
+ * itu menyatakan vonis yang menggantikan hitungan AI, dan sejalan dengan
  * `canReview` §12.2 hanya Penjamin Mutu yang memegangnya.
  *
  * **Pimpinan memantau, tidak menyusun** (§15) — cakupannya seluas Penjamin Mutu,

@@ -31,7 +31,7 @@ import { type StatusEvaluasi } from '../hooks/use-assessment-quality';
  * dijawabnya — "seberapa bisa saya percaya angka-angka ini?" — adalah pertanyaan
  * Penjamin Mutu, bukan hanya pertanyaan tim RAG. Yang membuatnya begitu adalah
  * metrik kelengkapan pencarian: ia satu-satunya cara membedakan "dokumen saya
- * memang kurang" dari "mesinnya tidak menemukan tulisan saya", dan tanpa itu
+ * memang kurang" dari "AI-nya tidak menemukan tulisan saya", dan tanpa itu
  * satu-satunya jalan adalah membaca ulang seluruh LED.
  *
  * Bahasanya mengikuti tab "Kualitas AI" di editor, sampai ke komponen kartunya
@@ -142,7 +142,7 @@ export function AssessmentQualityPanel({
 					<CardDescription>
 						Indikator yang kelengkapan pencariannya di bawah{' '}
 						{RECALL_PERLU_DIPERIKSA.toFixed(2)} — skornya bisa lebih rendah dari
-						yang seharusnya karena ada tulisan yang tidak ditemukan mesin.
+						yang seharusnya karena ada tulisan yang tidak ditemukan penilai AI.
 					</CardDescription>
 				</CardHeader>
 
@@ -183,10 +183,10 @@ export function AssessmentQualityPanel({
 			{/*
 			 * Sejajar kalimat penutup tab "Kualitas AI": dua permukaan bersebelahan
 			 * sama-sama menampilkan angka, dan pembacanya berhak tahu bahwa yang satu
-			 * mengukur mesinnya sementara yang lain mengukur dokumennya.
+			 * mengukur AI-nya sementara yang lain mengukur dokumennya.
 			 */}
 			<p className="text-xs leading-relaxed text-muted-foreground">
-				Metrik ini mengukur mutu kerja mesin penilainya, bukan kelayakan dokumen
+				Metrik ini mengukur mutu kerja penilai AI-nya, bukan kelayakan dokumen
 				terhadap kriteria akreditasi — itu ada di tab Penilaian.
 			</p>
 		</div>

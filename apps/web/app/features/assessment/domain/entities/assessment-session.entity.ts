@@ -70,22 +70,22 @@ export function persenProgres(sesi: AssessmentSessionEntity): number {
 }
 
 /**
- * Satu baris penilaian final: hasil mesin, indikatornya, dan keputusan Penjamin
+ * Satu baris penilaian final: hasil AI, indikatornya, dan keputusan Penjamin
  * Mutu yang berlaku atasnya.
  *
- * `skorFinal` **diturunkan, tidak disimpan** — hasil mesin ditimpa keputusan.
+ * `skorFinal` **diturunkan, tidak disimpan** — hasil AI ditimpa keputusan.
  * Kolom agregat yang bisa dihitung dari fakta yang ada akan jadi kebenaran kedua
  * yang bisa menyimpang, dan di sini menyimpangnya berarti dokumen resmi menyebut
  * angka yang tidak sama dengan yang dilihat orang di layar.
  *
  * **`statusTinjau` dan `perluDiperiksa` dua hal berbeda, dan penamaannya sengaja
  * dijauhkan.** Yang pertama fakta tentang pekerjaan manusia (sudah dilihat atau
- * belum); yang kedua dugaan mesin tentang angkanya (patut dicurigai atau tidak).
+ * belum); yang kedua dugaan AI tentang angkanya (patut dicurigai atau tidak).
  * Versi pertama berkas ini menamai keduanya "perlu ditinjau" dan keduanya jadi
  * tidak bisa dibedakan di layar.
  *
  * Keduanya tetap tidak sepenuhnya lepas: persetujuan manusia **mematikan** dugaan
- * mesin, karena yang menyetujui sudah membaca angka beserta alasannya. Lihat
+ * AI, karena yang menyetujui sudah membaca angka beserta alasannya. Lihat
  * {@link PenilaianFinalRow.perluDiperiksa}.
  */
 export type PenilaianFinalRow = {
@@ -95,18 +95,18 @@ export type PenilaianFinalRow = {
 	/** `undefined` bila belum pernah ditinjau. */
 	keputusan: AssessmentVerdictEntity | undefined;
 	statusTinjau: StatusTinjau;
-	/** Penjamin Mutu mengubah angkanya, bukan sekadar menyetujui hitungan mesin. */
+	/** Penjamin Mutu mengubah angkanya, bukan sekadar menyetujui hitungan AI. */
 	mengubahSkor: boolean;
 	/**
-	 * Yang berlaku: skor keputusan bila ada, selain itu skor mesin.
+	 * Yang berlaku: skor keputusan bila ada, selain itu skor AI.
 	 *
 	 * **Tetap angka Penjamin Mutu walau statusnya `TINJAU_ULANG`.** Keputusan
 	 * manusia tidak dicabut diam-diam oleh penilaian ulang — kalau ia berbalik ke
-	 * angka mesin sendiri, rata-rata dokumen akan bergeser tanpa ada seorang pun
+	 * angka AI sendiri, rata-rata dokumen akan bergeser tanpa ada seorang pun
 	 * yang memutuskan apa pun.
 	 */
 	skorFinal: number | null;
-	/** Skor mentah dari mesin, tetap ditampilkan berdampingan saat berbeda. */
+	/** Skor mentah dari AI, tetap ditampilkan berdampingan saat berbeda. */
 	skorMesin: number | null;
 	skorMaksimal: number;
 	/**
@@ -118,7 +118,7 @@ export type PenilaianFinalRow = {
 	 *
 	 * **Syarat "belum disetujui" itu yang membuatnya berhenti berbunyi.** Begitu
 	 * Penjamin Mutu menyetujui sebuah indikator, ia sudah melihat angkanya beserta
-	 * alasan mesinnya dan menyatakan itu yang berlaku — saran mesin untuk memeriksa
+	 * alasan AI-nya dan menyatakan itu yang berlaku — saran AI untuk memeriksa
 	 * lagi tidak menambah apa pun, dan dua penanda yang bertentangan di satu baris
 	 * ("Disetujui" bersama "Perlu diperiksa") justru membuat pembaca ragu mana yang
 	 * harus dipercaya.
@@ -130,7 +130,7 @@ export type PenilaianFinalRow = {
 };
 
 /**
- * Menggabungkan hasil mesin, keputusan, dan master indikator jadi tabel
+ * Menggabungkan hasil AI, keputusan, dan master indikator jadi tabel
  * penilaian final — terurut nomor indikator.
  *
  * Indikator yang tidak punya hasil tetap muncul dengan `skorFinal: null`, bukan
@@ -181,7 +181,7 @@ export function gabungPenilaian(input: {
 }
 
 export type RingkasanPenilaian = {
-	/** Indikator yang punya skor final (mesin atau keputusan). */
+	/** Indikator yang punya skor final (AI atau keputusan). */
 	jumlahDinilai: number;
 	total: number;
 	/** Rata-rata skor final, dua desimal. 0 bila belum ada yang dinilai. */
@@ -211,7 +211,7 @@ export type RingkasanPenilaian = {
 	 * dihitung sendiri di bawah.
 	 */
 	jumlahDikoreksi: number;
-	/** Ditinjau **dan** angkanya dibiarkan sama dengan hitungan mesin. */
+	/** Ditinjau **dan** angkanya dibiarkan sama dengan hitungan AI. */
 	jumlahDisetujuiApaAdanya: number;
 	/** 0–100, dibulatkan. Penyebutnya seluruh indikator. */
 	persenDitinjau: number;

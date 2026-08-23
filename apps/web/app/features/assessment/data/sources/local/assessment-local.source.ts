@@ -1,7 +1,7 @@
 /**
  * Tiga blob terpisah, bukan satu objek bersarang.
  *
- * Hasil mesin ditimpa tiap penilaian ulang sementara keputusan Penjamin Mutu
+ * Hasil AI ditimpa tiap penilaian ulang sementara keputusan Penjamin Mutu
  * harus bertahan melewatinya — memasukkan keduanya ke satu key membuat penulisan
  * yang satu selalu menyentuh yang lain, dan cukup satu kekeliruan penyalinan
  * untuk menghapus keputusan yang seharusnya kekal.

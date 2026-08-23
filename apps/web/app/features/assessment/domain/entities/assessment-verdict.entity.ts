@@ -8,7 +8,7 @@ import { z } from 'zod';
  *
  * **Kenapa "keputusan", bukan "koreksi".** Versi pertama entitas ini hanya
  * mencatat perubahan angka, sehingga "tidak ada baris" berarti dua hal sekaligus:
- * belum ada yang melihat indikator ini, **atau** sudah dilihat dan mesinnya
+ * belum ada yang melihat indikator ini, **atau** sudah dilihat dan AI-nya
  * dianggap benar. Untuk dokumen akreditasi, membiarkan keduanya tampak sama itu
  * cacat serius — Penjamin Mutu tidak bisa menjawab "berapa indikator yang masih
  * perlu saya periksa?", dan pembaca dokumen tidak bisa membedakan angka yang
@@ -18,7 +18,7 @@ import { z } from 'zod';
  * hasilnya di samping menyetujui.
  *
  * **Kenapa lapis tersendiri, bukan kolom di `IndicatorResult`.** Baris hasil
- * mesin kebijakannya main timpa: menjalankan penilaian ulang menggantinya. Kalau
+ * AI kebijakannya main timpa: menjalankan penilaian ulang menggantinya. Kalau
  * keputusan manusia ikut tinggal di sana, satu klik "Nilai Ulang" akan
  * menghapusnya tanpa jejak — kelas cacat yang sama dengan `checkpointAktifId`
  * yang dulu tidak dibersihkan generate, dan yang paling mahal di sini karena
@@ -34,12 +34,12 @@ import { z } from 'zod';
  * aturan arsitektur.
  *
  * Wajib untuk koreksi karena koreksi mengganti satu angka yang punya justifikasi
- * tertulis (mesin selalu menuliskannya) dengan angka yang tidak punya. Yang
+ * tertulis (AI selalu menuliskannya) dengan angka yang tidak punya. Yang
  * membaca dokumen ini berbulan-bulan kemudian tidak punya cara lain mengetahui
  * kenapa keduanya berbeda.
  *
  * **Tidak wajib saat menyetujui**, dan itu bukan kelonggaran: menyetujui berarti
- * justifikasi mesin sudah memadai — dan justifikasi itu sudah ada di layar.
+ * justifikasi AI sudah memadai — dan justifikasi itu sudah ada di layar.
  * Menuntut kalimat untuk menyatakan setuju hanya akan menghasilkan tujuh puluh
  * delapan "sudah sesuai" yang tidak menerangkan apa pun.
  */
@@ -63,11 +63,11 @@ export const assessmentVerdictSchema = z.object({
 	/** Wajib untuk koreksi, boleh kosong untuk persetujuan. */
 	catatan: catatanTinjauSchema,
 	/**
-	 * Skor mesin **saat peninjauan dilakukan**. Disimpan, bukan dibaca ulang dari
+	 * Skor AI **saat peninjauan dilakukan**. Disimpan, bukan dibaca ulang dari
 	 * sesi terakhir — inilah satu-satunya cara mengetahui bahwa penilaian ulang
 	 * sudah menggeser dasar pertimbangannya.
 	 *
-	 * `null` bila indikatornya gagal dinilai mesin saat itu.
+	 * `null` bila indikatornya gagal dinilai AI saat itu.
 	 */
 	skorMesinSaatDitinjau: z.number().nullable(),
 	/** Sesi yang jadi dasar, untuk ditunjukkan pada penanda basi. */
@@ -91,14 +91,14 @@ export type AssessmentVerdictEntity = z.infer<typeof assessmentVerdictSchema>;
  *   mengoreksi sama-sama berarti "sudah saya tangani" — yang membedakan cuma
  *   angkanya, dan yang berlaku memang sudah tertera sebagai skor barisnya. Ia
  *   tetap dihitung sebagai fakta ({@link mengubahSkor}) untuk kartu ringkasan dan
- *   penyaring, sementara rinciannya (skor mesin, catatan, atribusi) dibaca di
+ *   penyaring, sementara rinciannya (skor AI, catatan, atribusi) dibaca di
  *   laci detail.
  * - **"Disetujui · basi" adalah kontradiksi.** Disetujui atau tidak? Keadaan itu
  *   sebenarnya pekerjaan yang belum selesai, jadi ia diberi nama yang menyatakan
  *   itu: `TINJAU_ULANG`.
  *
  * `BELUM` dan `TINJAU_ULANG` bukan nilai yang tersimpan — keduanya diturunkan
- * dari ada-tidaknya baris keputusan dan dari perbandingan snapshot skor mesin.
+ * dari ada-tidaknya baris keputusan dan dari perbandingan snapshot skor AI.
  */
 export const statusTinjauEnum = z.enum(['BELUM', 'DISETUJUI', 'TINJAU_ULANG']);
 export type StatusTinjau = z.infer<typeof statusTinjauEnum>;
@@ -116,14 +116,14 @@ export const statusTinjauLabels: Record<StatusTinjau, string> = {
  * berkali-kali (status bab, skor maksimal, total skor): kolom yang bisa dihitung
  * dari fakta yang ada akan jadi kebenaran kedua yang bisa menyimpang. Di sini
  * menyimpangnya berarti sebuah baris mengaku dikoreksi padahal angkanya sama
- * persis dengan hitungan mesin.
+ * persis dengan hitungan AI.
  *
  * Konsekuensi yang menyenangkan dari menurunkannya: saat Penjamin Mutu menggeser
- * skor **kembali** ke angka mesin, keputusannya otomatis berhenti terhitung
+ * skor **kembali** ke angka AI, keputusannya otomatis berhenti terhitung
  * sebagai koreksi tanpa perlu aksi terpisah. Itu memang yang ia maksud — "saya
- * cabut koreksi saya, mesinnya benar" — dan ia tidak perlu tahu ada dua konsep.
+ * cabut koreksi saya, AI-nya benar" — dan ia tidak perlu tahu ada dua konsep.
  *
- * Indikator yang gagal dinilai mesin (`skorMesinSaatDitinjau = null`) selalu
+ * Indikator yang gagal dinilai AI (`skorMesinSaatDitinjau = null`) selalu
  * terhitung diubah: memberi angka pada yang tidak punya angka memang bukan
  * menyetujui.
  */
@@ -136,7 +136,7 @@ export function mengubahSkor(verdict: AssessmentVerdictEntity): boolean {
  *
  * **Kenapa dasar yang bergeser membatalkan status "sudah ditinjau".** Tanpa itu,
  * penilaian ulang jadi mesin pencuci persetujuan lama: seseorang menyetujui skor
- * 3, babnya disunting, penilaian dijalankan ulang dan mesin memberi 2 — dan
+ * 3, babnya disunting, penilaian dijalankan ulang dan AI memberi 2 — dan
  * dokumen tetap memajang "Disetujui · 3" seolah ada manusia yang memeriksanya,
  * padahal yang ia periksa sudah bukan angka ini.
  *
@@ -146,7 +146,7 @@ export function mengubahSkor(verdict: AssessmentVerdictEntity): boolean {
  * dengan `ragasBasi()` di fitur chapter, dan alasannya juga sama: yang dihapus
  * akan menghilangkan fakta yang benar.
  *
- * **Skor yang berlaku tetap angka Penjamin Mutu**, bukan angka mesin terbaru
+ * **Skor yang berlaku tetap angka Penjamin Mutu**, bukan angka AI terbaru
  * (lihat `gabungPenilaian`). Keputusan manusia tidak dicabut diam-diam oleh
  * penilaian ulang; ia cuma diminta ditinjau lagi.
  */

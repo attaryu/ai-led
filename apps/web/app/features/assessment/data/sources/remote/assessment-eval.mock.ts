@@ -35,7 +35,7 @@ export type RunEvalInput = {
  *
  * Rentangnya berbeda per metrik dan itu disengaja: kelengkapan pencarian
  * dibiarkan paling lebar ke bawah supaya keadaan "ada tulisan yang tidak
- * ditemukan mesin" benar-benar muncul di data contoh. Kalau semuanya
+ * ditemukan penilai AI" benar-benar muncul di data contoh. Kalau semuanya
  * dibangkitkan tinggi, daftar "patut diperiksa" akan selalu kosong dan bagian
  * paling berguna dari tab ini tidak akan pernah terlihat.
  */

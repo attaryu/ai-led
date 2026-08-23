@@ -182,7 +182,7 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 					}
 				/>
 				{/*
-				 * Menggantikan kartu "Indikator Dinilai" (cakupan mesin), yang hampir
+				 * Menggantikan kartu "Indikator Dinilai" (cakupan AI), yang hampir
 				 * selalu penuh dan karena itu jarang jadi pertanyaan. Yang benar-benar
 				 * ditanyakan Penjamin Mutu tiap hari adalah seberapa jauh **dia** sudah
 				 * memeriksa — jadi itulah yang diangkat jadi angka besar beserta barnya.
@@ -209,7 +209,7 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 					value={String(ringkasan.jumlahDikoreksi)}
 					hint={
 						ringkasan.jumlahDikoreksi === 0
-							? 'Belum ada skor mesin yang diubah'
+							? 'Belum ada skor AI yang diubah'
 							: `${ringkasan.jumlahDisetujuiApaAdanya} lainnya disetujui apa adanya`
 					}
 				/>
@@ -221,7 +221,7 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 					// angkanya kini menyusut tiap kali Penjamin Mutu menyetujui sesuatu,
 					// dan daftar pemicu tanpa syarat itu akan membuat angkanya tampak
 					// tidak cocok dengan keterangannya sendiri.
-					hint="Temuan mesin yang belum disetujui Penjamin Mutu"
+					hint="Temuan AI yang belum disetujui Penjamin Mutu"
 					tone={ringkasan.jumlahPerluDiperiksa > 0 ? 'warning' : 'default'}
 				/>
 			</div>

@@ -13,14 +13,14 @@ import { type IndicatorResultEntity } from '../../domain/entities/indicator-resu
 import { type AssessmentPermission } from './use-assessment-permission';
 
 /**
- * Tabel penilaian final untuk satu sesi: hasil mesin ditimpa keputusan Penjamin
+ * Tabel penilaian final untuk satu sesi: hasil AI ditimpa keputusan Penjamin
  * Mutu, digabung dengan master indikator.
  *
  * **Keputusan dibaca per dokumen, hasil dibaca per sesi**, dan perbedaan itu
  * disengaja — itulah yang membuat keputusan bertahan saat penilaian diulang.
  * Sesi lama yang dibuka dari Riwayat pun menampilkan keputusan yang berlaku
  * sekarang, bukan keputusan "versi waktu itu": yang ditanyakan orang saat membuka
- * sesi lama adalah bagaimana angka mesin waktu itu dibandingkan keputusan yang
+ * sesi lama adalah bagaimana angka AI waktu itu dibandingkan keputusan yang
  * berlaku, dan penanda basi yang menjelaskan selisihnya.
  */
 export function useAssessmentResults({
@@ -74,7 +74,7 @@ export function useAssessmentResults({
 	/**
 	 * Menyimpan keputusan — menyetujui maupun mengoreksi lewat satu jalur.
 	 *
-	 * Skor mesin dan sesi asalnya diambil dari baris yang sedang dilihat, bukan
+	 * Skor AI dan sesi asalnya diambil dari baris yang sedang dilihat, bukan
 	 * dari pemanggil: keduanya harus sepasang agar penanda basi bisa dipercaya.
 	 */
 	const simpanKeputusan = React.useCallback(

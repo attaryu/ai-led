@@ -19,7 +19,7 @@ import { type RubricScoreType } from '~/features/chapter/domain/entities/rubric-
  * untuk membuat panel progres dan penanganan sesi `RUNNING` benar; berapa banyak
  * yang berjalan serempak tidak terlihat dari sisi ini sama sekali.
  *
- * **Mesin skornya bukan milik berkas ini.** Ia memanggil `nilaiKriteria()` dari
+ * **Penilai AI-nya bukan milik berkas ini.** Ia memanggil `nilaiKriteria()` dari
  * `chapter-scoring.mock.ts`, tempat master indikator yang dinilainya juga
  * tinggal. Penilai yang disalin ke sini akan menyimpang dari daftar kriterianya
  * cepat atau lambat, dan selisih angkanya tidak akan bisa dijelaskan kepada
@@ -70,19 +70,30 @@ function hitungConfidence(kunci: string, tipeSkor: RubricScoreType): number {
 }
 
 /**
- * Saran perbaikan, atau `null` bila memang tidak ada yang perlu disarankan.
+ * Saran perbaikan — **selalu ada**, termasuk untuk skor penuh.
  *
- * Skor penuh sengaja **tidak** diberi rekomendasi berbunyi "pertahankan": kolom
- * yang selalu terisi berhenti menandakan apa pun, dan pembaca kehilangan cara
- * memindai mana yang benar-benar menuntut tindakan. Kolomnya kosong justru itu
- * informasinya.
+ * Versi sebelumnya mengembalikan `null` di skor penuh, dengan alasan kolom yang
+ * selalu terisi berhenti menandakan apa pun. Yang menggantikannya: pemindaian
+ * "mana yang menuntut tindakan" sudah dikerjakan skor dan penanda Perlu
+ * Diperiksa di daftar, sedangkan laci detail dibuka justru untuk **satu**
+ * indikator — dan di situ blok rekomendasi yang hilang terbaca sebagai penilaian
+ * yang belum selesai, bukan sebagai kabar baik.
+ *
+ * Kalimat skor penuhnya karena itu **bukan** "pertahankan": ia menunjuk ke
+ * siklus berikutnya, satu-satunya hal yang memang masih bisa ditindak pada
+ * indikator yang sudah penuh.
+ *
+ * Tetap `| null` di tipenya: indikator yang gagal dinilai tidak pernah sampai ke
+ * sini, dan hasil yang tersimpan sebelum perubahan ini sah berisi `null`.
  */
 function rekomendasiUntuk(
 	skor: number,
 	skorMaksimalKriteria: number,
 	tipeSkor: RubricScoreType,
 ): string | null {
-	if (skor >= skorMaksimalKriteria) return null;
+	if (skor >= skorMaksimalKriteria) {
+		return 'Sudah memenuhi tingkat tertinggi indikator ini. Jaga bukti dukungnya tetap mutakhir — data periode berikutnya yang belum diperbarui akan menurunkan skornya sendiri pada penilaian mendatang.';
+	}
 
 	if (tipeSkor === 'kuantitatif') {
 		return 'Angkanya berasal dari tabel LKPS, jadi menambah narasi tidak akan menaikkannya. Perbaiki datanya di LKPS, atau lampirkan penjelasan bila angkanya memang sudah benar.';

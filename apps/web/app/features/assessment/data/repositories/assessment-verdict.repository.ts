@@ -11,7 +11,7 @@ import { assessmentLocalSource } from '../sources/local/assessment-local.source'
  * Keputusan Penjamin Mutu — penilaian final (docs/database.md §12b: celah,
  * tabelnya belum ada).
  *
- * **Repository terpisah dari sesi, dan itu inti rancangannya.** Hasil mesin
+ * **Repository terpisah dari sesi, dan itu inti rancangannya.** Hasil AI
  * ditimpa tiap penilaian ulang; keputusan tidak boleh ikut tertimpa. Menaruh
  * keduanya di satu repository berarti setiap penulisan hasil menyentuh berkas
  * yang sama dengan keputusan, dan cukup satu penyalinan keliru untuk menghapus
@@ -27,8 +27,8 @@ export const assessmentVerdictRepository = {
 	 * menyiapkan apa pun. Itu salah, dan salahnya lebih dalam dari sekadar data
 	 * contoh yang keliru:
 	 *
-	 * - **Keputusan adalah pernyataan manusia.** Hasil mesin boleh di-seed karena
-	 *   mesinnya memang menghitungnya. Persetujuan tidak: yang di-seed itu klaim
+	 * - **Keputusan adalah pernyataan manusia.** Hasil AI boleh di-seed karena
+	 *   AI-nya memang menghitungnya. Persetujuan tidak: yang di-seed itu klaim
 	 *   bahwa seseorang bernama Ahmad Fauzi sudah memeriksa dan menyetujui sebuah
 	 *   indikator, padahal tidak ada yang pernah melakukannya. Di layar ia muncul
 	 *   sebagai "sudah disetujui" tanpa ada yang menyetujui — persis keadaan yang
@@ -38,8 +38,8 @@ export const assessmentVerdictRepository = {
 	 *   halaman dari keadaan bersih memunculkannya lagi seolah aplikasi memutuskan
 	 *   sendiri.
 	 * - **Ia bahkan tidak menghasilkan keadaan yang dijanjikannya.** Skornya
-	 *   dipatok angka tetap sementara skor mesin ikut isi bab, jadi "koreksi"
-	 *   contohnya berulang kali jatuh sama persis dengan hitungan mesin — yang
+	 *   dipatok angka tetap sementara skor AI ikut isi bab, jadi "koreksi"
+	 *   contohnya berulang kali jatuh sama persis dengan hitungan AI — yang
 	 *   menurut `mengubahSkor` berarti bukan koreksi sama sekali.
 	 *
 	 * Ketiga status tetap mudah dilihat tanpa seed, lewat jalan yang jujur:
@@ -83,7 +83,7 @@ export const assessmentVerdictRepository = {
 	 *
 	 * Keduanya satu jalur karena keduanya menyatakan hal yang sama: seseorang
 	 * sudah melihat indikator ini dan menetapkan angka yang berlaku. Yang
-	 * membedakan hanya apakah angkanya sama dengan hitungan mesin, dan itu
+	 * membedakan hanya apakah angkanya sama dengan hitungan AI, dan itu
 	 * diturunkan saat dibaca — bukan dikirim pemanggil.
 	 *
 	 * `skorMesinSaatDitinjau` dan `sesiIdSaatDitinjau` diisi di sini dari sesi yang
@@ -127,7 +127,7 @@ export const assessmentVerdictRepository = {
 	 * Mencabut keputusan; indikatornya kembali ke **Belum ditinjau**.
 	 *
 	 * Satu-satunya makna yang tersisa untuk aksi ini setelah "kembali ke angka
-	 * mesin" jadi persetujuan: "saya belum siap memutuskan".
+	 * AI" jadi persetujuan: "saya belum siap memutuskan".
 	 */
 	remove(dokumenId: string, indikatorNo: number): void {
 		this.save(

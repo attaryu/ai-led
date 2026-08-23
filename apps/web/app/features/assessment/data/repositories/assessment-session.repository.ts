@@ -25,7 +25,7 @@ import {
 } from '../sources/remote/assessment-run.mock';
 
 /**
- * Sesi penilaian AMI beserta hasil mesinnya (docs/database.md →
+ * Sesi penilaian AMI beserta hasil AI-nya (docs/database.md →
  * `AssessmentSession`, `IndicatorResult`).
  *
  * Koreksi Penjamin Mutu **tidak** ada di sini — ia punya repository sendiri
@@ -47,13 +47,13 @@ function daysAgo(days: number): string {
  *
  * **Dibangun malas, bukan sebagai konstanta modul, dan itu bukan soal
  * performa.** Skornya harus dihitung dari isi bab dokumen itu yang sebenarnya —
- * dengan mesin yang sama seperti penilaian sungguhan. Versi pertama berkas ini
+ * dengan penilai AI yang sama seperti penilaian sungguhan. Versi pertama berkas ini
  * memakai untaian sintetis karena membaca `chapterRepository` saat modul dimuat
  * akan membuat urutan inisialisasi kedua repository saling bergantung (alasan
  * yang sama sudah ditulis di `chapter.repository.ts`). Akibatnya terlihat begitu
  * dijalankan: menekan "Nilai Ulang" tanpa menyunting apa pun melompatkan
  * rata-rata dari 2,61 ke 3,61, dan seluruh koreksi mendadak ditandai basi.
- * Keduanya perilaku yang benar — skor mesinnya memang berubah — tapi yang
+ * Keduanya perilaku yang benar — skor AI-nya memang berubah — tapi yang
  * berubah adalah sesuatu yang tidak pernah dilihat pengguna, sehingga fiturnya
  * terbaca seperti rusak.
  *
