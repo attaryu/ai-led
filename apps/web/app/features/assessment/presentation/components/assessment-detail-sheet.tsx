@@ -35,17 +35,22 @@ import { formatSkor } from '../utils/assessment-format';
  * | --- | --- | --- |
  * | Pilihan = skor AI | Setujui skor | — |
  * | Pilihan digeser | Simpan koreksi (alasan wajib) | Batal |
- * | Sudah ada keputusan | seperti di atas | Cabut keputusan |
+ * | Sudah ada keputusan | seperti di atas | Batal keputusan |
  *
  * **Label ditentukan dengan membandingkan pilihan terhadap skor AI**, bukan
  * terhadap nilai tersimpan. Satu perilaku muncul sendiri dari situ: menggeser
  * kembali ke angka AI otomatis jadi "Setujui skor", dan hasilnya status
- * Disetujui — persis yang dimaksud penggunanya ("saya cabut koreksi saya,
+ * Disetujui — persis yang dimaksud penggunanya ("saya batalkan koreksi saya,
  * AI-nya benar"). Ia tidak perlu tahu ada dua konsep.
  *
- * Dua "batal" sengaja bernama berbeda karena artinya berbeda: **Batal** membuang
- * perubahan yang belum disimpan; **Cabut keputusan** menghapus keputusan yang
- * sudah tersimpan sehingga indikatornya kembali ke Belum ditinjau.
+ * **Keduanya berbunyi "Batal" tapi tidak sama, dan itu disengaja.** `Batal`
+ * membuang perubahan yang belum disimpan; `Batal keputusan` menghapus keputusan
+ * yang **sudah** tersimpan sehingga indikatornya kembali ke Belum ditinjau —
+ * yang pertama bisa diulang, yang kedua membuang pekerjaan orang. Keduanya
+ * menempati slot yang sama di kaki laci, jadi kata "keputusan" itulah
+ * satu-satunya yang membedakan aksi merusak dari yang tidak. Ia tidak pernah
+ * bisa muncul bersamaan dengan `Batal` — cabang rendernya saling meniadakan —
+ * sehingga tidak ada dua tombol kembar di layar.
  *
  * Navigasi ‹ › ada supaya meninjau berurutan tidak menuntut tutup-buka per
  * indikator — tanpa itu, laci justru dua kali lebih mahal daripada accordion
@@ -364,7 +369,7 @@ export function AssessmentDetailSheet({
 							onClick={onCabut}
 							className="mr-auto cursor-pointer text-destructive"
 						>
-							Cabut keputusan
+							Batal keputusan
 						</Button>
 					)}
 
@@ -391,7 +396,7 @@ export function AssessmentDetailSheet({
 					 * angka yang berlaku sekarang, sehingga statusnya kembali Disetujui —
 					 * dan itu memang yang dimaksud Penjamin Mutu yang sudah memeriksa
 					 * ulang lalu berkata "keputusan saya masih berlaku". Tanpa ini,
-					 * satu-satunya jalan adalah mencabut keputusannya lalu membuatnya
+					 * satu-satunya jalan adalah membatalkan keputusannya lalu membuatnya
 					 * lagi dari nol.
 					 */}
 					<Button

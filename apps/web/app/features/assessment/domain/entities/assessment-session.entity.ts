@@ -101,7 +101,7 @@ export type PenilaianFinalRow = {
 	 * Yang berlaku: skor keputusan bila ada, selain itu skor AI.
 	 *
 	 * **Tetap angka Penjamin Mutu walau statusnya `TINJAU_ULANG`.** Keputusan
-	 * manusia tidak dicabut diam-diam oleh penilaian ulang — kalau ia berbalik ke
+	 * manusia tidak dibatalkan diam-diam oleh penilaian ulang — kalau ia berbalik ke
 	 * angka AI sendiri, rata-rata dokumen akan bergeser tanpa ada seorang pun
 	 * yang memutuskan apa pun.
 	 */

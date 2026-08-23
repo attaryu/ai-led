@@ -34,7 +34,7 @@ export const assessmentVerdictRepository = {
 	 *   sebagai "sudah disetujui" tanpa ada yang menyetujui — persis keadaan yang
 	 *   seluruh fitur ini dibangun untuk mencegahnya.
 	 * - **Ia hidup kembali sendiri.** Seed dibangun setiap kali kunci
-	 *   penyimpanannya tidak ada, sehingga mencabut semua keputusan lalu membuka
+	 *   penyimpanannya tidak ada, sehingga membatalkan semua keputusan lalu membuka
 	 *   halaman dari keadaan bersih memunculkannya lagi seolah aplikasi memutuskan
 	 *   sendiri.
 	 * - **Ia bahkan tidak menghasilkan keadaan yang dijanjikannya.** Skornya
@@ -124,7 +124,7 @@ export const assessmentVerdictRepository = {
 	},
 
 	/**
-	 * Mencabut keputusan; indikatornya kembali ke **Belum ditinjau**.
+	 * Membatalkan keputusan; indikatornya kembali ke **Belum ditinjau**.
 	 *
 	 * Satu-satunya makna yang tersisa untuk aksi ini setelah "kembali ke angka
 	 * AI" jadi persetujuan: "saya belum siap memutuskan".

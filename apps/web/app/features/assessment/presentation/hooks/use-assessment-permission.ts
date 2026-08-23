@@ -29,7 +29,7 @@ export type AssessmentPermission = {
 	canRead: boolean;
 	/** Memulai sesi penilaian baru dan menjalankan evaluasi RAGAS-nya. */
 	canRun: boolean;
-	/** Mengubah skor final dan mencabut koreksi. */
+	/** Mengubah skor final dan membatalkan koreksi. */
 	canCorrect: boolean;
 };
 

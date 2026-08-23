@@ -121,7 +121,7 @@ export const statusTinjauLabels: Record<StatusTinjau, string> = {
  * Konsekuensi yang menyenangkan dari menurunkannya: saat Penjamin Mutu menggeser
  * skor **kembali** ke angka AI, keputusannya otomatis berhenti terhitung
  * sebagai koreksi tanpa perlu aksi terpisah. Itu memang yang ia maksud — "saya
- * cabut koreksi saya, AI-nya benar" — dan ia tidak perlu tahu ada dua konsep.
+ * batalkan koreksi saya, AI-nya benar" — dan ia tidak perlu tahu ada dua konsep.
  *
  * Indikator yang gagal dinilai AI (`skorMesinSaatDitinjau = null`) selalu
  * terhitung diubah: memberi angka pada yang tidak punya angka memang bukan
@@ -147,7 +147,7 @@ export function mengubahSkor(verdict: AssessmentVerdictEntity): boolean {
  * akan menghilangkan fakta yang benar.
  *
  * **Skor yang berlaku tetap angka Penjamin Mutu**, bukan angka AI terbaru
- * (lihat `gabungPenilaian`). Keputusan manusia tidak dicabut diam-diam oleh
+ * (lihat `gabungPenilaian`). Keputusan manusia tidak dibatalkan diam-diam oleh
  * penilaian ulang; ia cuma diminta ditinjau lagi.
  */
 export function statusTinjauDari(
