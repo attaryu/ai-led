@@ -16,6 +16,9 @@ import { Role } from '@ai-led/db';
 import { requireEnv } from '../config/env';
 import { Protected } from '../tenant/protected.decorator';
 import { BabDokumenService } from './bab-dokumen.service';
+import { BabDraftService } from './bab-draft.service';
+import { BabPipelineService } from './bab-pipeline.service';
+import { BabReviewService } from './bab-review.service';
 import { ChatMessageDto } from './dto/chat-message.dto';
 import { CreateBabDokumenDto } from './dto/create-bab-dokumen.dto';
 import { CreateBabDraftDto } from './dto/create-bab-draft.dto';
@@ -25,9 +28,7 @@ import { UpdateBabDokumenDto } from './dto/update-bab-dokumen.dto';
 import { ReviewStatusDto } from './dto/review-status.dto';
 import { SubmitReviewDto } from './dto/submit-review.dto';
 
-// Same role split as DokumenLedController: ADMIN has zero access, PIMPINAN
-// read-only, PENJAMIN_MUTU/PENYUSUN full content rights (minus the review
-// actions, which are exclusive to one role each - see docs/database.md §5-6.
+// Same role split as DokumenLedController; review actions are exclusive to one role each — docs/database.md §5-6.
 const READ_ROLES = [Role.PIMPINAN, Role.PENJAMIN_MUTU, Role.PENYUSUN];
 const WRITE_ROLES = [Role.PENJAMIN_MUTU, Role.PENYUSUN];
 
@@ -35,7 +36,12 @@ const WRITE_ROLES = [Role.PENJAMIN_MUTU, Role.PENYUSUN];
 @ApiBearerAuth()
 @Controller()
 export class BabDokumenController {
-  constructor(private readonly babDokumenService: BabDokumenService) {}
+  constructor(
+    private readonly babDokumenService: BabDokumenService,
+    private readonly babDraftService: BabDraftService,
+    private readonly babReviewService: BabReviewService,
+    private readonly babPipelineService: BabPipelineService,
+  ) {}
 
   @Post('dokumen/:dokumenId/bab')
   @Protected(...WRITE_ROLES)
@@ -78,25 +84,25 @@ export class BabDokumenController {
     summary: 'Trigger generasi konten AI untuk bab (Producer GENERASI_BAB)',
   })
   generate(@Param('id') id: string, @Body() dto: GenerateBabDto) {
-    return this.babDokumenService.triggerGenerate(id, dto.prompt);
+    return this.babPipelineService.triggerGenerate(id, dto.prompt);
   }
 
   @Get('bab/:id/drafts')
   @Protected(...READ_ROLES)
   findDrafts(@Param('id') id: string) {
-    return this.babDokumenService.findDrafts(id);
+    return this.babDraftService.findDrafts(id);
   }
 
   @Post('bab/:id/drafts')
   @Protected(...WRITE_ROLES)
   createDraft(@Param('id') id: string, @Body() dto: CreateBabDraftDto) {
-    return this.babDokumenService.createDraft(id, dto);
+    return this.babDraftService.createDraft(id, dto);
   }
 
   @Get('bab/:id/rubrik')
   @Protected(...READ_ROLES)
   findRubrik(@Param('id') id: string) {
-    return this.babDokumenService.findRubrik(id);
+    return this.babDraftService.findRubrik(id);
   }
 
   @Post('bab/:id/simulasi-skor')
@@ -106,18 +112,10 @@ export class BabDokumenController {
     summary: 'Trigger simulasi skor rubrik untuk bab (Producer SIMULASI_SKOR)',
   })
   simulateScore(@Param('id') id: string, @Body() dto: SimulateScoreDto) {
-    return this.babDokumenService.triggerSimulateScore(id, dto.babDraftId);
+    return this.babPipelineService.triggerSimulateScore(id, dto.babDraftId);
   }
 
-  /**
-   * Passthrough SSE proxy to apps/ai's POST /chat/:id — @Res() raw
-   * response, not @Sse(), since this is forwarding an already-SSE-shaped
-   * upstream byte stream rather than emitting our own Observable of
-   * events (and @Sse() only supports GET without reaching into NestJS's
-   * internal route-metadata constants). apps/ai owns the chat_messages
-   * writes itself (it has the full assistant reply only after the stream
-   * ends) — this route never touches Postgres.
-   */
+  /** SSE passthrough proxy to apps/ai's POST /chat/:id — @Res() raw response since we're forwarding an existing byte stream, not emitting our own. apps/ai owns the chat_messages writes. */
   @Post('bab/:id/chat')
   @Protected(...WRITE_ROLES)
   async chat(
@@ -125,7 +123,7 @@ export class BabDokumenController {
     @Body() dto: ChatMessageDto,
     @Res() res: Response,
   ): Promise<void> {
-    const { userId } = await this.babDokumenService.assertChatAccess(id);
+    const { userId } = await this.babPipelineService.assertChatAccess(id);
     const aiServiceUrl = requireEnv('AI_SERVICE_URL');
 
     const abortController = new AbortController();
@@ -167,14 +165,11 @@ export class BabDokumenController {
     }
   }
 
-  /**
-   * Plain JSON passthrough to apps/ai's GET /chat/:id/history — frontend
-   * never talks to apps/ai directly (same rule as the stream above).
-   */
+  /** Plain JSON passthrough to apps/ai's GET /chat/:id/history — same no-direct-access rule as the stream above. */
   @Get('bab/:id/chat/history')
   @Protected(...WRITE_ROLES)
   async chatHistory(@Param('id') id: string) {
-    await this.babDokumenService.assertChatAccess(id);
+    await this.babPipelineService.assertChatAccess(id);
     const aiServiceUrl = requireEnv('AI_SERVICE_URL');
 
     let upstream: globalThis.Response;
@@ -195,13 +190,13 @@ export class BabDokumenController {
   @Protected(Role.PENYUSUN)
   @HttpCode(200)
   submitForReview(@Param('id') id: string, @Body() dto: SubmitReviewDto) {
-    return this.babDokumenService.submitForReview(id, dto);
+    return this.babReviewService.submitForReview(id, dto);
   }
 
   @Patch('bab/:id/review-status')
   @Protected(Role.PENJAMIN_MUTU)
   setReviewStatus(@Param('id') id: string, @Body() dto: ReviewStatusDto) {
-    return this.babDokumenService.setReviewStatus(id, dto);
+    return this.babReviewService.setReviewStatus(id, dto);
   }
 
   @Delete('bab/:id')
