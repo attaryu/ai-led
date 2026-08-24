@@ -26,9 +26,9 @@ export const assessmentVerdictRepository = {
 		catatan: string;
 	}): Promise<AssessmentVerdictEntity> {
 		const row = await assessmentRemoteSource.upsertVerdict(input.dokumenId, {
-			indikatorNo: input.indikatorNo,
-			skorFinal: input.skorFinal,
-			catatan: input.catatan.trim() === '' ? undefined : input.catatan,
+			indicatorNo: input.indikatorNo,
+			finalScore: input.skorFinal,
+			note: input.catatan.trim() === '' ? undefined : input.catatan,
 		});
 		return mapVerdict(row);
 	},

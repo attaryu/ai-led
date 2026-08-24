@@ -4,12 +4,12 @@ import { type LedSourceMode } from '../../../domain/entities/assessment-source.e
 /** Baris Prisma `AssessmentSession`, dengan `createdBy.fullName` di-include. */
 export type BackendAssessmentSession = {
 	id: string;
-	dokumenId: string;
+	documentId: string;
 	createdByUserId: string;
-	laporanBuktiDukungId: string | null;
-	sumberLed: LedSourceMode;
+	reportEvidenceId: string | null;
+	ledSource: LedSourceMode;
 	ledFileName: string | null;
-	lkpsBuktiDukungId: string | null;
+	lkpsEvidenceId: string | null;
 	totalIndicators: number;
 	completedIndicators: number;
 	status: 'RUNNING' | 'COMPLETED' | 'FAILED';
@@ -44,15 +44,15 @@ export type BackendReasoningStep = {
 /** Baris Prisma `AssessmentVerdict`. */
 export type BackendAssessmentVerdict = {
 	id: string;
-	dokumenId: string;
-	indikatorNo: number;
-	skorFinal: string;
-	catatan: string | null;
-	skorMesinSaatDitinjau: string | null;
-	sesiIdSaatDitinjau: string;
-	ditinjauOlehUserId: string;
-	ditinjauOlehNama: string;
-	ditinjauPada: string;
+	documentId: string;
+	indicatorNo: number;
+	finalScore: string;
+	note: string | null;
+	machineScoreAtReview: string | null;
+	sessionIdAtReview: string;
+	reviewedByUserId: string;
+	reviewedByName: string;
+	reviewedAt: string;
 };
 
 export type BackendJob = {
@@ -71,9 +71,9 @@ export type TriggerAssessmentPayload = {
 };
 
 export type UpsertVerdictPayload = {
-	indikatorNo: number;
-	skorFinal: number;
-	catatan?: string;
+	indicatorNo: number;
+	finalScore: number;
+	note?: string;
 };
 
 export const assessmentRemoteSource = {

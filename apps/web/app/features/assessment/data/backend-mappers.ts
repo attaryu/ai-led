@@ -17,12 +17,12 @@ function toNumber(value: string | null): number | null {
 export function mapSession(row: BackendAssessmentSession): AssessmentSessionEntity {
 	return {
 		id: row.id,
-		dokumenId: row.dokumenId,
+		dokumenId: row.documentId,
 		sumber: {
-			sumberLed: row.sumberLed,
+			sumberLed: row.ledSource,
 			ledFileName: row.ledFileName,
-			lkpsBuktiDukungId: row.lkpsBuktiDukungId,
-			laporanBuktiDukungId: row.laporanBuktiDukungId,
+			lkpsBuktiDukungId: row.lkpsEvidenceId,
+			laporanBuktiDukungId: row.reportEvidenceId,
 		},
 		totalIndicators: row.totalIndicators,
 		completedIndicators: row.completedIndicators,
@@ -55,14 +55,14 @@ export function mapResult(row: BackendIndicatorResult): IndicatorResultEntity {
 export function mapVerdict(row: BackendAssessmentVerdict): AssessmentVerdictEntity {
 	return {
 		id: row.id,
-		dokumenId: row.dokumenId,
-		indikatorNo: row.indikatorNo,
-		skorFinal: Number(row.skorFinal),
-		catatan: row.catatan ?? '',
-		skorMesinSaatDitinjau: toNumber(row.skorMesinSaatDitinjau),
-		sesiIdSaatDitinjau: row.sesiIdSaatDitinjau,
-		ditinjauOlehUserId: row.ditinjauOlehUserId,
-		ditinjauOlehNama: row.ditinjauOlehNama,
-		ditinjauPada: row.ditinjauPada,
+		dokumenId: row.documentId,
+		indikatorNo: row.indicatorNo,
+		skorFinal: Number(row.finalScore),
+		catatan: row.note ?? '',
+		skorMesinSaatDitinjau: toNumber(row.machineScoreAtReview),
+		sesiIdSaatDitinjau: row.sessionIdAtReview,
+		ditinjauOlehUserId: row.reviewedByUserId,
+		ditinjauOlehNama: row.reviewedByName,
+		ditinjauPada: row.reviewedAt,
 	};
 }

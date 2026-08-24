@@ -21,7 +21,7 @@ export class AssessmentService {
   async findSessions(dokumenId: string) {
     await this.dokumenLedService.findOne(dokumenId); // isolasi tenant + 404
     return this.prisma.assessmentSession.findMany({
-      where: { dokumenId },
+      where: { documentId: dokumenId },
       orderBy: { createdAt: 'desc' },
       include: this.includeCreatedByName,
     });
@@ -61,16 +61,16 @@ export class AssessmentService {
 
   async findVerdicts(dokumenId: string) {
     await this.dokumenLedService.findOne(dokumenId);
-    return this.prisma.assessmentVerdict.findMany({ where: { dokumenId } });
+    return this.prisma.assessmentVerdict.findMany({ where: { documentId: dokumenId } });
   }
 
-  /** skorMesinSaatDitinjau/sesiIdSaatDitinjau are derived here, never trusted from the request body — provenance can't be spoofed. */
+  /** machineScoreAtReview/sessionIdAtReview are derived here, never trusted from the request body — provenance can't be spoofed. */
   async upsertVerdict(dokumenId: string, dto: UpsertVerdictDto) {
     await this.dokumenLedService.findOne(dokumenId);
     const { userId } = this.tenantContext.getOrThrow();
 
     const latestSession = await this.prisma.assessmentSession.findFirst({
-      where: { dokumenId },
+      where: { documentId: dokumenId },
       orderBy: { createdAt: 'desc' },
     });
     if (!latestSession) {
@@ -83,7 +83,7 @@ export class AssessmentService {
       where: {
         sessionId_indicatorNo: {
           sessionId: latestSession.id,
-          indicatorNo: dto.indikatorNo,
+          indicatorNo: dto.indicatorNo,
         },
       },
     });
@@ -93,20 +93,20 @@ export class AssessmentService {
     });
 
     const shared = {
-      skorFinal: dto.skorFinal,
-      catatan: dto.catatan ?? null,
-      skorMesinSaatDitinjau: currentResult?.score ?? null,
-      sesiIdSaatDitinjau: latestSession.id,
-      ditinjauOlehUserId: userId,
-      ditinjauOlehNama: user.fullName,
+      finalScore: dto.finalScore,
+      note: dto.note ?? null,
+      machineScoreAtReview: currentResult?.score ?? null,
+      sessionIdAtReview: latestSession.id,
+      reviewedByUserId: userId,
+      reviewedByName: user.fullName,
     };
 
     return this.prisma.assessmentVerdict.upsert({
       where: {
-        dokumenId_indikatorNo: { dokumenId, indikatorNo: dto.indikatorNo },
+        documentId_indicatorNo: { documentId: dokumenId, indicatorNo: dto.indicatorNo },
       },
-      create: { dokumenId, indikatorNo: dto.indikatorNo, ...shared },
-      update: { ...shared, ditinjauPada: new Date() },
+      create: { documentId: dokumenId, indicatorNo: dto.indicatorNo, ...shared },
+      update: { ...shared, reviewedAt: new Date() },
     });
   }
 
@@ -114,7 +114,7 @@ export class AssessmentService {
   async removeVerdict(dokumenId: string, indikatorNo: number) {
     await this.dokumenLedService.findOne(dokumenId);
     await this.prisma.assessmentVerdict.deleteMany({
-      where: { dokumenId, indikatorNo },
+      where: { documentId: dokumenId, indicatorNo: indikatorNo },
     });
   }
 }

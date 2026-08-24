@@ -1,6 +1,6 @@
 """Postgres access layer for the AMI assessment pipeline — writes to the
-monorepo's own tables (assessment_sessions, indicator_results,
-reasoning_steps, owned by packages/db/prisma/schema.prisma), replacing the
+monorepo's own tables (assessment_sessions, assessment_indicator_results,
+assessment_reasoning_steps, owned by packages/db/prisma/schema.prisma), replacing the
 old Supabase project db.supabase_client used to write to (tracker row 44).
 
 Same lazy-singleton-connection shape as db/supabase_client.py, same
@@ -58,9 +58,9 @@ def create_session(
             cur.execute(
                 """
                 INSERT INTO assessment_sessions
-                    (id, tenant_id, dokumen_id, created_by_user_id,
-                     laporan_bukti_dukung_id, sumber_led, led_file_name,
-                     lkps_bukti_dukung_id, total_indicators,
+                    (id, tenant_id, document_id, created_by_user_id,
+                     report_evidence_id, led_source, led_file_name,
+                     lkps_evidence_id, total_indicators,
                      completed_indicators, status, updated_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'RUNNING', now())
                 """,
@@ -133,7 +133,7 @@ def list_sessions(limit: int = 50) -> list[dict]:
                    s.completed_indicators, s.created_at, s.updated_at, s.error,
                    AVG(r.score) AS avg_score
             FROM assessment_sessions s
-            LEFT JOIN indicator_results r ON r.session_id = s.id AND r.score IS NOT NULL
+            LEFT JOIN assessment_indicator_results r ON r.session_id = s.id AND r.score IS NOT NULL
             GROUP BY s.id
             ORDER BY s.created_at DESC
             LIMIT %s
@@ -162,12 +162,12 @@ def log_indicator_result(
     recommendation: Optional[str] = None,
     error: Optional[str] = None,
 ) -> None:
-    """Upsert a scored indicator into indicator_results."""
+    """Upsert a scored indicator into assessment_indicator_results."""
     try:
         with _get_conn().cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO indicator_results
+                INSERT INTO assessment_indicator_results
                     (id, session_id, indicator_no, score, justification,
                      confidence, recommendation, error)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
@@ -196,12 +196,12 @@ def log_indicator_result(
 
 
 def get_indicator_results(session_id: str) -> list[dict]:
-    """Return all indicator_results rows for a session, ordered by indicator_no."""
+    """Return all assessment_indicator_results rows for a session, ordered by indicator_no."""
     with _get_conn().cursor() as cur:
         cur.execute(
             """
             SELECT indicator_no, score, justification, confidence, recommendation, error
-            FROM indicator_results WHERE session_id = %s ORDER BY indicator_no
+            FROM assessment_indicator_results WHERE session_id = %s ORDER BY indicator_no
             """,
             (session_id,),
         )
@@ -216,7 +216,7 @@ def get_indicator_results(session_id: str) -> list[dict]:
 
 def get_completed_indicator_numbers(session_id: str) -> set[int]:
     """Return the set of indicator_no that already have a row in
-    indicator_results for this session — i.e. their graph run finished
+    assessment_indicator_results for this session — i.e. their graph run finished
     (successfully or with a logged error), as opposed to never having
     started or being cut off mid-run by a crash/restart. Used by resume to
     decide what still needs (re-)processing.
@@ -228,7 +228,7 @@ def get_completed_indicator_numbers(session_id: str) -> set[int]:
     try:
         with _get_conn().cursor() as cur:
             cur.execute(
-                "SELECT indicator_no FROM indicator_results WHERE session_id = %s",
+                "SELECT indicator_no FROM assessment_indicator_results WHERE session_id = %s",
                 (session_id,),
             )
             return {row["indicator_no"] for row in cur.fetchall()}
@@ -243,12 +243,12 @@ def log_reasoning_step(
     step_index: int,
     content: str,
 ) -> None:
-    """Append one reasoning step to the reasoning_steps table."""
+    """Append one reasoning step to the assessment_reasoning_steps table."""
     try:
         with _get_conn().cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO reasoning_steps (id, session_id, indicator_no, step_index, content)
+                INSERT INTO assessment_reasoning_steps (id, session_id, indicator_no, step_index, content)
                 VALUES (%s, %s, %s, %s, %s)
                 """,
                 (str(uuid.uuid4()), session_id, indicator_no, step_index, content),
