@@ -1,7 +1,9 @@
-import { CaretLeftIcon, CaretRightIcon } from '@phosphor-icons/react';
-
-import { Button } from '~/core/components/ui/button';
-import { Sheet, SheetBody, SheetHeader } from '~/core/components/ui/sheet';
+import {
+	Sheet,
+	SheetBody,
+	SheetHeader,
+	SheetNav,
+} from '~/core/components/ui/sheet';
 import { formatRelativeTime } from '~/core/lib/format-time';
 import { EvidenceStatusBadge } from '~/features/evidence/presentation/components/evidence-status-badge';
 import {
@@ -9,6 +11,7 @@ import {
 	getFileVisual,
 } from '~/features/evidence/presentation/utils/evidence-format';
 import { type BarisRujukan } from '../hooks/use-chapter-reference';
+import { ChapterChunkList } from './chapter-chunk-list';
 
 /**
  * Laci kutipan satu bukti dukung (docs/application_flow.md §11.1a).
@@ -66,31 +69,12 @@ export function ChapterEvidenceDetailSheet({
 		>
 			<SheetHeader onClose={onTutup}>
 				<div className="flex flex-col gap-2">
-					<div className="flex items-center gap-2">
-						<Button
-							variant="ghost"
-							size="icon-xs"
-							aria-label="Bukti dukung sebelumnya"
-							onClick={() => onPindah(-1)}
-							disabled={posisi <= 1}
-							className="cursor-pointer"
-						>
-							<CaretLeftIcon className="size-4" />
-						</Button>
-						<span className="text-xs tabular-nums text-muted-foreground">
-							{posisi}/{total}
-						</span>
-						<Button
-							variant="ghost"
-							size="icon-xs"
-							aria-label="Bukti dukung berikutnya"
-							onClick={() => onPindah(1)}
-							disabled={posisi >= total}
-							className="cursor-pointer"
-						>
-							<CaretRightIcon className="size-4" />
-						</Button>
-					</div>
+					<SheetNav
+						posisi={posisi}
+						total={total}
+						label="Bukti dukung"
+						onPindah={onPindah}
+					/>
 
 					<div className="flex items-start gap-2.5">
 						<FileTypeIcon
@@ -127,39 +111,25 @@ export function ChapterEvidenceDetailSheet({
 				</div>
 			</SheetHeader>
 
+			{/*
+			 * Catatan kakinya dinyatakan, bukan didiamkan: pembaca yang melihat
+			 * petikan selengkap ini berhak tahu ia belum berasal dari berkasnya
+			 * sendiri.
+			 */}
 			<SheetBody className="space-y-2">
-				<p className="text-xs leading-relaxed text-muted-foreground">
-					{kutipan.length} bagian berkas ini dipakai saat menyusun bab tersebut.
-				</p>
-
-				<ul className="space-y-2">
-					{kutipan.map((potongan) => (
-						<li
-							key={potongan.id}
-							className="rounded-md border border-border bg-muted/40 p-2.5"
-						>
-							<p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-								{potongan.halamanMulai === potongan.halamanSelesai
-									? `hlm. ${potongan.halamanMulai}`
-									: `hlm. ${potongan.halamanMulai}–${potongan.halamanSelesai}`}
-								{potongan.judulBagian && ` · ${potongan.judulBagian}`}
-							</p>
-							<p className="mt-1.5 text-sm leading-relaxed">
-								{potongan.kutipan}
-							</p>
-						</li>
-					))}
-				</ul>
-
-				{/*
-				 * Dinyatakan, bukan didiamkan: pembaca yang melihat petikan selengkap
-				 * ini berhak tahu ia belum berasal dari berkasnya sendiri. §11.1 sudah
-				 * memakai nada yang sama untuk bagian Panduan yang belum ada.
-				 */}
-				<p className="pt-1 text-xs leading-relaxed text-muted-foreground">
-					Kutipan masih contoh: pencarian ke isi berkas yang sebenarnya menyusul
-					bersama vector database-nya.
-				</p>
+				<ChapterChunkList
+					potongan={kutipan.map((potongan) => ({
+						id: potongan.id,
+						kutipan: potongan.kutipan,
+						asal:
+							potongan.halamanMulai === potongan.halamanSelesai
+								? `hlm. ${potongan.halamanMulai}`
+								: `hlm. ${potongan.halamanMulai}–${potongan.halamanSelesai}`,
+						judulBagian: potongan.judulBagian,
+					}))}
+					pengantar={`${kutipan.length} bagian berkas ini dipakai saat menyusun bab tersebut.`}
+					catatanKaki="Kutipan masih contoh: pencarian ke isi berkas yang sebenarnya menyusul bersama vector database-nya."
+				/>
 			</SheetBody>
 		</Sheet>
 	);

@@ -8,6 +8,7 @@ import { type ChapterPermission } from '../hooks/use-chapter-permission';
 import { ChapterDraftPanel } from './chapter-draft-panel';
 import { ChapterGenerationPanel } from './chapter-generation-panel';
 import { ChapterQualityPanel } from './chapter-quality-panel';
+import { ChapterGuidancePanel } from './chapter-guidance-panel';
 import { ChapterReferencePanel } from './chapter-reference-panel';
 import { ChapterReviewPanel } from './chapter-review-panel';
 
@@ -32,6 +33,14 @@ import { ChapterReviewPanel } from './chapter-review-panel';
 export const PANEL_TABS = [
 	{ value: 'draft', label: 'Draft' },
 	{ value: 'generasi', label: 'Generasi' },
+	// Di depan "Bukti", mengikuti urutan pipeline sungguhan: pedoman dan rubrik
+	// diambil lebih dulu, bukti dukung menyusul. Urutan bacanya pun sama — "apa
+	// yang seharusnya ditulis" mendahului "dari mana tulisannya berasal".
+	//
+	// Ini **bukan** tab Rubrik yang dihapus di §9 yang kembali: yang itu
+	// menjalankan simulasi skor bab dan menulis `HASIL_SKOR_KRITERIA`; yang ini
+	// murni baca, memperlihatkan konteks yang diberikan ke generator.
+	{ value: 'panduan', label: 'Panduan' },
 	// Label "Bukti", `value` tetap `'rujukan'` — sama seperti `skor`/"Kualitas AI":
 	// `value` kunci internal yang tidak pernah dilihat pengguna. Labelnya sengaja
 	// pendek, bukan "Bukti Dukung" penuh, karena baris ini dibagi dengan bilah alat
@@ -115,6 +124,13 @@ export function ChapterEditorPanels({
 					chapter={chapter}
 					studyProgramId={studyProgramId}
 				/>
+			</TabsContent>
+
+			<TabsContent
+				value="panduan"
+				className="flex min-h-0 flex-1 flex-col overflow-hidden"
+			>
+				<ChapterGuidancePanel chapter={chapter} />
 			</TabsContent>
 
 			<TabsContent

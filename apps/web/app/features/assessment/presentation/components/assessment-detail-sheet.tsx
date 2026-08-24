@@ -1,10 +1,5 @@
 import * as React from 'react';
-import {
-	CaretLeftIcon,
-	CaretRightIcon,
-	CheckIcon,
-	WarningCircleIcon,
-} from '@phosphor-icons/react';
+import { CheckIcon, WarningCircleIcon } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
 import {
@@ -12,6 +7,7 @@ import {
 	SheetBody,
 	SheetFooter,
 	SheetHeader,
+	SheetNav,
 } from '~/core/components/ui/sheet';
 import { Textarea } from '~/core/components/ui/textarea';
 import { formatRelativeTimeLong } from '~/core/lib/format-time';
@@ -133,29 +129,12 @@ export function AssessmentDetailSheet({
 			<SheetHeader onClose={onTutup}>
 				<div className="flex flex-col gap-2">
 					<div className="flex items-center gap-2">
-						<Button
-							variant="ghost"
-							size="icon-xs"
-							aria-label="Indikator sebelumnya"
-							onClick={() => onPindah(-1)}
-							disabled={posisi <= 1}
-							className="cursor-pointer"
-						>
-							<CaretLeftIcon className="size-4" />
-						</Button>
-						<span className="text-xs tabular-nums text-muted-foreground">
-							{posisi}/{total}
-						</span>
-						<Button
-							variant="ghost"
-							size="icon-xs"
-							aria-label="Indikator berikutnya"
-							onClick={() => onPindah(1)}
-							disabled={posisi >= total}
-							className="cursor-pointer"
-						>
-							<CaretRightIcon className="size-4" />
-						</Button>
+						<SheetNav
+							posisi={posisi}
+							total={total}
+							label="Indikator"
+							onPindah={onPindah}
+						/>
 
 						<AssessmentStatusBadge
 							status={row.statusTinjau}

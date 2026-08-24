@@ -44,9 +44,12 @@ import { ChapterEvidenceDetailSheet } from './chapter-evidence-detail-sheet';
  *   Yang dibuka di sini bukan isi berkasnya, melainkan **bagian yang dipakai** —
  *   justru inti janji ketertelusuran `referensi_chunk_ids` (docs/database.md).
  *   Melihat berkas utuhnya tetap lewat Perpustakaan.
- * - **Bagian "Panduan" belum ada.** `PANDUAN_REFERENSI`/`PANDUAN_DETAIL` belum
- *   dibangun, dan `referensiChunkIds` yang tersimpan masih string tiruan tanpa
- *   entitas di baliknya. Ketiadaannya dinyatakan di kaki panel, bukan didiamkan.
+ * - **Bagian "Panduan" pindah ke tabnya sendiri** (§11.1b). §11.1 merancang
+ *   keduanya sebagai dua bagian satu tab, dan itu ditulis saat bagian panduan
+ *   belum punya apa pun untuk ditampilkan. Begitu tiap butirnya membawa kutipan
+ *   sendiri, menumpuk keduanya di satu panel 320 px membuat hitungan di kepala
+ *   tab ini berhenti berarti "berapa berkas". Kaki panel ini tidak lagi
+ *   menjanjikannya menyusul — janjinya sudah ditepati di sebelah.
  */
 export function ChapterReferencePanel({
 	chapter,
@@ -130,7 +133,7 @@ export function ChapterReferencePanel({
 								? 'Checkpoint ini tidak mencatat bukti dukung apa pun.'
 								: hasKonten(chapter)
 									? 'Belum ada bukti dukung yang tercatat dipakai bab ini.'
-									: 'Panduan dan bukti dukung yang dipakai akan muncul di sini setelah bab ini digenerate atau ditulis.'}
+									: 'Bukti dukung yang dipakai akan muncul di sini setelah bab ini digenerate atau ditulis.'}
 						</p>
 					) : (
 						<ul className="space-y-0.5 pb-2">
@@ -169,10 +172,6 @@ export function ChapterReferencePanel({
 					<ArrowRightIcon className="size-4" />
 				</Link>
 
-				<p className="text-xs leading-relaxed text-muted-foreground">
-					Bagian panduan LAM Teknik menyusul setelah dokumen panduan dan
-					pencariannya tersedia.
-				</p>
 			</div>
 
 			<ChapterEvidenceDetailSheet

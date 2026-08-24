@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { XIcon } from '@phosphor-icons/react';
+import { CaretLeftIcon, CaretRightIcon, XIcon } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
 import { cn } from '~/core/lib/utils';
@@ -97,6 +97,61 @@ export function SheetHeader({
 				className="shrink-0 cursor-pointer"
 			>
 				<XIcon className="size-4" />
+			</Button>
+		</div>
+	);
+}
+
+/**
+ * Navigasi ‹ › antar baris di kepala laci, beserta penunjuk posisinya.
+ *
+ * Diangkat saat salinan ketiganya akan lahir — dua yang pertama di
+ * `assessment-detail-sheet.tsx` dan `chapter-evidence-detail-sheet.tsx`. Alasan
+ * mengangkatnya sama dengan alasan `Sheet` sendiri diangkat dari
+ * `evidence-detail-panel.tsx`: tiga salinan yang harus tetap berperilaku sama
+ * tanpa satu pun mekanisme yang memaksanya.
+ *
+ * `label` wajib karena nama aksesibelnya menyebut **apa** yang dilewati
+ * ("Indikator sebelumnya", "Bukti dukung sebelumnya"). Tiga laci yang seluruh
+ * tombolnya bernama "Sebelumnya" tidak berarti apa-apa di pembaca layar.
+ */
+export function SheetNav({
+	posisi,
+	total,
+	label,
+	onPindah,
+}: {
+	/** Urutan ke berapa dalam daftar yang sedang tampil, mulai 1. */
+	posisi: number;
+	total: number;
+	/** Kata benda tunggal yang dilewati, mis. "Indikator" atau "Butir panduan". */
+	label: string;
+	onPindah: (arah: -1 | 1) => void;
+}) {
+	return (
+		<div className="flex items-center gap-2">
+			<Button
+				variant="ghost"
+				size="icon-xs"
+				aria-label={`${label} sebelumnya`}
+				onClick={() => onPindah(-1)}
+				disabled={posisi <= 1}
+				className="cursor-pointer"
+			>
+				<CaretLeftIcon className="size-4" />
+			</Button>
+			<span className="text-xs tabular-nums text-muted-foreground">
+				{posisi}/{total}
+			</span>
+			<Button
+				variant="ghost"
+				size="icon-xs"
+				aria-label={`${label} berikutnya`}
+				onClick={() => onPindah(1)}
+				disabled={posisi >= total}
+				className="cursor-pointer"
+			>
+				<CaretRightIcon className="size-4" />
 			</Button>
 		</div>
 	);
