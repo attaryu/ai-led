@@ -69,11 +69,7 @@ export class UsersService {
     });
   }
 
-  /**
-   * `PATCH /users/:id`. PIMPINAN hanya boleh memindahkan seorang Penyusun ke
-   * prodi lain (§4.2) — field lain di `dto` ditolak. ADMIN boleh mengedit
-   * profil penuh (nama/email/role/password/prodi).
-   */
+  /** PIMPINAN may only move a Penyusun to another prodi (§4.2); ADMIN can edit the full profile. */
   async update(id: string, dto: UpdateUserDto) {
     const { tenantId, role: callerRole } = this.tenantContext.getOrThrow();
     const user = await this.prisma.user.findFirst({ where: { id, tenantId } });
@@ -155,8 +151,7 @@ export class UsersService {
       );
     }
     if (nextRole !== Role.PENYUSUN) {
-      // Role lain tidak punya prodi (docs/database.md §2) — dikosongkan kalau
-      // role-nya baru saja diganti keluar dari Penyusun.
+      // Other roles don't have a prodi (docs/database.md §2).
       data.studyProgramId = null;
     } else if (dto.studyProgramId !== undefined) {
       await this.programStudi.findOne(dto.studyProgramId);

@@ -4,12 +4,7 @@ import { TenantContextService } from '../tenant/tenant-context.service';
 import { DokumenLedService } from '../dokumen-led/dokumen-led.service';
 import { UpsertVerdictDto } from './dto/upsert-verdict.dto';
 
-/**
- * Sisi baca (session/results/reasoning) & keputusan Penjamin Mutu
- * (verdicts) untuk Penilaian AMI — pemicunya sendiri (`POST
- * dokumen/:id/assessment`) tetap di DokumenLedService, tidak dipindah ke
- * sini, supaya diffnya kecil.
- */
+/** AMI assessment reads (session/results/reasoning) + Penjamin Mutu verdicts — the trigger itself stays in DokumenLedService. */
 @Injectable()
 export class AssessmentService {
   constructor(
@@ -18,11 +13,7 @@ export class AssessmentService {
     private readonly dokumenLedService: DokumenLedService,
   ) {}
 
-  // `createdBy.fullName` di-include lewat relasi, bukan didenormalisasi
-  // ke kolom sendiri seperti BabDraft.dibuatOlehNama dkk — sesi ini
-  // dibaca lebih sering lewat join daripada ditulis, jadi satu query
-  // ekstra saat baca lebih murah daripada kolom kedua yang harus selalu
-  // ikut disetel Python (db/postgres_client.py::create_session).
+  /** Read via relation join instead of denormalizing a name column — read-heavy, so the extra join is cheaper. */
   private readonly includeCreatedByName = {
     createdBy: { select: { fullName: true } },
   } as const;
@@ -73,13 +64,7 @@ export class AssessmentService {
     return this.prisma.assessmentVerdict.findMany({ where: { dokumenId } });
   }
 
-  /**
-   * `skorMesinSaatDitinjau`/`sesiIdSaatDitinjau` **tidak** diterima dari
-   * body — dibaca di sini dari sesi terbaru dokumen ini, bukan dipercaya
-   * dari klien, supaya provenance keputusan (dasar apa yang sedang
-   * dipertimbangkan Penjamin Mutu) tidak bisa dipalsukan lewat request yang
-   * dibentuk manual.
-   */
+  /** skorMesinSaatDitinjau/sesiIdSaatDitinjau are derived here, never trusted from the request body — provenance can't be spoofed. */
   async upsertVerdict(dokumenId: string, dto: UpsertVerdictDto) {
     await this.dokumenLedService.findOne(dokumenId);
     const { userId } = this.tenantContext.getOrThrow();

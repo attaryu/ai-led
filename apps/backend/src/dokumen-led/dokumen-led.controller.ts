@@ -17,13 +17,8 @@ import { CreateDokumenLedDto } from './dto/create-dokumen-led.dto';
 import { TriggerAssessmentDto } from './dto/trigger-assessment.dto';
 import { UpdateDokumenLedDto } from './dto/update-dokumen-led.dto';
 
-// Nested under program-studi for creation/listing (needs parent context),
-// flat by id for read/update/delete (id is already globally unique).
-//
-// Role split per docs/database.md §2: ADMIN has zero access to LED content
-// at all (back-office only), PIMPINAN is read-only, PENJAMIN_MUTU has full
-// content rights, PENYUSUN can create/edit but not delete (PENJAMIN_MUTU
-// only, since deleting an entire LED project is the more destructive action).
+// Nested under program-studi for create/list (needs parent context), flat by id otherwise.
+// Role split per docs/database.md §2 — ADMIN has zero access; delete is PENJAMIN_MUTU-only.
 const READ_ROLES = [Role.PIMPINAN, Role.PENJAMIN_MUTU, Role.PENYUSUN];
 const WRITE_ROLES = [Role.PENJAMIN_MUTU, Role.PENYUSUN];
 

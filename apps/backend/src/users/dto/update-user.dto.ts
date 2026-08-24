@@ -7,11 +7,7 @@ import {
 } from 'class-validator';
 import { Role } from '@ai-led/db';
 
-/**
- * Bentuk `PATCH /users/:id`. PIMPINAN hanya boleh mengisi `studyProgramId`
- * (memindahkan Penyusun ke prodi lain, §4.2) — field lain ditolak di service.
- * ADMIN boleh mengisi semuanya untuk edit profil penuh.
- */
+/** PATCH /users/:id — PIMPINAN may only set studyProgramId (§4.2), ADMIN can edit the full profile. */
 export class UpdateUserDto {
   @IsOptional()
   @IsString()

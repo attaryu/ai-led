@@ -11,10 +11,8 @@ import { JobsGateway } from './jobs.gateway';
 import { JobsService } from './jobs.service';
 import { ASSESSMENT_QUEUE, GENERATION_QUEUE, INGESTION_QUEUE } from './queue-names';
 
-// BullMQ default job retention keeps every completed/failed job forever,
-// yang persis risiko "penumpukan memori Redis" di Temuan Kendala tracker.
-// attempts/backoff disetel di producer, bukan consumer — BullMQ menyimpannya
-// di Redis, jadi worker bahasa apa pun otomatis mengikuti.
+// Caps job retention (unbounded default risks Redis memory growth). attempts/backoff live here
+// (producer), not the consumer — BullMQ stores them in Redis so any worker language honors them.
 const defaultJobOptions = {
   removeOnComplete: { count: 1000 },
   removeOnFail: { count: 5000 },
@@ -26,9 +24,7 @@ const defaultJobOptions = {
   imports: [
     BullModule.forRootAsync({
       useFactory: () => ({
-        // `maxRetriesPerRequest: null` wajib untuk koneksi BullMQ (persyaratan
-        // library-nya sendiri, bukan pilihan) — retry command dikelola BullMQ,
-        // bukan ioredis.
+        // `maxRetriesPerRequest: null` is required by BullMQ itself — it manages command retries, not ioredis.
         connection: new Redis(requireEnv('REDIS_URL'), {
           maxRetriesPerRequest: null,
         }),

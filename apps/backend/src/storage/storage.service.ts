@@ -10,18 +10,11 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { requireEnv } from '../config/env';
 
-/** Presigned URLs expire quickly on purpose — a long-lived one is a leaked
- * link that works forever (tracker's own "Potential Risks" note). Both are
- * one-shot: upload then confirm, or fetch-and-view, not a durable link. */
+/** Short TTL on purpose — these are one-shot links (upload-then-confirm, or fetch-and-view), not durable. */
 const UPLOAD_URL_TTL_SECONDS = 5 * 60;
 const DOWNLOAD_URL_TTL_SECONDS = 5 * 60;
 
-/**
- * Thin wrapper over the S3-compatible client pointed at Cloudflare R2 —
- * tracker "Implementasi Cloudflare R2 Storage Module". R2's S3 API needs
- * region "auto" and the account-scoped endpoint; everything else is
- * identical to talking to real S3.
- */
+/** S3-compatible client pointed at Cloudflare R2 — region "auto" + account-scoped endpoint, otherwise identical to S3. */
 @Injectable()
 export class StorageService {
   private readonly client: S3Client;
@@ -58,12 +51,7 @@ export class StorageService {
     );
   }
 
-  /**
-   * Confirms an object actually landed in R2 (the presigned PUT step is
-   * client-side and unverifiable otherwise) and returns its real size/type
-   * — read from R2, not trusted from the client, so a caller can't lie
-   * about what it uploaded.
-   */
+  /** Confirms an object landed in R2 and returns its real size/type — not trusted from the client. */
   async headObject(key: string): Promise<{ sizeBytes: number; contentType: string | null }> {
     const res = await this.client.send(
       new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
@@ -78,12 +66,7 @@ export class StorageService {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
 
-  /**
-   * Reads an object's bytes server-side (not a presigned URL) — used to
-   * proxy an already-uploaded file to apps/ai (LED upload) without the
-   * browser ever talking to apps/ai directly, same rule as the chat SSE
-   * proxy.
-   */
+  /** Server-side read (not a presigned URL) — used to proxy an uploaded file to apps/ai directly. */
   async getObjectBytes(key: string): Promise<{ bytes: Buffer; contentType: string | null }> {
     const res = await this.client.send(
       new GetObjectCommand({ Bucket: this.bucket, Key: key }),

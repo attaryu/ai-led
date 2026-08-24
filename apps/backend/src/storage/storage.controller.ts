@@ -16,11 +16,7 @@ export class StorageController {
     private readonly tenantContext: TenantContextService,
   ) {}
 
-  /**
-   * Isolasi per tenant (DoD): kunci objeknya SELALU dibangun dari
-   * tenantId di token, tidak pernah dari input klien — klien tidak bisa
-   * memilih path tenant lain untuk diunggah.
-   */
+  /** Object key is always built from the token's tenantId, never client input — no way to target another tenant's path. */
   @Post('presigned-upload')
   @Protected()
   async presignedUpload(@Body() dto: RequestUploadUrlDto) {
@@ -30,12 +26,7 @@ export class StorageController {
     return { key, uploadUrl };
   }
 
-  /**
-   * `key` datang dari klien (baris `BuktiDukung.fileUrl` dst.), jadi
-   * divalidasi di sini — bukan cukup di sisi pemanggil — supaya tidak ada
-   * jalan lain yang lupa mengeceknya sebelum menerbitkan URL ke objek
-   * tenant lain.
-   */
+  /** `key` comes from the client — validated here (not just by callers) so no path can skip the tenant check. */
   @Get('presigned-download')
   @Protected()
   async presignedDownload(@Query('key') key?: string) {

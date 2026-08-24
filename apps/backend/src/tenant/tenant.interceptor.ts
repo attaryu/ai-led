@@ -9,12 +9,7 @@ import { Observable } from 'rxjs';
 import type { JwtPayload } from '../auth/types/jwt-payload.type';
 import { TenantContextService } from './tenant-context.service';
 
-/**
- * Runs after TenantGuard (which already verified request.user.tenantId exists).
- * Wraps the rest of the request in AsyncLocalStorage so anything downstream -
- * services, a future Prisma auto-scoping extension - can read the current
- * tenant without threading it through every function signature.
- */
+/** Runs after TenantGuard — wraps the request in AsyncLocalStorage so downstream services can read tenant context without it threading through every signature. */
 @Injectable()
 export class TenantInterceptor implements NestInterceptor {
   constructor(private readonly tenantContext: TenantContextService) {}

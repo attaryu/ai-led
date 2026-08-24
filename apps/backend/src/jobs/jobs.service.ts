@@ -11,13 +11,7 @@ import {
   QUEUE_NAME_BY_JOB_TYPE,
 } from './queue-names';
 
-/**
- * Satu-satunya jalan mendorong job ke BullMQ (docs tracker row 16). Fitur
- * lain (generasi bab, asesmen AMI, ingesti bukti dukung) memanggil
- * `enqueue()`, bukan meng-inject `Queue` sendiri-sendiri — supaya baris
- * `Job` di Postgres (riwayat/audit, lihat komentar model di schema.prisma)
- * tidak pernah lupa ditulis di salah satu jalur.
- */
+/** The only path into BullMQ — callers use enqueue() instead of injecting Queue directly, so the Postgres `Job` audit row never gets skipped. */
 @Injectable()
 export class JobsService {
   constructor(

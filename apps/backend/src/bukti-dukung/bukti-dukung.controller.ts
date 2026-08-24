@@ -5,8 +5,7 @@ import { Protected } from '../tenant/protected.decorator';
 import { BuktiDukungService } from './bukti-dukung.service';
 import { CreateBuktiDukungDto } from './dto/create-bukti-dukung.dto';
 
-// docs/database.md §7: ADMIN tidak punya akses ke bukti dukung sama sekali —
-// dikecualikan dari daftar ini dengan sengaja, bukan lupa.
+// ADMIN has no bukti-dukung access at all (docs/database.md §7) — deliberately excluded.
 const BUKTI_DUKUNG_ROLES = [Role.PIMPINAN, Role.PENJAMIN_MUTU, Role.PENYUSUN];
 
 @ApiTags('bukti-dukung')
@@ -15,12 +14,7 @@ const BUKTI_DUKUNG_ROLES = [Role.PIMPINAN, Role.PENJAMIN_MUTU, Role.PENYUSUN];
 export class BuktiDukungController {
   constructor(private readonly buktiDukungService: BuktiDukungService) {}
 
-  /**
-   * File-nya sendiri sudah sampai ke R2 langsung dari browser sebelum ini
-   * dipanggil (POST /storage/presigned-upload lalu PUT langsung ke R2) —
-   * endpoint ini cuma mengonfirmasi & mencatat barisnya. Tidak ada lagi
-   * multipart/FileInterceptor di sini (tracker: Cloudflare R2 Storage Module).
-   */
+  /** File already reached R2 via presigned PUT before this is called — this just confirms and records the row. */
   @Post()
   @Protected(...BUKTI_DUKUNG_ROLES)
   async create(@Body() dto: CreateBuktiDukungDto) {

@@ -3,10 +3,7 @@ import { LedSourceMode } from '@ai-led/db';
 import { IsArray, IsEnum, IsInt, IsOptional, IsString } from 'class-validator';
 
 export class TriggerAssessmentDto {
-  // number, not a code string — matches indicator_no throughout the rest of
-  // the system (apps/ai/excel/reader.py's IndicatorRow, Prisma's
-  // IndicatorResult/ReasoningStep.indicatorNo). No alphanumeric indicator
-  // code scheme exists anywhere else to match against.
+  // number, not a code string — matches indicatorNo everywhere else in the system.
   @ApiPropertyOptional({
     description:
       'Daftar nomor indikator yang akan dinilai (opsional; kosong/tidak diisi akan menilai seluruh indikator)',
@@ -17,9 +14,7 @@ export class TriggerAssessmentDto {
   @IsInt({ each: true })
   indikatorList?: number[];
 
-  // Deskriptif saja — dicatat di assessment_sessions untuk ditampilkan,
-  // tidak mengubah cara agent mengambil bukti (selalu lewat pgvector
-  // search_led_evidence, lihat catatan di worker.py::_handle_assessment_ami).
+  // Descriptive only — recorded on assessment_sessions, doesn't change how the agent retrieves evidence.
   @ApiPropertyOptional({ enum: LedSourceMode })
   @IsOptional()
   @IsEnum(LedSourceMode)

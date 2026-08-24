@@ -28,8 +28,7 @@ export class DokumenLedService {
     private readonly storage: StorageService,
   ) {}
 
-  // PENYUSUN is scoped to the single program studi they're assigned to;
-  // every other role operates tenant-wide.
+  /** PENYUSUN is scoped to their one assigned program studi; every other role is tenant-wide. */
   private assertProgramStudiScope(studyProgramId: string): void {
     const { role, studyProgramId: assignedId } =
       this.tenantContext.getOrThrow();
@@ -125,13 +124,8 @@ export class DokumenLedService {
       dokumenId: dokumen.id,
       tenantId,
       programStudiId: dokumen.studyProgramId,
-      // Required — assessment_sessions.created_by_user_id is a NOT NULL FK
-      // (db/postgres_client.py::create_session), unlike the old Supabase
-      // tables which had no user concept at all.
-      createdByUserId: userId,
-      // Omitted (not []) when unspecified — an empty array would read as
-      // "assess zero indicators" downstream, not "assess all of them".
-      indikatorList: dto?.indikatorList,
+      createdByUserId: userId, // NOT NULL FK on assessment_sessions
+      indikatorList: dto?.indikatorList, // omitted (not []) means "assess all"
       ...(dto?.sumberLed ? { sumberLed: dto.sumberLed } : {}),
       ...(dto?.ledFileName ? { ledFileName: dto.ledFileName } : {}),
       ...(dto?.lkpsBuktiDukungId ? { lkpsBuktiDukungId: dto.lkpsBuktiDukungId } : {}),
@@ -139,14 +133,7 @@ export class DokumenLedService {
     });
   }
 
-  /**
-   * PDF LED sudah sampai ke R2 langsung dari browser (POST
-   * /storage/presigned-upload lalu PUT ke R2) — di sini cuma mengambil
-   * baliknya dari R2 lalu meneruskannya sebagai multipart ke apps/ai's
-   * POST /upload/led, yang mengerjakan ekstraksi+indexing pgvector-nya
-   * sendiri, tidak berubah sama sekali. Frontend tidak pernah bicara
-   * langsung ke apps/ai, aturan yang sama dengan proxy chat SSE.
-   */
+  /** LED already sits in R2 (client uploaded via presigned PUT) — reads it back and forwards it as multipart to apps/ai's POST /upload/led. */
   async confirmLedUpload(id: string, dto: ConfirmLedUploadDto) {
     const dokumen = await this.findOne(id);
     const { tenantId } = this.tenantContext.getOrThrow();
@@ -167,9 +154,7 @@ export class DokumenLedService {
     form.append('tenant_id', tenantId);
     form.append('dokumen_id', dokumen.id);
     form.append(
-      // `new Uint8Array(bytes)` copies into a fresh ArrayBuffer — Buffer's
-      // own type is ArrayBufferLike (could be a SharedArrayBuffer), which
-      // Blob's BlobPart type doesn't accept.
+      // Buffer's ArrayBufferLike isn't a valid BlobPart; Uint8Array copies it into one that is.
       'file',
       new Blob([new Uint8Array(bytes)], { type: contentType ?? 'application/octet-stream' }),
       fileName,

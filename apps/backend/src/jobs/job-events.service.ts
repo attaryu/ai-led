@@ -14,11 +14,7 @@ export interface JobUpdate {
   error?: string;
 }
 
-/**
- * One QueueEvents (Redis pub/sub) connection per queue, shared by every SSE
- * client via a multicast Observable. A QueueEvents-per-request would leak a
- * Redis connection per browser tab (row 18 Kendala).
- */
+/** One QueueEvents connection per queue, shared via a multicast Observable — per-request would leak a Redis connection per tab. */
 @Injectable()
 export class JobEventsService implements OnModuleDestroy {
   private readonly queueEvents: QueueEvents[] = [];

@@ -4,13 +4,7 @@ import { Protected } from '../tenant/protected.decorator';
 import { CreateJobDto } from './dto/create-job.dto';
 import { JobsService } from './jobs.service';
 
-/**
- * Belum ada fitur nyata yang memanggil ini — generasi bab (Week 4) dan
- * asesmen AMI (Week 5) yang akan jadi pemanggil sungguhan lewat
- * `JobsService.enqueue()` langsung. Endpoint ini murni jalur uji manual
- * untuk row 16: buktikan job masuk antrean dan langsung dijawab 202,
- * tanpa menunggu worker (row 17) yang memang belum ada.
- */
+/** Manual job-enqueue endpoint for ops/testing — real producers call JobsService.enqueue() directly. */
 @ApiTags('jobs')
 @ApiBearerAuth()
 @Controller('jobs')

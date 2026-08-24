@@ -6,12 +6,7 @@ import { Protected } from '../tenant/protected.decorator';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { JobEventsService, JobUpdate } from './job-events.service';
 
-/**
- * Realtime job status (tracker row 18). SSE, not a WebSocket gateway: the
- * only direction of traffic is server -> client progress updates, and this
- * backend already streams SSE for chat (row 21) — no new dependency
- * (@nestjs/websockets/socket.io) needed for a one-way feed.
- */
+/** Realtime job status via SSE, not a WebSocket gateway — traffic is one-way (server -> client progress), no socket.io needed. */
 @ApiTags('jobs')
 @ApiBearerAuth()
 @Controller('jobs')

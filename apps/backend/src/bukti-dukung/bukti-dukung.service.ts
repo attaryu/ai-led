@@ -13,10 +13,7 @@ import { extractFileNameFromKey } from '../storage/storage-key.util';
 import { StorageService } from '../storage/storage.service';
 import { CreateBuktiDukungDto } from './dto/create-bukti-dukung.dto';
 
-// docs/database.md §7 "Fitur terkait": PIMPINAN & PENJAMIN_MUTU boleh
-// upload/hapus di scope manapun; PENYUSUN cuma di prodi tempatnya
-// ditugaskan, dan cuma boleh hapus berkas yang ia unggah sendiri. ADMIN
-// tidak disebut sama sekali — tidak dapat akses bukti dukung.
+/** docs/database.md §7 — PENYUSUN is scoped to their own prodi and own uploads; ADMIN has no access at all. */
 const SCOPED_TO_OWN_PRODI: Role[] = [Role.PENYUSUN];
 
 @Injectable()
@@ -32,10 +29,7 @@ export class BuktiDukungService {
     const { tenantId, userId, role, studyProgramId } =
       this.tenantContext.getOrThrow();
 
-    // `fileKey` datang dari klien (baris balasan /storage/presigned-upload) —
-    // dicek di sini juga, bukan cuma di StorageController, supaya baris
-    // BuktiDukung tidak pernah bisa dibuat menunjuk objek tenant lain
-    // walau lewat jalur yang berbeda.
+    // Re-checked here (not just StorageController) so no code path can create a row pointing at another tenant's object.
     if (!dto.fileKey.startsWith(`${tenantId}/`)) {
       throw new ForbiddenException('fileKey ini bukan milik tenant Anda');
     }
@@ -72,9 +66,7 @@ export class BuktiDukungService {
     });
 
     const id = randomUUID();
-    // Membaca ulang dari R2, bukan mempercayai body request: gagal di sini
-    // (404) berarti klien belum benar-benar menyelesaikan PUT ke presigned
-    // URL-nya sebelum memanggil endpoint ini.
+    // Read back from R2, not trusted from the body — a 404 here means the client's PUT never finished.
     const { sizeBytes } = await this.storage.headObject(dto.fileKey);
     const originalFileName = extractFileNameFromKey(dto.fileKey);
     const tipeFile = (originalFileName.split('.').pop() ?? '').toLowerCase();
@@ -152,8 +144,7 @@ export class BuktiDukungService {
     try {
       await this.storage.deleteObject(bukti.fileUrl);
     } catch {
-      // Objek sudah tidak ada (atau baris lama dari sebelum migrasi R2) —
-      // bukan alasan menggagalkan penghapusan barisnya.
+      // Object already gone (or a pre-R2 row) — not a reason to fail the row delete.
     }
   }
 }
