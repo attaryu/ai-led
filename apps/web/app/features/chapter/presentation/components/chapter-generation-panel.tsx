@@ -28,6 +28,7 @@ import {
 	useChapterGeneration,
 	type HasilGenerate,
 } from '../hooks/use-chapter-generation';
+import { ChapterEvidenceSuggestion } from './chapter-evidence-suggestion';
 
 /**
  * Isi tab "Generasi" (docs/application_flow.md §12.1): memilih bukti dukung yang
@@ -39,6 +40,11 @@ import {
  * yang statusnya belum `SIAP` tetap terlihat supaya penyusun tahu ia sudah
  * terunggah dan tinggal ditunggu — statusnya sendirilah penjelasan kenapa ia
  * belum bisa dicentang.
+ *
+ * Di atas daftar itu duduk {@link ChapterEvidenceSuggestion} (§12.1b), yang
+ * menjawab pertanyaan sebaliknya: berkas apa yang **tidak** ada di sini padahal
+ * kriteria babnya menuntutnya. Keduanya sengaja bertetangga — satu memerikan
+ * yang dimiliki, satu yang belum.
  */
 export function ChapterGenerationPanel({
 	chapter,
@@ -66,6 +72,7 @@ export function ChapterGenerationPanel({
 		jumlahBaru,
 		punyaDasar,
 		jumlahGugur,
+		saranBukti,
 		namaProdi,
 		tandaiUnggahanBaru,
 		jumlahMenungguOtomatis,
@@ -100,6 +107,18 @@ export function ChapterGenerationPanel({
 	 */
 	const [promptTerbuka, setPromptTerbuka] = React.useState(false);
 
+	/**
+	 * Blok rekomendasi menghilang selagi mencari (§12.1b).
+	 *
+	 * Kata kunci menyaring `daftar`, bukan `pustaka`, jadi bloknya tetap benar
+	 * secara data — tapi acuannya ke "daftar bawah" berhenti benar begitu daftar
+	 * itu tersaring, dan badan panel saat itu sedang berarti "hasil pencarian".
+	 * Nasihat yang tidak ikut tersaring, duduk di atas daftar yang tersaring,
+	 * tidak koheren. Ini juga yang menjaga keadaan "tidak ada yang cocok" tetap
+	 * bersih.
+	 */
+	const tampilkanSaran = saranBukti.length > 0 && kataKunci.trim() === '';
+
 	async function handleGenerate() {
 		const hasil = await jalankanGenerate();
 		if (hasil) onGenerated(hasil);
@@ -116,18 +135,26 @@ export function ChapterGenerationPanel({
 						 * Ditaruh menempel pada judulnya, bukan di kaki panel bersama
 						 * tombol Generate: yang ini menambah isi daftar di atasnya, bukan
 						 * menjalankan apa pun atas pilihan yang sudah dibuat.
+						 *
+						 * **Berlabel, bukan ikon telanjang.** Begitu pustakanya terisi,
+						 * keadaan kosong tidak lagi dirender dan tombol inilah satu-satunya
+						 * jalan unggah dari dalam tab — sementara tidak ada apa pun di
+						 * layar yang menamainya. Bobotnya sengaja ditahan di `ghost`/`xs`:
+						 * ia utilitas yang selalu tersedia, dan tidak boleh menyaingi
+						 * "Unggah sekarang" di blok rekomendasi, yang menjawab nasihat
+						 * tertentu dan menyebut berkas apa yang sedang dicari.
 						 */}
 						{bisaUnggah && (
 							<Button
 								type="button"
-								size="sm"
+								size="xs"
 								variant="ghost"
 								onClick={() => setUnggahTerbuka(true)}
 								disabled={sedangBerjalan}
-								aria-label="Unggah bukti dukung"
-								className="size-6 cursor-pointer p-0 text-muted-foreground hover:text-foreground"
+								className="cursor-pointer text-muted-foreground hover:text-foreground"
 							>
-								<UploadSimpleIcon className="size-4" />
+								<UploadSimpleIcon />
+								Unggah
 							</Button>
 						)}
 					</div>
@@ -186,33 +213,35 @@ export function ChapterGenerationPanel({
 			 */}
 			<ScrollArea className="min-h-0 flex-1">
 				<div className="px-5">
+					{/*
+					 * Di dalam gulungan, bukan di kepala panel — alasan yang sama yang
+					 * ditulis `chapter-review-panel.tsx` untuk `AssessmentBabBanner`:
+					 * kepala tab `shrink-0`, jadi blok setinggi ini akan menyita ruang
+					 * daftar di setiap kunjungan, selamanya, di panel yang lebarnya bisa
+					 * turun sampai 320 px. Di sini ia terlihat saat tab dibuka lalu
+					 * tergulung sendiri begitu penyusun mulai mencentang — dan ia berdiri
+					 * tepat di atas daftar yang disebutnya "daftar bawah".
+					 *
+					 * Kaki panel salah dua kali: ia zona aksi, sehingga nasihat di
+					 * sebelah tombol Generate terbaca sebagai prasyaratnya; dan ia tidak
+					 * dirender saat bab terkunci, padahal blok ini justru harus tetap
+					 * muncul di sana (§12.1a — hak unggah lepas dari hak sunting).
+					 */}
+					<ChapterEvidenceSuggestion
+						saran={tampilkanSaran ? saranBukti : []}
+						bisaUnggah={bisaUnggah}
+						dimatikan={sedangBerjalan}
+						onUnggah={() => setUnggahTerbuka(true)}
+					/>
+
 					{daftar.length === 0 ? (
-						totalPustaka === 0 && bisaUnggah ? (
-							// Ajakannya kini bisa dituntaskan di tempat; sebelumnya kalimat ini
-							// memulangkan pengguna ke Perpustakaan Bukti Dukung dan kembali.
-							<div className="flex flex-col items-center gap-2 py-8 text-center">
-								<p className="text-xs leading-relaxed text-muted-foreground">
-									Belum ada bukti dukung yang bisa dipakai bab ini.
-								</p>
-								<Button
-									type="button"
-									size="sm"
-									variant="outline"
-									onClick={() => setUnggahTerbuka(true)}
-									disabled={sedangBerjalan}
-									className="cursor-pointer"
-								>
-									<UploadSimpleIcon />
-									Unggah bukti dukung
-								</Button>
-							</div>
-						) : (
-							<p className="py-8 text-center text-xs leading-relaxed text-muted-foreground">
-								{totalPustaka === 0
-									? 'Belum ada bukti dukung yang bisa dipakai bab ini. Unggah dari Perpustakaan Bukti Dukung lebih dulu.'
-									: 'Tidak ada berkas yang cocok dengan pencarian.'}
-							</p>
-						)
+						<KeadaanKosong
+							totalPustaka={totalPustaka}
+							adaSaran={tampilkanSaran}
+							bisaUnggah={bisaUnggah}
+							dimatikan={sedangBerjalan}
+							onUnggah={() => setUnggahTerbuka(true)}
+						/>
 					) : (
 						<ul className="space-y-0.5 pb-2">
 							{daftar.map((bukti) => (
@@ -403,6 +432,80 @@ export function ChapterGenerationPanel({
 					onUploaded={tandaiUnggahanBaru}
 				/>
 			)}
+		</div>
+	);
+}
+
+/**
+ * Keadaan kosong daftar bukti dukung, dibedakan menurut **penyebabnya** (§4.6).
+ *
+ * Ajakan unggahnya sengaja **tidak** dirender saat blok rekomendasi sedang
+ * tampil: tombol di sana membuka modal yang sama persis, sambil menyebut berkas
+ * apa yang sedang dicari. Dua tombol bersebelahan yang bermuara ke satu tempat
+ * tidak menambah pilihan, cuma menambah keraguan. Kalimatnya tetap ada —
+ * "pustakanya masih kosong" tetap kabar yang berbeda dari "ada dua saran".
+ *
+ * Efek samping yang ikut terbetulkan: kalimat yang memulangkan pengguna ke
+ * Perpustakaan Bukti Dukung — keluar dari editor — kini hanya muncul saat
+ * memang tidak ada jalan unggah di dalam tab.
+ */
+function KeadaanKosong({
+	totalPustaka,
+	adaSaran,
+	bisaUnggah,
+	dimatikan,
+	onUnggah,
+}: {
+	totalPustaka: number;
+	/** `true` bila blok rekomendasi sedang tampil di atas keadaan ini. */
+	adaSaran: boolean;
+	bisaUnggah: boolean;
+	dimatikan: boolean;
+	onUnggah: () => void;
+}) {
+	if (totalPustaka > 0) {
+		return (
+			<p className="py-8 text-center text-xs leading-relaxed text-muted-foreground">
+				Tidak ada berkas yang cocok dengan pencarian.
+			</p>
+		);
+	}
+
+	if (adaSaran) {
+		return (
+			<p className="pb-8 text-center text-xs leading-relaxed text-muted-foreground">
+				Belum ada bukti dukung yang bisa dipakai bab ini.
+			</p>
+		);
+	}
+
+	if (!bisaUnggah) {
+		return (
+			<p className="py-8 text-center text-xs leading-relaxed text-muted-foreground">
+				Belum ada bukti dukung yang bisa dipakai bab ini. Unggah dari
+				Perpustakaan Bukti Dukung lebih dulu.
+			</p>
+		);
+	}
+
+	// Ajakannya bisa dituntaskan di tempat; sebelumnya kalimat ini memulangkan
+	// pengguna ke Perpustakaan Bukti Dukung dan kembali.
+	return (
+		<div className="flex flex-col items-center gap-2 py-8 text-center">
+			<p className="text-xs leading-relaxed text-muted-foreground">
+				Belum ada bukti dukung yang bisa dipakai bab ini.
+			</p>
+			<Button
+				type="button"
+				size="sm"
+				variant="outline"
+				onClick={onUnggah}
+				disabled={dimatikan}
+				className="cursor-pointer"
+			>
+				<UploadSimpleIcon />
+				Unggah bukti dukung
+			</Button>
 		</div>
 	);
 }
