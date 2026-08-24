@@ -42,7 +42,7 @@ import {
  * - **Tombol hapus.** §8.1 melarangnya karena checkpoint adalah jejak audit
  *   akreditasi; `chapterDraftRepository` bahkan tidak punya methodnya.
  * - **Daftar bukti dukung tiap checkpoint.** Datanya tersimpan (itu inti
- *   `BUKTI_DUKUNG_DRAFT`), tapi yang menampilkannya nanti tab Rujukan — kolom
+ *   `BUKTI_DUKUNG_DRAFT`), tapi yang menampilkannya nanti tab Bukti — kolom
  *   selebar ini tidak cukup untuk riwayat sekaligus rinciannya.
  */
 export function ChapterDraftPanel({

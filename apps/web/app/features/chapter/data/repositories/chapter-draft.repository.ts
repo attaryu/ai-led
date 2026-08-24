@@ -38,7 +38,7 @@ const BUKTI: Record<string, BuktiDukungRef> = {
 	/**
 	 * Sengaja **tidak ada** di seed `evidence.repository.ts` — berkas yang dulu
 	 * dipakai lalu dihapus dari Perpustakaan. Ia yang membuat keadaan "sudah
-	 * dihapus" di tab Rujukan bisa dilihat tanpa perlu menghapus apa pun dulu.
+	 * dihapus" di tab Bukti bisa dilihat tanpa perlu menghapus apa pun dulu.
 	 */
 	'ev-99': {
 		id: 'ev-99',

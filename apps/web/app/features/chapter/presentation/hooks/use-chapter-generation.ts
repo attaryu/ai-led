@@ -321,7 +321,7 @@ export function useChapterGeneration({
 
 			const buktiTerpilih = pustaka.filter((bukti) => terpilih.has(bukti.id));
 			// Nama dan tipe dibekukan di sini, saat berkasnya masih ada — itulah yang
-			// membuat tab Rujukan tetap bisa menyebutnya kalau kelak dihapus.
+			// membuat tab Bukti tetap bisa menyebutnya kalau kelak dihapus.
 			const rujukan: BuktiDukungRef[] = buktiTerpilih.map((bukti) => ({
 				id: bukti.id,
 				namaDokumen: bukti.namaDokumen,

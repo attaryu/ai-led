@@ -71,7 +71,7 @@ export const chapterSchema = z.object({
 	 *
 	 * Bentuknya {@link BuktiDukungRef}, bukan sekadar daftar id: alasan lengkapnya
 	 * ada di entitas itu — singkatnya, berkas yang dihapus dari Perpustakaan harus
-	 * tetap bisa disebutkan namanya di tab Rujukan.
+	 * tetap bisa disebutkan namanya di tab Bukti.
 	 */
 	buktiDukung: z.array(buktiDukungRefSchema),
 	/**

@@ -32,7 +32,11 @@ import { ChapterReviewPanel } from './chapter-review-panel';
 export const PANEL_TABS = [
 	{ value: 'draft', label: 'Draft' },
 	{ value: 'generasi', label: 'Generasi' },
-	{ value: 'rujukan', label: 'Rujukan' },
+	// Label "Bukti", `value` tetap `'rujukan'` — sama seperti `skor`/"Kualitas AI":
+	// `value` kunci internal yang tidak pernah dilihat pengguna. Labelnya sengaja
+	// pendek, bukan "Bukti Dukung" penuh, karena baris ini dibagi dengan bilah alat
+	// editor; judul di dalam panelnya tetap berbunyi lengkap.
+	{ value: 'rujukan', label: 'Bukti' },
 	{ value: 'skor', label: 'Kualitas AI' },
 	// Ditaruh paling akhir: ia bukan alat menyusun melainkan keadaan bab, dan
 	// ditengok sesudah pekerjaannya — bukan sambil mengerjakan.

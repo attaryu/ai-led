@@ -425,7 +425,7 @@ export const chapterRepository = {
 	 * `konten_kerja` + `checkpoint_aktif_id`. Alasannya, kalau bukti dukungnya
 	 * ditinggal apa adanya, `BUKTI_DUKUNG_BAB` akan menyatakan konten aktif
 	 * disusun dari berkas yang sudah tidak ada hubungannya dengan tulisan yang
-	 * barusan dipulihkan — tab Rujukan (§11.1) akan salah sejak hari pertama ia
+	 * barusan dipulihkan — tab Bukti (§11.1) akan salah sejak hari pertama ia
 	 * dibangun. Arsip checkpointnya sendiri tidak tersentuh: yang dibaca di sini
 	 * salinan, bukan sumbernya.
 	 */
