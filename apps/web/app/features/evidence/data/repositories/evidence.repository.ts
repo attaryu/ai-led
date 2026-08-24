@@ -8,6 +8,16 @@ import {
 	type EvidenceQueryDto,
 } from '../../domain/dtos/evidence-query.dto';
 import { type UploadEvidenceTargetDto } from '../../domain/dtos/upload-evidence.dto';
+import {
+	dalamCakupan,
+	folderAnak,
+	hitungIsiFolder,
+	jalurFolder,
+	keturunanIds,
+	type EvidenceNode,
+	type EvidenceScope,
+} from '../../domain/entities/evidence-folder.entity';
+import { evidenceFolderRepository } from './evidence-folder.repository';
 import { evidenceLocalSource } from '../sources/local/evidence-local.source';
 import {
 	reportUploadComplete,
@@ -30,6 +40,7 @@ const initialEvidences: EvidenceEntity[] = [
 		tenantId: CURRENT_TENANT_ID,
 		studyProgramId: null,
 		studyProgramName: null,
+		folderId: 'fld-seed-kebijakan',
 		namaDokumen: 'Statuta_Universitas_2024.pdf',
 		fileUrl: 'tenant/statuta-universitas-2024.pdf',
 		tipeFile: 'pdf',
@@ -46,6 +57,7 @@ const initialEvidences: EvidenceEntity[] = [
 		tenantId: CURRENT_TENANT_ID,
 		studyProgramId: null,
 		studyProgramName: null,
+		folderId: 'fld-seed-kebijakan',
 		namaDokumen: 'Renstra_Universitas_2025_2030.pdf',
 		fileUrl: 'tenant/renstra-universitas-2025-2030.pdf',
 		tipeFile: 'pdf',
@@ -62,6 +74,7 @@ const initialEvidences: EvidenceEntity[] = [
 		tenantId: CURRENT_TENANT_ID,
 		studyProgramId: null,
 		studyProgramName: null,
+		folderId: 'fld-seed-kebijakan',
 		namaDokumen: 'SK_Rektor_Penjaminan_Mutu.pdf',
 		fileUrl: 'tenant/sk-rektor-penjaminan-mutu.pdf',
 		tipeFile: 'pdf',
@@ -78,6 +91,7 @@ const initialEvidences: EvidenceEntity[] = [
 		tenantId: CURRENT_TENANT_ID,
 		studyProgramId: null,
 		studyProgramName: null,
+		folderId: 'fld-seed-kebijakan',
 		namaDokumen: 'Pedoman_Akademik_Universitas.docx',
 		fileUrl: 'tenant/pedoman-akademik-universitas.docx',
 		tipeFile: 'docx',
@@ -94,6 +108,7 @@ const initialEvidences: EvidenceEntity[] = [
 		tenantId: CURRENT_TENANT_ID,
 		studyProgramId: null,
 		studyProgramName: null,
+		folderId: 'fld-seed-laporan',
 		namaDokumen: 'Laporan_Keuangan_Universitas_2025.xlsx',
 		fileUrl: 'tenant/laporan-keuangan-universitas-2025.xlsx',
 		tipeFile: 'xlsx',
@@ -110,6 +125,7 @@ const initialEvidences: EvidenceEntity[] = [
 		tenantId: CURRENT_TENANT_ID,
 		studyProgramId: null,
 		studyProgramName: null,
+		folderId: 'fld-seed-legalitas',
 		namaDokumen: 'Sertifikat_Akreditasi_Institusi.jpg',
 		fileUrl: 'tenant/sertifikat-akreditasi-institusi.jpg',
 		tipeFile: 'jpg',
@@ -126,6 +142,7 @@ const initialEvidences: EvidenceEntity[] = [
 		tenantId: CURRENT_TENANT_ID,
 		studyProgramId: null,
 		studyProgramName: null,
+		folderId: 'fld-seed-kebijakan',
 		namaDokumen: 'Kebijakan_SPMI_Universitas.pdf',
 		fileUrl: 'tenant/kebijakan-spmi-universitas.pdf',
 		tipeFile: 'pdf',
@@ -142,6 +159,7 @@ const initialEvidences: EvidenceEntity[] = [
 		tenantId: CURRENT_TENANT_ID,
 		studyProgramId: null,
 		studyProgramName: null,
+		folderId: null,
 		namaDokumen: 'Struktur_Organisasi_Universitas.png',
 		fileUrl: 'tenant/struktur-organisasi-universitas.png',
 		tipeFile: 'png',
@@ -158,6 +176,7 @@ const initialEvidences: EvidenceEntity[] = [
 		tenantId: CURRENT_TENANT_ID,
 		studyProgramId: null,
 		studyProgramName: null,
+		folderId: null,
 		namaDokumen: 'Rekap_Kerja_Sama_Industri.xlsx',
 		fileUrl: 'tenant/rekap-kerja-sama-industri.xlsx',
 		tipeFile: 'xlsx',
@@ -174,6 +193,7 @@ const initialEvidences: EvidenceEntity[] = [
 		tenantId: CURRENT_TENANT_ID,
 		studyProgramId: null,
 		studyProgramName: null,
+		folderId: 'fld-seed-laporan',
 		namaDokumen: 'Notulen_Rapat_Senat_Juli.docx',
 		fileUrl: 'tenant/notulen-rapat-senat-juli.docx',
 		tipeFile: 'docx',
@@ -190,6 +210,7 @@ const initialEvidences: EvidenceEntity[] = [
 		tenantId: CURRENT_TENANT_ID,
 		studyProgramId: null,
 		studyProgramName: null,
+		folderId: null,
 		namaDokumen: 'Panduan_Tracer_Study.pdf',
 		fileUrl: 'tenant/panduan-tracer-study.pdf',
 		tipeFile: 'pdf',
@@ -206,6 +227,7 @@ const initialEvidences: EvidenceEntity[] = [
 		tenantId: null,
 		studyProgramId: '1',
 		studyProgramName: 'Teknik Informatika',
+		folderId: 'fld-seed-lkps',
 		namaDokumen: 'LKPS_Teknik_Informatika_2026.xlsx',
 		fileUrl: 'program-studi/1/lkps-teknik-informatika-2026.xlsx',
 		tipeFile: 'xlsx',
@@ -222,6 +244,7 @@ const initialEvidences: EvidenceEntity[] = [
 		tenantId: null,
 		studyProgramId: '1',
 		studyProgramName: 'Teknik Informatika',
+		folderId: 'fld-seed-kriteria',
 		namaDokumen: 'SK_Kurikulum_Prodi_TI.pdf',
 		fileUrl: 'program-studi/1/sk-kurikulum-prodi-ti.pdf',
 		tipeFile: 'pdf',
@@ -238,6 +261,7 @@ const initialEvidences: EvidenceEntity[] = [
 		tenantId: null,
 		studyProgramId: '1',
 		studyProgramName: 'Teknik Informatika',
+		folderId: 'fld-seed-kriteria-4',
 		namaDokumen: 'Daftar_Publikasi_Dosen_TI.xlsx',
 		fileUrl: 'program-studi/1/daftar-publikasi-dosen-ti.xlsx',
 		tipeFile: 'xlsx',
@@ -254,6 +278,7 @@ const initialEvidences: EvidenceEntity[] = [
 		tenantId: null,
 		studyProgramId: '1',
 		studyProgramName: 'Teknik Informatika',
+		folderId: null,
 		namaDokumen: 'Foto_Laboratorium_Jaringan.jpg',
 		fileUrl: 'program-studi/1/foto-laboratorium-jaringan.jpg',
 		tipeFile: 'jpg',
@@ -270,6 +295,7 @@ const initialEvidences: EvidenceEntity[] = [
 		tenantId: null,
 		studyProgramId: '2',
 		studyProgramName: 'Sistem Informasi',
+		folderId: null,
 		namaDokumen: 'LKPS_Sistem_Informasi_2026.xlsx',
 		fileUrl: 'program-studi/2/lkps-sistem-informasi-2026.xlsx',
 		tipeFile: 'xlsx',
@@ -286,6 +312,7 @@ const initialEvidences: EvidenceEntity[] = [
 		tenantId: null,
 		studyProgramId: '2',
 		studyProgramName: 'Sistem Informasi',
+		folderId: null,
 		namaDokumen: 'Laporan_Kegiatan_Himpunan_SI.docx',
 		fileUrl: 'program-studi/2/laporan-kegiatan-himpunan-si.docx',
 		tipeFile: 'docx',
@@ -302,6 +329,7 @@ const initialEvidences: EvidenceEntity[] = [
 		tenantId: null,
 		studyProgramId: '3',
 		studyProgramName: 'Teknik Elektro',
+		folderId: null,
 		namaDokumen: 'SK_Dosen_Pembimbing_TA_Elektro.pdf',
 		fileUrl: 'program-studi/3/sk-dosen-pembimbing-ta-elektro.pdf',
 		tipeFile: 'pdf',
@@ -341,6 +369,52 @@ function compare(a: EvidenceEntity, b: EvidenceEntity, sort: string): number {
 	}
 }
 
+/**
+ * Cakupan perpustakaan dari apa yang dipegang lapis presentasi (`level` +
+ * `:programId` di URL).
+ *
+ * Diekspor karena bukan cuma `findPaged` yang membutuhkannya: membuat folder,
+ * memindahkan berkas, dan menelusuri jalur folder saat unggah semuanya bekerja
+ * per cakupan. Menyusunnya di tiap pemanggil berarti `CURRENT_TENANT_ID` bocor
+ * ke lapis presentasi, dan satu tempat yang lupa mengisinya berarti kebocoran
+ * antar prodi.
+ */
+export function evidenceScopeFor(input: {
+	ownerTipe: EvidenceEntity['ownerTipe'];
+	studyProgramId?: string | null;
+}): EvidenceScope {
+	return input.ownerTipe === 'TENANT'
+		? {
+				ownerTipe: 'TENANT',
+				tenantId: CURRENT_TENANT_ID,
+				studyProgramId: null,
+			}
+		: {
+				ownerTipe: 'PROGRAM_STUDI',
+				tenantId: null,
+				studyProgramId: input.studyProgramId ?? null,
+			};
+}
+
+/**
+ * Menolong baris yang ditulis sebelum kolom `folderId` ada.
+ *
+ * `findAll` mem-`JSON.parse` tanpa lewat zod — sengaja, karena skema hanya jadi
+ * kontrak bentuk di sini — jadi baris lama tidak menimbulkan galat apa pun. Yang
+ * terjadi lebih buruk daripada galat: `undefined` menyusup ke tempat yang
+ * mengharap `string | null`, lalu `evidence.folderId === null` bernilai salah dan
+ * berkasnya lenyap dari akar maupun dari folder mana pun.
+ *
+ * Satu penormalan di jalan masuk menggantikan kebutuhan migrasi, dan ia tetap
+ * murah karena `findAll` memang sudah menelusuri seluruh barisnya.
+ */
+function normalkanBaris(baris: EvidenceEntity[]): EvidenceEntity[] {
+	return baris.map((evidence) => ({
+		...evidence,
+		folderId: evidence.folderId ?? null,
+	}));
+}
+
 export const evidenceRepository = {
 	findAll(): EvidenceEntity[] {
 		const stored = evidenceLocalSource.getAll();
@@ -349,7 +423,7 @@ export const evidenceRepository = {
 			return initialEvidences;
 		}
 		try {
-			return JSON.parse(stored);
+			return normalkanBaris(JSON.parse(stored));
 		} catch {
 			this.save(initialEvidences);
 			return initialEvidences;
@@ -372,40 +446,98 @@ export const evidenceRepository = {
 	 * Penyaringan, pencarian, pengurutan, dan pemotongan halaman semuanya di
 	 * sini — bukan di halaman — supaya saat pindah ke API ia tinggal berubah
 	 * jadi query string tanpa menyentuh lapis presentasi.
+	 *
+	 * **Dua mode, dipisah `q`** (docs/application_flow.md §4.6a):
+	 *
+	 * - `q` kosong → menjelajah satu folder: subfolder langsung `query.folderId`
+	 *   ditambah berkas yang `folderId`-nya sama
+	 * - `q` terisi → **seluruh cakupan, folder diabaikan**, dan tiap berkas
+	 *   dibawakan jalur foldernya
+	 *
+	 * Pencarian yang merata itu bukan kelalaian melainkan intinya: satu-satunya
+	 * bahaya nyata dari folder adalah berkas jadi hilang di dalamnya, dan
+	 * pencarian yang hanya melihat folder yang sedang dibuka justru memperkuat
+	 * bahaya itu.
+	 *
+	 * **Folder selalu di depan berkas**, apa pun kunci dan arah urutannya, dan
+	 * antar folder selalu menurut nama. `ukuranBytes`/`status`/`tipeFile`/
+	 * `uploadedByName` tidak punya arti bagi folder; memaksakannya menghasilkan
+	 * urutan yang tidak bisa dibaca sebagai apa pun. Halaman memotong daftar
+	 * gabungan itu, jadi `PaginationFooter` tidak perlu tahu ada dua macam baris.
 	 */
 	findPaged(query: EvidenceQueryDto): EvidencePage {
-		const all = this.findAll();
-
-		const scoped = all.filter((evidence) => {
-			if (evidence.ownerTipe !== query.ownerTipe) return false;
-			if (query.ownerTipe === 'TENANT') {
-				return evidence.tenantId === (query.tenantId ?? CURRENT_TENANT_ID);
-			}
-			return evidence.studyProgramId === query.studyProgramId;
-		});
+		const cakupan = evidenceScopeFor(query);
+		const berkasCakupan = this.findAll().filter((evidence) =>
+			dalamCakupan(evidence, cakupan),
+		);
+		const folderCakupan = evidenceFolderRepository.findByScope(cakupan);
 
 		const keyword = query.q?.trim().toLowerCase() ?? '';
-		const filtered = keyword
-			? scoped.filter(
+		const mencari = keyword !== '';
+		const folderAktif = query.folderId ?? null;
+
+		// Dihitung atas seluruh cakupan, bukan atas yang tampil: angka di kartu
+		// folder memang harus mencakup keturunan yang tidak sedang dirender.
+		const isi = hitungIsiFolder(folderCakupan, berkasCakupan);
+
+		const folderTampil = mencari
+			? folderCakupan
+					.filter((folder) => folder.nama.toLowerCase().includes(keyword))
+					.sort((a, b) => a.nama.localeCompare(b.nama, 'id'))
+			: folderAnak(folderCakupan, folderAktif);
+
+		const nodeFolder = folderTampil.map<EvidenceNode>((folder) => ({
+			tipe: 'FOLDER',
+			id: folder.id,
+			folder,
+			jumlahBerkas: isi.get(folder.id)?.berkas ?? 0,
+			jumlahPerluPerhatian: isi.get(folder.id)?.perluPerhatian ?? 0,
+		}));
+
+		const berkasTampil = mencari
+			? berkasCakupan.filter(
 					(evidence) =>
 						evidence.namaDokumen.toLowerCase().includes(keyword) ||
 						evidence.uploadedByName.toLowerCase().includes(keyword) ||
 						evidence.tipeFile.toLowerCase().includes(keyword),
 				)
-			: scoped;
+			: berkasCakupan.filter((evidence) => evidence.folderId === folderAktif);
 
 		// Tanpa pilihan urutan, yang terbaru di atas — kebiasaan umum daftar berkas.
 		const sortKey = query.sort ?? 'waktuDiunggah';
 		const descending = query.sort ? query.dir === 'desc' : true;
-		const sorted = [...filtered].sort((a, b) => {
+		const berkasUrut = [...berkasTampil].sort((a, b) => {
 			const result = compare(a, b, sortKey);
 			return descending ? -result : result;
 		});
 
+		// Dikunci per folder, bukan per berkas: jumlah foldernya belasan sementara
+		// berkasnya bisa ratusan, dan jalur keduanya sama.
+		const jalurPerFolder = new Map<string, string[]>();
+		if (mencari) {
+			for (const folder of folderCakupan) {
+				jalurPerFolder.set(
+					folder.id,
+					jalurFolder(folderCakupan, folder.id).map((simpul) => simpul.nama),
+				);
+			}
+		}
+
+		const nodeBerkas = berkasUrut.map<EvidenceNode>((evidence) => ({
+			tipe: 'BERKAS',
+			id: evidence.id,
+			evidence,
+			jalur:
+				mencari && evidence.folderId !== null
+					? (jalurPerFolder.get(evidence.folderId) ?? [])
+					: [],
+		}));
+
+		const gabungan = [...nodeFolder, ...nodeBerkas];
 		const start = (query.page - 1) * query.limit;
 		return {
-			items: sorted.slice(start, start + query.limit),
-			total: sorted.length,
+			items: gabungan.slice(start, start + query.limit),
+			total: gabungan.length,
 		};
 	},
 
@@ -471,6 +603,68 @@ export const evidenceRepository = {
 	},
 
 	/**
+	 * Memindahkan sekumpulan berkas ke satu folder (`null` = akar cakupannya).
+	 *
+	 * Menerima himpunan, bukan satu id, karena inilah jalan yang dipakai baik oleh
+	 * satu berkas lewat menu "…" maupun oleh hasil pilih massal — satu tulisan ke
+	 * penyimpanan dan satu `storage-update`, bukan satu per berkas.
+	 *
+	 * Cakupannya tidak ikut berubah: memindahkan berkas antar cakupan berarti
+	 * memindahkannya antar perpustakaan, dan pemilih folder tidak pernah
+	 * menawarkan folder dari cakupan lain.
+	 */
+	moveMany(ids: Set<string>, folderId: string | null): void {
+		this.save(
+			this.findAll().map((evidence) =>
+				ids.has(evidence.id) ? { ...evidence, folderId } : evidence,
+			),
+		);
+		this.notify();
+	},
+
+	/**
+	 * Apa yang akan ikut terhapus bersama sebuah folder. Murni membaca — dipakai
+	 * menyusun kalimat konfirmasi sebelum ada yang dihapus.
+	 *
+	 * `subfolder` tidak menghitung folder itu sendiri, supaya angkanya bisa
+	 * langsung dibacakan apa adanya di konfirmasi.
+	 */
+	rincianHapusFolder(folderId: string): { subfolder: number; berkas: number } {
+		const ids = keturunanIds(evidenceFolderRepository.findAll(), folderId);
+		const berkas = this.findAll().filter(
+			(evidence) => evidence.folderId !== null && ids.has(evidence.folderId),
+		).length;
+
+		return { subfolder: ids.size - 1, berkas };
+	},
+
+	/**
+	 * Menghapus folder beserta seluruh keturunannya — subfolder maupun berkas.
+	 *
+	 * **Tinggal di sini, bukan di `evidence-folder.repository`,** karena ia
+	 * menyentuh kedua koleksi sekaligus, dan repository folder sengaja tidak
+	 * mengimpor yang ini supaya arah impornya tetap satu jalan.
+	 *
+	 * Tidak ada tempat sampah: yang menahan salah tekan adalah konfirmasi yang
+	 * menyebut jumlahnya, bukan kemungkinan membatalkan.
+	 */
+	deleteFolderCascade(folderId: string): void {
+		const ids = keturunanIds(evidenceFolderRepository.findAll(), folderId);
+
+		this.save(
+			this.findAll().filter(
+				(evidence) =>
+					evidence.folderId === null || !ids.has(evidence.folderId),
+			),
+		);
+		// Memancarkan `storage-update`-nya sendiri; satu event tambahan lebih murah
+		// daripada urutan yang bisa membuat daftar terbaca saat folder sudah hilang
+		// tapi berkasnya belum.
+		evidenceFolderRepository.removeMany(ids);
+		this.notify();
+	},
+
+	/**
 	 * Tiruan antrean ekstraksi di sisi backend: MENUNGGU → DIPROSES → SIAP|GAGAL.
 	 * Dijalankan lewat timer, jadi status ikut berubah di layar tanpa muat ulang.
 	 */
@@ -508,6 +702,7 @@ export const evidenceRepository = {
 		uploadedByUserId,
 		uploadedByName,
 		studyProgramName,
+		folderId,
 		onProgress,
 	}: {
 		file: File;
@@ -515,6 +710,15 @@ export const evidenceRepository = {
 		uploadedByUserId: string;
 		uploadedByName: string;
 		studyProgramName: string | null;
+		/**
+		 * Folder tujuan; `null` = akar cakupannya.
+		 *
+		 * **Per berkas, bukan per batch** — tidak seperti `target`. Satu unggahan
+		 * folder membawa berkas dari beberapa folder sekaligus, sementara cakupannya
+		 * tetap satu. Jalurnya sudah diselesaikan pemanggil lewat
+		 * `evidenceFolderRepository.ensureFolderPaths` sebelum batch dimulai.
+		 */
+		folderId: string | null;
 		onProgress: (percent: number) => void;
 	}): Promise<EvidenceEntity> {
 		const tipeFile = getEvidenceExtension(file.name);
@@ -540,6 +744,7 @@ export const evidenceRepository = {
 				target.ownerTipe === 'PROGRAM_STUDI' ? target.studyProgramId : null,
 			studyProgramName:
 				target.ownerTipe === 'PROGRAM_STUDI' ? studyProgramName : null,
+			folderId,
 			namaDokumen: file.name,
 			fileUrl: reported.fileUrl,
 			tipeFile,

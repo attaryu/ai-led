@@ -1,6 +1,11 @@
 import * as React from 'react';
 
 import { evidenceRepository } from '~/features/evidence/data/repositories/evidence.repository';
+import { evidenceFolderRepository } from '~/features/evidence/data/repositories/evidence-folder.repository';
+import {
+	jalurFolder,
+	type EvidenceFolderEntity,
+} from '~/features/evidence/domain/entities/evidence-folder.entity';
 import {
 	type EvidenceEntity,
 	type EvidenceStatus,
@@ -109,8 +114,21 @@ export function useChapterGeneration({
 		ReadonlySet<string>
 	>(() => new Set());
 
+	/**
+	 * Folder bukti dukung, dibaca **seluruhnya** tanpa disaring cakupan.
+	 *
+	 * `pustaka` di sini memang melintasi dua cakupan sekaligus — berkas prodi ini
+	 * ditambah berkas universitas (§5.2) — jadi menyaring foldernya ke satu
+	 * cakupan akan membuat jalur separuh berkas tidak terbaca. Id folder unik
+	 * lintas cakupan, sehingga menaiki pohonnya tetap benar.
+	 */
+	const [folderPustaka, setFolderPustaka] = React.useState<
+		EvidenceFolderEntity[]
+	>([]);
+
 	const muat = React.useCallback(() => {
 		setPustaka(evidenceRepository.findAvailableForStudyProgram(studyProgramId));
+		setFolderPustaka(evidenceFolderRepository.findAll());
 	}, [studyProgramId]);
 
 	// Ingestion bukti dukung berjalan di atas timer sungguhan (MENUNGGU →
@@ -258,6 +276,30 @@ export function useChapterGeneration({
 		() => pustaka.filter((bukti) => bukti.status === STATUS_TERPAKAI).length,
 		[pustaka],
 	);
+
+	/**
+	 * Jalur folder per berkas, untuk keterangan di bawah namanya (§4.6a).
+	 *
+	 * **Daftarnya tetap datar, tidak jadi pohon.** Pekerjaan panel ini memilih
+	 * berkas mana yang menyuapi AI, bukan menjelajahi perpustakaan; menuntut
+	 * penggunanya menelusuri folder di kolom 320 px menambah langkah tanpa
+	 * menambah kejelasan. Yang benar-benar hilang tanpa folder cuma satu hal —
+	 * kemampuan membedakan dua `LKPS_2026.xlsx` dari tempat berbeda — dan itu
+	 * dijawab satu baris jalur, bukan satu mode navigasi baru.
+	 *
+	 * Berkas di akar tidak masuk peta: barisnya memang tidak menampilkan apa pun.
+	 */
+	const jalurBukti = React.useMemo(() => {
+		const peta = new Map<string, string>();
+		for (const bukti of pustaka) {
+			if (bukti.folderId === null) continue;
+			const jalur = jalurFolder(folderPustaka, bukti.folderId);
+			if (jalur.length > 0) {
+				peta.set(bukti.id, jalur.map((folder) => folder.nama).join(' / '));
+			}
+		}
+		return peta;
+	}, [pustaka, folderPustaka]);
 
 	/**
 	 * Bukti dukung yang dituntut kriteria bab ini tapi belum ada padanannya di
@@ -414,6 +456,7 @@ export function useChapterGeneration({
 
 	return {
 		daftar,
+		jalurBukti,
 		/** Total bukti sebelum disaring kata kunci — pembeda "kosong" vs "tak cocok". */
 		totalPustaka: pustaka.length,
 		jumlahSiap,

@@ -71,7 +71,13 @@ export function CollectionToolbar({
 				/>
 			</div>
 
-			<div className="flex items-center gap-2">
+			{/*
+			 * `flex-wrap`, bukan satu baris kaku: jumlah tombol di sini ditentukan
+			 * pemanggilnya lewat `actions`, dan Perpustakaan Bukti Dukung sekarang
+			 * menyumbang dua. Tanpa ini deretannya meluber keluar layar di lebar
+			 * sempit alih-alih turun ke baris berikutnya.
+			 */}
+			<div className="flex flex-wrap items-center justify-end gap-2">
 				{hasActiveFilters && (
 					<Button
 						variant="outline"

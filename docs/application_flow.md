@@ -340,6 +340,47 @@ Berlaku sama di lapis tenant maupun prodi:
 - **Detail berkas** dibuka lewat panel geser dari kanan (klik kartu atau baris): metadata lengkap, tahap pemrosesan, serta tombol coba lagi/hapus sesuai hak akses. Panelnya ikut memperbarui status bila ekstraksi selesai selagi panel terbuka.
 - **Keadaan kosong dibedakan**: "belum ada bukti dukung" (mengajak mengunggah, tombolnya hanya untuk yang berhak) berbeda dari "tidak ada yang cocok dengan pencarian" (mengajak membersihkan kata kunci).
 
+### 4.6a Folder bukti dukung
+
+Menjawab [Pertanyaan Terbuka #9](#16-pertanyaan-terbuka-yang-belum-diputuskan) — pengelompokan bukti dukung — dengan **folder**, model Google Drive: nama dan kedalaman bebas, plus unggah satu folder utuh yang membawa struktur relatifnya.
+
+**Satu pohon per cakupan, bukan satu pohon untuk semuanya.** Folder memakai `owner_tipe` + `tenant_id`/`program_studi_id` yang sama persis dengan berkasnya, jadi perpustakaan universitas dan tiap perpustakaan prodi punya akarnya masing-masing dan tidak ada folder yang melintasi batas itu. Bukan penyederhanaan: `database.md` §7 menetapkan isolasi antar prodi ditegakkan lewat kombinasi kolom itu, dan folder tenant yang memuat berkas prodi akan melubanginya.
+
+> **Catatan desain — folder disimpan terpisah dari berkas, bukan sebagai baris bertipe.** Godaan yang jelas adalah satu koleksi dengan pembeda `tipe = FOLDER | BERKAS`. Itu ditolak karena tujuh tempat di luar fitur ini menghitung tiap baris `BUKTI_DUKUNG` sebagai berkas — yang paling tegas `summarizeEvidence`, yang memasukkan **setiap** baris ke salah satu ember status lalu membaginya jadi persentase kesiapan. Folder tidak punya status ekstraksi, sehingga satu folder akan terhitung sebagai dokumen yang belum siap dan **menarik turun angka kesiapan institusi** — kesalahan yang tidak muncul sebagai error, hanya sebagai angka yang salah. Tabel `FOLDER_BUKTI` yang berdiri sendiri (`database.md` §7a) membuat ketujuhnya tidak berubah sama sekali. Pembeda `tipe` tetap ada, tapi hanya di lapis tampilan, tempat daftar memang harus merender dua macam baris berdampingan.
+
+- **Folder aktif hidup di URL** (`?folder=<id>`), tanpa nilai berarti akar — menyambung §4.6, tempat `q`/`sort`/`dir`/`page`/`limit` sudah lebih dulu di URL. Rutenya sendiri tidak berubah; id folder itu opaque, jadi ia tidak layak jadi segmen path. Masuk folder mengubah tiga hal sekaligus: set `folder`, kembali ke halaman 1, dan **bersihkan kata kunci**.
+- **Navigasi lewat remah tautan**, bukan kolom pohon di kiri. Halaman ini sudah berada di dalam sidebar aplikasi, dan sidebar kedua membuat isinya terjepit di layar sempit.
+- **Pencarian merata ke seluruh cakupan, mengabaikan folder.** Ini titik terpenting rancangannya: satu-satunya bahaya nyata dari folder adalah berkas jadi hilang di dalamnya, dan pencarian yang hanya melihat folder yang sedang dibuka justru memperkuat bahaya itu. Selagi mencari, remah tautan diganti keterangan "hasil pencarian di seluruh perpustakaan", nama folder ikut dicocokkan, dan tiap baris berkas membawa jalur foldernya.
+- **Folder selalu di depan berkas**, apa pun kunci dan arah urutannya, dan antar folder selalu menurut nama. Ukuran/status/tipe/pengunggah tidak punya arti bagi folder; memaksakannya menghasilkan urutan yang tidak terbaca. Halaman memotong daftar gabungan itu, jadi penomoran halaman tidak perlu tahu ada dua macam baris.
+- **Jumlah berkas di kartu folder dihitung rekursif** — seluruh keturunan, bukan anak langsung. Folder yang isinya hanya subfolder akan berbunyi "0 berkas" kalau tidak, dan terbaca kosong padahal memuat puluhan.
+- **Folder ikut mengabarkan kegagalan di dalamnya** lewat penanda "*n* perlu perhatian". Folder menyembunyikan kegagalan, sementara seluruh guna kolom status adalah menjawab "bukti saya sudah siap belum" — satu berkas `GAGAL` tiga tingkat di dalam akan lenyap dari pandangan begitu daftarnya bertingkat.
+- **Keadaan kosong jadi tiga, bukan dua**: perpustakaan yang memang belum berisi, folder yang kosong, dan pencarian yang tidak menemukan apa pun. Yang kedua perlu dibedakan — folder kosong yang menampilkan ajakan "belum ada bukti dukung" terbaca seolah seluruh perpustakaan kosong, padahal isinya cuma ada di cabang sebelah.
+
+#### Unggah folder
+
+Modal unggah punya dua tombol pilih: berkas, dan **folder** beserta seluruh isinya. Struktur foldernya diselesaikan **sekali, sebelum batch dimulai** — kalau tiap berkas menyelesaikan jalurnya sendiri saat unggahannya jalan, dua berkas dalam satu folder akan berlomba membuat folder yang sama dua kali.
+
+- **Cakupan satu per batch, folder per berkas.** Pembagian itulah yang membuat satu folder utuh bisa mendarat apa adanya, karena berkasnya memang tersebar ke beberapa folder sekaligus.
+- **Nama yang sama di bawah induk yang sama dipakai ulang, tidak diduplikasi.** Berbeda dari Google Drive, yang menduplikasi — di sini mengunggah ulang `Kriteria 4/` yang sudah ada jauh lebih sering berarti "tambahkan isinya" daripada "buatkan folder kembar".
+- **Folder kosong tidak bisa terbawa.** Peramban hanya memancarkan berkas; direktori tanpa berkas tidak meninggalkan jejak apa pun untuk dibaca. Yang tercipta hanya folder yang memuat setidaknya satu berkas yang lolos validasi. Ini batas peramban, bukan pilihan rancangan — dan dicatat supaya tidak "diperbaiki" nanti.
+- **Berkas terbuang diringkas per alasan**, tidak lagi satu baris per berkas: folder nyata selalu berisi `.DS_Store`, `Thumbs.db`, dan sejenisnya, dan daftar satu-satu berhenti terbaca pada 150 penolakan. Rinciannya tetap bisa dibuka.
+- **Batas 100 berkas per unggahan**, dinyatakan di modal, dan sisanya dilaporkan — bukan dipotong diam-diam. Daftar yang tiba-tiba lebih pendek dari yang dipilih terbaca seperti berkas yang hilang.
+- **Target ke prodi lain mendarat di akar prodi itu.** §4.4.1 membolehkan lapis tenant menyasar prodi mana pun; pohon prodi itu sedang tidak terlihat, dan memilih folder di perpustakaan yang tidak kelihatan adalah menebak. Dalam keadaan itu pemilih foldernya tidak dirender dan diganti keterangannya. Struktur folder yang ikut diunggah tetap terbawa.
+
+#### Menata isi
+
+- **Buat folder & ganti nama** memakai satu dialog yang sama; bentuknya identik, dan dua dialog berarti dua salinan pesan validasi yang harus dijaga tetap sama. Nama ditolak bila kosong, lebih dari 100 karakter, memuat garis miring, atau sudah dipakai saudara di induk yang sama (tanpa peduli besar-kecil huruf).
+- **Pindah lewat dialog "Pindahkan ke…"**, bukan tarik-lepas. Tarik-lepas hanya menjangkau folder yang kebetulan sedang terlihat di layar yang sama, tidak bisa dipakai tanpa tetikus, dan menuntut tiga sasaran jatuh berbeda. Dialog dengan pohon ciut menjawab ketiganya, dan ia pula yang membuat memindahkan dua belas berkas sekaligus mungkin. Folder yang sedang dipindahkan beserta keturunannya **tidak dirender** di pemilih — tujuan yang tampak ada tapi tidak bisa dipilih mengabarkan pilihan yang tidak pernah ada.
+- **Pilih massal** lewat centang di kartu maupun baris tabel, dengan satu bilah aksi. Seleksi dibersihkan saat berpindah folder, berpindah halaman, dan saat kata kunci berubah: aksi massal atas berkas yang tidak terlihat di layar adalah cara paling mudah menghapus hal yang salah. Tombol hapus massal mati bila sebagian pilihan bukan unggahan penggunanya sendiri (§15) — menghapus sebagiannya diam-diam adalah hasil yang tidak diminta siapa pun.
+- **Hapus folder ikut menghapus isinya**, dengan jumlah subfolder dan berkas disebut di konfirmasi sebelum apa pun dihapus. Tidak ada tempat sampah, jadi angka itulah satu-satunya penahan. Peringatan rujukan bab yang sama seperti hapus satu berkas ikut ditampilkan.
+- **Ganti nama berkas sengaja belum ada.** `nama_dokumen` adalah nama berkas lengkap dengan ekstensinya sementara `file_url` adalah object key yang tidak ikut berubah — satu berkas akan punya dua nama, dan yang dilihat pengguna bukan yang ada di penyimpanan. Itu keputusan sendiri, bukan efek samping folder.
+
+#### Di luar perpustakaan
+
+Pemilih bukti dukung di tab Generasi Editor Bab (§12.1) **tetap datar**, hanya ditambah jalur folder sebagai keterangan di bawah nama berkas. Pekerjaan panel itu memilih berkas mana yang menyuapi AI, bukan menjelajahi perpustakaan; menuntut penggunanya menelusuri pohon di kolom 320 px menambah langkah tanpa menambah kejelasan. Yang benar-benar hilang tanpa folder cuma satu hal — kemampuan membedakan dua `LKPS_2026.xlsx` dari tempat berbeda — dan itu dijawab satu baris jalur, bukan satu mode navigasi baru.
+
+Unggah dari tab Generasi (§12.1a) dan dari halaman Penilaian AMI tetap memakai modal yang sama, lengkap dengan pemilih folder tujuannya; bawaannya akar, karena keduanya memang tidak sedang menjelajahi perpustakaan.
+
 ### 4.7 Kasus Uji — Perpustakaan & Unggah Bukti Dukung
 
 | #   | Kondisi                                          | Aksi                                          | Hasil yang diharapkan                                                                                                     |
@@ -358,6 +399,24 @@ Berlaku sama di lapis tenant maupun prodi:
 | 12  | Penyusun melihat berkas unggahan orang lain      | Buka menu aksi berkas tersebut                | Tombol hapus tidak dirender untuk berkas itu, tapi dirender untuk unggahannya sendiri                                       |
 | 13  | Berkas sedang `DIPROSES`, panel detail terbuka   | Tunggu sampai ekstraksi selesai               | Badge status dan tahap pemrosesan di panel ikut berubah tanpa menutup panel                                                 |
 | 14  | Perpustakaan prodi yang belum punya bukti dukung | Buka halamannya                               | Keadaan kosong berisi ajakan mengunggah (tombol hanya untuk yang berhak), bukan daftar kosong tanpa konteks                 |
+
+Kasus uji folder (§4.6a):
+
+| #   | Kondisi                                          | Aksi                                          | Hasil yang diharapkan                                                                                                     |
+| --- | ------------------------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 15  | Dashboard Utama, angka kesiapan tercatat         | Buat tiga folder, kembali ke Dashboard        | Angka "n dari m berkas siap dipakai AI" **sama persis**. Folder tidak pernah terhitung sebagai berkas — ini uji terpenting |
+| 16  | Sedang di dalam sebuah folder                    | Muat ulang halaman                            | Tetap di folder itu; `?folder=` dibaca dari URL seperti `q`/`sort`/`page`                                                  |
+| 17  | URL memuat `?folder=` yang folder-nya tak ada    | Buka URL itu                                  | Dipulangkan ke akar dan `?folder=` dibersihkan dari URL, bukan menampilkan folder kosong yang tak bisa dijelaskan          |
+| 18  | Sedang di dalam folder A                         | Cari kata kunci yang cocok di folder B        | Hasil dari seluruh cakupan, remah tautan diganti keterangan, tiap baris membawa jalur foldernya; kosongkan → kembali ke A  |
+| 19  | Sudah ada folder "Laporan & Notulen" di akar     | Buat folder "LAPORAN & notulen" di akar       | Ditolak beserta alasannya; nama yang sama di induk berbeda tetap diterima                                                 |
+| 20  | Direktori berisi `Kriteria 4/SK/a.pdf`, `Kriteria 4/b.docx`, satu `.txt`, dan satu subfolder kosong | Pilih folder lalu unggah | Dua folder tercipta bersarang benar, `.txt` diringkas sebagai penolakan per alasan, **subfolder kosong tidak ikut**        |
+| 21  | Lanjutan #20                                     | Unggah ulang jalur yang sama                  | Folder dipakai ulang, tidak jadi kembar                                                                                    |
+| 22  | Beberapa berkas tercentang                       | Pindahkan ke folder lain                      | Semuanya pindah dalam satu langkah; bilah seleksi hilang setelahnya                                                        |
+| 23  | Memindahkan sebuah folder                        | Buka pemilih tujuan                           | Folder itu beserta seluruh keturunannya **tidak dirender** — bukan sekadar dinonaktifkan                                   |
+| 24  | Folder berisi 2 subfolder dan 3 berkas           | Hapus folder itu                              | Konfirmasi menyebut angka pastinya; setelah dihapus tak satu pun keturunannya tersisa dan tak ada berkas yatim             |
+| 25  | Penyusun memilih berkasnya sendiri + milik orang | Lihat bilah aksi terpilih                     | Tombol hapus mati beserta alasannya; memilih hanya miliknya sendiri membuatnya hidup lagi                                  |
+| 26  | Folder baru yang masih kosong                    | Masuk ke dalamnya                             | "Folder ini masih kosong", bukan ajakan yang sama dengan perpustakaan yang memang belum berisi                             |
+| 27  | Editor Bab → tab Generasi                        | Lihat daftar bukti dukung                     | Daftarnya tetap datar, tiap berkas membawa jalur foldernya; berkas di akar tidak menampilkan apa pun                       |
 
 ---
 
@@ -1004,5 +1063,7 @@ Bagian ini mencatat hal-hal yang belum diputuskan/dibahas tuntas, untuk didiskus
 9. **Pengelompokan bukti dukung** — perpustakaan saat ini datar dengan pencarian sebagai satu-satunya alat penyaring. Apakah nanti perlu folder, tag, atau kategori (mis. per kriteria LAM Teknik) begitu jumlah berkasnya membesar?
 
    > **Catatan —** §12.1b sudah menjawabnya sementara dengan pencocokan **nama berkas** terhadap katalog penanda, karena ia butuh tahu bukti dukung apa yang belum ada dan tidak ada kolom kategori untuk ditanyai. Itu tambalan, bukan jawaban: begitu kategori sungguhan ada, daftar penanda di `evidence-recommendation.entity.ts` adalah yang pertama dihapus.
+
+   > **Terjawab sebagian di §4.6a — folder, bukan tag maupun kategori.** Perpustakaan sekarang berupa pohon dengan nama dan kedalaman bebas, satu pohon per cakupan, plus unggah folder utuh. Yang **masih terbuka**: folder menempatkan satu berkas di **satu** tempat, sehingga berkas yang relevan ke beberapa kriteria LAM sekaligus — SK yang sama dipakai kriteria 2 dan kriteria 6 — tetap tidak punya jawaban. Itu kebutuhan tag, bukan folder, dan keduanya bisa hidup berdampingan. Karena itu tambalan §12.1b di atas **belum boleh dihapus**: folder tidak memberi kolom kategori untuk ditanyai.
 
 10. **Pembatalan unggahan yang sedang berjalan** — panel progres saat ini hanya bisa disembunyikan, bukan membatalkan unggahan, karena pembatalan perlu dukungan pembatalan permintaan ke object storage sekaligus pembersihan objek separuh jalan di sisi backend.

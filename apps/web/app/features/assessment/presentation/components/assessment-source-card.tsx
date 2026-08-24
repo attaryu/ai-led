@@ -22,6 +22,7 @@ import {
 import { Select } from '~/core/components/ui/select';
 import { cn } from '~/core/lib/utils';
 import { EvidenceUploadDialog } from '~/features/evidence/presentation/components/evidence-upload-dialog';
+import { evidenceScopeFor } from '~/features/evidence/data/repositories/evidence.repository';
 import { type EvidenceEntity } from '~/features/evidence/domain/entities/evidence.entity';
 import {
 	type AssessmentReadiness,
@@ -219,6 +220,16 @@ export function AssessmentSourceCard({
 				level="PROGRAM_STUDI"
 				studyProgramId={studyProgramId}
 				studyProgramName={studyProgramName}
+				/*
+				 * Cakupannya prodi ini, tujuannya akar: halaman Penilaian AMI tidak
+				 * menjelajahi perpustakaan, jadi tidak ada folder yang sedang dibuka.
+				 * Pemilih folder di modal tetap tersedia (§4.6a).
+				 */
+				cakupan={evidenceScopeFor({
+					ownerTipe: 'PROGRAM_STUDI',
+					studyProgramId,
+				})}
+				labelAkar={`Bukti Dukung Prodi ${studyProgramName}`}
 				uploader={uploader}
 				onUploaded={pakaiHasilUnggah}
 			/>

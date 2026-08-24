@@ -24,6 +24,10 @@ erDiagram
     PROGRAM_STUDI ||--o{ USER : "menugaskan PENYUSUN"
     PROGRAM_STUDI ||--o{ DOKUMEN_LED : "memiliki"
     PROGRAM_STUDI ||--o{ BUKTI_DUKUNG : "memiliki (owner_tipe=PROGRAM_STUDI)"
+    TENANT ||--o{ FOLDER_BUKTI : "memiliki (owner_tipe=TENANT)"
+    PROGRAM_STUDI ||--o{ FOLDER_BUKTI : "memiliki (owner_tipe=PROGRAM_STUDI)"
+    FOLDER_BUKTI ||--o{ FOLDER_BUKTI : "parent_id — sarang bebas"
+    FOLDER_BUKTI ||--o{ BUKTI_DUKUNG : "mengelompokkan (folder_id nullable)"
 
     DOKUMEN_LED ||--o{ BAB_DOKUMEN : "terdiri dari"
     BAB_DOKUMEN ||--o{ BAB_DRAFT : "punya checkpoint"

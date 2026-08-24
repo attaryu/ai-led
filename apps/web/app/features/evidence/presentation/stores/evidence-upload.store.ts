@@ -20,6 +20,17 @@ export type EvidenceUploadItem = {
 	sizeBytes: number;
 	target: UploadEvidenceTargetDto;
 	studyProgramName: string | null;
+	/**
+	 * Folder tujuan; `null` = akar cakupannya.
+	 *
+	 * **Per baris antrean, bukan per batch** — tidak seperti `target`. Unggah
+	 * folder membawa berkas dari beberapa folder sekaligus sementara cakupannya
+	 * tetap satu, dan pembagian itu yang membuat strukturnya bisa mendarat apa
+	 * adanya. Jalurnya sudah diselesaikan modal unggah sebelum batch dimulai.
+	 */
+	folderId: string | null;
+	/** Nama folder tujuan untuk dibaca manusia; `null` = akar. */
+	namaFolder: string | null;
 	progress: number;
 	phase: UploadPhase;
 	/** Baris `BUKTI_DUKUNG` yang tercipta; baru terisi sesudah `phase = 'selesai'`. */
@@ -36,7 +47,16 @@ type EvidenceUploadState = {
 	items: EvidenceUploadItem[];
 	isCollapsed: boolean;
 	startBatch: (input: {
-		files: File[];
+		/**
+		 * Tiap berkas membawa folder tujuannya sendiri. Bentuk jamak yang lebih
+		 * kaya dari `File[]` inilah yang membuat unggah satu folder utuh mungkin
+		 * tanpa memecahnya jadi banyak batch.
+		 */
+		files: Array<{
+			file: File;
+			folderId: string | null;
+			namaFolder: string | null;
+		}>;
 		target: UploadEvidenceTargetDto;
 		studyProgramName: string | null;
 		uploader: UploaderIdentity;
@@ -79,6 +99,7 @@ export const useEvidenceUploadStore = create<EvidenceUploadState>(
 					uploadedByUserId: uploader.userId,
 					uploadedByName: uploader.name,
 					studyProgramName: item.studyProgramName,
+					folderId: item.folderId,
 					onProgress: (percent) =>
 						patch(item.id, { phase: 'uploading', progress: percent }),
 				});
@@ -125,13 +146,17 @@ export const useEvidenceUploadStore = create<EvidenceUploadState>(
 				uploader,
 				onUploaded,
 			}) => {
-				const newItems: EvidenceUploadItem[] = files.map((file, index) => ({
-					id: `${Date.now()}-${index}-${file.name}`,
-					file,
-					fileName: file.name,
-					sizeBytes: file.size,
+				const newItems: EvidenceUploadItem[] = files.map((entri, index) => ({
+					// `index` yang menjamin keunikan, bukan namanya: unggah folder bisa
+					// membawa dua `laporan.pdf` dari dua folder berbeda dalam satu batch.
+					id: `${Date.now()}-${index}-${entri.file.name}`,
+					file: entri.file,
+					fileName: entri.file.name,
+					sizeBytes: entri.file.size,
 					target,
 					studyProgramName,
+					folderId: entri.folderId,
+					namaFolder: entri.namaFolder,
 					progress: 0,
 					phase: 'antre',
 				}));

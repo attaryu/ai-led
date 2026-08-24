@@ -1,6 +1,11 @@
 import * as React from 'react';
 import {
+	CaretDownIcon,
+	CaretRightIcon,
 	CloudArrowUpIcon,
+	FolderIcon,
+	FolderPlusIcon,
+	FilePlusIcon,
 	WarningCircleIcon,
 	XIcon,
 } from '@phosphor-icons/react';
@@ -19,6 +24,8 @@ import { Field, FieldLabel } from '~/core/components/ui/field';
 import { cn } from '~/core/lib/utils';
 import { studyProgramRepository } from '~/features/study-program/data/repositories/study-program.repository';
 import { type StudyProgramEntity } from '~/features/study-program/domain/entities/study-program.entity';
+import { evidenceFolderRepository } from '../../data/repositories/evidence-folder.repository';
+import { evidenceScopeFor } from '../../data/repositories/evidence.repository';
 import {
 	EVIDENCE_ACCEPT_ATTRIBUTE,
 	EVIDENCE_ACCEPTED_EXTENSIONS,
@@ -26,24 +33,61 @@ import {
 	type EvidenceEntity,
 	type EvidenceOwnerType,
 } from '../../domain/entities/evidence.entity';
+import {
+	jalurFolder,
+	type EvidenceFolderEntity,
+	type EvidenceScope,
+} from '../../domain/entities/evidence-folder.entity';
 import { uploadEvidenceTargetSchema } from '../../domain/dtos/upload-evidence.dto';
 import {
 	useEvidenceUploadStore,
 	type UploaderIdentity,
 } from '../stores/evidence-upload.store';
 import { formatBytes } from '../utils/evidence-format';
+import { EvidenceFolderPicker } from './evidence-folder-picker';
 
 const TENANT_OPTION = 'TENANT';
 
-type QueuedFile = { file: File; error: string | null };
+/**
+ * Batas berkas per batch.
+ *
+ * Unggah folder membuat batas ini perlu ada: tiap unggahan tiruan memakai
+ * `setInterval` sungguhan 1,2–6 detik ditambah dua timer ingestion, dan folder
+ * nyata gampang berisi ratusan berkas. Angkanya **dinyatakan di modal dan
+ * sisanya dilaporkan**, bukan dipotong diam-diam — daftar yang tiba-tiba lebih
+ * pendek dari yang dipilih terbaca seperti berkas yang hilang.
+ */
+const MAKS_BERKAS_PER_BATCH = 100;
+
+type QueuedFile = {
+	file: File;
+	error: string | null;
+	/** Folder relatif dari hasil pilih folder; kosong untuk pilih berkas biasa. */
+	jalur: string[];
+};
+
+/** Kunci antrean: nama saja tidak cukup begitu satu batch memuat banyak folder. */
+function kunciAntrean(item: QueuedFile): string {
+	return `${item.jalur.join('/')}/${item.file.name}-${item.file.size}`;
+}
 
 /**
  * Modal pemilihan berkas untuk satu batch unggahan (docs/application_flow.md
- * §4.4 & §5.2).
+ * §4.4, §4.6a & §5.2).
  *
- * Satu batch = satu target: di lapis tenant target dipilih di sini (universitas
- * atau salah satu prodi), di lapis prodi ia terkunci ke prodi yang sedang
- * dibuka sehingga pemilihnya tidak dirender sama sekali.
+ * Satu batch = satu **cakupan**: di lapis tenant dipilih di sini (universitas
+ * atau salah satu prodi), di lapis prodi ia terkunci ke prodi yang sedang dibuka
+ * sehingga pemilihnya tidak dirender sama sekali.
+ *
+ * **Folder-nya per berkas, bukan per batch.** Unggah folder membawa berkas dari
+ * beberapa folder sekaligus, sementara cakupannya tetap satu — pembagian itu yang
+ * membuat struktur folder di komputer pengguna bisa mendarat apa adanya.
+ *
+ * **Folder tujuan hanya bisa dipilih saat cakupannya sama dengan yang sedang
+ * dibuka.** Mengarahkan unggahan ke prodi lain (§4.4.1) berarti berkasnya masuk
+ * pohon prodi itu, yang tidak sedang terlihat; memilih folder di perpustakaan
+ * yang tidak kelihatan adalah menebak. Dalam keadaan itu tujuannya akar prodi
+ * tersebut, dan itu **dinyatakan**, bukan didiamkan.
  *
  * Begitu tombol unggah ditekan, modal langsung tertutup — progres berpindah ke
  * panel melayang agar pengguna tidak terkurung menunggu di halaman ini.
@@ -55,6 +99,9 @@ export function EvidenceUploadDialog({
 	studyProgramId,
 	studyProgramName,
 	allowTenantTarget = false,
+	cakupan,
+	folderAktif = null,
+	labelAkar,
 	uploader,
 	onUploaded,
 }: {
@@ -70,6 +117,11 @@ export function EvidenceUploadDialog({
 	 * sedang dibuka dan universitas.
 	 */
 	allowTenantTarget?: boolean;
+	/** Cakupan yang sedang dibuka; jadi pembanding saat memutuskan folder tujuan. */
+	cakupan: EvidenceScope;
+	/** Folder yang sedang dibuka; jadi tujuan bawaan. */
+	folderAktif?: string | null;
+	labelAkar: string;
 	uploader: UploaderIdentity;
 	/**
 	 * Dipanggil per berkas yang barisnya berhasil tercatat. Dipakai pemanggil yang
@@ -95,56 +147,116 @@ export function EvidenceUploadDialog({
 	const [studyPrograms, setStudyPrograms] = React.useState<
 		StudyProgramEntity[]
 	>([]);
+	const [tujuanFolder, setTujuanFolder] = React.useState<string | null>(
+		folderAktif,
+	);
+	const [pemilihTerbuka, setPemilihTerbuka] = React.useState(false);
+	const [tolakanTerbuka, setTolakanTerbuka] = React.useState(false);
+	const [dilewati, setDilewati] = React.useState(0);
+	const [folders, setFolders] = React.useState<EvidenceFolderEntity[]>([]);
 	const inputRef = React.useRef<HTMLInputElement>(null);
+	const folderInputRef = React.useRef<HTMLInputElement>(null);
 
 	React.useEffect(() => {
 		if (level === 'TENANT') setStudyPrograms(studyProgramRepository.findAll());
 	}, [level]);
 
 	// Setiap kali modal dibuka lagi, ia mulai dari kondisi bersih — antrean lama
-	// sudah pindah ke panel melayang.
+	// sudah pindah ke panel melayang. Daftar folder dibaca di sini, bukan
+	// dilanggankan: modal ini hidup sebentar dan tidak ada yang bisa menambah
+	// folder selagi ia terbuka.
 	React.useEffect(() => {
-		if (open) {
-			setQueued([]);
-			setTargetValue(targetBawaan);
-			setTargetError(null);
-			setIsDragging(false);
-		}
-	}, [open, targetBawaan]);
+		if (!open) return;
+		setQueued([]);
+		setTargetValue(targetBawaan);
+		setTargetError(null);
+		setIsDragging(false);
+		setTujuanFolder(folderAktif);
+		setPemilihTerbuka(false);
+		setTolakanTerbuka(false);
+		setDilewati(0);
+		setFolders(evidenceFolderRepository.findByScope(cakupan));
+	}, [open, targetBawaan, folderAktif, cakupan]);
 
 	const addFiles = React.useCallback((files: FileList | null) => {
 		if (!files) return;
-		const incoming = Array.from(files).map((file) => ({
-			file,
-			error: validateEvidenceFile(file),
-		}));
+
+		const incoming = Array.from(files).map<QueuedFile>((file) => {
+			// `webkitRelativePath` hanya terisi lewat input berkasnya sendiri —
+			// `Kriteria 4/SK/a.pdf`. Ruas terakhir nama berkasnya, jadi dibuang.
+			const relatif = file.webkitRelativePath;
+			const jalur = relatif ? relatif.split('/').slice(0, -1) : [];
+
+			return { file, error: validateEvidenceFile(file), jalur };
+		});
+
 		setQueued((previous) => {
 			// Berkas yang sama dipilih dua kali cukup dihitung sekali.
-			const seen = new Set(
-				previous.map((item) => `${item.file.name}-${item.file.size}`),
-			);
-			return [
-				...previous,
-				...incoming.filter(
-					(item) => !seen.has(`${item.file.name}-${item.file.size}`),
-				),
-			];
+			const seen = new Set(previous.map(kunciAntrean));
+			const segar = incoming.filter((item) => !seen.has(kunciAntrean(item)));
+			const ruang = MAKS_BERKAS_PER_BATCH - previous.length;
+
+			if (segar.length > ruang) {
+				setDilewati((sebelumnya) => sebelumnya + (segar.length - ruang));
+				return [...previous, ...segar.slice(0, Math.max(0, ruang))];
+			}
+
+			return [...previous, ...segar];
 		});
 	}, []);
 
-	const validFiles = queued.filter((item) => !item.error).map((item) => item.file);
-	const rejectedCount = queued.length - validFiles.length;
+	const validFiles = queued.filter((item) => !item.error);
+	const ditolak = queued.filter((item) => item.error);
+
+	/** Ditolak dikelompokkan per alasan; 150 baris satu-satu tidak terbaca lagi. */
+	const tolakanPerAlasan = React.useMemo(() => {
+		const peta = new Map<string, QueuedFile[]>();
+		for (const item of ditolak) {
+			const alasan = item.error as string;
+			const daftar = peta.get(alasan);
+			if (daftar) daftar.push(item);
+			else peta.set(alasan, [item]);
+		}
+		return [...peta.entries()];
+	}, [ditolak]);
+
+	/** Antrean dikelompokkan per folder asal; kunci kosong = tanpa folder. */
+	const antreanPerJalur = React.useMemo(() => {
+		const peta = new Map<string, QueuedFile[]>();
+		for (const item of validFiles) {
+			const kunci = item.jalur.join('/');
+			const daftar = peta.get(kunci);
+			if (daftar) daftar.push(item);
+			else peta.set(kunci, [item]);
+		}
+		return [...peta.entries()].sort(([a], [b]) => a.localeCompare(b));
+	}, [validFiles]);
+
+	const targetTerpilih =
+		targetValue === TENANT_OPTION
+			? { ownerTipe: 'TENANT' as const, studyProgramId: null }
+			: {
+					ownerTipe: 'PROGRAM_STUDI' as const,
+					studyProgramId: targetValue,
+				};
+
+	/**
+	 * Apakah target unggahan sama dengan perpustakaan yang sedang dibuka. Kalau
+	 * tidak, folder tujuan tidak bisa dipilih — lihat JSDoc komponen.
+	 */
+	const targetSamaDenganCakupan =
+		targetTerpilih.ownerTipe === cakupan.ownerTipe &&
+		(targetTerpilih.ownerTipe === 'TENANT' ||
+			targetTerpilih.studyProgramId === cakupan.studyProgramId);
+
+	const namaTujuan = React.useMemo(() => {
+		if (tujuanFolder === null) return labelAkar;
+		const jalur = jalurFolder(folders, tujuanFolder);
+		return jalur.length > 0 ? jalur.map((f) => f.nama).join(' / ') : labelAkar;
+	}, [folders, tujuanFolder, labelAkar]);
 
 	const handleSubmit = () => {
-		// Satu sumber target untuk kedua lapis: `targetValue`. Di lapis prodi tanpa
-		// opsi universitas ia tidak pernah berubah dari prodi yang sedang dibuka,
-		// jadi hasilnya sama dengan versi bercabang sebelumnya.
-		const target =
-			targetValue === TENANT_OPTION
-				? { ownerTipe: 'TENANT' as const, studyProgramId: null }
-				: { ownerTipe: 'PROGRAM_STUDI' as const, studyProgramId: targetValue };
-
-		const parsed = uploadEvidenceTargetSchema.safeParse(target);
+		const parsed = uploadEvidenceTargetSchema.safeParse(targetTerpilih);
 		if (!parsed.success) {
 			setTargetError(parsed.error.issues[0]?.message ?? 'Target tidak valid');
 			return;
@@ -160,8 +272,50 @@ export function EvidenceUploadDialog({
 							?.studyProgramName ?? null)
 				: null;
 
+		const indukTujuan = targetSamaDenganCakupan ? tujuanFolder : null;
+
+		/*
+		 * Struktur folder diselesaikan **sekali, sebelum batch dimulai** — bukan
+		 * per berkas saat unggahannya jalan. Dua berkas dalam satu folder akan
+		 * berlomba membuat folder yang sama kalau masing-masing menyelesaikannya
+		 * sendiri. Cakupannya cakupan target, bukan yang sedang dibuka: unggahan ke
+		 * prodi lain tetap membawa strukturnya, hanya mendarat di akar prodi itu.
+		 */
+		const cakupanTujuan = evidenceScopeFor({
+			ownerTipe: parsed.data.ownerTipe,
+			studyProgramId: parsed.data.studyProgramId,
+		});
+		const jalurUnik = [
+			...new Set(
+				validFiles
+					.filter((item) => item.jalur.length > 0)
+					.map((item) => item.jalur.join('/')),
+			),
+		].map((kunci) => kunci.split('/'));
+
+		const petaFolder =
+			jalurUnik.length > 0
+				? evidenceFolderRepository.ensureFolderPaths({
+						cakupan: cakupanTujuan,
+						parentId: indukTujuan,
+						daftarJalur: jalurUnik,
+						pembuat: { userId: uploader.userId, nama: uploader.name },
+					})
+				: new Map<string, string | null>();
+
 		startBatch({
-			files: validFiles,
+			files: validFiles.map((item) => ({
+				file: item.file,
+				folderId:
+					item.jalur.length === 0
+						? indukTujuan
+						: (petaFolder.get(item.jalur.join('/')) ?? indukTujuan),
+				/** Dipakai panel melayang untuk menyebut tempat mendaratnya. */
+				namaFolder:
+					item.jalur.length === 0
+						? tujuanRingkas(indukTujuan, namaTujuan, targetSamaDenganCakupan)
+						: item.jalur[item.jalur.length - 1],
+			})),
 			target: parsed.data,
 			studyProgramName: targetProgramName,
 			uploader,
@@ -176,13 +330,13 @@ export function EvidenceUploadDialog({
 				<DialogHeader>
 					<DialogTitle>Unggah Bukti Dukung</DialogTitle>
 					<DialogDescription>
-						Bisa memilih beberapa berkas sekaligus. Format{' '}
-						{EVIDENCE_ACCEPTED_EXTENSIONS.join(', ')}, maksimal 25 MB per
-						berkas.
+						Bisa memilih beberapa berkas, atau satu folder utuh beserta
+						isinya. Format {EVIDENCE_ACCEPTED_EXTENSIONS.join(', ')}, maksimal
+						25 MB per berkas dan {MAKS_BERKAS_PER_BATCH} berkas per unggahan.
 					</DialogDescription>
 				</DialogHeader>
 
-				<div className="flex flex-col gap-4">
+				<div className="flex max-h-[60vh] flex-col gap-4 overflow-y-auto">
 					{level === 'TENANT' ? (
 						<Field data-invalid={!!targetError}>
 							<FieldLabel htmlFor="evidence-target">Simpan ke</FieldLabel>
@@ -246,6 +400,50 @@ export function EvidenceUploadDialog({
 						</p>
 					)}
 
+					{targetSamaDenganCakupan ? (
+						<Field>
+							<FieldLabel htmlFor="evidence-folder-tujuan">Folder</FieldLabel>
+							<button
+								id="evidence-folder-tujuan"
+								type="button"
+								onClick={() => setPemilihTerbuka((buka) => !buka)}
+								aria-expanded={pemilihTerbuka}
+								className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-accent/40"
+							>
+								<FolderIcon
+									weight="fill"
+									className="size-4 shrink-0 text-muted-foreground"
+								/>
+								<span className="min-w-0 flex-1 truncate">{namaTujuan}</span>
+								{pemilihTerbuka ? (
+									<CaretDownIcon className="size-4 shrink-0 text-muted-foreground" />
+								) : (
+									<CaretRightIcon className="size-4 shrink-0 text-muted-foreground" />
+								)}
+							</button>
+
+							{pemilihTerbuka && (
+								<EvidenceFolderPicker
+									folders={folders}
+									labelAkar={labelAkar}
+									nilai={tujuanFolder}
+									onPilih={setTujuanFolder}
+								/>
+							)}
+
+							<p className="text-xs text-muted-foreground">
+								Folder dari hasil pilih folder dibuat di dalam sini.
+							</p>
+						</Field>
+					) : (
+						<p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
+							Berkas mendarat di <span className="font-medium">akar</span>{' '}
+							perpustakaan tujuan, bukan di folder yang sedang Anda buka —
+							pohon folder tiap perpustakaan berdiri sendiri. Struktur folder
+							yang ikut diunggah tetap terbawa.
+						</p>
+					)}
+
 					<div
 						onDragOver={(event) => {
 							event.preventDefault();
@@ -257,19 +455,42 @@ export function EvidenceUploadDialog({
 							setIsDragging(false);
 							addFiles(event.dataTransfer.files);
 						}}
-						onClick={() => inputRef.current?.click()}
 						className={cn(
-							'flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border px-6 py-8 text-center transition-colors',
+							'flex flex-col items-center gap-3 rounded-lg border-2 border-dashed border-border px-6 py-8 text-center transition-colors',
 							isDragging && 'border-primary bg-primary/5',
 						)}
 					>
 						<CloudArrowUpIcon className="size-8 text-muted-foreground" />
-						<p className="text-sm font-medium">
-							Tarik berkas ke sini, atau klik untuk memilih
-						</p>
+						<p className="text-sm font-medium">Tarik berkas ke sini</p>
+
+						<div className="flex flex-wrap items-center justify-center gap-2">
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onClick={() => inputRef.current?.click()}
+								className="cursor-pointer gap-1.5"
+							>
+								<FilePlusIcon className="size-4" />
+								Pilih berkas
+							</Button>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onClick={() => folderInputRef.current?.click()}
+								className="cursor-pointer gap-1.5"
+							>
+								<FolderPlusIcon className="size-4" />
+								Pilih folder
+							</Button>
+						</div>
+
 						<p className="text-xs text-muted-foreground">
-							Beberapa berkas sekaligus diperbolehkan
+							Pilih folder ikut membawa subfoldernya. Folder yang tidak berisi
+							berkas tidak ikut terbawa.
 						</p>
+
 						<input
 							ref={inputRef}
 							type="file"
@@ -283,55 +504,114 @@ export function EvidenceUploadDialog({
 								event.target.value = '';
 							}}
 						/>
+						{/*
+						 * `webkitdirectory` tidak ada di tipe atribut React, dan ia satu-satunya
+						 * cara membaca struktur folder dari peramban. Ditulis lewat `{...{}}`
+						 * supaya tidak perlu menambal deklarasi global demi satu atribut.
+						 *
+						 * Tanpa `accept`: peramban tidak menyaringnya secara andal untuk
+						 * pilihan folder, dan berkas sampah seperti `.DS_Store` memang
+						 * seharusnya masuk lalu ditolak dengan alasannya — bukan lenyap
+						 * tanpa kabar.
+						 */}
+						<input
+							ref={folderInputRef}
+							type="file"
+							multiple
+							className="hidden"
+							{...{ webkitdirectory: '' }}
+							onChange={(event) => {
+								addFiles(event.target.files);
+								event.target.value = '';
+							}}
+						/>
 					</div>
 
-					{queued.length > 0 && (
-						<div className="flex max-h-56 flex-col gap-2 overflow-y-auto">
-							{queued.map((item) => (
-								<div
-									key={`${item.file.name}-${item.file.size}`}
-									className={cn(
-										'flex items-start justify-between gap-3 rounded-md border border-border px-3 py-2',
-										item.error && 'border-destructive/40 bg-destructive/5',
+					{antreanPerJalur.length > 0 && (
+						<div className="flex flex-col gap-3">
+							{antreanPerJalur.map(([kunci, daftar]) => (
+								<div key={kunci} className="flex flex-col gap-2">
+									{kunci !== '' && (
+										<p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+											<FolderIcon weight="fill" className="size-3.5 shrink-0" />
+											{kunci.split('/').join(' / ')}
+										</p>
 									)}
-								>
-									<div className="min-w-0">
-										<p className="truncate text-sm font-medium">
-											{item.file.name}
-										</p>
-										<p className="text-xs text-muted-foreground">
-											{formatBytes(item.file.size)}
-										</p>
-										{item.error && (
-											<p className="mt-1 flex items-center gap-1 text-xs text-destructive">
-												<WarningCircleIcon className="size-3.5 shrink-0" />
-												{item.error}
-											</p>
-										)}
-									</div>
-									<button
-										type="button"
-										aria-label={`Keluarkan ${item.file.name}`}
-										onClick={() =>
-											setQueued((previous) =>
-												previous.filter(
-													(candidate) => candidate.file !== item.file,
-												),
-											)
-										}
-										className="cursor-pointer rounded-sm p-1 text-muted-foreground hover:text-foreground"
-									>
-										<XIcon className="size-4" />
-									</button>
+									{daftar.map((item) => (
+										<BarisAntrean
+											key={kunciAntrean(item)}
+											item={item}
+											onKeluarkan={() =>
+												setQueued((previous) =>
+													previous.filter(
+														(kandidat) => kandidat.file !== item.file,
+													),
+												)
+											}
+										/>
+									))}
 								</div>
 							))}
 						</div>
 					)}
 
-					{rejectedCount > 0 && (
+					{tolakanPerAlasan.length > 0 && (
+						<div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2">
+							<button
+								type="button"
+								onClick={() => setTolakanTerbuka((buka) => !buka)}
+								aria-expanded={tolakanTerbuka}
+								aria-controls="daftar-tolakan"
+								className="flex w-full cursor-pointer items-center gap-2 text-left"
+							>
+								<WarningCircleIcon className="size-4 shrink-0 text-destructive" />
+								<span className="min-w-0 flex-1 text-sm font-medium">
+									{ditolak.length} berkas dilewati
+								</span>
+								{tolakanTerbuka ? (
+									<CaretDownIcon className="size-4 shrink-0 text-muted-foreground" />
+								) : (
+									<CaretRightIcon className="size-4 shrink-0 text-muted-foreground" />
+								)}
+							</button>
+
+							<div className="mt-1.5 flex flex-col gap-1">
+								{tolakanPerAlasan.map(([alasan, daftar]) => (
+									<p key={alasan} className="text-xs text-muted-foreground">
+										{daftar.length} × {alasan}
+									</p>
+								))}
+							</div>
+
+							{/*
+							 * Tetap dirender walau tertutup: `aria-controls` di atas harus
+							 * menunjuk elemen yang sungguh ada. Pola yang sama dengan daftar
+							 * saran bukti dukung di tab Generasi.
+							 */}
+							<ul
+								id="daftar-tolakan"
+								hidden={!tolakanTerbuka}
+								className="mt-2 flex max-h-40 list-inside list-disc flex-col gap-0.5 overflow-y-auto text-xs text-muted-foreground"
+							>
+								{ditolak.map((item) => (
+									<li key={kunciAntrean(item)} className="truncate">
+										{item.jalur.length > 0 && `${item.jalur.join('/')}/`}
+										{item.file.name}
+									</li>
+								))}
+							</ul>
+
+							<p className="mt-2 text-xs text-muted-foreground">
+								Berkas lain dalam pilihan ini tetap bisa dilanjutkan.
+							</p>
+						</div>
+					)}
+
+					{dilewati > 0 && (
 						<p className="text-xs text-muted-foreground">
-							{rejectedCount} berkas tidak akan diunggah karena tidak memenuhi
-							syarat. Berkas lain tetap bisa dilanjutkan.
+							{dilewati} berkas tidak dimasukkan karena satu unggahan dibatasi{' '}
+							{MAKS_BERKAS_PER_BATCH} berkas. Unggah sisanya setelah batch ini
+							selesai.
 						</p>
 					)}
 				</div>
@@ -356,5 +636,43 @@ export function EvidenceUploadDialog({
 				</DialogFooter>
 			</DialogContent>
 		</Dialog>
+	);
+}
+
+/** Nama pendek tujuan untuk baris panel melayang. */
+function tujuanRingkas(
+	folderId: string | null,
+	namaLengkap: string,
+	targetSama: boolean,
+): string | null {
+	if (!targetSama || folderId === null) return null;
+	const bagian = namaLengkap.split(' / ');
+	return bagian[bagian.length - 1];
+}
+
+function BarisAntrean({
+	item,
+	onKeluarkan,
+}: {
+	item: QueuedFile;
+	onKeluarkan: () => void;
+}) {
+	return (
+		<div className="flex items-start justify-between gap-3 rounded-md border border-border px-3 py-2">
+			<div className="min-w-0">
+				<p className="truncate text-sm font-medium">{item.file.name}</p>
+				<p className="text-xs text-muted-foreground">
+					{formatBytes(item.file.size)}
+				</p>
+			</div>
+			<button
+				type="button"
+				aria-label={`Keluarkan ${item.file.name}`}
+				onClick={onKeluarkan}
+				className="cursor-pointer rounded-sm p-1 text-muted-foreground hover:text-foreground"
+			>
+				<XIcon className="size-4" />
+			</button>
+		</div>
 	);
 }

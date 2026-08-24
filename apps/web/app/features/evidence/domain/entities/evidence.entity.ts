@@ -36,6 +36,21 @@ export const evidenceSchema = z.object({
 	 * Nanti diisi backend lewat join; di sini disimpan ikut barisnya.
 	 */
 	studyProgramName: z.string().nullable(),
+	/**
+	 * Folder tempat berkas ini berada; `null` = akar cakupannya
+	 * (docs/application_flow.md §4.6a). Padanan `BUKTI_DUKUNG.folder_id`.
+	 *
+	 * Foldernya sendiri hidup di koleksi terpisah — alasannya panjang dan ditulis
+	 * di kepala {@link ./evidence-folder.entity evidence-folder.entity.ts}, karena
+	 * ia yang menentukan bentuk seluruh fitur folder.
+	 *
+	 * **Kolom ini lebih muda dari data yang sudah tersimpan.** Baris `evidence_data`
+	 * yang ditulis sebelum folder ada tidak memuatnya, dan `findAll` mem-`JSON.parse`
+	 * tanpa lewat zod — jadi tidak ada galat, yang ada `undefined` menyusup ke
+	 * tempat yang mengharap `string | null`. Ditolong satu normalisasi di
+	 * `evidenceRepository.findAll`, bukan migrasi.
+	 */
+	folderId: z.string().nullable(),
 	namaDokumen: z
 		.string()
 		.min(1, 'Nama dokumen wajib diisi')

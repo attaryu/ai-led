@@ -16,6 +16,7 @@ import { Textarea } from '~/core/components/ui/textarea';
 import { formatRelativeTimeLong } from '~/core/lib/format-time';
 import { EvidenceStatusBadge } from '~/features/evidence/presentation/components/evidence-status-badge';
 import { EvidenceUploadDialog } from '~/features/evidence/presentation/components/evidence-upload-dialog';
+import { evidenceScopeFor } from '~/features/evidence/data/repositories/evidence.repository';
 import { useEvidencePermission } from '~/features/evidence/presentation/hooks/use-evidence-permission';
 import { formatBytes } from '~/features/evidence/presentation/utils/evidence-format';
 import { type EvidenceEntity } from '~/features/evidence/domain/entities/evidence.entity';
@@ -62,6 +63,7 @@ export function ChapterGenerationPanel({
 
 	const {
 		daftar,
+		jalurBukti,
 		totalPustaka,
 		jumlahSiap,
 		kataKunci,
@@ -248,6 +250,7 @@ export function ChapterGenerationPanel({
 								<BarisBukti
 									key={bukti.id}
 									bukti={bukti}
+									jalur={jalurBukti.get(bukti.id)}
 									terpilih={terpilih.has(bukti.id)}
 									dimatikan={sedangBerjalan}
 									onToggle={() => toggle(bukti)}
@@ -425,6 +428,18 @@ export function ChapterGenerationPanel({
 					studyProgramId={studyProgramId}
 					studyProgramName={namaProdi}
 					allowTenantTarget={izinBukti.canUploadTenant}
+					/*
+					 * Cakupannya prodi dokumen ini, dan tujuannya akarnya — editor bab
+					 * tidak sedang menjelajahi perpustakaan, jadi tidak ada "folder yang
+					 * sedang dibuka" untuk dijadikan bawaan. Pemilih foldernya tetap ada
+					 * di modal, sehingga berkas yang diunggah sambil menulis tetap bisa
+					 * langsung ditaruh pada tempatnya (§4.6a).
+					 */
+					cakupan={evidenceScopeFor({
+						ownerTipe: 'PROGRAM_STUDI',
+						studyProgramId,
+					})}
+					labelAkar={`Bukti Dukung Prodi ${namaProdi ?? ''}`.trim()}
 					uploader={{
 						userId: izinBukti.session.userId,
 						name: izinBukti.session.namaLengkap,
@@ -520,11 +535,14 @@ function KeadaanKosong({
  */
 function BarisBukti({
 	bukti,
+	jalur,
 	terpilih,
 	dimatikan,
 	onToggle,
 }: {
 	bukti: EvidenceEntity;
+	/** Jalur folder berkas ini; tak ada berarti di akar perpustakaannya. */
+	jalur?: string;
 	terpilih: boolean;
 	/** `true` selagi generate berjalan; seluruh daftar dibekukan. */
 	dimatikan: boolean;
@@ -564,6 +582,19 @@ function BarisBukti({
 							{bukti.tipeFile.toUpperCase()} · {formatBytes(bukti.ukuranBytes)}
 						</span>
 					</span>
+
+					{/*
+					 * Daftarnya tetap datar; jalur ini yang membedakan dua berkas
+					 * bernama sama dari folder berbeda — lihat JSDoc `jalurBukti`.
+					 */}
+					{jalur && (
+						<span
+							className="mt-1 block truncate text-xs text-muted-foreground"
+							title={jalur}
+						>
+							{jalur}
+						</span>
+					)}
 
 					{bukti.status === 'GAGAL' && bukti.catatanGagal && (
 						<span className="mt-1 block text-xs leading-relaxed text-destructive">

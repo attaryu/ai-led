@@ -13,6 +13,8 @@
    - [BAB_DRAFT](#6-bab_draft)
 4. [Kelompok: Bukti Dukung](#kelompok-bukti-dukung)
    - [BUKTI_DUKUNG](#7-bukti_dukung)
+- [FOLDER_BUKTI](#7a-folder_bukti)
+- [FOLDER_BUKTI](#7a-folder_bukti)
    - [BUKTI_DUKUNG_BAB](#8-bukti_dukung_bab)
    - [BUKTI_DUKUNG_DRAFT](#9-bukti_dukung_draft)
 5. [Kelompok: Skoring (Simulasi Penilaian)](#kelompok-skoring-simulasi-penilaian)
@@ -351,7 +353,8 @@ Ini adalah "perpustakaan" bukti — dikelola di dua tempat berbeda sesuai leveln
 | `tenant_id` | string (FK, nullable) | Diisi jika `owner_tipe = TENANT` |
 | `program_studi_id` | string (FK, nullable) | Diisi jika `owner_tipe = PROGRAM_STUDI` |
 | `nama_dokumen` | string | Contoh: "SK_Rektor_2026.pdf" |
-| `file_url` | string | **Object key** di object storage (Cloudflare R2), misal `tenant/1721-SK_Rektor_2026.pdf` — bukan URL publik. Tautan unduh dibuat sesaat (presigned) ketika dibutuhkan |
+| `folder_id` | string (FK, nullable) | Folder tempat berkas ini berada di [`FOLDER_BUKTI`](#7a-folder_bukti); `NULL` = di akar cakupannya. Ditambahkan bersama fitur folder (application_flow.md §4.6a) |
+| `file_url` | string | **Object key** di object storage (Cloudflare R2), misal `tenant/1721-SK_Rektor_2026.pdf` — bukan URL publik. Tautan unduh dibuat sesaat (presigned) ketika dibutuhkan. **Tidak ikut berubah saat berkas dipindahkan antar folder**: folder adalah pengelompokan logis, bukan jalur penyimpanan |
 | `tipe_file` | string | PDF, JPG, dll |
 | `ukuran_bytes` | int | Ukuran berkas; dipakai UI untuk menampilkan ukuran dan menegakkan batas unggah |
 | `status_ekstraksi` | string | `MENUNGGU` \| `DIPROSES` \| `SIAP` \| `GAGAL` — tahap pipeline ekstraksi teks/OCR (PRD §3.3). Bukti dukung baru bisa dipakai sebagai konteks AI setelah `SIAP` |
@@ -375,6 +378,46 @@ Ini adalah "perpustakaan" bukti — dikelola di dua tempat berbeda sesuai leveln
 - **Pemilihan bukti dukung sebagai konteks generate**: sebelum menekan tombol generate di suatu bab, user memilih satu atau lebih `BUKTI_DUKUNG` yang relevan; pilihan ini menjadi dasar pencarian semantik (RAG) untuk menyusun konten bab.
 - **Ekstraksi asinkron & coba ulang**: setelah unggahan dilaporkan, backend mengantrekan ekstraksi teks/OCR dan memperbarui `status_ekstraksi`. Kegagalan tidak menghapus barisnya — berkas tetap tampil dengan status `GAGAL` beserta `catatan_gagal`, dan user berwenang bisa memicu ekstraksi ulang tanpa mengunggah berkasnya lagi.
 - **Hapus bukti dukung**: `PIMPINAN` dan `PENJAMIN_MUTU` boleh menghapus bukti dukung apa pun di cakupannya; `PENYUSUN` hanya boleh menghapus berkas yang ia unggah sendiri (dicocokkan lewat `diunggah_oleh_user_id`).
+
+---
+
+## 7a. FOLDER_BUKTI
+
+### Deskripsi
+`FOLDER_BUKTI` merepresentasikan satu folder di dalam perpustakaan bukti dukung. Nama dan kedalamannya bebas — sarangnya dibentuk `parent_id` yang menunjuk ke barisnya sendiri, model Google Drive (application_flow.md §4.6a).
+
+### Konteks pengguna
+Menjawab [Pertanyaan Terbuka #9](./application_flow.md#16-pertanyaan-terbuka-yang-belum-diputuskan): perpustakaan yang sebelumnya datar jadi bisa dirapikan, dan satu folder di komputer penyusun bisa diunggah utuh beserta strukturnya.
+
+### Kolom
+
+| Kolom | Tipe | Keterangan |
+|---|---|---|
+| `id` | string (PK) | Identitas unik folder |
+| `owner_tipe` | string | `TENANT` \| `PROGRAM_STUDI` — **sama persis dengan `BUKTI_DUKUNG`** |
+| `tenant_id` | string (FK, nullable) | Diisi jika `owner_tipe = TENANT` |
+| `program_studi_id` | string (FK, nullable) | Diisi jika `owner_tipe = PROGRAM_STUDI` |
+| `nama` | string | Maksimal 100 karakter, tanpa garis miring. Wajib unik di antara saudara satu induk (dibandingkan tanpa peduli besar-kecil huruf) |
+| `parent_id` | string (FK, nullable) | Folder induk; `NULL` = folder ini di akar cakupannya |
+| `dibuat_oleh_user_id` | string (FK) | User yang membuat folder |
+| `dibuat_oleh_nama` | string | **Denormalisasi**, bukan FK — lihat [catatan konvensi](#konvensi-menyimpan-nama-bukan-hanya-id) |
+| `waktu_dibuat` | datetime | Waktu folder dibuat |
+
+> **Catatan desain — kenapa tabel sendiri, bukan `BUKTI_DUKUNG` bertipe.** Godaan yang jelas adalah menambah kolom `tipe = FOLDER | BERKAS` ke `BUKTI_DUKUNG` dan memakai `parent_id` untuk keduanya. Itu ditolak karena setiap konsumen daftar bukti dukung menghitung barisnya sebagai berkas — yang paling tegas ringkasan kesiapan, yang memasukkan **setiap** baris ke salah satu ember `status_ekstraksi` lalu membaginya jadi persentase. Folder tidak punya status ekstraksi, sehingga satu folder akan terhitung sebagai dokumen yang belum siap dan menarik turun angka kesiapan institusi — kesalahan yang tidak pernah muncul sebagai error, hanya sebagai angka yang salah. Tabel terpisah membuat seluruh query kesiapan tidak perlu tahu folder itu ada.
+
+> **Catatan desain — hapus berantai dijalankan aplikasi, bukan database.** `parent_id` dan `BUKTI_DUKUNG.folder_id` keduanya `ON DELETE RESTRICT`. Menghapus folder berisi lewat `ON DELETE CASCADE` akan membuang berkas tanpa satu pun kesempatan mengabarkan berapa banyak yang ikut hilang, padahal justru angka itulah satu-satunya penahan salah tekan di UI — sistem ini belum punya tempat sampah. Aplikasi yang mengumpulkan keturunannya, menyebut jumlahnya di konfirmasi, lalu menghapusnya dalam satu transaksi.
+
+> **Catatan desain — `jalur` dan `kedalaman` sengaja tidak disimpan.** Keduanya turunan `parent_id`, dan menyimpan turunan berarti memelihara dua sumber kebenaran yang bisa berselisih: satu pemindahan folder harus menulis ulang seluruh keturunannya. Untuk pohon sedalam ini biayanya tidak sebanding. Perlu `CHECK` di level aplikasi agar `parent_id` tidak pernah menunjuk keturunannya sendiri — pohon yang berputar membuat seluruh cabangnya lenyap dari query mana pun tanpa jalan pulih lewat UI.
+
+### Relasi
+- Folder level tenant dimiliki oleh satu `TENANT`; folder level prodi dimiliki oleh satu `PROGRAM_STUDI`. **Tidak ada folder yang melintasi batas itu** — tiap cakupan punya pohonnya sendiri, mengikuti aturan isolasi antar prodi di [§7](#7-bukti_dukung).
+- Satu folder dapat memuat banyak `FOLDER_BUKTI` lain lewat `parent_id` (self-referencing).
+- Satu folder dapat memuat banyak `BUKTI_DUKUNG` lewat `BUKTI_DUKUNG.folder_id`.
+
+### Fitur terkait
+- **Unggah folder**: peramban mengirim jalur relatif tiap berkas, dan backend/aplikasi membuat folder yang belum ada lalu memakai ulang yang sudah ada (dicocokkan per nama di bawah induk yang sama). Folder kosong tidak pernah terbawa — peramban hanya memancarkan berkas, sehingga direktori tanpa berkas tidak meninggalkan jejak untuk dibaca.
+- **Pencarian mengabaikan folder**: kata kunci dicocokkan ke seluruh cakupan, bukan ke folder yang sedang dibuka, dan tiap hasil membawa jalur foldernya. Folder yang menyembunyikan berkas adalah satu-satunya bahaya nyata dari fitur ini; pencarian yang ikut terbatasi folder justru memperkuatnya.
+- **Pindah**: mengubah `folder_id` (untuk berkas) atau `parent_id` (untuk folder). Cakupannya tidak pernah ikut berubah.
 
 ---
 

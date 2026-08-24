@@ -47,6 +47,13 @@ function UploadRow({ item }: { item: EvidenceUploadItem }) {
 				) : (
 					<p className="mt-0.5 text-xs text-muted-foreground">
 						{phaseLabel[item.phase]} · {formatBytes(item.sizeBytes)}
+						{/*
+						 * Folder tujuan ikut disebut karena satu batch tidak lagi mendarat
+						 * di satu tempat: unggah folder menyebar berkasnya ke beberapa
+						 * folder sekaligus, dan tanpa keterangan ini panel melayang jadi
+						 * satu-satunya bagian yang tidak tahu itu terjadi.
+						 */}
+						{item.namaFolder && ` · ${item.namaFolder}`}
 					</p>
 				)}
 
