@@ -22,12 +22,12 @@ export class BabDokumenService {
   async create(dokumenId: string, dto: CreateBabDokumenDto) {
     await this.access.findDokumenScoped(dokumenId);
     try {
-      return await this.prisma.babDokumen.create({
+      return await this.prisma.documentChapter.create({
         data: {
-          dokumenId,
-          urutanBab: dto.urutanBab,
-          judulBab: dto.judulBab,
-          kontenKerja: {},
+          documentId: dokumenId,
+          chapterOrder: dto.chapterOrder,
+          chapterTitle: dto.chapterTitle,
+          workingContent: {},
         },
       });
     } catch (err) {
@@ -40,9 +40,9 @@ export class BabDokumenService {
 
   async findAllForDokumen(dokumenId: string) {
     await this.access.findDokumenScoped(dokumenId);
-    return this.prisma.babDokumen.findMany({
-      where: { dokumenId },
-      orderBy: { urutanBab: 'asc' },
+    return this.prisma.documentChapter.findMany({
+      where: { documentId: dokumenId },
+      orderBy: { chapterOrder: 'asc' },
     });
   }
 
@@ -51,9 +51,9 @@ export class BabDokumenService {
     const { tenantId, role, studyProgramId } = this.tenantContext.getOrThrow();
     if (role === Role.PENYUSUN && !studyProgramId) return [];
 
-    return this.prisma.babDokumen.findMany({
+    return this.prisma.documentChapter.findMany({
       where: {
-        dokumen: {
+        document: {
           studyProgram: { tenantId },
           ...(role === Role.PENYUSUN ? { studyProgramId: studyProgramId ?? undefined } : {}),
         },
@@ -64,55 +64,55 @@ export class BabDokumenService {
   /** Includes buktiDukungBab/ragasScores/hasilSkorKriteria — access.findOneScoped skips these, most callers don't need them. */
   async findOne(id: string) {
     const { tenantId } = this.tenantContext.getOrThrow();
-    const bab = await this.prisma.babDokumen.findFirst({
-      where: { id, dokumen: { studyProgram: { tenantId } } },
+    const bab = await this.prisma.documentChapter.findFirst({
+      where: { id, document: { studyProgram: { tenantId } } },
       include: {
-        dokumen: { select: { studyProgramId: true } },
+        document: { select: { studyProgramId: true } },
         buktiDukungBab: true,
-        ragasScores: { orderBy: { dihitungPada: 'desc' }, take: 1 },
+        ragasScores: { orderBy: { computedAt: 'desc' }, take: 1 },
         hasilSkorKriteria: { where: { targetTipe: 'BAB_AKTIF' } },
       },
     });
     if (!bab) {
       throw new NotFoundException('Bab dokumen tidak ditemukan');
     }
-    this.access.assertProgramStudiScope(bab.dokumen.studyProgramId);
+    this.access.assertProgramStudiScope(bab.document.studyProgramId);
 
-    const { dokumen, ...rest } = bab;
-    void dokumen;
+    const { document, ...rest } = bab;
+    void document;
     return rest;
   }
 
-  /** Content edit (judulBab/kontenKerja) — the autosave path. */
+  /** Content edit (chapterTitle/workingContent) — the autosave path. */
   async update(id: string, dto: UpdateBabDokumenDto) {
     const { role } = this.tenantContext.getOrThrow();
     const bab = await this.access.findOneScoped(id);
 
-    if (bab.terkunci) {
+    if (bab.locked) {
       throw new ForbiddenException('Bab ini sedang terkunci untuk direview');
     }
-    if (role === Role.PENYUSUN && bab.diajukanReviewPada) {
+    if (role === Role.PENYUSUN && bab.reviewSubmittedAt) {
       throw new ForbiddenException(
         'Bab ini sedang menunggu review, tidak bisa diedit Penyusun',
       );
     }
 
-    return this.prisma.babDokumen.update({
+    return this.prisma.documentChapter.update({
       where: { id },
       data: {
         ...dto,
-        kontenKerja: dto.kontenKerja as Prisma.InputJsonValue | undefined,
+        workingContent: dto.workingContent as Prisma.InputJsonValue | undefined,
       },
     });
   }
 
   async remove(id: string) {
     const bab = await this.access.findOneScoped(id);
-    if (bab.terkunci) {
+    if (bab.locked) {
       throw new ForbiddenException('Bab ini sedang terkunci untuk direview');
     }
     try {
-      await this.prisma.babDokumen.delete({ where: { id } });
+      await this.prisma.documentChapter.delete({ where: { id } });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') {
         throw new ConflictException(

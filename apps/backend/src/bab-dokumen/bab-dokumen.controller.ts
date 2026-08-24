@@ -112,7 +112,7 @@ export class BabDokumenController {
     summary: 'Trigger simulasi skor rubrik untuk bab (Producer SIMULASI_SKOR)',
   })
   simulateScore(@Param('id') id: string, @Body() dto: SimulateScoreDto) {
-    return this.babPipelineService.triggerSimulateScore(id, dto.babDraftId);
+    return this.babPipelineService.triggerSimulateScore(id, dto.chapterDraftId);
   }
 
   /** SSE passthrough proxy to apps/ai's POST /chat/:id — @Res() raw response since we're forwarding an existing byte stream, not emitting our own. apps/ai owns the chat_messages writes. */

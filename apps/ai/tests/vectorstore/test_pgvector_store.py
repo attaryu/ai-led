@@ -79,7 +79,7 @@ def fixture_ids(conn):
             )
             cur.execute(
                 """
-                INSERT INTO dokumen_led (id, study_program_id, judul, tahun_akademik, status_keseluruhan)
+                INSERT INTO writing_led_documents (id, study_program_id, title, academic_year, overall_status)
                 VALUES (%s, %s, %s, %s, 'DRAFT')
                 """,
                 (dokumen_id, program_studi_id, "Test LED", "2026/2027"),
@@ -97,8 +97,8 @@ def fixture_ids(conn):
             # led_chunk_embeddings -> dokumen_led is ON DELETE RESTRICT (same
             # pattern as the rest of this schema), so tests' own rows must
             # go first.
-            cur.execute("DELETE FROM led_chunk_embeddings WHERE dokumen_id = %s", (ids[label]["dokumen_id"],))
-            cur.execute("DELETE FROM dokumen_led WHERE id = %s", (ids[label]["dokumen_id"],))
+            cur.execute("DELETE FROM writing_led_chunk_embeddings WHERE document_id = %s", (ids[label]["dokumen_id"],))
+            cur.execute("DELETE FROM writing_led_documents WHERE id = %s", (ids[label]["dokumen_id"],))
             cur.execute("DELETE FROM org_study_programs WHERE id = %s", (ids[label]["program_studi_id"],))
             cur.execute("DELETE FROM org_tenants WHERE id = %s", (ids[label]["tenant_id"],))
 

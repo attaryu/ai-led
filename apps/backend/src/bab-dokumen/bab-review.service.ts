@@ -19,48 +19,48 @@ export class BabReviewService {
   async submitForReview(id: string, dto: SubmitReviewDto = {}) {
     const diajukan = dto.diajukan ?? true;
     const bab = await this.access.findOneScoped(id);
-    if (bab.terkunci) {
+    if (bab.locked) {
       throw new ForbiddenException('Bab ini sedang terkunci untuk direview');
     }
-    if (diajukan && bab.diajukanReviewPada) {
+    if (diajukan && bab.reviewSubmittedAt) {
       throw new ConflictException('Bab ini sudah diajukan untuk review');
     }
-    if (!diajukan && !bab.diajukanReviewPada) {
+    if (!diajukan && !bab.reviewSubmittedAt) {
       throw new ConflictException('Bab ini belum diajukan untuk review');
     }
-    return this.prisma.babDokumen.update({
+    return this.prisma.documentChapter.update({
       where: { id },
-      data: { diajukanReviewPada: diajukan ? new Date() : null },
+      data: { reviewSubmittedAt: diajukan ? new Date() : null },
     });
   }
 
-  /** PENJAMIN_MUTU-only: lock/unlock and/or write a review note; either action clears diajukanReviewPada. */
+  /** PENJAMIN_MUTU-only: lock/unlock and/or write a review note; either action clears reviewSubmittedAt. */
   async setReviewStatus(id: string, dto: ReviewStatusDto) {
     const { userId } = this.tenantContext.getOrThrow();
     await this.access.findOneScoped(id);
 
-    const data: Prisma.BabDokumenUpdateInput = { diajukanReviewPada: null };
+    const data: Prisma.DocumentChapterUpdateInput = { reviewSubmittedAt: null };
 
-    if (dto.terkunci !== undefined) {
-      data.terkunci = dto.terkunci;
+    if (dto.locked !== undefined) {
+      data.locked = dto.locked;
     }
 
-    if (dto.catatanPenjaminMutu !== undefined) {
-      if (dto.catatanPenjaminMutu === null) {
-        data.catatanPenjaminMutu = null;
-        data.catatanOlehNama = null;
-        data.catatanPada = null;
+    if (dto.qualityAssuranceNote !== undefined) {
+      if (dto.qualityAssuranceNote === null) {
+        data.qualityAssuranceNote = null;
+        data.notedByName = null;
+        data.notedAt = null;
       } else {
         const user = await this.prisma.user.findUniqueOrThrow({
           where: { id: userId },
           select: { fullName: true },
         });
-        data.catatanPenjaminMutu = dto.catatanPenjaminMutu;
-        data.catatanOlehNama = user.fullName;
-        data.catatanPada = new Date();
+        data.qualityAssuranceNote = dto.qualityAssuranceNote;
+        data.notedByName = user.fullName;
+        data.notedAt = new Date();
       }
     }
 
-    return this.prisma.babDokumen.update({ where: { id }, data });
+    return this.prisma.documentChapter.update({ where: { id }, data });
   }
 }

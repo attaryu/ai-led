@@ -4,11 +4,10 @@ export class UpdateBabDokumenDto {
   @IsOptional()
   @IsString()
   @MaxLength(255)
-  judulBab?: string;
+  chapterTitle?: string;
 
-  // Editor content (Tiptap-style JSON) - shape is intentionally not deeply
-  // validated here, matches the loose jsonb column in docs/database.md §5.
+  // Editor content (Tiptap-style JSON) — loosely validated, matches the jsonb column (docs/database.md §5).
   @IsOptional()
   @IsObject()
-  kontenKerja?: Record<string, unknown>;
+  workingContent?: Record<string, unknown>;
 }

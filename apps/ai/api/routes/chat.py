@@ -86,8 +86,8 @@ async def chat(bab_id: str, body: ChatRequest):
     async def stream():
         # Synchronous (psycopg2 + blocking encode) — off the event loop so it
         # doesn't stall concurrent SSE streams.
-        evidence = await asyncio.to_thread(search_led, body.message, bab["tenant_id"], bab["dokumen_id"], n_results=3)
-        prompt = _build_chat_prompt(bab["judul_bab"], bab.get("konten_kerja") or {}, evidence, body.message)
+        evidence = await asyncio.to_thread(search_led, body.message, bab["tenant_id"], bab["document_id"], n_results=3)
+        prompt = _build_chat_prompt(bab["chapter_title"], bab.get("working_content") or {}, evidence, body.message)
 
         llm = build_plain_llm()
         full_reply = ""

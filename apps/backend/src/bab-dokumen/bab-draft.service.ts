@@ -17,17 +17,17 @@ export class BabDraftService {
   /** Riwayat checkpoint — tab Draft/Rujukan/Kualitas AI/Rubrik. */
   async findDrafts(id: string) {
     await this.access.findOneScoped(id);
-    return this.prisma.babDraft.findMany({
-      where: { babId: id },
-      orderBy: { versi: 'desc' },
+    return this.prisma.chapterDraft.findMany({
+      where: { chapterId: id },
+      orderBy: { version: 'desc' },
       include: { buktiDukungDraft: true, ragasScores: true, hasilSkorKriteria: true },
     });
   }
 
   /**
    * Manual checkpoint (tab Draft, §8.1).
-   * ponytail: baca-lalu-tulis `versi`, bukan increment atomik — race dua
-   * klik simultan gagal keras via `@@unique([babId, versi])`, bukan korup diam-diam.
+   * ponytail: baca-lalu-tulis `version`, bukan increment atomik — race dua
+   * klik simultan gagal keras via `@@unique([chapterId, version])`, bukan korup diam-diam.
    */
   async createDraft(id: string, dto: CreateBabDraftDto) {
     const { userId } = this.tenantContext.getOrThrow();
@@ -36,18 +36,18 @@ export class BabDraftService {
     const [user, buktiDukungBab, terakhir] = await Promise.all([
       this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { fullName: true } }),
       this.prisma.buktiDukungBab.findMany({ where: { babDokumenId: id } }),
-      this.prisma.babDraft.aggregate({ where: { babId: id }, _max: { versi: true } }),
+      this.prisma.chapterDraft.aggregate({ where: { chapterId: id }, _max: { version: true } }),
     ]);
 
-    return this.prisma.babDraft.create({
+    return this.prisma.chapterDraft.create({
       data: {
-        babId: id,
-        dibuatOlehUserId: userId,
-        dibuatOlehNama: user.fullName,
-        versi: (terakhir._max.versi ?? 0) + 1,
+        chapterId: id,
+        createdByUserId: userId,
+        createdByName: user.fullName,
+        version: (terakhir._max.version ?? 0) + 1,
         label: dto.label?.trim() || null,
-        kontenSnapshot: bab.kontenKerja as Prisma.InputJsonValue,
-        sumber: 'MANUAL',
+        contentSnapshot: bab.workingContent as Prisma.InputJsonValue,
+        source: 'MANUAL',
         buktiDukungDraft: {
           create: buktiDukungBab.map((row) => ({
             buktiDukungId: row.buktiDukungId,
@@ -64,7 +64,7 @@ export class BabDraftService {
   async findRubrik(id: string) {
     const bab = await this.access.findOneScoped(id);
     const rows = await this.prisma.rubrikKriteriaBab.findMany({
-      where: { urutanBab: bab.urutanBab },
+      where: { urutanBab: bab.chapterOrder },
       include: { kriteria: { include: { level: { orderBy: { skor: 'desc' } } } } },
     });
     return rows.map((row) => row.kriteria);

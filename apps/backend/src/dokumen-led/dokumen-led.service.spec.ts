@@ -11,7 +11,7 @@ function makeService(context: {
   const findMany = jest.fn().mockResolvedValue([]);
   const findFirst = jest.fn().mockResolvedValue(null);
   const prisma = {
-    dokumenLed: { findMany, findFirst },
+    ledDocument: { findMany, findFirst },
   };
   const tenantContext: Pick<TenantContextService, 'getOrThrow'> = {
     getOrThrow: jest.fn().mockReturnValue({ userId: 'u1', ...context }),

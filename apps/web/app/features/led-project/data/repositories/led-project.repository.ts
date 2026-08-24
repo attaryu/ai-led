@@ -51,11 +51,11 @@ function toEntity(row: BackendDokumenLed, studyProgramName: string): LedProjectE
 		id: row.id,
 		studyProgramId: row.studyProgramId,
 		studyProgramName,
-		judul: row.judul,
-		tahunAkademik: row.tahunAkademik,
-		statusKeseluruhan: row.statusKeseluruhan,
-		tenggat: row.tenggat,
-		createdAt: row.dibuatPada,
+		judul: row.title,
+		tahunAkademik: row.academicYear,
+		statusKeseluruhan: row.overallStatus,
+		tenggat: row.deadline,
+		createdAt: row.createdAt,
 	};
 }
 
@@ -101,9 +101,9 @@ export const ledProjectRepository = {
 		tenggat: string | null;
 	}): Promise<LedProjectEntity> {
 		const created = await ledProjectRemoteSource.create(data.studyProgramId, {
-			judul: data.judul,
-			tahunAkademik: data.tahunAkademik,
-			tenggat: data.tenggat ?? undefined,
+			title: data.judul,
+			academicYear: data.tahunAkademik,
+			deadline: data.tenggat ?? undefined,
 		});
 
 		await Promise.all(
@@ -183,11 +183,11 @@ export const ledProjectRepository = {
 		data: Partial<Omit<LedProjectEntity, 'id' | 'createdAt'>>,
 	): Promise<LedProjectEntity> {
 		const payload: DokumenLedUpdatePayload = {};
-		if (data.judul !== undefined) payload.judul = data.judul;
-		if (data.tahunAkademik !== undefined) payload.tahunAkademik = data.tahunAkademik;
+		if (data.judul !== undefined) payload.title = data.judul;
+		if (data.tahunAkademik !== undefined) payload.academicYear = data.tahunAkademik;
 		if (data.statusKeseluruhan !== undefined)
-			payload.statusKeseluruhan = data.statusKeseluruhan;
-		if (data.tenggat !== undefined) payload.tenggat = data.tenggat ?? undefined;
+			payload.overallStatus = data.statusKeseluruhan;
+		if (data.tenggat !== undefined) payload.deadline = data.tenggat ?? undefined;
 
 		const updated = await ledProjectRemoteSource.update(id, payload);
 		const program = await studyProgramRepository.findById(updated.studyProgramId);

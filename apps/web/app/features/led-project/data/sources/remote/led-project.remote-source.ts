@@ -5,21 +5,21 @@ import { type LedProjectStatus } from '../../../domain/entities/led-project.enti
 export type BackendDokumenLed = {
 	id: string;
 	studyProgramId: string;
-	judul: string;
-	tahunAkademik: string;
-	statusKeseluruhan: LedProjectStatus;
-	tenggat: string | null;
-	dibuatPada: string;
+	title: string;
+	academicYear: string;
+	overallStatus: LedProjectStatus;
+	deadline: string | null;
+	createdAt: string;
 };
 
 export type DokumenLedCreatePayload = {
-	judul: string;
-	tahunAkademik: string;
-	tenggat?: string;
+	title: string;
+	academicYear: string;
+	deadline?: string;
 };
 
 export type DokumenLedUpdatePayload = Partial<DokumenLedCreatePayload> & {
-	statusKeseluruhan?: LedProjectStatus;
+	overallStatus?: LedProjectStatus;
 };
 
 export const ledProjectRemoteSource = {

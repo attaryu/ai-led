@@ -6,5 +6,5 @@ import { CreateDokumenLedDto } from './create-dokumen-led.dto';
 export class UpdateDokumenLedDto extends PartialType(CreateDokumenLedDto) {
   @IsOptional()
   @IsEnum(StatusDokumen)
-  statusKeseluruhan?: StatusDokumen;
+  overallStatus?: StatusDokumen;
 }

@@ -27,13 +27,13 @@ def get_user_nama(user_id: str) -> str:
 
 
 def get_bab_dokumen(bab_id: str) -> Optional[dict]:
-    """Return {id, dokumen_id, urutan_bab, judul_bab, konten_kerja, tenant_id}, or None."""
+    """Return {id, document_id, chapter_order, chapter_title, working_content, tenant_id}, or None."""
     with get_conn().cursor() as cur:
         cur.execute(
             """
-            SELECT bd.id, bd.dokumen_id, bd.urutan_bab, bd.judul_bab, bd.konten_kerja, ps.tenant_id
-            FROM bab_dokumen bd
-            JOIN dokumen_led dl ON dl.id = bd.dokumen_id
+            SELECT bd.id, bd.document_id, bd.chapter_order, bd.chapter_title, bd.working_content, ps.tenant_id
+            FROM writing_document_chapters bd
+            JOIN writing_led_documents dl ON dl.id = bd.document_id
             JOIN org_study_programs ps ON ps.id = dl.study_program_id
             WHERE bd.id = %s
             """,
@@ -97,10 +97,10 @@ def get_rubrik_levels(kriteria_ids: list[str]) -> dict[str, list[dict]]:
 
 
 def get_bab_draft(bab_draft_id: str) -> Optional[dict]:
-    """Return {id, bab_id, konten_snapshot}, or None."""
+    """Return {id, chapter_id, content_snapshot}, or None."""
     with get_conn().cursor() as cur:
         cur.execute(
-            "SELECT id, bab_id, konten_snapshot FROM bab_draft WHERE id = %s",
+            "SELECT id, chapter_id, content_snapshot FROM writing_chapter_drafts WHERE id = %s",
             (bab_draft_id,),
         )
         row = cur.fetchone()
@@ -168,19 +168,22 @@ def create_bab_draft(
     konten_snapshot: dict,
     referensi_chunk_ids: Optional[list[str]] = None,
 ) -> dict:
-    """Insert a new AI-sourced BabDraft (checkpoint), versi = max+1 for this bab."""
+    """Insert a new AI-sourced BabDraft (checkpoint), version = max+1 for this bab."""
     draft_id = str(uuid.uuid4())
     with get_conn().cursor() as cur:
-        cur.execute("SELECT COALESCE(MAX(versi), 0) AS v FROM bab_draft WHERE bab_id = %s", (bab_id,))
+        cur.execute(
+            "SELECT COALESCE(MAX(version), 0) AS v FROM writing_chapter_drafts WHERE chapter_id = %s",
+            (bab_id,),
+        )
         next_versi = cur.fetchone()["v"] + 1
 
         cur.execute(
             """
-            INSERT INTO bab_draft
-                (id, bab_id, dibuat_oleh_user_id, versi, konten_snapshot, sumber,
-                 referensi_chunk_ids, dibuat_oleh_nama)
+            INSERT INTO writing_chapter_drafts
+                (id, chapter_id, created_by_user_id, version, content_snapshot, source,
+                 reference_chunk_ids, created_by_name)
             VALUES (%s, %s, %s, %s, %s, 'AI', %s, %s)
-            RETURNING id, versi
+            RETURNING id, version
             """,
             (
                 draft_id,
@@ -201,8 +204,8 @@ def update_bab_dokumen_aktif(bab_id: str, konten_kerja: dict, checkpoint_aktif_i
     with get_conn().cursor() as cur:
         cur.execute(
             """
-            UPDATE bab_dokumen
-            SET konten_kerja = %s, checkpoint_aktif_id = %s
+            UPDATE writing_document_chapters
+            SET working_content = %s, active_checkpoint_id = %s
             WHERE id = %s
             """,
             (json.dumps(konten_kerja), checkpoint_aktif_id, bab_id),
@@ -225,8 +228,8 @@ def create_generation_run(
     with get_conn().cursor() as cur:
         cur.execute(
             """
-            INSERT INTO generation_runs
-                (id, bab_draft_id, model, pedoman_used, rubric_used, checklist,
+            INSERT INTO writing_generation_runs
+                (id, chapter_draft_id, model, guidelines_used, rubric_used, checklist,
                  chunks_used, judge_result, prompt_full, latency_sec, token_count)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
@@ -261,8 +264,8 @@ def create_ragas_score(
     with get_conn().cursor() as cur:
         cur.execute(
             """
-            INSERT INTO ragas_scores
-                (id, target_tipe, bab_id, bab_draft_id, metrik, jumlah_chunk, dihitung_pada)
+            INSERT INTO writing_ragas_scores
+                (id, target_type, chapter_id, chapter_draft_id, metrics, chunk_count, computed_at)
             VALUES (%s, 'BAB_AKTIF', %s, %s, %s, %s, %s)
             RETURNING id
             """,
@@ -277,7 +280,7 @@ def save_chat_message(bab_id: str, user_id: str, role: str, message: str) -> dic
     with get_conn().cursor() as cur:
         cur.execute(
             """
-            INSERT INTO chat_messages (id, bab_dokumen_id, user_id, role, message)
+            INSERT INTO writing_chat_messages (id, chapter_id, user_id, role, message)
             VALUES (%s, %s, %s, %s, %s)
             RETURNING id, created_at
             """,
@@ -291,8 +294,8 @@ def get_chat_history(bab_id: str, limit: int = 50) -> list[dict]:
         cur.execute(
             """
             SELECT id, user_id, role, message, created_at
-            FROM chat_messages
-            WHERE bab_dokumen_id = %s
+            FROM writing_chat_messages
+            WHERE chapter_id = %s
             ORDER BY created_at ASC
             LIMIT %s
             """,

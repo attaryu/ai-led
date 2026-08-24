@@ -55,16 +55,16 @@ export class DokumenLedService {
 
   async create(studyProgramId: string, dto: CreateDokumenLedDto) {
     await this.assertProgramStudiInTenant(studyProgramId);
-    return this.prisma.dokumenLed.create({
-      data: { ...dto, studyProgramId, statusKeseluruhan: StatusDokumen.DRAFT },
+    return this.prisma.ledDocument.create({
+      data: { ...dto, studyProgramId, overallStatus: StatusDokumen.DRAFT },
     });
   }
 
   async findAllForProgramStudi(studyProgramId: string) {
     await this.assertProgramStudiInTenant(studyProgramId);
-    return this.prisma.dokumenLed.findMany({
+    return this.prisma.ledDocument.findMany({
       where: { studyProgramId },
-      orderBy: { dibuatPada: 'desc' },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
@@ -73,18 +73,18 @@ export class DokumenLedService {
     const { tenantId, role, studyProgramId } = this.tenantContext.getOrThrow();
     if (role === Role.PENYUSUN && !studyProgramId) return [];
 
-    return this.prisma.dokumenLed.findMany({
+    return this.prisma.ledDocument.findMany({
       where: {
         studyProgram: { tenantId },
         ...(role === Role.PENYUSUN ? { studyProgramId: studyProgramId ?? undefined } : {}),
       },
-      orderBy: { dibuatPada: 'desc' },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
   async findOne(id: string) {
     const { tenantId } = this.tenantContext.getOrThrow();
-    const dokumen = await this.prisma.dokumenLed.findFirst({
+    const dokumen = await this.prisma.ledDocument.findFirst({
       where: { id, studyProgram: { tenantId } },
     });
     if (!dokumen) {
@@ -96,13 +96,13 @@ export class DokumenLedService {
 
   async update(id: string, dto: UpdateDokumenLedDto) {
     await this.findOne(id);
-    return this.prisma.dokumenLed.update({ where: { id }, data: dto });
+    return this.prisma.ledDocument.update({ where: { id }, data: dto });
   }
 
   async remove(id: string) {
     await this.findOne(id);
     try {
-      await this.prisma.dokumenLed.delete({ where: { id } });
+      await this.prisma.ledDocument.delete({ where: { id } });
     } catch (err) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&

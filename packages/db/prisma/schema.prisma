@@ -149,7 +149,7 @@ model User {
   // prodi diam-diam mengosongkan study_program_id penghuninya.
   studyProgram StudyProgram? @relation(fields: [studyProgramId], references: [id], onDelete: Restrict)
 
-  babDraftDibuat      BabDraft[]          @relation("BabDraftDibuatOleh")
+  babDraftDibuat      ChapterDraft[]      @relation("BabDraftDibuatOleh")
   buktiDukungDiunggah BuktiDukung[]       @relation("BuktiDukungDiunggahOleh")
   hasilSkorDijalankan HasilSkorKriteria[] @relation("HasilSkorDijalankanOleh")
   chatMessages        ChatMessage[]
@@ -177,7 +177,7 @@ model StudyProgram {
 
   tenant      Tenant        @relation(fields: [tenantId], references: [id])
   users       User[]
-  dokumenLed  DokumenLed[]
+  dokumenLed  LedDocument[]
   buktiDukung BuktiDukung[]
 
   @@index([tenantId])
@@ -187,77 +187,77 @@ model StudyProgram {
 // ─────────────────────── Kelompok: Dokumen LED ───────────────────────
 
 /// docs/database.md §4
-model DokumenLed {
-  id                String        @id @default(cuid())
-  studyProgramId    String        @map("study_program_id")
-  judul             String
-  tahunAkademik     String        @map("tahun_akademik")
-  statusKeseluruhan StatusDokumen @map("status_keseluruhan")
-  tenggat           DateTime?     @db.Date
-  dibuatPada        DateTime      @default(now()) @map("dibuat_pada")
+model LedDocument {
+  id             String        @id @default(cuid())
+  studyProgramId String        @map("study_program_id")
+  title          String
+  academicYear   String        @map("academic_year")
+  overallStatus  StatusDokumen @map("overall_status")
+  deadline       DateTime?     @db.Date
+  createdAt      DateTime      @default(now()) @map("created_at")
 
   studyProgram       StudyProgram        @relation(fields: [studyProgramId], references: [id])
-  babDokumen         BabDokumen[]
+  chapters           DocumentChapter[]
   assessmentSessions AssessmentSession[]
   assessmentVerdicts AssessmentVerdict[]
-  ledChunkEmbeddings LedChunkEmbedding[]
+  chunkEmbeddings    LedChunkEmbedding[]
 
   @@index([studyProgramId])
-  @@map("dokumen_led")
+  @@map("writing_led_documents")
 }
 
 /// docs/database.md §5
-model BabDokumen {
-  id                  String    @id @default(cuid())
-  dokumenId           String    @map("dokumen_id")
-  urutanBab           Int       @map("urutan_bab")
-  judulBab            String    @map("judul_bab")
-  kontenKerja         Json      @map("konten_kerja")
-  checkpointAktifId   String?   @map("checkpoint_aktif_id")
-  terkunci            Boolean   @default(false)
-  catatanPenjaminMutu String?   @map("catatan_penjamin_mutu") @db.Text
-  catatanOlehNama     String?   @map("catatan_oleh_nama")
-  catatanPada         DateTime? @map("catatan_pada")
-  diajukanReviewPada  DateTime? @map("diajukan_review_pada")
-  terakhirDisimpan    DateTime  @updatedAt @map("terakhir_disimpan")
+model DocumentChapter {
+  id                   String    @id @default(cuid())
+  documentId           String    @map("document_id")
+  chapterOrder         Int       @map("chapter_order")
+  chapterTitle         String    @map("chapter_title")
+  workingContent       Json      @map("working_content")
+  activeCheckpointId   String?   @map("active_checkpoint_id")
+  locked               Boolean   @default(false)
+  qualityAssuranceNote String?   @map("quality_assurance_note") @db.Text
+  notedByName          String?   @map("noted_by_name")
+  notedAt              DateTime? @map("noted_at")
+  reviewSubmittedAt    DateTime? @map("review_submitted_at")
+  lastSavedAt          DateTime  @updatedAt @map("last_saved_at")
 
-  dokumen           DokumenLed          @relation(fields: [dokumenId], references: [id])
-  checkpointAktif   BabDraft?           @relation("CheckpointAktif", fields: [checkpointAktifId], references: [id])
-  babDraft          BabDraft[]          @relation("BabDraftOfBab")
+  document          LedDocument         @relation(fields: [documentId], references: [id])
+  activeCheckpoint  ChapterDraft?       @relation("ActiveCheckpoint", fields: [activeCheckpointId], references: [id])
+  drafts            ChapterDraft[]      @relation("ChapterDrafts")
   buktiDukungBab    BuktiDukungBab[]
   hasilSkorKriteria HasilSkorKriteria[]
   ragasScores       RagasScore[]
   chatMessages      ChatMessage[]
 
-  @@unique([dokumenId, urutanBab])
-  @@map("bab_dokumen")
+  @@unique([documentId, chapterOrder])
+  @@map("writing_document_chapters")
 }
 
 /// docs/database.md §6
-model BabDraft {
+model ChapterDraft {
   id                String      @id @default(cuid())
-  babId             String      @map("bab_id")
-  dibuatOlehUserId  String      @map("dibuat_oleh_user_id")
-  versi             Int
+  chapterId         String      @map("chapter_id")
+  createdByUserId   String      @map("created_by_user_id")
+  version           Int
   label             String?
-  kontenSnapshot    Json        @map("konten_snapshot")
-  sumber            SumberDraft
-  referensiChunkIds String?     @map("referensi_chunk_ids") @db.Text
-  dibuatOlehNama    String      @map("dibuat_oleh_nama")
-  dibuatPada        DateTime    @default(now()) @map("dibuat_pada")
+  contentSnapshot   Json        @map("content_snapshot")
+  source            SumberDraft
+  referenceChunkIds String?     @map("reference_chunk_ids") @db.Text
+  createdByName     String      @map("created_by_name")
+  createdAt         DateTime    @default(now()) @map("created_at")
 
-  bab             BabDokumen   @relation("BabDraftOfBab", fields: [babId], references: [id])
-  dibuatOleh      User         @relation("BabDraftDibuatOleh", fields: [dibuatOlehUserId], references: [id])
-  checkpointOfBab BabDokumen[] @relation("CheckpointAktif")
+  chapter            DocumentChapter   @relation("ChapterDrafts", fields: [chapterId], references: [id])
+  createdBy          User              @relation("BabDraftDibuatOleh", fields: [createdByUserId], references: [id])
+  activeCheckpointOf DocumentChapter[] @relation("ActiveCheckpoint")
 
   buktiDukungDraft  BuktiDukungDraft[]
   hasilSkorKriteria HasilSkorKriteria[]
   ragasScores       RagasScore[]
   generationRun     GenerationRun?
 
-  @@unique([babId, versi])
-  @@index([babId])
-  @@map("bab_draft")
+  @@unique([chapterId, version])
+  @@index([chapterId])
+  @@map("writing_chapter_drafts")
 }
 
 // ─────────────────────── Kelompok: Bukti Dukung ───────────────────────
@@ -300,8 +300,8 @@ model BuktiDukungBab {
   namaDokumen   String @map("nama_dokumen")
   tipeFile      String @map("tipe_file")
 
-  buktiDukung BuktiDukung @relation(fields: [buktiDukungId], references: [id])
-  babDokumen  BabDokumen  @relation(fields: [babDokumenId], references: [id])
+  buktiDukung BuktiDukung     @relation(fields: [buktiDukungId], references: [id])
+  babDokumen  DocumentChapter @relation(fields: [babDokumenId], references: [id])
 
   @@unique([buktiDukungId, babDokumenId])
   @@map("bukti_dukung_bab")
@@ -315,8 +315,8 @@ model BuktiDukungDraft {
   namaDokumen   String @map("nama_dokumen")
   tipeFile      String @map("tipe_file")
 
-  buktiDukung BuktiDukung @relation(fields: [buktiDukungId], references: [id])
-  babDraft    BabDraft    @relation(fields: [babDraftId], references: [id])
+  buktiDukung BuktiDukung  @relation(fields: [buktiDukungId], references: [id])
+  babDraft    ChapterDraft @relation(fields: [babDraftId], references: [id])
 
   @@unique([buktiDukungId, babDraftId])
   @@map("bukti_dukung_draft")
@@ -375,10 +375,10 @@ model HasilSkorKriteria {
   dijalankanOlehNama   String     @map("dijalankan_oleh_nama")
   dijalankanPada       DateTime   @default(now()) @map("dijalankan_pada")
 
-  kriteria       RubrikKriteria @relation(fields: [kriteriaId], references: [id])
-  bab            BabDokumen?    @relation(fields: [babId], references: [id])
-  babDraft       BabDraft?      @relation(fields: [babDraftId], references: [id])
-  dijalankanOleh User           @relation("HasilSkorDijalankanOleh", fields: [dijalankanOlehUserId], references: [id])
+  kriteria       RubrikKriteria   @relation(fields: [kriteriaId], references: [id])
+  bab            DocumentChapter? @relation(fields: [babId], references: [id])
+  babDraft       ChapterDraft?    @relation(fields: [babDraftId], references: [id])
+  dijalankanOleh User             @relation("HasilSkorDijalankanOleh", fields: [dijalankanOlehUserId], references: [id])
 
   @@index([babId])
   @@index([babDraftId])
@@ -435,59 +435,59 @@ model PanduanDetailBab {
 /// dihasilkannya. Mengganti `drafts` (§16); kontennya sendiri tetap hidup
 /// di BabDraft.kontenSnapshot, bukan di sini.
 model GenerationRun {
-  id          String   @id @default(cuid())
-  babDraftId  String   @unique @map("bab_draft_id")
-  model       String
-  pedomanUsed Json     @map("pedoman_used")
-  rubricUsed  Json     @map("rubric_used")
-  checklist   Json
-  chunksUsed  Json     @map("chunks_used")
-  judgeResult Json?    @map("judge_result")
-  promptFull  String   @map("prompt_full") @db.Text
-  latencySec  Float    @map("latency_sec")
-  tokenCount  Int      @map("token_count")
-  createdAt   DateTime @default(now()) @map("created_at")
+  id             String   @id @default(cuid())
+  chapterDraftId String   @unique @map("chapter_draft_id")
+  model          String
+  guidelinesUsed Json     @map("guidelines_used")
+  rubricUsed     Json     @map("rubric_used")
+  checklist      Json
+  chunksUsed     Json     @map("chunks_used")
+  judgeResult    Json?    @map("judge_result")
+  promptFull     String   @map("prompt_full") @db.Text
+  latencySec     Float    @map("latency_sec")
+  tokenCount     Int      @map("token_count")
+  createdAt      DateTime @default(now()) @map("created_at")
 
-  babDraft   BabDraft    @relation(fields: [babDraftId], references: [id])
-  evalResult EvalResult?
+  chapterDraft ChapterDraft @relation(fields: [chapterDraftId], references: [id])
+  evalResult   EvalResult?
 
-  @@map("generation_runs")
+  @@map("writing_generation_runs")
 }
 
 /// Skor RAGAS dinormalisasi — persis usulan §12a, menempel ke bab aktif
 /// ATAU checkpoint sesuai target_tipe (pola sama dengan HasilSkorKriteria).
 model RagasScore {
-  id           String     @id @default(cuid())
-  targetTipe   TargetTipe @map("target_tipe")
-  babId        String?    @map("bab_id")
-  babDraftId   String?    @map("bab_draft_id")
-  metrik       Json
-  jumlahChunk  Int        @map("jumlah_chunk")
-  dihitungPada DateTime   @map("dihitung_pada")
+  id             String     @id @default(cuid())
+  targetType     TargetTipe @map("target_type")
+  chapterId      String?    @map("chapter_id")
+  chapterDraftId String?    @map("chapter_draft_id")
+  metrics        Json
+  chunkCount     Int        @map("chunk_count")
+  computedAt     DateTime   @map("computed_at")
 
-  bab      BabDokumen? @relation(fields: [babId], references: [id])
-  babDraft BabDraft?   @relation(fields: [babDraftId], references: [id])
+  chapter      DocumentChapter? @relation(fields: [chapterId], references: [id])
+  chapterDraft ChapterDraft?    @relation(fields: [chapterDraftId], references: [id])
 
-  @@index([babId])
-  @@index([babDraftId])
-  @@map("ragas_scores")
+  @@index([chapterId])
+  @@index([chapterDraftId])
+  @@map("writing_ragas_scores")
 }
 
 /// Riwayat chat revisi, diikat ke kondisi aktif bab (bukan section_id/model
 /// bebas seperti prototipe §17 — prototipe multi-model dijatuhkan di produksi).
 model ChatMessage {
-  id           String   @id @default(cuid())
-  babDokumenId String   @map("bab_dokumen_id")
-  userId       String   @map("user_id")
-  role         ChatRole
-  message      String   @db.Text
-  createdAt    DateTime @default(now()) @map("created_at")
+  id        String   @id @default(cuid())
+  chapterId String   @map("chapter_id")
+  userId    String   @map("user_id")
+  role      ChatRole
+  message   String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
 
-  babDokumen BabDokumen @relation(fields: [babDokumenId], references: [id])
-  user       User       @relation(fields: [userId], references: [id])
+  chapter DocumentChapter @relation(fields: [chapterId], references: [id])
+  user    User            @relation(fields: [userId], references: [id])
 
-  @@index([babDokumenId])
-  @@map("chat_messages")
+  @@index([chapterId])
+  @@map("writing_chat_messages")
 }
 
 /// Riwayat job BullMQ yang tahan lama di Postgres (Redis menyimpan state
@@ -540,7 +540,7 @@ model AssessmentSession {
   updatedAt            DateTime         @updatedAt @map("updated_at")
 
   tenant             Tenant       @relation(fields: [tenantId], references: [id])
-  dokumen            DokumenLed   @relation(fields: [dokumenId], references: [id])
+  dokumen            LedDocument  @relation(fields: [dokumenId], references: [id])
   createdBy          User         @relation(fields: [createdByUserId], references: [id])
   laporanBuktiDukung BuktiDukung? @relation(fields: [laporanBuktiDukungId], references: [id])
 
@@ -611,7 +611,7 @@ model AssessmentVerdict {
   ditinjauOlehNama      String   @map("ditinjau_oleh_nama")
   ditinjauPada          DateTime @default(now()) @map("ditinjau_pada")
 
-  dokumen          DokumenLed        @relation(fields: [dokumenId], references: [id])
+  dokumen          LedDocument       @relation(fields: [dokumenId], references: [id])
   sesiSaatDitinjau AssessmentSession @relation(fields: [sesiIdSaatDitinjau], references: [id])
   ditinjauOleh     User              @relation("AssessmentVerdictDitinjauOleh", fields: [ditinjauOlehUserId], references: [id])
 
@@ -635,7 +635,7 @@ model EvalResult {
 
   generationRun GenerationRun @relation(fields: [generationRunId], references: [id])
 
-  @@map("eval_results")
+  @@map("writing_eval_results")
 }
 
 // ─────────────────── Kelompok: Vector Store (pgvector) ───────────────────
@@ -652,7 +652,7 @@ model EvalResult {
 model LedChunkEmbedding {
   id             String                     @id @default(cuid())
   tenantId       String                     @map("tenant_id")
-  dokumenId      String                     @map("dokumen_id")
+  documentId     String                     @map("document_id")
   chunkId        String                     @map("chunk_id")
   text           String                     @db.Text
   embedding      Unsupported("vector(384)")
@@ -664,12 +664,12 @@ model LedChunkEmbedding {
   charStart      Int                        @map("char_start")
   createdAt      DateTime                   @default(now()) @map("created_at")
 
-  tenant  Tenant     @relation(fields: [tenantId], references: [id])
-  dokumen DokumenLed @relation(fields: [dokumenId], references: [id])
+  tenant   Tenant      @relation(fields: [tenantId], references: [id])
+  document LedDocument @relation(fields: [documentId], references: [id])
 
-  @@unique([dokumenId, chunkId])
-  @@index([tenantId, dokumenId])
-  @@map("led_chunk_embeddings")
+  @@unique([documentId, chunkId])
+  @@index([tenantId, documentId])
+  @@map("writing_led_chunk_embeddings")
 }
 
 /// Chunk + embedding untuk satu berkas BuktiDukung — pola sama dengan

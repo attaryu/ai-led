@@ -123,19 +123,19 @@ async def _handle_generasi_bab(job) -> dict:
 
     # 1. Pedoman & rubrik — relational lookup by chapter number, not vector
     # search (see db/generation_client.py's own note on why).
-    pedoman = get_pedoman_for_bab(bab["urutan_bab"])
-    rubric = get_rubrik_for_bab(bab["urutan_bab"])
+    pedoman = get_pedoman_for_bab(bab["chapter_order"])
+    rubric = get_rubrik_for_bab(bab["chapter_order"])
 
     # 2. Checklist + evidence chunks from the LED document itself.
-    checklist = [p["judul_poin"] for p in pedoman] or [f"Poin kunci untuk {bab['judul_bab']}"]
-    query = f"{bab['judul_bab']}: " + " ".join(checklist[:5])
+    checklist = [p["judul_poin"] for p in pedoman] or [f"Poin kunci untuk {bab['chapter_title']}"]
+    query = f"{bab['chapter_title']}: " + " ".join(checklist[:5])
     # search_led is synchronous (psycopg2 + blocking SentenceTransformer.encode) —
     # off the event loop, or it blocks BullMQ's lock-renewal long enough to stall.
-    chunks = await asyncio.to_thread(search_led, query, bab["tenant_id"], bab["dokumen_id"], n_results=5)
+    chunks = await asyncio.to_thread(search_led, query, bab["tenant_id"], bab["document_id"], n_results=5)
 
     # 3. LLM call, then Markdown -> HTML.
     prompt = _build_generasi_prompt(
-        bab["judul_bab"], pedoman, rubric, checklist, chunks, payload.get("prompt")
+        bab["chapter_title"], pedoman, rubric, checklist, chunks, payload.get("prompt")
     )
     llm = build_plain_llm()
     response = await llm.ainvoke(prompt)
@@ -146,7 +146,7 @@ async def _handle_generasi_bab(job) -> dict:
     # 4. RAGAS: faithfulness / answer_relevancy / context_precision.
     try:
         ragas_scores = score_single_sample(
-            question=bab["judul_bab"],
+            question=bab["chapter_title"],
             answer=markdown_text,
             contexts=[c["text"] for c in chunks],
         )
@@ -186,7 +186,7 @@ async def _handle_generasi_bab(job) -> dict:
     return {
         "status": "completed",
         "babDraftId": draft["id"],
-        "versi": draft["versi"],
+        "versi": draft["version"],
         "ragasScores": ragas_scores,
     }
 
@@ -247,28 +247,28 @@ async def _handle_simulasi_skor(job) -> dict:
 
     if bab_draft_id:
         draft = get_bab_draft(bab_draft_id)
-        if draft is None or draft["bab_id"] != bab_id:
+        if draft is None or draft["chapter_id"] != bab_id:
             return {"status": "error", "error": f"Checkpoint {bab_draft_id} tidak ditemukan"}
-        snapshot = draft["konten_snapshot"]
+        snapshot = draft["content_snapshot"]
         konten = snapshot.get("body", "") if isinstance(snapshot, dict) else ""
         target_tipe = "BAB_DRAFT"
     else:
-        snapshot = bab["konten_kerja"]
+        snapshot = bab["working_content"]
         konten = snapshot.get("body", "") if isinstance(snapshot, dict) else ""
         target_tipe = "BAB_AKTIF"
 
     if not konten.strip():
         return {"status": "error", "error": "Belum ada tulisan yang bisa dinilai untuk lingkup yang dipilih"}
 
-    kriteria = get_rubrik_for_bab(bab["urutan_bab"])
+    kriteria = get_rubrik_for_bab(bab["chapter_order"])
     if not kriteria:
-        return {"status": "error", "error": f"Bab {bab['urutan_bab']} tidak dinilai kriteria rubrik apa pun"}
+        return {"status": "error", "error": f"Bab {bab['chapter_order']} tidak dinilai kriteria rubrik apa pun"}
 
     levels_by_kriteria = get_rubrik_levels([k["id"] for k in kriteria])
     for k in kriteria:
         k["level"] = levels_by_kriteria.get(k["id"], [])
 
-    prompt = _build_simulasi_skor_prompt(bab["judul_bab"], konten, kriteria)
+    prompt = _build_simulasi_skor_prompt(bab["chapter_title"], konten, kriteria)
     llm = build_plain_llm()
     response = await llm.ainvoke(prompt)
     parsed = _extract_json(response.content)

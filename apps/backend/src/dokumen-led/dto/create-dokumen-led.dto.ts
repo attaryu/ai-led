@@ -10,14 +10,14 @@ export class CreateDokumenLedDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
-  judul!: string;
+  title!: string;
 
   @IsString()
   @IsNotEmpty()
   @MaxLength(20)
-  tahunAkademik!: string;
+  academicYear!: string;
 
   @IsOptional()
   @IsDateString()
-  tenggat?: string;
+  deadline?: string;
 }

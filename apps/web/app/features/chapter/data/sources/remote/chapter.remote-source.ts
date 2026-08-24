@@ -19,13 +19,13 @@ export type BackendBuktiDukungDraft = {
 /** Baris Prisma `RagasScore`. */
 export type BackendRagasScore = {
 	id: string;
-	targetTipe: 'BAB_AKTIF' | 'BAB_DRAFT';
-	babId: string | null;
-	babDraftId: string | null;
+	targetType: 'BAB_AKTIF' | 'BAB_DRAFT';
+	chapterId: string | null;
+	chapterDraftId: string | null;
 	/** `Record<RagasMetrik, number>` — lihat `worker.py::score_single_sample`. */
-	metrik: Record<string, number>;
-	jumlahChunk: number;
-	dihitungPada: string;
+	metrics: Record<string, number>;
+	chunkCount: number;
+	computedAt: string;
 };
 
 /** Baris Prisma `HasilSkorKriteria`. */
@@ -50,17 +50,17 @@ export type BackendHasilSkorKriteria = {
  */
 export type BackendBabDokumen = {
 	id: string;
-	dokumenId: string;
-	urutanBab: number;
-	judulBab: string;
-	kontenKerja: Record<string, unknown>;
-	checkpointAktifId: string | null;
-	terkunci: boolean;
-	catatanPenjaminMutu: string | null;
-	catatanOlehNama: string | null;
-	catatanPada: string | null;
-	diajukanReviewPada: string | null;
-	terakhirDisimpan: string;
+	documentId: string;
+	chapterOrder: number;
+	chapterTitle: string;
+	workingContent: Record<string, unknown>;
+	activeCheckpointId: string | null;
+	locked: boolean;
+	qualityAssuranceNote: string | null;
+	notedByName: string | null;
+	notedAt: string | null;
+	reviewSubmittedAt: string | null;
+	lastSavedAt: string;
 	buktiDukungBab?: BackendBuktiDukungBab[];
 	/** Diurutkan terbaru dulu, dipotong ke satu baris — lihat `findOne`. */
 	ragasScores?: BackendRagasScore[];
@@ -71,16 +71,16 @@ export type BackendBabDokumen = {
 /** Baris Prisma `BabDraft` — checkpoint, dikembalikan `GET bab/:id/drafts`. */
 export type BackendBabDraft = {
 	id: string;
-	babId: string;
-	dibuatOlehUserId: string;
-	versi: number;
+	chapterId: string;
+	createdByUserId: string;
+	version: number;
 	label: string | null;
-	kontenSnapshot: Record<string, unknown>;
-	sumber: 'AI' | 'MANUAL';
+	contentSnapshot: Record<string, unknown>;
+	source: 'AI' | 'MANUAL';
 	/** Comma-separated di Postgres (`@db.Text`) — lihat `chapter-draft.remote-source.ts`. */
-	referensiChunkIds: string | null;
-	dibuatOlehNama: string;
-	dibuatPada: string;
+	referenceChunkIds: string | null;
+	createdByName: string;
+	createdAt: string;
 	buktiDukungDraft: BackendBuktiDukungDraft[];
 	ragasScores: BackendRagasScore[];
 	hasilSkorKriteria: BackendHasilSkorKriteria[];
@@ -103,18 +103,18 @@ export type BackendRubrikKriteria = {
 };
 
 export type CreateBabPayload = {
-	urutanBab: number;
-	judulBab: string;
+	chapterOrder: number;
+	chapterTitle: string;
 };
 
 export type UpdateBabPayload = {
-	judulBab?: string;
-	kontenKerja?: Record<string, unknown>;
+	chapterTitle?: string;
+	workingContent?: Record<string, unknown>;
 };
 
 export type ReviewStatusPayload = {
-	terkunci?: boolean;
-	catatanPenjaminMutu?: string | null;
+	locked?: boolean;
+	qualityAssuranceNote?: string | null;
 };
 
 /** Baris `Job` (Prisma) sebagaimana dikembalikan `POST bab/:id/generate` dan `.../simulasi-skor`. */
@@ -186,7 +186,7 @@ export const chapterRemoteSource = {
 	simulateScore(id: string, babDraftId?: string): Promise<BackendJob> {
 		return apiFetch<BackendJob>(`/bab/${id}/simulasi-skor`, {
 			method: 'POST',
-			body: babDraftId ? { babDraftId } : {},
+			body: babDraftId ? { chapterDraftId: babDraftId } : {},
 		});
 	},
 

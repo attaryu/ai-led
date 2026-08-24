@@ -22,7 +22,7 @@ export class BabAccessService {
 
   async findDokumenScoped(dokumenId: string) {
     const { tenantId } = this.tenantContext.getOrThrow();
-    const dokumen = await this.prisma.dokumenLed.findFirst({
+    const dokumen = await this.prisma.ledDocument.findFirst({
       where: { id: dokumenId, studyProgram: { tenantId } },
       select: { id: true, studyProgramId: true },
     });
@@ -35,14 +35,14 @@ export class BabAccessService {
 
   async findOneScoped(id: string) {
     const { tenantId } = this.tenantContext.getOrThrow();
-    const bab = await this.prisma.babDokumen.findFirst({
-      where: { id, dokumen: { studyProgram: { tenantId } } },
-      include: { dokumen: { select: { studyProgramId: true } } },
+    const bab = await this.prisma.documentChapter.findFirst({
+      where: { id, document: { studyProgram: { tenantId } } },
+      include: { document: { select: { studyProgramId: true } } },
     });
     if (!bab) {
       throw new NotFoundException('Bab dokumen tidak ditemukan');
     }
-    this.assertProgramStudiScope(bab.dokumen.studyProgramId);
+    this.assertProgramStudiScope(bab.document.studyProgramId);
     return bab;
   }
 }

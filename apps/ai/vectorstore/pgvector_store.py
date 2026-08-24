@@ -70,7 +70,7 @@ def index_led_chunks(chunks: list[LEDChunk], tenant_id: str, dokumen_id: str) ->
 
     with conn.cursor() as cur:
         cur.execute(
-            "DELETE FROM led_chunk_embeddings WHERE tenant_id = %s AND dokumen_id = %s",
+            "DELETE FROM writing_led_chunk_embeddings WHERE tenant_id = %s AND document_id = %s",
             (tenant_id, dokumen_id),
         )
 
@@ -105,8 +105,8 @@ def index_led_chunks(chunks: list[LEDChunk], tenant_id: str, dokumen_id: str) ->
         psycopg2.extras.execute_values(
             cur,
             """
-            INSERT INTO led_chunk_embeddings
-                (id, tenant_id, dokumen_id, chunk_id, text, embedding,
+            INSERT INTO writing_led_chunk_embeddings
+                (id, tenant_id, document_id, chunk_id, text, embedding,
                  page_start, page_end, para_start, para_end, section_heading, char_start)
             VALUES %s
             """,
@@ -141,8 +141,8 @@ def search_led(
             """
             SELECT chunk_id, text, page_start, page_end, para_start, para_end,
                    section_heading, char_start, embedding <=> %s AS distance
-            FROM led_chunk_embeddings
-            WHERE tenant_id = %s AND dokumen_id = %s
+            FROM writing_led_chunk_embeddings
+            WHERE tenant_id = %s AND document_id = %s
             ORDER BY embedding <=> %s
             LIMIT %s
             """,

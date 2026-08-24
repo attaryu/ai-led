@@ -24,21 +24,21 @@ import {
  * yang tidak meng-include-nya (dipakai ringkasan progres, bukan Editor Bab).
  */
 function toEntityFromBackend(row: BackendBabDokumen): ChapterEntity {
-	const kontenKerja = mapKontenBody(row.kontenKerja);
+	const kontenKerja = mapKontenBody(row.workingContent);
 
 	return {
 		id: row.id,
-		ledProjectId: row.dokumenId,
-		urutanBab: row.urutanBab,
-		judulBab: row.judulBab,
+		ledProjectId: row.documentId,
+		urutanBab: row.chapterOrder,
+		judulBab: row.chapterTitle,
 		kontenKerja,
-		checkpointAktifId: row.checkpointAktifId,
-		terkunci: row.terkunci,
-		catatanPenjaminMutu: row.catatanPenjaminMutu,
-		catatanOlehNama: row.catatanOlehNama,
-		catatanPada: row.catatanPada,
-		diajukanReviewPada: row.diajukanReviewPada,
-		terakhirDisimpan: row.terakhirDisimpan,
+		checkpointAktifId: row.activeCheckpointId,
+		terkunci: row.locked,
+		catatanPenjaminMutu: row.qualityAssuranceNote,
+		catatanOlehNama: row.notedByName,
+		catatanPada: row.notedAt,
+		diajukanReviewPada: row.reviewSubmittedAt,
+		terakhirDisimpan: row.lastSavedAt,
 		buktiDukung: mapBuktiDukungRef(row.buktiDukungBab),
 		ragas: mapRagas(row.ragasScores?.[0]),
 		hasilSkorKriteriaAktif: mapHasilSkor(row.hasilSkorKriteria),
@@ -53,27 +53,27 @@ function toEntityFromBackend(row: BackendBabDokumen): ChapterEntity {
  * masih Pertanyaan Terbuka #2 (§16). Kalau daftar resminya ternyata berbeda,
  * cukup konstanta ini yang diubah — sisanya ikut.
  */
-export const CHAPTER_TEMPLATE: { urutanBab: number; judulBab: string }[] = [
-	{ urutanBab: 1, judulBab: 'Pendahuluan' },
-	{ urutanBab: 2, judulBab: 'Kondisi Eksternal' },
-	{ urutanBab: 3, judulBab: 'Profil Unit Pengelola Program Studi' },
-	{ urutanBab: 4, judulBab: 'Kriteria 1 — Visi, Misi, Tujuan, dan Strategi' },
+export const CHAPTER_TEMPLATE: { chapterOrder: number; chapterTitle: string }[] = [
+	{ chapterOrder: 1, chapterTitle: 'Pendahuluan' },
+	{ chapterOrder: 2, chapterTitle: 'Kondisi Eksternal' },
+	{ chapterOrder: 3, chapterTitle: 'Profil Unit Pengelola Program Studi' },
+	{ chapterOrder: 4, chapterTitle: 'Kriteria 1 — Visi, Misi, Tujuan, dan Strategi' },
 	{
-		urutanBab: 5,
-		judulBab: 'Kriteria 2 — Tata Pamong, Tata Kelola, dan Kerja Sama',
+		chapterOrder: 5,
+		chapterTitle: 'Kriteria 2 — Tata Pamong, Tata Kelola, dan Kerja Sama',
 	},
-	{ urutanBab: 6, judulBab: 'Kriteria 3 — Mahasiswa' },
-	{ urutanBab: 7, judulBab: 'Kriteria 4 — Sumber Daya Manusia' },
-	{ urutanBab: 8, judulBab: 'Kriteria 5 — Keuangan, Sarana, dan Prasarana' },
-	{ urutanBab: 9, judulBab: 'Kriteria 6 — Pendidikan' },
-	{ urutanBab: 10, judulBab: 'Kriteria 7 — Penelitian' },
-	{ urutanBab: 11, judulBab: 'Kriteria 8 — Pengabdian kepada Masyarakat' },
-	{ urutanBab: 12, judulBab: 'Kriteria 9 — Luaran dan Capaian Tridharma' },
+	{ chapterOrder: 6, chapterTitle: 'Kriteria 3 — Mahasiswa' },
+	{ chapterOrder: 7, chapterTitle: 'Kriteria 4 — Sumber Daya Manusia' },
+	{ chapterOrder: 8, chapterTitle: 'Kriteria 5 — Keuangan, Sarana, dan Prasarana' },
+	{ chapterOrder: 9, chapterTitle: 'Kriteria 6 — Pendidikan' },
+	{ chapterOrder: 10, chapterTitle: 'Kriteria 7 — Penelitian' },
+	{ chapterOrder: 11, chapterTitle: 'Kriteria 8 — Pengabdian kepada Masyarakat' },
+	{ chapterOrder: 12, chapterTitle: 'Kriteria 9 — Luaran dan Capaian Tridharma' },
 	{
-		urutanBab: 13,
-		judulBab: 'Analisis dan Penetapan Program Pengembangan',
+		chapterOrder: 13,
+		chapterTitle: 'Analisis dan Penetapan Program Pengembangan',
 	},
-	{ urutanBab: 14, judulBab: 'Penutup' },
+	{ chapterOrder: 14, chapterTitle: 'Penutup' },
 ];
 
 export const chapterRepository = {
@@ -126,7 +126,7 @@ export const chapterRepository = {
 	): Promise<ChapterEntity | undefined> {
 		try {
 			const row = await chapterRemoteSource.update(chapterId, {
-				kontenKerja: toKontenBody(kontenKerja),
+				workingContent: toKontenBody(kontenKerja),
 			});
 			return toEntityFromBackend(row);
 		} catch (err) {
@@ -148,7 +148,7 @@ export const chapterRepository = {
 	): Promise<ChapterEntity | undefined> {
 		try {
 			const row = await chapterRemoteSource.update(chapterId, {
-				kontenKerja: toKontenBody(kontenSnapshot),
+				workingContent: toKontenBody(kontenSnapshot),
 			});
 			return toEntityFromBackend(row);
 		} catch (err) {
@@ -159,7 +159,7 @@ export const chapterRepository = {
 
 	/** Kunci review Penjamin Mutu (§12.2) — `PATCH bab/:id/review-status`. Error dilempar apa adanya, tombol klik sengaja. */
 	async setTerkunci(chapterId: string, terkunci: boolean): Promise<ChapterEntity> {
-		const row = await chapterRemoteSource.setReviewStatus(chapterId, { terkunci });
+		const row = await chapterRemoteSource.setReviewStatus(chapterId, { locked: terkunci });
 		return toEntityFromBackend(row);
 	},
 
@@ -170,7 +170,7 @@ export const chapterRepository = {
 	): Promise<ChapterEntity> {
 		const isi = catatan?.trim() ? catatan.trim() : null;
 		const row = await chapterRemoteSource.setReviewStatus(chapterId, {
-			catatanPenjaminMutu: isi,
+			qualityAssuranceNote: isi,
 		});
 		return toEntityFromBackend(row);
 	},

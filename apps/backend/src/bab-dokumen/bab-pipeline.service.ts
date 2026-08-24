@@ -19,7 +19,7 @@ export class BabPipelineService {
   async triggerGenerate(id: string, prompt?: string) {
     const { tenantId, userId } = this.tenantContext.getOrThrow();
     const bab = await this.access.findOneScoped(id);
-    if (bab.terkunci) {
+    if (bab.locked) {
       throw new ForbiddenException('Bab ini sedang terkunci untuk direview');
     }
 
@@ -35,13 +35,13 @@ export class BabPipelineService {
   async triggerSimulateScore(id: string, babDraftId?: string) {
     const { tenantId, userId } = this.tenantContext.getOrThrow();
     const bab = await this.access.findOneScoped(id);
-    if (bab.terkunci) {
+    if (bab.locked) {
       throw new ForbiddenException('Bab ini sedang terkunci untuk direview');
     }
 
     if (babDraftId) {
-      const draft = await this.prisma.babDraft.findFirst({
-        where: { id: babDraftId, babId: id },
+      const draft = await this.prisma.chapterDraft.findFirst({
+        where: { id: babDraftId, chapterId: id },
       });
       if (!draft) {
         throw new NotFoundException('Checkpoint tidak ditemukan');

@@ -56,7 +56,7 @@ def fixture_ids(conn):
         )
         cur.execute(
             """
-            INSERT INTO dokumen_led (id, study_program_id, judul, tahun_akademik, status_keseluruhan)
+            INSERT INTO writing_led_documents (id, study_program_id, title, academic_year, overall_status)
             VALUES (%s, %s, %s, %s, 'DRAFT')
             """,
             (dokumen_id, program_studi_id, "Test LED", "2026/2027"),
@@ -73,7 +73,7 @@ def fixture_ids(conn):
 
     with conn.cursor() as cur:
         cur.execute("DELETE FROM org_users WHERE id = %s", (user_id,))
-        cur.execute("DELETE FROM dokumen_led WHERE id = %s", (dokumen_id,))
+        cur.execute("DELETE FROM writing_led_documents WHERE id = %s", (dokumen_id,))
         cur.execute("DELETE FROM org_study_programs WHERE id = %s", (program_studi_id,))
         cur.execute("DELETE FROM org_tenants WHERE id = %s", (tenant_id,))
 

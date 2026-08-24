@@ -56,7 +56,7 @@ const ALASAN_RAGAS =
 export function mapRagas(row: BackendRagasScore | undefined): RagasScore | null {
 	if (!row) return null;
 
-	const metrik = Object.entries(row.metrik).map(([nama, nilai]) => ({
+	const metrik = Object.entries(row.metrics).map(([nama, nilai]) => ({
 		metrik: nama as RagasMetrik,
 		nilai,
 		alasan: ALASAN_RAGAS,
@@ -64,8 +64,8 @@ export function mapRagas(row: BackendRagasScore | undefined): RagasScore | null 
 
 	return {
 		metrik,
-		jumlahChunk: row.jumlahChunk,
-		dihitungPada: row.dihitungPada,
+		jumlahChunk: row.chunkCount,
+		dihitungPada: row.computedAt,
 	};
 }
 

@@ -6,22 +6,22 @@ import { chapterRemoteSource, type BackendBabDraft } from './chapter.remote-sour
 export function mapBabDraft(row: BackendBabDraft): ChapterDraftEntity {
 	return {
 		id: row.id,
-		chapterId: row.babId,
-		versi: row.versi,
+		chapterId: row.chapterId,
+		versi: row.version,
 		label: row.label,
-		kontenSnapshot: mapKontenBody(row.kontenSnapshot) ?? '',
-		sumber: row.sumber,
+		kontenSnapshot: mapKontenBody(row.contentSnapshot) ?? '',
+		sumber: row.source,
 		buktiDukung: mapBuktiDukungRef(row.buktiDukungDraft),
-		referensiChunkIds: row.referensiChunkIds
-			? row.referensiChunkIds.split(',').filter(Boolean)
+		referensiChunkIds: row.referenceChunkIds
+			? row.referenceChunkIds.split(',').filter(Boolean)
 			: [],
 		// Sebuah checkpoint hanya pernah dinilai sekali (worker menulis satu
 		// RagasScore per generate, lihat db/generation_client.py::create_ragas_score),
 		// jadi indeks 0 sudah cukup tanpa perlu memilih yang terbaru.
 		ragas: mapRagas(row.ragasScores[0]),
-		dibuatOlehUserId: row.dibuatOlehUserId,
-		dibuatOlehNama: row.dibuatOlehNama,
-		dibuatPada: row.dibuatPada,
+		dibuatOlehUserId: row.createdByUserId,
+		dibuatOlehNama: row.createdByName,
+		dibuatPada: row.createdAt,
 	};
 }
 
