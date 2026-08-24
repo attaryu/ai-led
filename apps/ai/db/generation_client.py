@@ -21,9 +21,9 @@ from db.connection import get_conn
 
 def get_user_nama(user_id: str) -> str:
     with get_conn().cursor() as cur:
-        cur.execute('SELECT nama_lengkap FROM "user" WHERE id = %s', (user_id,))
+        cur.execute('SELECT full_name FROM org_users WHERE id = %s', (user_id,))
         row = cur.fetchone()
-    return row["nama_lengkap"] if row else "Unknown"
+    return row["full_name"] if row else "Unknown"
 
 
 def get_bab_dokumen(bab_id: str) -> Optional[dict]:
@@ -34,7 +34,7 @@ def get_bab_dokumen(bab_id: str) -> Optional[dict]:
             SELECT bd.id, bd.dokumen_id, bd.urutan_bab, bd.judul_bab, bd.konten_kerja, ps.tenant_id
             FROM bab_dokumen bd
             JOIN dokumen_led dl ON dl.id = bd.dokumen_id
-            JOIN program_studi ps ON ps.id = dl.program_studi_id
+            JOIN org_study_programs ps ON ps.id = dl.study_program_id
             WHERE bd.id = %s
             """,
             (bab_id,),

@@ -39,11 +39,11 @@ export const userRepository = {
 		studyProgramId: string | null;
 	}): Promise<UserEntity> {
 		const row = await userRemoteSource.create({
-			namaLengkap: input.namaLengkap,
+			fullName: input.namaLengkap,
 			email: input.email,
 			password: input.password,
 			role: ROLE_TO_BACKEND[input.role],
-			programStudiId: input.studyProgramId ?? undefined,
+			studyProgramId: input.studyProgramId ?? undefined,
 		});
 		this.notify();
 		return toUserEntity(row);
@@ -65,11 +65,11 @@ export const userRepository = {
 		},
 	): Promise<UserEntity> {
 		const row = await userRemoteSource.update(id, {
-			namaLengkap: data.namaLengkap,
+			fullName: data.namaLengkap,
 			email: data.email,
 			password: data.password,
 			role: data.role ? ROLE_TO_BACKEND[data.role] : undefined,
-			programStudiId: data.studyProgramId ?? undefined,
+			studyProgramId: data.studyProgramId ?? undefined,
 		});
 		this.notify();
 		return toUserEntity(row);

@@ -9,15 +9,15 @@ import {
 function toEntity(row: BackendProgramStudi): StudyProgramEntity {
 	return {
 		id: row.id,
-		studyProgramName: row.nama,
-		kode: row.kode,
-		jenjang: row.jenjang,
-		fakultas: row.fakultas,
-		ketuaProdi: row.ketuaProdi,
-		peringkatAkreditasi: row.peringkatAkreditasi,
-		nomorSkAkreditasi: row.nomorSkAkreditasi,
-		berlakuSampaiAkreditasi: row.berlakuSampaiAkreditasi,
-		createdAt: row.dibuatPada,
+		studyProgramName: row.name,
+		kode: row.code,
+		jenjang: row.level,
+		fakultas: row.faculty,
+		ketuaProdi: row.programHead,
+		peringkatAkreditasi: row.accreditationRank,
+		nomorSkAkreditasi: row.accreditationDecreeNumber,
+		berlakuSampaiAkreditasi: row.accreditationValidUntil,
+		createdAt: row.createdAt,
 	};
 }
 
@@ -31,17 +31,17 @@ function toPayload(
 	data: Partial<Omit<StudyProgramEntity, 'id' | 'createdAt'>>,
 ): Partial<ProgramStudiPayload> {
 	const payload: Partial<ProgramStudiPayload> = {};
-	if (data.studyProgramName !== undefined) payload.nama = data.studyProgramName;
-	if (data.kode !== undefined) payload.kode = data.kode;
-	if (data.jenjang !== undefined) payload.jenjang = data.jenjang;
-	if (data.fakultas !== undefined) payload.fakultas = data.fakultas;
-	if (data.ketuaProdi !== undefined) payload.ketuaProdi = data.ketuaProdi;
+	if (data.studyProgramName !== undefined) payload.name = data.studyProgramName;
+	if (data.kode !== undefined) payload.code = data.kode;
+	if (data.jenjang !== undefined) payload.level = data.jenjang;
+	if (data.fakultas !== undefined) payload.faculty = data.fakultas;
+	if (data.ketuaProdi !== undefined) payload.programHead = data.ketuaProdi;
 	if (data.peringkatAkreditasi !== undefined)
-		payload.peringkatAkreditasi = data.peringkatAkreditasi;
+		payload.accreditationRank = data.peringkatAkreditasi;
 	if (data.nomorSkAkreditasi !== undefined)
-		payload.nomorSkAkreditasi = data.nomorSkAkreditasi ?? undefined;
+		payload.accreditationDecreeNumber = data.nomorSkAkreditasi ?? undefined;
 	if (data.berlakuSampaiAkreditasi !== undefined)
-		payload.berlakuSampaiAkreditasi = data.berlakuSampaiAkreditasi ?? undefined;
+		payload.accreditationValidUntil = data.berlakuSampaiAkreditasi ?? undefined;
 	return payload;
 }
 

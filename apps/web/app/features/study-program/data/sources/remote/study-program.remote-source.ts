@@ -4,30 +4,30 @@ import {
 	type PeringkatAkreditasi,
 } from '../../../domain/entities/study-program.entity';
 
-/** Bentuk baris Prisma `ProgramStudi` sebagaimana dikembalikan `/program-studi`. */
+/** Bentuk baris Prisma `StudyProgram` sebagaimana dikembalikan `/program-studi`. */
 export type BackendProgramStudi = {
 	id: string;
 	tenantId: string;
-	nama: string;
-	kode: string;
-	jenjang: Jenjang;
-	fakultas: string;
-	ketuaProdi: string;
-	peringkatAkreditasi: PeringkatAkreditasi;
-	nomorSkAkreditasi: string | null;
-	berlakuSampaiAkreditasi: string | null;
-	dibuatPada: string;
+	name: string;
+	code: string;
+	level: Jenjang;
+	faculty: string;
+	programHead: string;
+	accreditationRank: PeringkatAkreditasi;
+	accreditationDecreeNumber: string | null;
+	accreditationValidUntil: string | null;
+	createdAt: string;
 };
 
 export type ProgramStudiPayload = {
-	nama: string;
-	kode: string;
-	jenjang: Jenjang;
-	fakultas: string;
-	ketuaProdi: string;
-	peringkatAkreditasi: PeringkatAkreditasi;
-	nomorSkAkreditasi?: string;
-	berlakuSampaiAkreditasi?: string;
+	name: string;
+	code: string;
+	level: Jenjang;
+	faculty: string;
+	programHead: string;
+	accreditationRank: PeringkatAkreditasi;
+	accreditationDecreeNumber?: string;
+	accreditationValidUntil?: string;
 };
 
 export const studyProgramRemoteSource = {

@@ -2,7 +2,7 @@ import { apiFetch } from '~/core/lib/api-client';
 
 export type BackendTenant = {
 	id: string;
-	namaUniversitas: string;
+	universityName: string;
 };
 
 export const tenantRemoteSource = {

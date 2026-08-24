@@ -6,7 +6,7 @@ import type { TenantContextService } from '../tenant/tenant-context.service';
 function makeService(context: {
   tenantId: string;
   role: Role;
-  programStudiId: string | null;
+  studyProgramId: string | null;
 }) {
   const findMany = jest.fn().mockResolvedValue([]);
   const findFirst = jest.fn().mockResolvedValue(null);
@@ -32,7 +32,7 @@ describe('DokumenLedService.findAllForTenant', () => {
     const { service, findMany } = makeService({
       tenantId: 't1',
       role: Role.PENYUSUN,
-      programStudiId: null,
+      studyProgramId: null,
     });
 
     await expect(service.findAllForTenant()).resolves.toEqual([]);
@@ -43,15 +43,15 @@ describe('DokumenLedService.findAllForTenant', () => {
     const { service, findMany } = makeService({
       tenantId: 't1',
       role: Role.PENYUSUN,
-      programStudiId: 'prodi-1',
+      studyProgramId: 'prodi-1',
     });
 
     await service.findAllForTenant();
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          programStudi: { tenantId: 't1' },
-          programStudiId: 'prodi-1',
+          studyProgram: { tenantId: 't1' },
+          studyProgramId: 'prodi-1',
         }) as unknown,
       }),
     );
@@ -61,12 +61,12 @@ describe('DokumenLedService.findAllForTenant', () => {
     const { service, findMany } = makeService({
       tenantId: 't1',
       role: Role.PIMPINAN,
-      programStudiId: null,
+      studyProgramId: null,
     });
 
     await service.findAllForTenant();
     const call = findMany.mock.calls[0][0] as { where: Record<string, unknown> };
-    expect(call.where).not.toHaveProperty('programStudiId');
+    expect(call.where).not.toHaveProperty('studyProgramId');
   });
 });
 
@@ -75,12 +75,12 @@ describe('DokumenLedService.triggerAssessment', () => {
     const { service, findFirst, jobsService } = makeService({
       tenantId: 't1',
       role: Role.PENJAMIN_MUTU,
-      programStudiId: null,
+      studyProgramId: null,
     });
 
     findFirst.mockResolvedValue({
       id: 'doc-123',
-      programStudiId: 'prodi-1',
+      studyProgramId: 'prodi-1',
     });
 
     const res = await service.triggerAssessment('doc-123', {
@@ -88,11 +88,13 @@ describe('DokumenLedService.triggerAssessment', () => {
     });
 
     expect(findFirst).toHaveBeenCalledWith({
-      where: { id: 'doc-123', programStudi: { tenantId: 't1' } },
+      where: { id: 'doc-123', studyProgram: { tenantId: 't1' } },
     });
     expect(jobsService.enqueue).toHaveBeenCalledWith(JobType.ASSESSMENT_AMI, {
       dokumenId: 'doc-123',
       tenantId: 't1',
+      // BullMQ job payload key stays `programStudiId` — cross-service contract
+      // with apps/ai's worker, not renamed alongside the Prisma field.
       programStudiId: 'prodi-1',
       createdByUserId: 'u1',
       indikatorList: [1, 2],
@@ -104,10 +106,10 @@ describe('DokumenLedService.triggerAssessment', () => {
     const { service, findFirst, jobsService } = makeService({
       tenantId: 't1',
       role: Role.PENJAMIN_MUTU,
-      programStudiId: null,
+      studyProgramId: null,
     });
 
-    findFirst.mockResolvedValue({ id: 'doc-123', programStudiId: 'prodi-1' });
+    findFirst.mockResolvedValue({ id: 'doc-123', studyProgramId: 'prodi-1' });
 
     await service.triggerAssessment('doc-123');
 
@@ -119,7 +121,7 @@ describe('DokumenLedService.triggerAssessment', () => {
     const { service, findFirst } = makeService({
       tenantId: 't1',
       role: Role.PENJAMIN_MUTU,
-      programStudiId: null,
+      studyProgramId: null,
     });
 
     findFirst.mockResolvedValue(null);

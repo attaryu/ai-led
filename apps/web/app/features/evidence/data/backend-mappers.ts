@@ -9,7 +9,7 @@ export type BuktiDukungApiRow = {
 	id: string;
 	ownerTipe: EvidenceOwnerType;
 	tenantId: string | null;
-	programStudiId: string | null;
+	studyProgramId: string | null;
 	namaDokumen: string;
 	fileUrl: string;
 	tipeFile: string;
@@ -22,8 +22,8 @@ export type BuktiDukungApiRow = {
 };
 
 /**
- * `programStudi.nama` tidak ikut di-join backend (`bukti-dukung.service.ts`
- * cuma menyimpan `programStudiId`) — `studyProgramName` selalu `null` di sini.
+ * `studyProgram.name` tidak ikut di-join backend (`bukti-dukung.service.ts`
+ * cuma menyimpan `studyProgramId`) — `studyProgramName` selalu `null` di sini.
  * Satu-satunya tempat yang benar-benar menampilkannya (Detail Panel, level
  * PROGRAM_STUDI) jatuh ke placeholder "-", bukan nama karangan.
  */
@@ -32,7 +32,7 @@ export function mapBuktiDukungToEvidence(row: BuktiDukungApiRow): EvidenceEntity
 		id: row.id,
 		ownerTipe: row.ownerTipe,
 		tenantId: row.ownerTipe === 'TENANT' ? row.tenantId : null,
-		studyProgramId: row.programStudiId,
+		studyProgramId: row.studyProgramId,
 		studyProgramName: null,
 		namaDokumen: row.namaDokumen,
 		fileUrl: row.fileUrl,

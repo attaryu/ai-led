@@ -80,10 +80,10 @@ export function Register() {
 							// belum punya modul User untuk mengundang role lain — lihat
 							// docs/.backend-blockers.md).
 							registerAccount.mutate({
-								namaLengkap: data.fullname,
+								fullName: data.fullname,
 								email: data.email,
 								password: data.password,
-								namaUniversitas: data.universityName,
+								universityName: data.universityName,
 							}),
 						)}
 					>

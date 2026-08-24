@@ -10,7 +10,7 @@ import { Role } from '@ai-led/db';
 export class CreateUserDto {
   @IsString()
   @MinLength(3)
-  namaLengkap!: string;
+  fullName!: string;
 
   @IsEmail()
   email!: string;
@@ -25,5 +25,5 @@ export class CreateUserDto {
   /** Wajib bila `role === PENYUSUN` — ditegakkan di `UsersService.create`. */
   @IsOptional()
   @IsString()
-  programStudiId?: string;
+  studyProgramId?: string;
 }

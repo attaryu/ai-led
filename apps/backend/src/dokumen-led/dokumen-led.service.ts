@@ -30,10 +30,10 @@ export class DokumenLedService {
 
   // PENYUSUN is scoped to the single program studi they're assigned to;
   // every other role operates tenant-wide.
-  private assertProgramStudiScope(programStudiId: string): void {
-    const { role, programStudiId: assignedId } =
+  private assertProgramStudiScope(studyProgramId: string): void {
+    const { role, studyProgramId: assignedId } =
       this.tenantContext.getOrThrow();
-    if (role === Role.PENYUSUN && assignedId !== programStudiId) {
+    if (role === Role.PENYUSUN && assignedId !== studyProgramId) {
       throw new ForbiddenException(
         'Anda hanya bisa mengakses program studi tempat Anda ditugaskan',
       );
@@ -41,43 +41,43 @@ export class DokumenLedService {
   }
 
   private async assertProgramStudiInTenant(
-    programStudiId: string,
+    studyProgramId: string,
   ): Promise<void> {
     const { tenantId } = this.tenantContext.getOrThrow();
-    const programStudi = await this.prisma.programStudi.findFirst({
-      where: { id: programStudiId, tenantId },
+    const studyProgram = await this.prisma.studyProgram.findFirst({
+      where: { id: studyProgramId, tenantId },
       select: { id: true },
     });
-    if (!programStudi) {
+    if (!studyProgram) {
       throw new NotFoundException('Program studi tidak ditemukan');
     }
-    this.assertProgramStudiScope(programStudiId);
+    this.assertProgramStudiScope(studyProgramId);
   }
 
-  async create(programStudiId: string, dto: CreateDokumenLedDto) {
-    await this.assertProgramStudiInTenant(programStudiId);
+  async create(studyProgramId: string, dto: CreateDokumenLedDto) {
+    await this.assertProgramStudiInTenant(studyProgramId);
     return this.prisma.dokumenLed.create({
-      data: { ...dto, programStudiId, statusKeseluruhan: StatusDokumen.DRAFT },
+      data: { ...dto, studyProgramId, statusKeseluruhan: StatusDokumen.DRAFT },
     });
   }
 
-  async findAllForProgramStudi(programStudiId: string) {
-    await this.assertProgramStudiInTenant(programStudiId);
+  async findAllForProgramStudi(studyProgramId: string) {
+    await this.assertProgramStudiInTenant(studyProgramId);
     return this.prisma.dokumenLed.findMany({
-      where: { programStudiId },
+      where: { studyProgramId },
       orderBy: { dibuatPada: 'desc' },
     });
   }
 
   /** Seluruh Dokumen LED tenant lintas prodi, satu query (bukan 1+N). */
   async findAllForTenant() {
-    const { tenantId, role, programStudiId } = this.tenantContext.getOrThrow();
-    if (role === Role.PENYUSUN && !programStudiId) return [];
+    const { tenantId, role, studyProgramId } = this.tenantContext.getOrThrow();
+    if (role === Role.PENYUSUN && !studyProgramId) return [];
 
     return this.prisma.dokumenLed.findMany({
       where: {
-        programStudi: { tenantId },
-        ...(role === Role.PENYUSUN ? { programStudiId: programStudiId ?? undefined } : {}),
+        studyProgram: { tenantId },
+        ...(role === Role.PENYUSUN ? { studyProgramId: studyProgramId ?? undefined } : {}),
       },
       orderBy: { dibuatPada: 'desc' },
     });
@@ -86,12 +86,12 @@ export class DokumenLedService {
   async findOne(id: string) {
     const { tenantId } = this.tenantContext.getOrThrow();
     const dokumen = await this.prisma.dokumenLed.findFirst({
-      where: { id, programStudi: { tenantId } },
+      where: { id, studyProgram: { tenantId } },
     });
     if (!dokumen) {
       throw new NotFoundException('Dokumen LED tidak ditemukan');
     }
-    this.assertProgramStudiScope(dokumen.programStudiId);
+    this.assertProgramStudiScope(dokumen.studyProgramId);
     return dokumen;
   }
 
@@ -124,7 +124,7 @@ export class DokumenLedService {
     return this.jobsService.enqueue(JobType.ASSESSMENT_AMI, {
       dokumenId: dokumen.id,
       tenantId,
-      programStudiId: dokumen.programStudiId,
+      programStudiId: dokumen.studyProgramId,
       // Required — assessment_sessions.created_by_user_id is a NOT NULL FK
       // (db/postgres_client.py::create_session), unlike the old Supabase
       // tables which had no user concept at all.

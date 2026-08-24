@@ -18,32 +18,32 @@ export class ProgramStudiService {
 
   create(dto: CreateProgramStudiDto) {
     const { tenantId } = this.tenantContext.getOrThrow();
-    return this.prisma.programStudi.create({ data: { ...dto, tenantId } });
+    return this.prisma.studyProgram.create({ data: { ...dto, tenantId } });
   }
 
   findAll() {
     const { tenantId } = this.tenantContext.getOrThrow();
-    return this.prisma.programStudi.findMany({
+    return this.prisma.studyProgram.findMany({
       where: { tenantId },
-      orderBy: { dibuatPada: 'desc' },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
   async findOne(id: string) {
     const { tenantId } = this.tenantContext.getOrThrow();
-    const programStudi = await this.prisma.programStudi.findFirst({
+    const studyProgram = await this.prisma.studyProgram.findFirst({
       where: { id, tenantId },
     });
-    if (!programStudi) {
+    if (!studyProgram) {
       throw new NotFoundException('Program studi tidak ditemukan');
     }
-    return programStudi;
+    return studyProgram;
   }
 
   async update(id: string, dto: UpdateProgramStudiDto) {
     await this.findOne(id);
     const { tenantId } = this.tenantContext.getOrThrow();
-    return this.prisma.programStudi.update({
+    return this.prisma.studyProgram.update({
       where: { id, tenantId },
       data: dto,
     });
@@ -56,7 +56,7 @@ export class ProgramStudiService {
     // Dicek dulu supaya pesannya bisa menyebut jumlahnya; FK Restrict tetap
     // jadi penjaga terakhir kalau ada race.
     const penyusunCount = await this.prisma.user.count({
-      where: { programStudiId: id, role: Role.PENYUSUN },
+      where: { studyProgramId: id, role: Role.PENYUSUN },
     });
     if (penyusunCount > 0) {
       throw new ConflictException(
@@ -65,7 +65,7 @@ export class ProgramStudiService {
     }
 
     try {
-      await this.prisma.programStudi.delete({ where: { id, tenantId } });
+      await this.prisma.studyProgram.delete({ where: { id, tenantId } });
     } catch (err) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&

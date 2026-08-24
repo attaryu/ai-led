@@ -1,7 +1,7 @@
 import { apiFetch } from '~/core/lib/api-client';
 import { type LedSourceMode } from '../../../domain/entities/assessment-source.entity';
 
-/** Baris Prisma `AssessmentSession`, dengan `createdBy.namaLengkap` di-include. */
+/** Baris Prisma `AssessmentSession`, dengan `createdBy.fullName` di-include. */
 export type BackendAssessmentSession = {
 	id: string;
 	dokumenId: string;
@@ -16,7 +16,7 @@ export type BackendAssessmentSession = {
 	error: string | null;
 	createdAt: string;
 	updatedAt: string;
-	createdBy: { namaLengkap: string };
+	createdBy: { fullName: string };
 };
 
 /** Baris Prisma `IndicatorResult` — `score`/`confidence` Decimal datang sebagai string. */

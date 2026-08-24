@@ -43,27 +43,27 @@ def fixture_ids(conn):
 
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO tenant (id, nama_universitas) VALUES (%s, %s)",
+            "INSERT INTO org_tenants (id, university_name) VALUES (%s, %s)",
             (tenant_id, "Test University"),
         )
         cur.execute(
             """
-            INSERT INTO program_studi
-                (id, tenant_id, nama, kode, jenjang, fakultas, ketua_prodi, peringkat_akreditasi)
+            INSERT INTO org_study_programs
+                (id, tenant_id, name, code, level, faculty, program_head, accreditation_rank)
             VALUES (%s, %s, %s, %s, 'S1', %s, %s, 'BAIK')
             """,
             (program_studi_id, tenant_id, "Test Prodi", "TP", "Test Fakultas", "Test Ketua"),
         )
         cur.execute(
             """
-            INSERT INTO dokumen_led (id, program_studi_id, judul, tahun_akademik, status_keseluruhan)
+            INSERT INTO dokumen_led (id, study_program_id, judul, tahun_akademik, status_keseluruhan)
             VALUES (%s, %s, %s, %s, 'DRAFT')
             """,
             (dokumen_id, program_studi_id, "Test LED", "2026/2027"),
         )
         cur.execute(
             """
-            INSERT INTO "user" (id, tenant_id, nama_lengkap, email, password_hash, role)
+            INSERT INTO org_users (id, tenant_id, full_name, email, password_hash, role)
             VALUES (%s, %s, %s, %s, %s, 'PENJAMIN_MUTU')
             """,
             (user_id, tenant_id, "Test User", f"{user_id}@example.com", "hash"),
@@ -72,10 +72,10 @@ def fixture_ids(conn):
     yield {"tenant_id": tenant_id, "dokumen_id": dokumen_id, "user_id": user_id}
 
     with conn.cursor() as cur:
-        cur.execute("DELETE FROM \"user\" WHERE id = %s", (user_id,))
+        cur.execute("DELETE FROM org_users WHERE id = %s", (user_id,))
         cur.execute("DELETE FROM dokumen_led WHERE id = %s", (dokumen_id,))
-        cur.execute("DELETE FROM program_studi WHERE id = %s", (program_studi_id,))
-        cur.execute("DELETE FROM tenant WHERE id = %s", (tenant_id,))
+        cur.execute("DELETE FROM org_study_programs WHERE id = %s", (program_studi_id,))
+        cur.execute("DELETE FROM org_tenants WHERE id = %s", (tenant_id,))
 
 
 def test_session_lifecycle_and_upsert(fixture_ids):

@@ -18,13 +18,13 @@ export class AssessmentService {
     private readonly dokumenLedService: DokumenLedService,
   ) {}
 
-  // `createdBy.namaLengkap` di-include lewat relasi, bukan didenormalisasi
+  // `createdBy.fullName` di-include lewat relasi, bukan didenormalisasi
   // ke kolom sendiri seperti BabDraft.dibuatOlehNama dkk — sesi ini
   // dibaca lebih sering lewat join daripada ditulis, jadi satu query
   // ekstra saat baca lebih murah daripada kolom kedua yang harus selalu
   // ikut disetel Python (db/postgres_client.py::create_session).
   private readonly includeCreatedByName = {
-    createdBy: { select: { namaLengkap: true } },
+    createdBy: { select: { fullName: true } },
   } as const;
 
   async findSessions(dokumenId: string) {
@@ -113,7 +113,7 @@ export class AssessmentService {
       skorMesinSaatDitinjau: currentResult?.score ?? null,
       sesiIdSaatDitinjau: latestSession.id,
       ditinjauOlehUserId: userId,
-      ditinjauOlehNama: user.namaLengkap,
+      ditinjauOlehNama: user.fullName,
     };
 
     return this.prisma.assessmentVerdict.upsert({

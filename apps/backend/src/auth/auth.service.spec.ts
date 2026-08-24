@@ -10,12 +10,12 @@ process.env.JWT_REFRESH_SECRET ??= 'test-refresh-secret';
 const USER = {
   id: 'user-1',
   tenantId: 'tenant-1',
-  programStudiId: null,
-  namaLengkap: 'Test User',
+  studyProgramId: null,
+  fullName: 'Test User',
   email: 'test@example.com',
   passwordHash: 'hash',
   role: Role.ADMIN,
-  dibuatPada: new Date(),
+  createdAt: new Date(),
 };
 
 // JwtService dari @nestjs/jwt murni bungkus jsonwebtoken tanpa dependency Nest
@@ -24,7 +24,7 @@ const jwt = new JwtService({});
 
 function signRefresh(jti: string): string {
   return jwt.sign(
-    { sub: USER.id, tenantId: USER.tenantId, role: USER.role, programStudiId: null, jti },
+    { sub: USER.id, tenantId: USER.tenantId, role: USER.role, studyProgramId: null, jti },
     { secret: process.env.JWT_REFRESH_SECRET, expiresIn: '7d' },
   );
 }

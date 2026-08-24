@@ -8,7 +8,7 @@ import {
 import { Role } from '@ai-led/db';
 
 /**
- * Bentuk `PATCH /users/:id`. PIMPINAN hanya boleh mengisi `programStudiId`
+ * Bentuk `PATCH /users/:id`. PIMPINAN hanya boleh mengisi `studyProgramId`
  * (memindahkan Penyusun ke prodi lain, §4.2) — field lain ditolak di service.
  * ADMIN boleh mengisi semuanya untuk edit profil penuh.
  */
@@ -16,7 +16,7 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   @MinLength(3)
-  namaLengkap?: string;
+  fullName?: string;
 
   @IsOptional()
   @IsEmail()
@@ -33,5 +33,5 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsString()
-  programStudiId?: string;
+  studyProgramId?: string;
 }

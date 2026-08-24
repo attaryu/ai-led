@@ -16,21 +16,21 @@ export const ROLE_TO_BACKEND: Record<UserRole, BackendRole> = {
 };
 
 /**
- * `programStudi` cuma ada di respons `GET /users` (lihat `BackendUserWithProdi`).
+ * `studyProgram` cuma ada di respons `GET /users` (lihat `BackendUserWithProdi`).
  * `create`/`update` mengembalikan `BackendUser` polos — `studyProgramName`-nya
  * jatuh ke `null`, aman karena kedua pemanggil itu langsung pindah halaman
  * sesudahnya (list yang dilihat pengguna datang dari `findAll` yang fresh).
  */
 export function toUserEntity(
-	row: BackendUser & { programStudi?: { nama: string } | null },
+	row: BackendUser & { studyProgram?: { name: string } | null },
 ): UserEntity {
 	return {
 		id: row.id,
-		namaLengkap: row.namaLengkap,
+		namaLengkap: row.fullName,
 		email: row.email,
 		role: ROLE_FROM_BACKEND[row.role],
-		studyProgramId: row.programStudiId,
-		studyProgramName: row.programStudi?.nama ?? null,
-		createdAt: row.dibuatPada,
+		studyProgramId: row.studyProgramId,
+		studyProgramName: row.studyProgram?.name ?? null,
+		createdAt: row.createdAt,
 	};
 }

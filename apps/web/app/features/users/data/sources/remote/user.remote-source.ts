@@ -3,24 +3,24 @@ import { type BackendRole, type BackendUser } from '~/features/auth/data/sources
 
 /** `GET /users` meng-include nama prodi, tidak seperti bentuk `/auth/*`. */
 export type BackendUserWithProdi = BackendUser & {
-	programStudi: { nama: string } | null;
+	studyProgram: { name: string } | null;
 };
 
 export type CreateUserPayload = {
-	namaLengkap: string;
+	fullName: string;
 	email: string;
 	password: string;
 	role: BackendRole;
-	programStudiId?: string;
+	studyProgramId?: string;
 };
 
 /** Semua field opsional — server yang memutuskan mana yang boleh diisi per role. */
 export type UpdateUserPayload = {
-	namaLengkap?: string;
+	fullName?: string;
 	email?: string;
 	password?: string;
 	role?: BackendRole;
-	programStudiId?: string;
+	studyProgramId?: string;
 };
 
 export const userRemoteSource = {

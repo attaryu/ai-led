@@ -96,7 +96,7 @@ export async function reportUploadComplete({
 			method: 'POST',
 			body: {
 				ownerTipe: target.ownerTipe,
-				programStudiId: target.ownerTipe === 'PROGRAM_STUDI' ? target.studyProgramId : undefined,
+				studyProgramId: target.ownerTipe === 'PROGRAM_STUDI' ? target.studyProgramId : undefined,
 				namaDokumen,
 				fileKey: objectKey,
 			},

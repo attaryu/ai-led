@@ -47,11 +47,11 @@ function makeService(overrides?: {
 }
 
 describe('UsersService.create', () => {
-  it('rejects a PENYUSUN without programStudiId', async () => {
+  it('rejects a PENYUSUN without studyProgramId', async () => {
     const { service } = makeService();
     await expect(
       service.create({
-        namaLengkap: 'Budi',
+        fullName: 'Budi',
         email: 'budi@example.com',
         password: 'password123',
         role: Role.PENYUSUN,
@@ -59,14 +59,14 @@ describe('UsersService.create', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('creates a PENYUSUN with programStudiId and returns no passwordHash', async () => {
+  it('creates a PENYUSUN with studyProgramId and returns no passwordHash', async () => {
     const { service, programStudi } = makeService();
     const user = await service.create({
-      namaLengkap: 'Budi',
+      fullName: 'Budi',
       email: 'budi@example.com',
       password: 'password123',
       role: Role.PENYUSUN,
-      programStudiId: 'prodi-1',
+      studyProgramId: 'prodi-1',
     });
 
     expect(programStudi.findOne).toHaveBeenCalledWith('prodi-1');
@@ -79,7 +79,7 @@ describe('UsersService.create', () => {
     });
     await expect(
       service.create({
-        namaLengkap: 'Budi',
+        fullName: 'Budi',
         email: 'budi@example.com',
         password: 'password123',
         role: Role.PIMPINAN,
@@ -95,17 +95,17 @@ describe('UsersService.update — PIMPINAN', () => {
       findFirst: jest.fn().mockResolvedValue({ id: 'user-1', role: Role.PIMPINAN }),
     });
     await expect(
-      service.update('user-1', { programStudiId: 'prodi-2' }),
+      service.update('user-1', { studyProgramId: 'prodi-2' }),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
-  it('rejects any field other than programStudiId', async () => {
+  it('rejects any field other than studyProgramId', async () => {
     const { service } = makeService({
       role: Role.PIMPINAN,
       findFirst: jest.fn().mockResolvedValue({ id: 'user-1', role: Role.PENYUSUN }),
     });
     await expect(
-      service.update('user-1', { programStudiId: 'prodi-2', namaLengkap: 'Baru' }),
+      service.update('user-1', { studyProgramId: 'prodi-2', fullName: 'Baru' }),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -115,47 +115,47 @@ describe('UsersService.update — PIMPINAN', () => {
       findFirst: jest.fn().mockResolvedValue({ id: 'user-1', role: Role.PENYUSUN }),
     });
 
-    const user = await service.update('user-1', { programStudiId: 'prodi-2' });
+    const user = await service.update('user-1', { studyProgramId: 'prodi-2' });
 
     expect(programStudi.findOne).toHaveBeenCalledWith('prodi-2');
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: 'user-1' },
-      data: { programStudiId: 'prodi-2' },
+      data: { studyProgramId: 'prodi-2' },
     });
     expect(user).not.toHaveProperty('passwordHash');
   });
 });
 
 describe('UsersService.update — ADMIN', () => {
-  it('edits profile fields and clears programStudiId when role leaves PENYUSUN', async () => {
+  it('edits profile fields and clears studyProgramId when role leaves PENYUSUN', async () => {
     const { service, prisma } = makeService({
       role: Role.ADMIN,
       findFirst: jest.fn().mockResolvedValue({
         id: 'user-1',
         role: Role.PENYUSUN,
-        programStudiId: 'prodi-1',
+        studyProgramId: 'prodi-1',
       }),
     });
 
     const user = await service.update('user-1', {
-      namaLengkap: 'Baru',
+      fullName: 'Baru',
       role: Role.PIMPINAN,
     });
 
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: 'user-1' },
-      data: { namaLengkap: 'Baru', role: Role.PIMPINAN, programStudiId: null },
+      data: { fullName: 'Baru', role: Role.PIMPINAN, studyProgramId: null },
     });
     expect(user).not.toHaveProperty('passwordHash');
   });
 
-  it('rejects turning a user into PENYUSUN without a programStudiId', async () => {
+  it('rejects turning a user into PENYUSUN without a studyProgramId', async () => {
     const { service } = makeService({
       role: Role.ADMIN,
       findFirst: jest.fn().mockResolvedValue({
         id: 'user-1',
         role: Role.PIMPINAN,
-        programStudiId: null,
+        studyProgramId: null,
       }),
     });
 

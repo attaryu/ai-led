@@ -29,7 +29,7 @@ export class BuktiDukungService {
   ) {}
 
   async create(dto: CreateBuktiDukungDto) {
-    const { tenantId, userId, role, programStudiId } =
+    const { tenantId, userId, role, studyProgramId } =
       this.tenantContext.getOrThrow();
 
     // `fileKey` datang dari klien (baris balasan /storage/presigned-upload) —
@@ -41,25 +41,25 @@ export class BuktiDukungService {
     }
 
     if (dto.ownerTipe === OwnerTipe.PROGRAM_STUDI) {
-      if (!dto.programStudiId) {
+      if (!dto.studyProgramId) {
         throw new BadRequestException(
-          'programStudiId wajib diisi untuk ownerTipe PROGRAM_STUDI',
+          'studyProgramId wajib diisi untuk ownerTipe PROGRAM_STUDI',
         );
       }
-      if (SCOPED_TO_OWN_PRODI.includes(role) && dto.programStudiId !== programStudiId) {
+      if (SCOPED_TO_OWN_PRODI.includes(role) && dto.studyProgramId !== studyProgramId) {
         throw new ForbiddenException(
           'Penyusun hanya boleh mengunggah bukti dukung untuk program studinya sendiri',
         );
       }
-      const prodi = await this.prisma.programStudi.findFirst({
-        where: { id: dto.programStudiId, tenantId },
+      const prodi = await this.prisma.studyProgram.findFirst({
+        where: { id: dto.studyProgramId, tenantId },
       });
       if (!prodi) {
         throw new NotFoundException('Program studi tidak ditemukan');
       }
-    } else if (dto.programStudiId) {
+    } else if (dto.studyProgramId) {
       throw new BadRequestException(
-        'programStudiId harus kosong untuk ownerTipe TENANT',
+        'studyProgramId harus kosong untuk ownerTipe TENANT',
       );
     } else if (SCOPED_TO_OWN_PRODI.includes(role)) {
       throw new ForbiddenException(
@@ -84,14 +84,14 @@ export class BuktiDukungService {
         id,
         ownerTipe: dto.ownerTipe,
         tenantId,
-        programStudiId: dto.ownerTipe === OwnerTipe.PROGRAM_STUDI ? dto.programStudiId : null,
+        studyProgramId: dto.ownerTipe === OwnerTipe.PROGRAM_STUDI ? dto.studyProgramId : null,
         namaDokumen: dto.namaDokumen || originalFileName,
         fileUrl: dto.fileKey,
         tipeFile,
         ukuranBytes: sizeBytes,
         statusEkstraksi: StatusEkstraksi.MENUNGGU,
         diunggahOlehUserId: userId,
-        diunggahOlehNama: user.namaLengkap,
+        diunggahOlehNama: user.fullName,
       },
     });
 
@@ -105,11 +105,11 @@ export class BuktiDukungService {
     return bukti;
   }
 
-  async findAll(programStudiId?: string) {
-    const { tenantId, role, programStudiId: ownProdiId } =
+  async findAll(studyProgramId?: string) {
+    const { tenantId, role, studyProgramId: ownProdiId } =
       this.tenantContext.getOrThrow();
 
-    if (!programStudiId) {
+    if (!studyProgramId) {
       // Level tenant — docs §7: "diakses Pimpinan & Penjamin Mutu" saja.
       if (SCOPED_TO_OWN_PRODI.includes(role)) {
         throw new ForbiddenException(
@@ -122,13 +122,13 @@ export class BuktiDukungService {
       });
     }
 
-    if (SCOPED_TO_OWN_PRODI.includes(role) && programStudiId !== ownProdiId) {
+    if (SCOPED_TO_OWN_PRODI.includes(role) && studyProgramId !== ownProdiId) {
       throw new ForbiddenException(
         'Penyusun hanya boleh melihat bukti dukung program studinya sendiri',
       );
     }
     return this.prisma.buktiDukung.findMany({
-      where: { tenantId, programStudiId },
+      where: { tenantId, studyProgramId },
       orderBy: { waktuDiunggah: 'desc' },
     });
   }

@@ -49,7 +49,7 @@ function compare(
 function toEntity(row: BackendDokumenLed, studyProgramName: string): LedProjectEntity {
 	return {
 		id: row.id,
-		studyProgramId: row.programStudiId,
+		studyProgramId: row.studyProgramId,
 		studyProgramName,
 		judul: row.judul,
 		tahunAkademik: row.tahunAkademik,
@@ -73,14 +73,14 @@ export const ledProjectRepository = {
 		]);
 		const namesById = new Map(programs.map((p) => [p.id, p.studyProgramName]));
 		return rows.map((row) =>
-			toEntity(row, namesById.get(row.programStudiId) ?? '(Prodi tidak diketahui)'),
+			toEntity(row, namesById.get(row.studyProgramId) ?? '(Prodi tidak diketahui)'),
 		);
 	},
 
 	async findById(id: string): Promise<LedProjectEntity | undefined> {
 		try {
 			const row = await ledProjectRemoteSource.findById(id);
-			const program = await studyProgramRepository.findById(row.programStudiId);
+			const program = await studyProgramRepository.findById(row.studyProgramId);
 			return toEntity(row, program?.studyProgramName ?? '(Prodi tidak diketahui)');
 		} catch (e) {
 			if (e instanceof ApiError && e.status === 404) return undefined;
@@ -190,7 +190,7 @@ export const ledProjectRepository = {
 		if (data.tenggat !== undefined) payload.tenggat = data.tenggat ?? undefined;
 
 		const updated = await ledProjectRemoteSource.update(id, payload);
-		const program = await studyProgramRepository.findById(updated.programStudiId);
+		const program = await studyProgramRepository.findById(updated.studyProgramId);
 		window.dispatchEvent(new Event('storage-update'));
 		return toEntity(updated, program?.studyProgramName ?? '(Prodi tidak diketahui)');
 	},

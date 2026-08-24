@@ -22,10 +22,10 @@ export class BabDokumenService {
     private readonly jobsService: JobsService,
   ) {}
 
-  private assertProgramStudiScope(programStudiId: string): void {
-    const { role, programStudiId: assignedId } =
+  private assertProgramStudiScope(studyProgramId: string): void {
+    const { role, studyProgramId: assignedId } =
       this.tenantContext.getOrThrow();
-    if (role === Role.PENYUSUN && assignedId !== programStudiId) {
+    if (role === Role.PENYUSUN && assignedId !== studyProgramId) {
       throw new ForbiddenException(
         'Anda hanya bisa mengakses program studi tempat Anda ditugaskan',
       );
@@ -35,26 +35,26 @@ export class BabDokumenService {
   private async findDokumenScoped(dokumenId: string) {
     const { tenantId } = this.tenantContext.getOrThrow();
     const dokumen = await this.prisma.dokumenLed.findFirst({
-      where: { id: dokumenId, programStudi: { tenantId } },
-      select: { id: true, programStudiId: true },
+      where: { id: dokumenId, studyProgram: { tenantId } },
+      select: { id: true, studyProgramId: true },
     });
     if (!dokumen) {
       throw new NotFoundException('Dokumen LED tidak ditemukan');
     }
-    this.assertProgramStudiScope(dokumen.programStudiId);
+    this.assertProgramStudiScope(dokumen.studyProgramId);
     return dokumen;
   }
 
   private async findOneScoped(id: string) {
     const { tenantId } = this.tenantContext.getOrThrow();
     const bab = await this.prisma.babDokumen.findFirst({
-      where: { id, dokumen: { programStudi: { tenantId } } },
-      include: { dokumen: { select: { programStudiId: true } } },
+      where: { id, dokumen: { studyProgram: { tenantId } } },
+      include: { dokumen: { select: { studyProgramId: true } } },
     });
     if (!bab) {
       throw new NotFoundException('Bab dokumen tidak ditemukan');
     }
-    this.assertProgramStudiScope(bab.dokumen.programStudiId);
+    this.assertProgramStudiScope(bab.dokumen.studyProgramId);
     return bab;
   }
 
@@ -92,14 +92,14 @@ export class BabDokumenService {
 
   /** Lintas prodi — Dashboard Utama KPI, mirrors DokumenLedService.findAllForTenant. */
   async findAllForTenant() {
-    const { tenantId, role, programStudiId } = this.tenantContext.getOrThrow();
-    if (role === Role.PENYUSUN && !programStudiId) return [];
+    const { tenantId, role, studyProgramId } = this.tenantContext.getOrThrow();
+    if (role === Role.PENYUSUN && !studyProgramId) return [];
 
     return this.prisma.babDokumen.findMany({
       where: {
         dokumen: {
-          programStudi: { tenantId },
-          ...(role === Role.PENYUSUN ? { programStudiId: programStudiId ?? undefined } : {}),
+          studyProgram: { tenantId },
+          ...(role === Role.PENYUSUN ? { studyProgramId: studyProgramId ?? undefined } : {}),
         },
       },
     });
@@ -114,9 +114,9 @@ export class BabDokumenService {
   async findOne(id: string) {
     const { tenantId } = this.tenantContext.getOrThrow();
     const bab = await this.prisma.babDokumen.findFirst({
-      where: { id, dokumen: { programStudi: { tenantId } } },
+      where: { id, dokumen: { studyProgram: { tenantId } } },
       include: {
-        dokumen: { select: { programStudiId: true } },
+        dokumen: { select: { studyProgramId: true } },
         buktiDukungBab: true,
         ragasScores: { orderBy: { dihitungPada: 'desc' }, take: 1 },
         hasilSkorKriteria: { where: { targetTipe: 'BAB_AKTIF' } },
@@ -125,7 +125,7 @@ export class BabDokumenService {
     if (!bab) {
       throw new NotFoundException('Bab dokumen tidak ditemukan');
     }
-    this.assertProgramStudiScope(bab.dokumen.programStudiId);
+    this.assertProgramStudiScope(bab.dokumen.studyProgramId);
 
     const { dokumen, ...rest } = bab;
     void dokumen;
@@ -161,7 +161,7 @@ export class BabDokumenService {
     const [user, buktiDukungBab, terakhir] = await Promise.all([
       this.prisma.user.findUniqueOrThrow({
         where: { id: userId },
-        select: { namaLengkap: true },
+        select: { fullName: true },
       }),
       this.prisma.buktiDukungBab.findMany({ where: { babDokumenId: id } }),
       this.prisma.babDraft.aggregate({
@@ -174,7 +174,7 @@ export class BabDokumenService {
       data: {
         babId: id,
         dibuatOlehUserId: userId,
-        dibuatOlehNama: user.namaLengkap,
+        dibuatOlehNama: user.fullName,
         versi: (terakhir._max.versi ?? 0) + 1,
         label: dto.label?.trim() || null,
         kontenSnapshot: bab.kontenKerja as Prisma.InputJsonValue,
@@ -320,10 +320,10 @@ export class BabDokumenService {
       } else {
         const user = await this.prisma.user.findUniqueOrThrow({
           where: { id: userId },
-          select: { namaLengkap: true },
+          select: { fullName: true },
         });
         data.catatanPenjaminMutu = dto.catatanPenjaminMutu;
-        data.catatanOlehNama = user.namaLengkap;
+        data.catatanOlehNama = user.fullName;
         data.catatanPada = new Date();
       }
     }

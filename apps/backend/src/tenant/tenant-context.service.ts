@@ -6,7 +6,7 @@ export interface TenantContext {
   tenantId: string;
   userId: string;
   role: Role;
-  programStudiId: string | null;
+  studyProgramId: string | null;
 }
 
 @Injectable()

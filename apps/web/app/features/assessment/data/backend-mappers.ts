@@ -29,7 +29,7 @@ export function mapSession(row: BackendAssessmentSession): AssessmentSessionEnti
 		status: row.status,
 		error: row.error,
 		dijalankanOlehUserId: row.createdByUserId,
-		dijalankanOlehNama: row.createdBy.namaLengkap,
+		dijalankanOlehNama: row.createdBy.fullName,
 		createdAt: row.createdAt,
 		updatedAt: row.updatedAt,
 		// RAGAS di level sesi (docs §12b) belum ada backing-nya sama sekali —

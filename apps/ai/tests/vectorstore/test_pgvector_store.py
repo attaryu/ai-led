@@ -66,20 +66,20 @@ def fixture_ids(conn):
             program_studi_id = f"test-prodi-{label}-{uuid.uuid4().hex[:8]}"
             dokumen_id = f"test-dok-{label}-{uuid.uuid4().hex[:8]}"
             cur.execute(
-                "INSERT INTO tenant (id, nama_universitas) VALUES (%s, %s)",
+                "INSERT INTO org_tenants (id, university_name) VALUES (%s, %s)",
                 (tenant_id, f"Test University {label}"),
             )
             cur.execute(
                 """
-                INSERT INTO program_studi
-                    (id, tenant_id, nama, kode, jenjang, fakultas, ketua_prodi, peringkat_akreditasi)
+                INSERT INTO org_study_programs
+                    (id, tenant_id, name, code, level, faculty, program_head, accreditation_rank)
                 VALUES (%s, %s, %s, %s, 'S1', %s, %s, 'BAIK')
                 """,
                 (program_studi_id, tenant_id, "Test Prodi", "TP", "Test Fakultas", "Test Ketua"),
             )
             cur.execute(
                 """
-                INSERT INTO dokumen_led (id, program_studi_id, judul, tahun_akademik, status_keseluruhan)
+                INSERT INTO dokumen_led (id, study_program_id, judul, tahun_akademik, status_keseluruhan)
                 VALUES (%s, %s, %s, %s, 'DRAFT')
                 """,
                 (dokumen_id, program_studi_id, "Test LED", "2026/2027"),
@@ -99,8 +99,8 @@ def fixture_ids(conn):
             # go first.
             cur.execute("DELETE FROM led_chunk_embeddings WHERE dokumen_id = %s", (ids[label]["dokumen_id"],))
             cur.execute("DELETE FROM dokumen_led WHERE id = %s", (ids[label]["dokumen_id"],))
-            cur.execute("DELETE FROM program_studi WHERE id = %s", (ids[label]["program_studi_id"],))
-            cur.execute("DELETE FROM tenant WHERE id = %s", (ids[label]["tenant_id"],))
+            cur.execute("DELETE FROM org_study_programs WHERE id = %s", (ids[label]["program_studi_id"],))
+            cur.execute("DELETE FROM org_tenants WHERE id = %s", (ids[label]["tenant_id"],))
 
 
 def _chunk(chunk_id, text):

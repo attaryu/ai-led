@@ -118,36 +118,36 @@ enum AssessmentStatus {
 
 /// docs/database.md §1
 model Tenant {
-  id              String @id @default(cuid())
-  namaUniversitas String @map("nama_universitas")
+  id             String @id @default(cuid())
+  universityName String @map("university_name")
 
   users                      User[]
-  programStudi               ProgramStudi[]
+  studyPrograms              StudyProgram[]
   buktiDukung                BuktiDukung[]
   jobs                       Job[]
   assessmentSessions         AssessmentSession[]
   ledChunkEmbeddings         LedChunkEmbedding[]
   buktiDukungChunkEmbeddings BuktiDukungChunkEmbedding[]
 
-  @@map("tenant")
+  @@map("org_tenants")
 }
 
 /// docs/database.md §2
 model User {
   id             String   @id @default(cuid())
   tenantId       String   @map("tenant_id")
-  programStudiId String?  @map("program_studi_id")
-  namaLengkap    String   @map("nama_lengkap")
+  studyProgramId String?  @map("study_program_id")
+  fullName       String   @map("full_name")
   email          String   @unique
   passwordHash   String   @map("password_hash")
   role           Role
-  dibuatPada     DateTime @default(now()) @map("dibuat_pada")
+  createdAt      DateTime @default(now()) @map("created_at")
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id])
   // `Restrict`, bukan default Prisma `SetNull` — lihat notes attar.md #2:
   // "PENYUSUN tidak boleh ada tanpa prodi" tidak bisa ditegakkan bila hapus
-  // prodi diam-diam mengosongkan program_studi_id penghuninya.
-  programStudi ProgramStudi? @relation(fields: [programStudiId], references: [id], onDelete: Restrict)
+  // prodi diam-diam mengosongkan study_program_id penghuninya.
+  studyProgram StudyProgram? @relation(fields: [studyProgramId], references: [id], onDelete: Restrict)
 
   babDraftDibuat      BabDraft[]          @relation("BabDraftDibuatOleh")
   buktiDukungDiunggah BuktiDukung[]       @relation("BuktiDukungDiunggahOleh")
@@ -158,22 +158,22 @@ model User {
   assessmentVerdicts  AssessmentVerdict[] @relation("AssessmentVerdictDitinjauOleh")
 
   @@index([tenantId])
-  @@map("user")
+  @@map("org_users")
 }
 
 /// docs/database.md §3
-model ProgramStudi {
-  id                      String              @id @default(cuid())
-  tenantId                String              @map("tenant_id")
-  nama                    String
-  kode                    String
-  jenjang                 Jenjang
-  fakultas                String
-  ketuaProdi              String              @map("ketua_prodi")
-  peringkatAkreditasi     PeringkatAkreditasi @map("peringkat_akreditasi")
-  nomorSkAkreditasi       String?             @map("nomor_sk_akreditasi")
-  berlakuSampaiAkreditasi DateTime?           @map("berlaku_sampai_akreditasi") @db.Date
-  dibuatPada              DateTime            @default(now()) @map("dibuat_pada")
+model StudyProgram {
+  id                        String              @id @default(cuid())
+  tenantId                  String              @map("tenant_id")
+  name                      String
+  code                      String
+  level                     Jenjang
+  faculty                   String
+  programHead               String              @map("program_head")
+  accreditationRank         PeringkatAkreditasi @map("accreditation_rank")
+  accreditationDecreeNumber String?             @map("accreditation_decree_number")
+  accreditationValidUntil   DateTime?           @map("accreditation_valid_until") @db.Date
+  createdAt                 DateTime            @default(now()) @map("created_at")
 
   tenant      Tenant        @relation(fields: [tenantId], references: [id])
   users       User[]
@@ -181,7 +181,7 @@ model ProgramStudi {
   buktiDukung BuktiDukung[]
 
   @@index([tenantId])
-  @@map("program_studi")
+  @@map("org_study_programs")
 }
 
 // ─────────────────────── Kelompok: Dokumen LED ───────────────────────
@@ -189,20 +189,20 @@ model ProgramStudi {
 /// docs/database.md §4
 model DokumenLed {
   id                String        @id @default(cuid())
-  programStudiId    String        @map("program_studi_id")
+  studyProgramId    String        @map("study_program_id")
   judul             String
   tahunAkademik     String        @map("tahun_akademik")
   statusKeseluruhan StatusDokumen @map("status_keseluruhan")
   tenggat           DateTime?     @db.Date
   dibuatPada        DateTime      @default(now()) @map("dibuat_pada")
 
-  programStudi       ProgramStudi        @relation(fields: [programStudiId], references: [id])
+  studyProgram       StudyProgram        @relation(fields: [studyProgramId], references: [id])
   babDokumen         BabDokumen[]
   assessmentSessions AssessmentSession[]
   assessmentVerdicts AssessmentVerdict[]
   ledChunkEmbeddings LedChunkEmbedding[]
 
-  @@index([programStudiId])
+  @@index([studyProgramId])
   @@map("dokumen_led")
 }
 
@@ -267,7 +267,7 @@ model BuktiDukung {
   id                 String          @id @default(cuid())
   ownerTipe          OwnerTipe       @map("owner_tipe")
   tenantId           String?         @map("tenant_id")
-  programStudiId     String?         @map("program_studi_id")
+  studyProgramId     String?         @map("study_program_id")
   namaDokumen        String          @map("nama_dokumen")
   fileUrl            String          @map("file_url")
   tipeFile           String          @map("tipe_file")
@@ -279,7 +279,7 @@ model BuktiDukung {
   waktuDiunggah      DateTime        @default(now()) @map("waktu_diunggah")
 
   tenant       Tenant?       @relation(fields: [tenantId], references: [id])
-  programStudi ProgramStudi? @relation(fields: [programStudiId], references: [id])
+  studyProgram StudyProgram? @relation(fields: [studyProgramId], references: [id])
   diunggahOleh User          @relation("BuktiDukungDiunggahOleh", fields: [diunggahOlehUserId], references: [id])
 
   buktiDukungBab     BuktiDukungBab[]
@@ -288,7 +288,7 @@ model BuktiDukung {
   chunkEmbeddings    BuktiDukungChunkEmbedding[]
 
   @@index([tenantId])
-  @@index([programStudiId])
+  @@index([studyProgramId])
   @@map("bukti_dukung")
 }
 

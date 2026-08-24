@@ -9,7 +9,7 @@ export class CreateBuktiDukungDto {
   // di service (bergantung pada ownerTipe, class-validator saja tidak cukup).
   @IsOptional()
   @IsString()
-  programStudiId?: string;
+  studyProgramId?: string;
 
   // Nama arsip yang ditampilkan ke user; default ke nama file asli bila kosong
   // (lihat docs/database.md §7 konvensi "menyimpan nama, bukan hanya id").

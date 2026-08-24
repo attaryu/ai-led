@@ -29,7 +29,7 @@ export class TenantInterceptor implements NestInterceptor {
           tenantId: user.tenantId,
           userId: user.sub,
           role: user.role,
-          programStudiId: user.programStudiId,
+          studyProgramId: user.studyProgramId,
         },
         () => {
           next.handle().subscribe(subscriber);

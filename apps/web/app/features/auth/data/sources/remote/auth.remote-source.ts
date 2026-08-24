@@ -7,11 +7,11 @@ export type BackendRole = 'ADMIN' | 'PIMPINAN' | 'PENJAMIN_MUTU' | 'PENYUSUN';
 export type BackendUser = {
 	id: string;
 	tenantId: string;
-	programStudiId: string | null;
-	namaLengkap: string;
+	studyProgramId: string | null;
+	fullName: string;
 	email: string;
 	role: BackendRole;
-	dibuatPada: string;
+	createdAt: string;
 };
 
 export type AuthResult = {
@@ -22,8 +22,8 @@ export type AuthResult = {
 };
 
 export type RegisterPayload = {
-	namaUniversitas: string;
-	namaLengkap: string;
+	universityName: string;
+	fullName: string;
 	email: string;
 	password: string;
 };

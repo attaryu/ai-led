@@ -4,7 +4,7 @@ import { type LedProjectStatus } from '../../../domain/entities/led-project.enti
 /** Bentuk baris Prisma `DokumenLed` sebagaimana dikembalikan `/program-studi/:id/dokumen` dan `/dokumen/:id`. */
 export type BackendDokumenLed = {
 	id: string;
-	programStudiId: string;
+	studyProgramId: string;
 	judul: string;
 	tahunAkademik: string;
 	statusKeseluruhan: LedProjectStatus;

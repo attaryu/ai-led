@@ -12,35 +12,35 @@ export class CreateProgramStudiDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
-  nama!: string;
+  name!: string;
 
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  kode!: string;
+  code!: string;
 
   @IsEnum(Jenjang)
-  jenjang!: Jenjang;
+  level!: Jenjang;
 
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
-  fakultas!: string;
+  faculty!: string;
 
   @IsString()
   @IsNotEmpty()
   @MaxLength(255)
-  ketuaProdi!: string;
+  programHead!: string;
 
   @IsEnum(PeringkatAkreditasi)
-  peringkatAkreditasi!: PeringkatAkreditasi;
+  accreditationRank!: PeringkatAkreditasi;
 
   @IsOptional()
   @IsString()
   @MaxLength(100)
-  nomorSkAkreditasi?: string;
+  accreditationDecreeNumber?: string;
 
   @IsOptional()
   @IsDateString()
-  berlakuSampaiAkreditasi?: string;
+  accreditationValidUntil?: string;
 }

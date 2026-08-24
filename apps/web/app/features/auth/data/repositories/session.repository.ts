@@ -24,9 +24,9 @@ function toSession(result: AuthResult): SessionEntity {
 	return sessionSchema.parse({
 		userId: result.user.id,
 		tenantId: result.user.tenantId,
-		namaLengkap: result.user.namaLengkap,
+		namaLengkap: result.user.fullName,
 		role: ROLE_FROM_BACKEND[result.user.role],
-		studyProgramId: result.user.programStudiId,
+		studyProgramId: result.user.studyProgramId,
 	});
 }
 

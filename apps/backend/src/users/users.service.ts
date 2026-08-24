@@ -25,15 +25,15 @@ export class UsersService {
   /** Admin membuat PIMPINAN/PENJAMIN_MUTU/PENYUSUN; tenantId selalu dari token. */
   async create(dto: CreateUserDto) {
     // Penyusun tanpa prodi tidak punya satu pun halaman yang boleh ia buka.
-    if (dto.role === Role.PENYUSUN && !dto.programStudiId) {
+    if (dto.role === Role.PENYUSUN && !dto.studyProgramId) {
       throw new BadRequestException(
         'Penyusun harus ditugaskan ke satu program studi',
       );
     }
 
-    if (dto.programStudiId) {
+    if (dto.studyProgramId) {
       // Melempar 404 sendiri bila prodinya bukan milik tenant ini.
-      await this.programStudi.findOne(dto.programStudiId);
+      await this.programStudi.findOne(dto.studyProgramId);
     }
 
     const existing = await this.prisma.user.findUnique({
@@ -48,11 +48,11 @@ export class UsersService {
     const user = await this.prisma.user.create({
       data: {
         tenantId,
-        namaLengkap: dto.namaLengkap,
+        fullName: dto.fullName,
         email: dto.email,
         passwordHash,
         role: dto.role,
-        programStudiId: dto.programStudiId ?? null,
+        studyProgramId: dto.studyProgramId ?? null,
       },
     });
 
@@ -64,8 +64,8 @@ export class UsersService {
     const { tenantId } = this.tenantContext.getOrThrow();
     return this.prisma.user.findMany({
       where: { tenantId },
-      orderBy: { dibuatPada: 'desc' },
-      include: { programStudi: { select: { nama: true } } },
+      orderBy: { createdAt: 'desc' },
+      include: { studyProgram: { select: { name: true } } },
     });
   }
 
@@ -91,9 +91,9 @@ export class UsersService {
     user: { id: string; role: Role },
     dto: UpdateUserDto,
   ) {
-    const { namaLengkap, email, password, role, programStudiId } = dto;
+    const { fullName, email, password, role, studyProgramId } = dto;
     const adaFieldTerlarang =
-      namaLengkap !== undefined ||
+      fullName !== undefined ||
       email !== undefined ||
       password !== undefined ||
       role !== undefined;
@@ -107,27 +107,27 @@ export class UsersService {
         'Hanya Penyusun yang punya prodi untuk dipindahkan',
       );
     }
-    if (!programStudiId) {
-      throw new BadRequestException('programStudiId wajib diisi');
+    if (!studyProgramId) {
+      throw new BadRequestException('studyProgramId wajib diisi');
     }
 
     // Melempar 404 sendiri bila prodinya bukan milik tenant ini.
-    await this.programStudi.findOne(programStudiId);
+    await this.programStudi.findOne(studyProgramId);
 
     const updated = await this.prisma.user.update({
       where: { id: user.id },
-      data: { programStudiId },
+      data: { studyProgramId },
     });
     return toSafeUser(updated);
   }
 
   private async updateAsAdmin(
-    user: { id: string; role: Role; programStudiId: string | null },
+    user: { id: string; role: Role; studyProgramId: string | null },
     dto: UpdateUserDto,
   ) {
     const data: Prisma.UserUncheckedUpdateInput = {};
 
-    if (dto.namaLengkap !== undefined) data.namaLengkap = dto.namaLengkap;
+    if (dto.fullName !== undefined) data.fullName = dto.fullName;
 
     if (dto.email !== undefined) {
       const existing = await this.prisma.user.findUnique({
@@ -146,10 +146,10 @@ export class UsersService {
     if (dto.role !== undefined) data.role = dto.role;
 
     const nextRole = dto.role ?? user.role;
-    const nextProgramStudiId =
-      dto.programStudiId !== undefined ? dto.programStudiId : user.programStudiId;
+    const nextStudyProgramId =
+      dto.studyProgramId !== undefined ? dto.studyProgramId : user.studyProgramId;
 
-    if (nextRole === Role.PENYUSUN && !nextProgramStudiId) {
+    if (nextRole === Role.PENYUSUN && !nextStudyProgramId) {
       throw new BadRequestException(
         'Penyusun harus ditugaskan ke satu program studi',
       );
@@ -157,10 +157,10 @@ export class UsersService {
     if (nextRole !== Role.PENYUSUN) {
       // Role lain tidak punya prodi (docs/database.md §2) — dikosongkan kalau
       // role-nya baru saja diganti keluar dari Penyusun.
-      data.programStudiId = null;
-    } else if (dto.programStudiId !== undefined) {
-      await this.programStudi.findOne(dto.programStudiId);
-      data.programStudiId = dto.programStudiId;
+      data.studyProgramId = null;
+    } else if (dto.studyProgramId !== undefined) {
+      await this.programStudi.findOne(dto.studyProgramId);
+      data.studyProgramId = dto.studyProgramId;
     }
 
     const updated = await this.prisma.user.update({

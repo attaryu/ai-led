@@ -16,26 +16,26 @@ const PRODI_ID = 'demo-prodi';
 
 const DEMO_USERS: {
 	email: string;
-	namaLengkap: string;
+	fullName: string;
 	role: Role;
-	programStudiId?: string;
+	studyProgramId?: string;
 }[] = [
-	{ email: 'admin@demo.test', namaLengkap: 'Dewi Lestari (Admin)', role: Role.ADMIN },
+	{ email: 'admin@demo.test', fullName: 'Dewi Lestari (Admin)', role: Role.ADMIN },
 	{
 		email: 'pimpinan@demo.test',
-		namaLengkap: 'Prof. Dr. Ir. H. Bambang (Pimpinan)',
+		fullName: 'Prof. Dr. Ir. H. Bambang (Pimpinan)',
 		role: Role.PIMPINAN,
 	},
 	{
 		email: 'pm@demo.test',
-		namaLengkap: 'Ahmad Fauzi (Penjamin Mutu)',
+		fullName: 'Ahmad Fauzi (Penjamin Mutu)',
 		role: Role.PENJAMIN_MUTU,
 	},
 	{
 		email: 'penyusun@demo.test',
-		namaLengkap: 'Siti Rahmawati (Penyusun)',
+		fullName: 'Siti Rahmawati (Penyusun)',
 		role: Role.PENYUSUN,
-		programStudiId: PRODI_ID,
+		studyProgramId: PRODI_ID,
 	},
 ];
 
@@ -45,21 +45,21 @@ async function main() {
 	const tenant = await prisma.tenant.upsert({
 		where: { id: TENANT_ID },
 		update: {},
-		create: { id: TENANT_ID, namaUniversitas: 'Universitas Contoh' },
+		create: { id: TENANT_ID, universityName: 'Universitas Contoh' },
 	});
 
-	const programStudi = await prisma.programStudi.upsert({
+	const studyProgram = await prisma.studyProgram.upsert({
 		where: { id: PRODI_ID },
 		update: {},
 		create: {
 			id: PRODI_ID,
 			tenantId: tenant.id,
-			nama: 'Teknik Informatika',
-			kode: '55201',
-			jenjang: Jenjang.S1,
-			fakultas: 'Fakultas Teknik',
-			ketuaProdi: 'Dr. Andi Nugroho, S.T., M.Kom.',
-			peringkatAkreditasi: PeringkatAkreditasi.BAIK_SEKALI,
+			name: 'Teknik Informatika',
+			code: '55201',
+			level: Jenjang.S1,
+			faculty: 'Fakultas Teknik',
+			programHead: 'Dr. Andi Nugroho, S.T., M.Kom.',
+			accreditationRank: PeringkatAkreditasi.BAIK_SEKALI,
 		},
 	});
 
@@ -69,8 +69,8 @@ async function main() {
 			update: {},
 			create: {
 				tenantId: tenant.id,
-				programStudiId: u.programStudiId ?? null,
-				namaLengkap: u.namaLengkap,
+				studyProgramId: u.studyProgramId ?? null,
+				fullName: u.fullName,
 				email: u.email,
 				passwordHash,
 				role: u.role,
@@ -78,7 +78,7 @@ async function main() {
 		});
 	}
 
-	console.log(`Seed selesai. Prodi: "${programStudi.nama}" (${programStudi.id})`);
+	console.log(`Seed selesai. Prodi: "${studyProgram.name}" (${studyProgram.id})`);
 	console.log(`Password untuk semua akun demo: ${DEMO_PASSWORD}`);
 	for (const u of DEMO_USERS) {
 		console.log(`  ${u.role.padEnd(14)} ${u.email}`);

@@ -52,12 +52,12 @@ export class AuthService {
 
     const user = await this.prisma.$transaction(async (tx) => {
       const tenant = await tx.tenant.create({
-        data: { namaUniversitas: dto.namaUniversitas },
+        data: { universityName: dto.universityName },
       });
       return tx.user.create({
         data: {
           tenantId: tenant.id,
-          namaLengkap: dto.namaLengkap,
+          fullName: dto.fullName,
           email: dto.email,
           passwordHash,
           role: Role.ADMIN,
@@ -138,7 +138,7 @@ export class AuthService {
       sub: user.id,
       tenantId: user.tenantId,
       role: user.role,
-      programStudiId: user.programStudiId,
+      studyProgramId: user.studyProgramId,
       jti: randomUUID(),
     };
 
