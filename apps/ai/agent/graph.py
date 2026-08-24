@@ -11,6 +11,7 @@ parse_output extracts score, justification, confidence, and recommendation.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from typing import Literal, Optional
@@ -25,6 +26,8 @@ from agent.tools.led_tool import search_led_evidence
 from agent.tools.lkps_tool import get_lkps_table
 from agent.tools.rubric_tool import get_indicator_rubric
 from llm.ollama_client import OllamaClient
+
+logger = logging.getLogger(__name__)
 
 TOOLS = [get_indicator_rubric, search_led_evidence, get_lkps_table, compute_formula_score]
 
@@ -54,14 +57,14 @@ def is_reasoning_model(model_name: str) -> bool:
 
 
 def build_graph_auto(ollama_client: OllamaClient):
-    """Pick native or reasoning graph based on the active model name."""
-    provider = os.environ.get("LLM_PROVIDER", "ollama").lower()
-    if provider == "openrouter":
-        model = os.environ.get("OPENROUTER_MODEL", "")
-    else:
-        model = ollama_client.model
+    """Pick native or reasoning graph based on the active model name.
 
-    if is_reasoning_model(model):
+    ollama_client.model is the single source of truth for "which model is
+    actually active", regardless of LLM_PROVIDER — create_ollama_client_from_env()
+    already resolves it from OLLAMA_MODEL or OPENROUTER_MODEL as appropriate,
+    so this dispatch (and _build_llm's provider branches) can just trust it
+    instead of independently re-reading provider-specific env vars."""
+    if is_reasoning_model(ollama_client.model):
         from agent.reasoning_graph import build_reasoning_graph
         return build_reasoning_graph(ollama_client)
 
@@ -73,21 +76,28 @@ def _build_llm(ollama_client: OllamaClient):
 
     Provider is selected by LLM_PROVIDER env var (default: ollama):
 
-        LLM_PROVIDER=ollama       — Ollama on Vast.ai (uses OllamaClient config)
-        LLM_PROVIDER=openrouter   — OpenRouter API (reads OPENROUTER_API_KEY,
-                                    OPENROUTER_MODEL)
+        LLM_PROVIDER=ollama       — Ollama on Vast.ai
+        LLM_PROVIDER=openrouter   — OpenRouter API (reads OPENROUTER_API_KEY)
+
+    Either way, the model name comes from ollama_client.model — it's the
+    single source of truth regardless of provider (see
+    create_ollama_client_from_env / get_available_models).
     """
     provider = os.environ.get("LLM_PROVIDER", "ollama").lower()
 
     if provider == "openrouter":
         from langchain_openai import ChatOpenAI
 
-        return ChatOpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=os.environ["OPENROUTER_API_KEY"],
-            model=os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-r1"),
-            temperature=0.1,
-        ).bind_tools(TOOLS)
+        return (
+            ChatOpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=os.environ["OPENROUTER_API_KEY"],
+                model=ollama_client.model,
+                temperature=0.1,
+            )
+            .bind_tools(TOOLS)
+            .with_retry(stop_after_attempt=3)
+        )
 
     # Default: Ollama
     from langchain_ollama import ChatOllama
@@ -102,7 +112,10 @@ def _build_llm(ollama_client: OllamaClient):
         # Pass Bearer token to the underlying ollama Client
         kwargs["client_kwargs"] = {"headers": {"Authorization": f"Bearer {api_key}"}}
 
-    return ChatOllama(**kwargs).bind_tools(TOOLS)
+    # Retry transient connection failures (e.g. connection reset mid-request
+    # to the remote Ollama instance) instead of letting them propagate raw
+    # into the indicator's error field with zero retry.
+    return ChatOllama(**kwargs).bind_tools(TOOLS).with_retry(stop_after_attempt=3)
 
 _SYSTEM_PROMPT = """Anda adalah AGEN OTONOM penilai akreditasi program studi (AMI).
 Anda BUKAN chatbot. Anda TIDAK bertanya balik ke user. Anda menyelesaikan
@@ -298,11 +311,17 @@ def build_judge_llm():
         )
 
     from langchain_ollama import ChatOllama
+    from llm.ollama_client import pick_ollama_endpoint
+
+    judge_base_url = pick_ollama_endpoint(
+        os.environ.get(
+            "RAGAS_OLLAMA_BASE_URL", os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        )
+    )
+    logger.info("Grounding judge using Ollama endpoint %s", judge_base_url)
 
     kwargs: dict = {
-        "base_url": os.environ.get(
-            "RAGAS_OLLAMA_BASE_URL", os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-        ),
+        "base_url": judge_base_url,
         "model": cfg["model"],
         "temperature": 0.0,
     }
@@ -408,16 +427,22 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
     MAX_TOOL_CALLS = 12
 
     def _looks_like_finalized(content: str) -> bool:
-        """Detect if message contains a parseable SKOR line."""
+        """Detect if message contains a parseable SKOR line AND a JUSTIFIKASI
+        marker. Requiring both avoids accepting a free-form response (e.g. a
+        markdown table/essay that merely mentions "Skor: 4" somewhere) as
+        finalized — which would otherwise make parse_output_node's fallback
+        grab the first 600 chars of unrelated text as the justification."""
         cleaned = re.sub(r"\*{1,3}|`+|#+\s*", "", content or "")
-        return bool(
+        has_score = bool(
             re.search(
                 r"(?im)\bskor(?:\s+(?:final|akhir))?\s*[:=]\s*[0-9]+(?:\.[0-9]+)?",
                 cleaned,
             )
         )
+        has_justification = bool(re.search(r"(?im)\bjustifikasi\s*[:=]", cleaned))
+        return has_score and has_justification
 
-    def should_continue(state: AssessmentState) -> Literal["tools", "force", "parse_output"]:
+    def should_continue(state: AssessmentState) -> Literal["tools", "force", "parse_output", "give_up"]:
         last = state["messages"][-1]
         # Both trigger reasons below (too many tool rounds, or stuck without a
         # final answer) share the SAME force-retry budget, so a model that
@@ -429,14 +454,27 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
         if hasattr(last, "tool_calls") and last.tool_calls:
             tool_calls_so_far = state.get("_tool_call_count", 0)
             if tool_calls_so_far >= MAX_TOOL_CALLS:
-                return "force" if forces < FORCE_LIMIT else "parse_output"
+                return "force" if forces < FORCE_LIMIT else "give_up"
             return "tools"
 
         content = getattr(last, "content", "") or ""
         if _looks_like_finalized(content):
             return "parse_output"
 
-        return "force" if forces < FORCE_LIMIT else "parse_output"
+        return "force" if forces < FORCE_LIMIT else "give_up"
+
+    def give_up_node(state: AssessmentState) -> AssessmentState:
+        """Reached when FORCE_LIMIT is exhausted without ever producing a
+        parseable SKOR+JUSTIFIKASI response. Sets an explicit error instead
+        of falling through to parse_output_node, which would otherwise
+        silently parse empty/unstructured content into a uniform
+        score=None/confidence=0.5/justification="" result indistinguishable
+        from a genuine (but empty) model answer."""
+        state["error"] = (
+            "Model tidak menghasilkan format SKOR/JUSTIFIKASI yang valid "
+            "setelah batas percobaan force-finalize tercapai."
+        )
+        return state
 
     def force_finalize_node(state: AssessmentState) -> AssessmentState:
         """Append a system reminder forcing the model to emit final format.
@@ -585,12 +623,18 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
     graph.add_node("force", force_finalize_node)
     graph.add_node("parse_output", parse_output_node)
     graph.add_node("judge", judge_node)
+    graph.add_node("give_up", give_up_node)
 
     graph.set_entry_point("agent")
     graph.add_conditional_edges(
         "agent",
         should_continue,
-        {"tools": "tools", "force": "force", "parse_output": "parse_output"},
+        {
+            "tools": "tools",
+            "force": "force",
+            "parse_output": "parse_output",
+            "give_up": "give_up",
+        },
     )
     graph.add_conditional_edges(
         "tools", route_after_tools, {"checklist": "checklist", "agent": "agent"}
@@ -599,5 +643,6 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
     graph.add_edge("force", "agent")
     graph.add_edge("parse_output", "judge")
     graph.add_edge("judge", END)
+    graph.add_edge("give_up", END)
 
     return graph.compile()

@@ -17,7 +17,12 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from eval.ragas_eval import ALL_METRICS, get_judge_llm_config, run_ragas_evaluation
+from eval.ragas_eval import (
+    ALL_METRICS,
+    get_available_judge_models,
+    get_judge_llm_config,
+    run_ragas_evaluation,
+)
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
@@ -43,8 +48,8 @@ class EvalRunRequest(BaseModel):
     n_indicators: int = Field(
         default=5,
         ge=1,
-        le=78,
-        description="Number of indicators to evaluate (1–78). Keep ≤10 for speed.",
+        le=64,
+        description="Number of indicators to evaluate (1–64). Keep ≤10 for speed.",
     )
     metrics: list[str] = Field(
         default=["faithfulness", "answer_relevancy", "context_precision", "context_recall"],
@@ -55,6 +60,11 @@ class EvalRunRequest(BaseModel):
         description="Path to a JSON file containing actual ground-truth references. "
                     'Format: [{"indicator_no": int, "reference": str}, ...]. '
                     "Missing indicators fall back to synthetic LLM generation.",
+    )
+    model: Optional[str] = Field(
+        default=None,
+        description="Override judge model — must be one of GET /eval/models. "
+                    "Defaults to the configured RAGAS/assessment model when omitted.",
     )
 
 
@@ -88,6 +98,11 @@ class EvalConfigResponse(BaseModel):
     assessment_model: str
 
 
+class AvailableModelsResponse(BaseModel):
+    provider: str
+    models: list[str]
+
+
 class EvalListItem(BaseModel):
     eval_id: str
     status: str
@@ -110,6 +125,7 @@ def _run_evaluation_background(
     n_indicators: int,
     metrics: list[str],
     reference_path: Optional[str] = None,
+    model: Optional[str] = None,
 ) -> None:
     _eval_results[eval_id]["status"] = "running"
     _eval_results[eval_id]["started_at"] = datetime.now(timezone.utc).isoformat()
@@ -133,6 +149,7 @@ def _run_evaluation_background(
             metrics_to_run=metrics,
             reference_path=reference_path,
             progress_cb=_on_progress,
+            model=model,
         )
         _eval_results[eval_id].update(
             {
@@ -183,8 +200,16 @@ async def run_evaluation(
             detail=f"Unknown metrics: {sorted(unknown)}. Valid: {ALL_METRICS}",
         )
 
+    if body.model is not None:
+        available = get_available_judge_models()
+        if body.model not in available:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown model: {body.model}. Available: {available}",
+            )
+
     eval_id = str(uuid.uuid4())
-    cfg = get_judge_llm_config()
+    cfg = get_judge_llm_config(model=body.model)
     _eval_results[eval_id] = {
         "status": "pending",
         "provider": cfg["provider"],
@@ -198,6 +223,7 @@ async def run_evaluation(
         n_indicators=body.n_indicators,
         metrics=body.metrics,
         reference_path=body.reference_path,
+        model=body.model,
     )
 
     return EvalRunResponse(
@@ -210,16 +236,24 @@ async def run_evaluation(
     )
 
 
+@router.get("/models", response_model=AvailableModelsResponse)
+def get_available_models() -> AvailableModelsResponse:
+    """Return the configured judge model list (RAGAS_* with fallback to the
+    assessment model) — used to populate a model picker before /eval/run."""
+    cfg = get_judge_llm_config()
+    return AvailableModelsResponse(provider=cfg["provider"], models=get_available_judge_models())
+
+
 @router.get("/config", response_model=EvalConfigResponse)
 def get_eval_config() -> EvalConfigResponse:
     """Return the RAGAS judge config + the assessment model (the thing under test)."""
     import os
+
+    from llm.ollama_client import get_available_models
+
     judge = get_judge_llm_config()
     assessment_provider = os.environ.get("LLM_PROVIDER", "ollama").lower()
-    if assessment_provider == "openrouter":
-        assessment_model = os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-r1")
-    else:
-        assessment_model = os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b")
+    assessment_model = get_available_models()[0]
 
     return EvalConfigResponse(
         judge_provider=judge["provider"],

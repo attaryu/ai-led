@@ -46,6 +46,99 @@ def test_build_graph_returns_compiled_graph():
     assert hasattr(graph, "invoke")
 
 
+def test_build_llm_wraps_ollama_with_retry():
+    """Transient connection errors talking to the Ollama backend (e.g. a
+    connection reset mid-request) must be retried by the LLM runnable itself,
+    not propagate raw up into the indicator's error field. Verifies
+    _build_llm chains Runnable.with_retry() onto the Ollama branch — the
+    retry mechanics themselves are LangChain's, not tested here.
+
+    Regression test: a real run hit "Error: [Errno 104] Connection reset by
+    peer" with zero retry, because the LLM runnable had no retry wrapper."""
+    from llm.ollama_client import OllamaClient
+    from agent.graph import _build_llm
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
+
+    with patch("langchain_ollama.ChatOllama") as mock_chat_ollama_cls:
+        mock_chat_ollama_cls.return_value = MagicMock()
+        _build_llm(fake_client)
+
+    bound = mock_chat_ollama_cls.return_value.bind_tools.return_value
+    bound.with_retry.assert_called_once()
+
+
+def test_build_judge_llm_round_robins_across_ollama_endpoints(monkeypatch):
+    """The inline per-indicator grounding judge must also spread across a
+    multi-GPU endpoint pool (via pick_ollama_endpoint), not always hit the
+    first one."""
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("OLLAMA_MODEL", "deepseek-r1:7b")
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://gpu1:11435,http://gpu2:11436")
+    monkeypatch.delenv("RAGAS_PROVIDER", raising=False)
+    monkeypatch.delenv("RAGAS_OLLAMA_BASE_URL", raising=False)
+    monkeypatch.delenv("RAGAS_OLLAMA_MODEL", raising=False)
+
+    from agent.graph import build_judge_llm
+
+    with patch("langchain_ollama.ChatOllama") as mock_chat_ollama_cls:
+        mock_chat_ollama_cls.return_value = MagicMock()
+        build_judge_llm()
+        build_judge_llm()
+
+    base_urls = {c.kwargs["base_url"] for c in mock_chat_ollama_cls.call_args_list}
+    assert base_urls == {"http://gpu1:11435", "http://gpu2:11436"}
+
+
+def test_build_llm_openrouter_uses_ollama_client_model(monkeypatch):
+    """Regression test: _build_llm's openrouter branch used to re-read
+    OPENROUTER_MODEL from env independently instead of trusting the resolved
+    ollama_client.model — which meant a model override (via
+    create_ollama_client_from_env(model=...)) had no effect under
+    LLM_PROVIDER=openrouter. ollama_client.model must be the single source
+    of truth regardless of provider."""
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "fake-key")
+    monkeypatch.setenv("OPENROUTER_MODEL", "deepseek/deepseek-r1")  # must NOT win
+
+    from llm.ollama_client import OllamaClient
+    from agent.graph import _build_llm
+
+    fake_client = OllamaClient(
+        base_url="http://fake:11434", model="anthropic/claude-haiku-4.5", timeout_seconds=30
+    )
+
+    with patch("langchain_openai.ChatOpenAI") as mock_chat_openai_cls:
+        mock_chat_openai_cls.return_value = MagicMock()
+        _build_llm(fake_client)
+
+    _, kwargs = mock_chat_openai_cls.call_args
+    assert kwargs["model"] == "anthropic/claude-haiku-4.5"
+
+
+def test_build_graph_auto_dispatches_by_ollama_client_model_under_openrouter(monkeypatch):
+    """Regression test: build_graph_auto used to independently re-read
+    OPENROUTER_MODEL for reasoning-model detection instead of trusting
+    ollama_client.model, so a model override had no effect on which graph
+    (native vs reasoning) got selected under LLM_PROVIDER=openrouter."""
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_MODEL", "anthropic/claude-haiku-4.5")  # must NOT win
+
+    from llm.ollama_client import OllamaClient
+    from agent.graph import build_graph_auto
+
+    fake_client = OllamaClient(
+        base_url="http://fake:11434", model="deepseek/deepseek-r1", timeout_seconds=30
+    )
+
+    with patch("agent.reasoning_graph.build_reasoning_graph") as mock_build_reasoning:
+        mock_build_reasoning.return_value = "reasoning-graph-sentinel"
+        result = build_graph_auto(fake_client)
+
+    mock_build_reasoning.assert_called_once_with(fake_client)
+    assert result == "reasoning-graph-sentinel"
+
+
 # ── loop termination: model that never stops calling tools ────────────────────
 
 def test_graph_terminates_when_llm_always_calls_tools():
@@ -83,12 +176,16 @@ def test_graph_terminates_when_llm_always_calls_tools():
         result = graph.invoke(_make_state(), config={"recursion_limit": 40})
 
     # Terminated on its own (no GraphRecursionError) — the mock LLM never once
-    # emitted a parseable SKOR line, so the graph had to force its way to
-    # parse_output rather than exit "naturally".
+    # emitted a parseable SKOR line, so the graph had to force its way through
+    # FORCE_LIMIT retries and then give up cleanly.
     assert fake_llm.invoke.call_count < 40
-    # parse_output always runs eventually, even if the forced answer is empty —
-    # confirm we actually reached it rather than stopping mid-loop.
-    assert "final_score" in result
+    # Regression test for the give_up path: exhausting FORCE_LIMIT while the
+    # model never finalizes must set an explicit error instead of silently
+    # falling through to parse_output_node with empty content (which used to
+    # produce score=None/confidence=0.5/justification="" indistinguishable
+    # from a genuine result).
+    assert result["final_score"] is None
+    assert result["error"] is not None
 
 
 # ── checklist node ──────────────────────────────────────────────────────────
@@ -366,7 +463,57 @@ def test_graph_terminates_when_llm_never_finalizes():
         result = graph.invoke(_make_state(), config={"recursion_limit": 40})
 
     assert fake_llm.invoke.call_count < 40
-    assert "final_score" in result
+    assert result["final_score"] is None
+    assert result["error"] is not None
+
+
+def test_graph_force_retries_when_skor_present_but_no_justifikasi_marker():
+    """A response containing a bare 'Skor: 4' (e.g. inside a markdown table)
+    but no literal 'Justifikasi:' marker — i.e. the model answered with a
+    free-form essay instead of the expected SKOR/JUSTIFIKASI/CONFIDENCE
+    format — must NOT be accepted as finalized outright. It should be
+    force-retried, giving the model a chance to produce a well-structured
+    response, instead of parse_output_node grabbing the first 600 chars of
+    unrelated markdown as the justification.
+
+    Regression test for _looks_like_finalized only requiring a bare 'Skor:'
+    substring anywhere in the text."""
+    import json
+    from langchain_core.messages import AIMessage
+    from llm.ollama_client import OllamaClient
+    from agent.graph import build_graph
+
+    garbled = AIMessage(content=(
+        "## Evaluasi Indikator\n\n| Komponen | Keterangan |\n"
+        "| --- | --- |\n| Skor: 4 | Melampaui target |\n\n---\n\n"
+        "Pemenuhan kriteria rubrik terpenuhi seluruhnya."
+    ))
+    clean = AIMessage(
+        content="SKOR: 4\nJUSTIFIKASI: Bukti lengkap dan valid.\nCONFIDENCE: 0.9"
+    )
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = [garbled, clean]
+
+    fake_judge_llm = MagicMock()
+    fake_judge_llm.invoke.return_value = AIMessage(
+        content=json.dumps(
+            {"grounded": True, "hallucinated_claims": [], "missing_facts": [], "notes": ""}
+        )
+    )
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
+
+    with (
+        patch("agent.graph._build_llm", return_value=fake_llm),
+        patch("agent.graph.build_judge_llm", return_value=fake_judge_llm),
+    ):
+        graph = build_graph(fake_client)
+        result = graph.invoke(_make_state(), config={"recursion_limit": 40})
+
+    assert fake_llm.invoke.call_count == 2
+    assert result["final_score"] == 4.0
+    assert result["justification"] == "Bukti lengkap dan valid."
+    assert "Komponen" not in (result["justification"] or "")
 
 
 # ── parse_output logic (extracted for unit testing) ───────────────────────────

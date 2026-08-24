@@ -15,7 +15,7 @@ Sheet structure (one block per indicator):
                col E = =IF(...,0,E7) formula that copies from judge row's E
 
 Detection logic:
-  - Judge rows: isinstance(row[0], int) — exactly 78 such rows in Laporan_AK
+  - Judge rows: isinstance(row[0], int) — exactly 64 such rows in Laporan_AK
   - Sheet identification: first sheet with col C == 'Skor' (literal, works with
     any openpyxl load_workbook mode)
 """
@@ -51,7 +51,7 @@ _SENTINEL_SKOR = "Skor"  # literal string in col C that marks a Skor row
 @dataclass
 class IndicatorRow:
     row_index: int                       # 0-based index of the JUDGE row in the sheet
-    indicator_no: int                    # indicator number (1–78)
+    indicator_no: int                    # indicator number (1–64)
     kriteria: str                        # indicator description from col C
     current_score: Optional[int]         # existing score in col E (None if blank)
     current_justification: Optional[str] # existing text in col H (None if blank)
@@ -63,7 +63,7 @@ class IndicatorRow:
 
 
 def read_indicator_rows(xlsx_path: str) -> list[IndicatorRow]:
-    """Parse Laporan_AK.xlsx Kertas Kerja sheet and return 78 indicator rows.
+    """Parse Laporan_AK.xlsx Kertas Kerja sheet and return 64 indicator rows.
 
     Returns an empty list (with a warning log) if the file is absent or no
     Kertas Kerja sheet is found — keeps FastAPI startup safe before upload.

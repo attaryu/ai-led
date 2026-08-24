@@ -14,6 +14,7 @@ Configuration via environment variables (never hardcoded):
 from __future__ import annotations
 
 import asyncio
+import itertools
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -103,17 +104,67 @@ class OllamaClient:
 
 
 # ---------------------------------------------------------------------------
+# Multi-GPU round-robin
+# ---------------------------------------------------------------------------
+
+# Shared across every pick_ollama_endpoint() call in the process (assessment
+# pipeline, RAGAS judge, inline grounding judge) so load actually spreads
+# across whatever pool is configured, rather than each call site picking
+# independently and skewing toward the first endpoint.
+_endpoint_counter = itertools.count()
+
+
+def pick_ollama_endpoint(raw: str) -> str:
+    """Round-robin across a comma-separated endpoint list.
+
+    A single URL (today's format, no comma) always returns that same URL —
+    existing single-endpoint configs are unaffected. Multiple URLs (e.g. one
+    Ollama instance per GPU, each pinned via CUDA_VISIBLE_DEVICES and its own
+    port) get spread round-robin across successive calls, so concurrent
+    indicator-scoring/eval tasks land on different GPUs instead of all
+    sharing one.
+    """
+    endpoints = [u.strip() for u in raw.split(",") if u.strip()]
+    if not endpoints:
+        raise ValueError("No Ollama endpoint configured")
+    if len(endpoints) == 1:
+        return endpoints[0]
+    return endpoints[next(_endpoint_counter) % len(endpoints)]
+
+
+# ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
 
 
-def create_ollama_client_from_env() -> OllamaClient:
-    """Build OllamaClient from environment variables."""
+def get_available_models() -> list[str]:
+    """Return the configured model list for the active LLM_PROVIDER.
+
+    Derived from OLLAMA_MODEL or OPENROUTER_MODEL (comma-separated; the
+    first entry is the default). Lets the caller (assessment start/resume,
+    RAGAS eval) offer a model picker without querying anything live.
+    """
+    import os
+
+    provider = os.environ.get("LLM_PROVIDER", "ollama").lower()
+    if provider == "openrouter":
+        raw = os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-r1")
+    else:
+        raw = os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b")
+    return [m.strip() for m in raw.split(",") if m.strip()]
+
+
+def create_ollama_client_from_env(model: Optional[str] = None) -> OllamaClient:
+    """Build OllamaClient from environment variables.
+
+    `model` overrides the configured default (first of get_available_models())
+    — used when the caller lets the user pick a model at request time.
+    """
     import os
 
     return OllamaClient(
-        base_url=os.environ["OLLAMA_BASE_URL"],
-        model=os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b"),
+        base_url=pick_ollama_endpoint(os.environ["OLLAMA_BASE_URL"]),
+        model=model or get_available_models()[0],
         timeout_seconds=int(os.environ.get("OLLAMA_TIMEOUT_SECONDS", "300")),
         api_key=os.environ.get("OLLAMA_API_KEY"),
     )

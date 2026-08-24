@@ -243,6 +243,48 @@ def test_eval_run_passes_reference_path(client):
     assert captured.get("reference_path") == "/data/refs.json"
 
 
+def test_eval_run_passes_model_override(client):
+    """?model in the request body must be forwarded to the background task
+    and validated against the configured judge model list."""
+    captured = {}
+
+    def fake_bg(**kwargs):
+        captured.update(kwargs)
+
+    with (
+        patch.dict(os.environ, {"LLM_PROVIDER": "ollama", "OLLAMA_MODEL": "qwen3.6:35b,deepseek-r1:32b"}, clear=False),
+        patch("api.routes.eval._run_evaluation_background", side_effect=fake_bg),
+    ):
+        for k in ("RAGAS_PROVIDER", "RAGAS_OLLAMA_MODEL", "RAGAS_OPENROUTER_MODEL"):
+            os.environ.pop(k, None)
+        resp = client.post("/eval/run", json={"n_indicators": 2, "model": "deepseek-r1:32b"})
+
+    assert resp.status_code == 200
+    assert captured.get("model") == "deepseek-r1:32b"
+
+
+def test_eval_run_rejects_unknown_model(client):
+    with patch.dict(os.environ, {"LLM_PROVIDER": "ollama", "OLLAMA_MODEL": "qwen3.6:35b"}, clear=False):
+        for k in ("RAGAS_PROVIDER", "RAGAS_OLLAMA_MODEL", "RAGAS_OPENROUTER_MODEL"):
+            os.environ.pop(k, None)
+        resp = client.post("/eval/run", json={"n_indicators": 2, "model": "not-a-real-model"})
+
+    assert resp.status_code == 400
+    assert "not-a-real-model" in resp.json()["detail"]
+
+
+def test_eval_models_endpoint(client):
+    with patch.dict(os.environ, {"LLM_PROVIDER": "ollama", "OLLAMA_MODEL": "qwen3.6:35b,deepseek-r1:32b"}, clear=False):
+        for k in ("RAGAS_PROVIDER", "RAGAS_OLLAMA_MODEL", "RAGAS_OPENROUTER_MODEL"):
+            os.environ.pop(k, None)
+        resp = client.get("/eval/models")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["provider"] == "ollama"
+    assert data["models"] == ["qwen3.6:35b", "deepseek-r1:32b"]
+
+
 # ── GET /eval/{eval_id}/results ────────────────────────────────────────────
 
 
@@ -279,6 +321,52 @@ def test_eval_results_completed(client):
 
 
 # ── Background task integration ────────────────────────────────────────────
+
+
+def test_run_ragas_evaluation_passes_run_config_with_generous_timeout_and_low_workers():
+    """RAGAS's own default RunConfig (timeout=180s, max_workers=16) is too
+    aggressive for a slow single-GPU Ollama instance — 16 concurrent jobs
+    queue behind each other on the same GPU and blow past the 180s per-job
+    timeout before their own inference even starts, so most jobs fail with
+    TimeoutError even though the model would eventually respond. Verify
+    run_ragas_evaluation configures a longer timeout (tied to
+    OLLAMA_TIMEOUT_SECONDS) and a small worker count instead of relying on
+    ragas's defaults."""
+    import pandas as pd
+    from eval.ragas_eval import EvalSample, run_ragas_evaluation
+
+    fake_sample = EvalSample(
+        indicator_no=1,
+        user_input="q?",
+        retrieved_contexts=["ctx"],
+        response="resp",
+        reference="ref",
+    )
+
+    fake_metric = MagicMock()
+    fake_metric.name = "faithfulness"
+
+    fake_result = MagicMock()
+    fake_result.to_pandas.return_value = pd.DataFrame({"faithfulness": [0.8]})
+
+    with (
+        patch("eval.ragas_eval.build_eval_samples", return_value=[fake_sample]),
+        patch("eval.ragas_eval._build_ragas_llm", return_value=MagicMock()),
+        patch("eval.ragas_eval._build_ragas_embeddings", return_value=MagicMock()),
+        patch("ragas.metrics.Faithfulness", return_value=fake_metric),
+        patch("ragas.dataset_schema.SingleTurnSample", return_value=MagicMock()),
+        patch("ragas.EvaluationDataset", return_value=MagicMock()),
+        patch("ragas.evaluate", return_value=fake_result) as mock_evaluate,
+        patch.dict(os.environ, {"OLLAMA_TIMEOUT_SECONDS": "300"}, clear=False),
+    ):
+        run_ragas_evaluation(n_indicators=1, metrics_to_run=["faithfulness"])
+
+    assert mock_evaluate.called
+    _, kwargs = mock_evaluate.call_args
+    run_config = kwargs.get("run_config")
+    assert run_config is not None
+    assert run_config.timeout >= 300
+    assert run_config.max_workers <= 4
 
 
 def test_run_evaluation_background_success():
@@ -360,6 +448,78 @@ def test_generate_reference_strips_think_block():
     result = _generate_reference("q?", ["chunk"], fake_llm)
     assert "<think>" not in result
     assert "Referensi bersih." in result
+
+
+# ── get_judge_llm_config / get_available_judge_models ─────────────────────────
+
+
+def test_build_ragas_llm_round_robins_across_ollama_endpoints():
+    """RAGAS's judge LLM must also spread across a multi-GPU endpoint pool
+    (via pick_ollama_endpoint), not always hit the first one."""
+    from eval.ragas_eval import _build_ragas_llm
+
+    with (
+        patch.dict(
+            os.environ,
+            {"LLM_PROVIDER": "ollama", "OLLAMA_MODEL": "deepseek-r1:7b",
+             "OLLAMA_BASE_URL": "http://gpu1:11435,http://gpu2:11436"},
+            clear=False,
+        ),
+        patch("langchain_ollama.ChatOllama") as mock_chat_ollama_cls,
+    ):
+        for k in ("RAGAS_PROVIDER", "RAGAS_OLLAMA_BASE_URL", "RAGAS_OLLAMA_MODEL"):
+            os.environ.pop(k, None)
+        mock_chat_ollama_cls.return_value = MagicMock()
+        _build_ragas_llm()
+        _build_ragas_llm()
+
+    base_urls = {c.kwargs["base_url"] for c in mock_chat_ollama_cls.call_args_list}
+    assert base_urls == {"http://gpu1:11435", "http://gpu2:11436"}
+
+
+def test_get_judge_llm_config_explicit_model_override():
+    """A caller-supplied model wins over RAGAS_* / assessment env vars —
+    used when the frontend lets the user pick a judge model."""
+    from eval.ragas_eval import get_judge_llm_config
+
+    with patch.dict(
+        os.environ,
+        {"LLM_PROVIDER": "ollama", "OLLAMA_MODEL": "qwen3.6:35b", "RAGAS_OLLAMA_MODEL": "deepseek-r1:32b"},
+        clear=False,
+    ):
+        cfg = get_judge_llm_config(model="anthropic/claude-haiku-4.5")
+
+    assert cfg["model"] == "anthropic/claude-haiku-4.5"
+
+
+def test_get_available_judge_models_falls_back_to_assessment_list():
+    """No RAGAS_* model configured -> falls back to the assessment model list."""
+    from eval.ragas_eval import get_available_judge_models
+
+    with patch.dict(os.environ, {"LLM_PROVIDER": "ollama", "OLLAMA_MODEL": "qwen3.6:35b,deepseek-r1:32b"}, clear=False):
+        for k in ("RAGAS_PROVIDER", "RAGAS_OLLAMA_MODEL", "RAGAS_OPENROUTER_MODEL"):
+            os.environ.pop(k, None)
+        models = get_available_judge_models()
+
+    assert models == ["qwen3.6:35b", "deepseek-r1:32b"]
+
+
+def test_get_available_judge_models_uses_ragas_override_list():
+    """RAGAS_OLLAMA_MODEL (comma-separated) overrides the assessment list."""
+    from eval.ragas_eval import get_available_judge_models
+
+    with patch.dict(
+        os.environ,
+        {
+            "LLM_PROVIDER": "ollama",
+            "OLLAMA_MODEL": "qwen3.6:35b",
+            "RAGAS_OLLAMA_MODEL": "deepseek-r1:32b,qwen2.5:14b",
+        },
+        clear=False,
+    ):
+        models = get_available_judge_models()
+
+    assert models == ["deepseek-r1:32b", "qwen2.5:14b"]
 
 
 def test_eval_config_endpoint_falls_back_to_assessment(client):

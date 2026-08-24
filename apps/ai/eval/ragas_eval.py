@@ -79,37 +79,46 @@ ALL_METRICS = RETRIEVAL_METRICS + GENERATION_METRICS
 # ---------------------------------------------------------------------------
 
 
-def get_judge_llm_config() -> dict:
+def get_available_judge_models() -> list[str]:
+    """Return the configured judge model list (comma-separated env var,
+    first entry is the default). Reads RAGAS_* first; falls back to the
+    assessment model list (OLLAMA_MODEL / OPENROUTER_MODEL) if unset —
+    same fallback used by get_judge_llm_config."""
+    provider = os.environ.get("RAGAS_PROVIDER", os.environ.get("LLM_PROVIDER", "ollama")).lower()
+    if provider == "openrouter":
+        raw = os.environ.get(
+            "RAGAS_OPENROUTER_MODEL", os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-r1")
+        )
+    else:
+        raw = os.environ.get("RAGAS_OLLAMA_MODEL", os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b"))
+    return [m.strip() for m in raw.split(",") if m.strip()]
+
+
+def get_judge_llm_config(model: Optional[str] = None) -> dict:
     """Return the LLM config used as RAGAS judge.
 
     Reads RAGAS_* env vars first; if unset, falls back to the assessment
     model (LLM_PROVIDER / OLLAMA_MODEL / OPENROUTER_MODEL). This lets you
     benchmark assessment models against a fixed judge for fair comparison.
+
+    `model` overrides the configured default (first of
+    get_available_judge_models()) — used when the caller lets the user pick
+    a judge model at request time.
     """
     provider = os.environ.get(
         "RAGAS_PROVIDER",
         os.environ.get("LLM_PROVIDER", "ollama"),
     ).lower()
-    if provider == "openrouter":
-        return {
-            "provider": "openrouter",
-            "model": os.environ.get(
-                "RAGAS_OPENROUTER_MODEL",
-                os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-r1"),
-            ),
-        }
+    resolved_provider = "openrouter" if provider == "openrouter" else "ollama"
     return {
-        "provider": "ollama",
-        "model": os.environ.get(
-            "RAGAS_OLLAMA_MODEL",
-            os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b"),
-        ),
+        "provider": resolved_provider,
+        "model": model or get_available_judge_models()[0],
     }
 
 
 # Back-compat alias — older code paths may import this name
-def get_active_llm_config() -> dict:
-    return get_judge_llm_config()
+def get_active_llm_config(model: Optional[str] = None) -> dict:
+    return get_judge_llm_config(model=model)
 
 
 class _ThinkStrippingLLMWrapper:
@@ -167,7 +176,7 @@ def _is_reasoning_model_name(model: str) -> bool:
         return any(p in m for p in ["deepseek-r1", "qwq", "o1-", "o1:", "thinking"])
 
 
-def _build_ragas_llm():
+def _build_ragas_llm(model: Optional[str] = None):
     """Return a LangchainLLMWrapper compatible with legacy RAGAS metrics.
 
     If the judge model is a reasoning model (deepseek-r1, qwq, o1, ...), the
@@ -176,7 +185,7 @@ def _build_ragas_llm():
     """
     from ragas.llms import LangchainLLMWrapper
 
-    cfg = get_judge_llm_config()
+    cfg = get_judge_llm_config(model=model)
 
     if cfg["provider"] == "openrouter":
         from langchain_openai import ChatOpenAI
@@ -189,12 +198,18 @@ def _build_ragas_llm():
         )
     else:
         from langchain_ollama import ChatOllama
+        from llm.ollama_client import pick_ollama_endpoint
 
-        kwargs: dict = {
-            "base_url": os.environ.get(
+        ragas_base_url = pick_ollama_endpoint(
+            os.environ.get(
                 "RAGAS_OLLAMA_BASE_URL",
                 os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
-            ),
+            )
+        )
+        logger.info("RAGAS judge using Ollama endpoint %s", ragas_base_url)
+
+        kwargs: dict = {
+            "base_url": ragas_base_url,
             "model": cfg["model"],
             "temperature": 0.1,
         }
@@ -311,6 +326,7 @@ def build_eval_samples(
     tenant_id: str = "local",
     dokumen_id: str = "local",
     progress_cb=None,
+    model: Optional[str] = None,
 ) -> list[EvalSample]:
     """Build EvalSample list by retrieving real LED chunks and optionally
     reading actual agent justifications from a Supabase session.
@@ -326,7 +342,7 @@ def build_eval_samples(
     from vectorstore.pgvector_store import search_led
 
     rubrics = _get_rubrics()
-    llm = _build_ragas_llm()
+    llm = _build_ragas_llm(model=model)
 
     # Load actual ground-truth references from JSON file if provided
     actual_refs: dict[int, str] = {}
@@ -420,6 +436,7 @@ def run_ragas_evaluation(
     metrics_to_run: Optional[list[str]] = None,
     reference_path: Optional[str] = None,
     progress_cb=None,
+    model: Optional[str] = None,
 ) -> dict:
     """Run RAGAS evaluation and return a results dict.
 
@@ -451,6 +468,7 @@ def run_ragas_evaluation(
         ContextRecall,
         Faithfulness,
     )
+    from ragas.run_config import RunConfig
 
     want = set(metrics_to_run or ALL_METRICS)
 
@@ -459,6 +477,7 @@ def run_ragas_evaluation(
         session_id=session_id,
         reference_path=reference_path,
         progress_cb=progress_cb,
+        model=model,
     )
 
     if progress_cb:
@@ -470,7 +489,7 @@ def run_ragas_evaluation(
     if not samples:
         return {"error": "No evaluation samples could be built.", "n_samples": 0}
 
-    llm_wrapper = _build_ragas_llm()
+    llm_wrapper = _build_ragas_llm(model=model)
     emb_wrapper = _build_ragas_embeddings()
 
     # Build metric objects
@@ -496,9 +515,21 @@ def run_ragas_evaluation(
     ]
     dataset = EvaluationDataset(samples=ragas_samples)
 
+    # ragas's own default RunConfig (timeout=180s, max_workers=16) assumes a
+    # fast/scalable LLM backend. Our Ollama instance is slow and typically a
+    # single GPU, so 16 concurrent jobs just queue behind each other and blow
+    # past the 180s per-job timeout before their own inference even starts.
+    # Tie the timeout to OLLAMA_TIMEOUT_SECONDS (the budget we already give a
+    # single call elsewhere) and keep worker count low to avoid GPU contention.
+    run_config = RunConfig(
+        timeout=int(os.environ.get("OLLAMA_TIMEOUT_SECONDS", "300")) + 60,
+        max_retries=2,
+        max_workers=int(os.environ.get("RAGAS_MAX_WORKERS", "2")),
+    )
+
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        result = evaluate(dataset=dataset, metrics=active_metrics)
+        result = evaluate(dataset=dataset, metrics=active_metrics, run_config=run_config)
 
     result_df = result.to_pandas()
 
@@ -525,7 +556,7 @@ def run_ragas_evaluation(
         "session_id": session_id,
         "scores": scores,
         "per_indicator": per_indicator,
-        **get_active_llm_config(),
+        **get_active_llm_config(model=model),
     }
 
 

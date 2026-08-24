@@ -163,6 +163,46 @@ def test_build_reasoning_graph_returns_compiled():
     assert hasattr(graph, "invoke")
 
 
+def test_build_reasoning_llm_wraps_ollama_with_retry():
+    """Same regression as _build_llm in graph.py: a transient connection
+    error talking to Ollama must be retried by the LLM runnable, not
+    propagate raw with zero retry."""
+    from unittest.mock import MagicMock
+    from llm.ollama_client import OllamaClient
+    from agent.reasoning_graph import _build_reasoning_llm
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
+
+    with patch("langchain_ollama.ChatOllama") as mock_chat_ollama_cls:
+        mock_chat_ollama_cls.return_value = MagicMock()
+        _build_reasoning_llm(fake_client)
+
+    mock_chat_ollama_cls.return_value.with_retry.assert_called_once()
+
+
+def test_build_reasoning_llm_openrouter_uses_ollama_client_model():
+    """Same regression as graph.py's _build_llm: the openrouter branch must
+    use ollama_client.model (the single resolved source of truth), not
+    independently re-read OPENROUTER_MODEL from env."""
+    from unittest.mock import MagicMock
+    from llm.ollama_client import OllamaClient
+    from agent.reasoning_graph import _build_reasoning_llm
+
+    with patch.dict(
+        os.environ,
+        {"LLM_PROVIDER": "openrouter", "OPENROUTER_API_KEY": "fake-key", "OPENROUTER_MODEL": "wrong/model"},
+    ):
+        fake_client = OllamaClient(
+            base_url="http://fake:11434", model="anthropic/claude-haiku-4.5", timeout_seconds=30
+        )
+        with patch("langchain_openai.ChatOpenAI") as mock_chat_openai_cls:
+            mock_chat_openai_cls.return_value = MagicMock()
+            _build_reasoning_llm(fake_client)
+
+    _, kwargs = mock_chat_openai_cls.call_args
+    assert kwargs["model"] == "anthropic/claude-haiku-4.5"
+
+
 # ── loop termination: model that never stops calling tools ────────────────────
 
 

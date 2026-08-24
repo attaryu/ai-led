@@ -280,6 +280,40 @@ def test_get_completed_indicator_numbers_empty_when_none_done(fake_sb):
     assert result == set()
 
 
+def test_get_completed_indicator_numbers_includes_failed_by_default(fake_sb):
+    """Default behavior (retry_failed=False) treats a row with a logged
+    `error` as done too — matches resume's original crash-recovery intent
+    (skip anything whose graph run already finished, success or failure)."""
+    from db.supabase_client import get_completed_indicator_numbers
+
+    fake_sb.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
+        {"indicator_no": 1, "error": None},
+        {"indicator_no": 2, "error": "Gagal dinilai (RuntimeError) — lihat log server untuk detail."},
+    ]
+
+    with patch("db.supabase_client.get_supabase", return_value=fake_sb):
+        result = get_completed_indicator_numbers("sess-1")
+
+    assert result == {1, 2}
+
+
+def test_get_completed_indicator_numbers_excludes_failed_when_retry_failed_true(fake_sb):
+    """retry_failed=True excludes indicators with a logged error from the
+    'done' set, so resume re-processes them instead of leaving them
+    permanently failed."""
+    from db.supabase_client import get_completed_indicator_numbers
+
+    fake_sb.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
+        {"indicator_no": 1, "error": None},
+        {"indicator_no": 2, "error": "Gagal dinilai (RuntimeError) — lihat log server untuk detail."},
+    ]
+
+    with patch("db.supabase_client.get_supabase", return_value=fake_sb):
+        result = get_completed_indicator_numbers("sess-1", retry_failed=True)
+
+    assert result == {1}
+
+
 def test_get_completed_indicator_numbers_returns_empty_set_on_exception(fake_sb):
     """A DB error must not block resume — treat it as 'nothing confirmed done
     yet', which is the conservative (re-run rather than wrongly skip) choice."""

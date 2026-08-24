@@ -127,6 +127,63 @@ def test_start_custom_max_parallel(fake_indicators):
     assert captured.get("max_parallel") == 3
 
 
+def test_start_passes_model_override(fake_indicators):
+    from main import app
+
+    captured = {}
+
+    async def fake_pipeline(**kwargs):
+        captured.update(kwargs)
+
+    with (
+        patch("api.routes.assessment.os.path.exists", return_value=True),
+        patch("api.routes.assessment.read_indicator_rows", return_value=fake_indicators),
+        patch("api.routes.assessment.create_session"),
+        patch("api.routes.assessment.get_available_models", return_value=["qwen3.6:35b", "deepseek-r1:32b"]),
+        patch("api.routes.assessment._run_assessment_pipeline", new=AsyncMock(side_effect=fake_pipeline)),
+    ):
+        with TestClient(app) as c:
+            resp = c.post(
+                "/assessment/start",
+                json=_start_body(model="deepseek-r1:32b"),
+            )
+
+    assert resp.status_code == 200
+    assert captured.get("model") == "deepseek-r1:32b"
+
+
+def test_start_rejects_unknown_model(fake_indicators):
+    from main import app
+
+    with (
+        patch("api.routes.assessment.os.path.exists", return_value=True),
+        patch("api.routes.assessment.read_indicator_rows", return_value=fake_indicators),
+        patch("api.routes.assessment.get_available_models", return_value=["qwen3.6:35b"]),
+    ):
+        with TestClient(app) as c:
+            resp = c.post(
+                "/assessment/start",
+                json=_start_body(model="not-a-real-model"),
+            )
+
+    assert resp.status_code == 400
+    assert "not-a-real-model" in resp.json()["detail"]
+
+
+def test_assessment_models_endpoint():
+    from main import app
+
+    with patch(
+        "api.routes.assessment.get_available_models", return_value=["qwen3.6:35b", "deepseek-r1:32b"]
+    ):
+        with TestClient(app) as c:
+            resp = c.get("/assessment/models")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["models"] == ["qwen3.6:35b", "deepseek-r1:32b"]
+
+
 def test_start_no_rubrics_available_returns_500():
     """No laporan_path AND no cached rubrics at all (matrix never parsed) —
     a distinct failure mode from 'file not found' or 'file has no rows'."""
@@ -225,6 +282,67 @@ def test_resume_skips_already_done_indicators(fake_indicators):
     remaining_nos = {ind.indicator_no for ind in captured["indicators"]}
     assert remaining_nos == {2, 3}
     assert captured["initial_completed"] == 1
+
+
+def test_resume_with_retry_failed_passes_flag_through(fake_indicators):
+    """?retry_failed=true must be forwarded to get_completed_indicator_numbers
+    so previously-failed indicators (logged error, not just never-started
+    ones) get re-processed instead of being skipped as 'already done'."""
+    from main import app
+
+    captured_call = {}
+
+    def fake_get_completed(session_id, retry_failed=False):
+        captured_call["session_id"] = session_id
+        captured_call["retry_failed"] = retry_failed
+        return set()
+
+    async def fake_pipeline(**kwargs):
+        pass
+
+    with (
+        patch("api.routes.assessment.get_session", return_value=_fake_session_row()),
+        patch("api.routes.assessment.os.path.exists", return_value=True),
+        patch("api.routes.assessment.read_indicator_rows", return_value=fake_indicators),
+        patch("api.routes.assessment.get_completed_indicator_numbers", side_effect=fake_get_completed),
+        patch("api.routes.assessment.update_session_status"),
+        patch("api.routes.assessment._run_assessment_pipeline", new=AsyncMock(side_effect=fake_pipeline)),
+    ):
+        with TestClient(app) as c:
+            resp = c.post(
+                "/assessment/sess-1/resume?retry_failed=true",
+                json=_resume_body(laporan_path="/fake/Laporan_AK.xlsx"),
+            )
+
+    assert resp.status_code == 200
+    assert captured_call["retry_failed"] is True
+
+
+def test_resume_passes_model_override(fake_indicators):
+    from main import app
+
+    captured = {}
+
+    async def fake_pipeline(**kwargs):
+        captured.update(kwargs)
+
+    with (
+        patch("api.routes.assessment.get_session", return_value=_fake_session_row()),
+        patch("api.routes.assessment.os.path.exists", return_value=True),
+        patch("api.routes.assessment.read_indicator_rows", return_value=fake_indicators),
+        patch("api.routes.assessment.get_completed_indicator_numbers", return_value=set()),
+        patch("api.routes.assessment.get_available_models", return_value=["qwen3.6:35b", "deepseek-r1:32b"]),
+        patch("api.routes.assessment.update_session_status"),
+        patch("api.routes.assessment._run_assessment_pipeline", new=AsyncMock(side_effect=fake_pipeline)),
+    ):
+        with TestClient(app) as c:
+            resp = c.post(
+                "/assessment/sess-1/resume?model=deepseek-r1:32b",
+                json=_resume_body(laporan_path="/fake/Laporan_AK.xlsx"),
+            )
+
+    assert resp.status_code == 200
+    assert captured.get("model") == "deepseek-r1:32b"
 
 
 def test_resume_without_laporan_path_uses_default_rubrics():
@@ -377,9 +495,10 @@ async def test_process_single_indicator_success(fake_indicators):
     with (
         patch("api.routes.assessment.log_reasoning_step"),
         patch("api.routes.assessment.log_indicator_result") as mock_log,
+        patch("api.routes.assessment.create_ollama_client_from_env", return_value=MagicMock()),
+        patch("api.routes.assessment.build_graph_auto", return_value=fake_graph),
     ):
         result = await _process_single_indicator(
-            graph=fake_graph,
             indicator=indicator,
             session_id="test-session",
             semaphore=semaphore,
@@ -396,6 +515,41 @@ async def test_process_single_indicator_success(fake_indicators):
 
 
 @pytest.mark.asyncio
+async def test_process_single_indicator_builds_its_own_graph_per_call(fake_indicators):
+    """Each indicator must build its own OllamaClient/graph (not share one
+    built once for the whole batch) so that pick_ollama_endpoint()'s
+    round-robin actually spreads concurrent indicators across GPUs, instead
+    of every parallel task reusing the same first-picked endpoint."""
+    from api.routes.assessment import _process_single_indicator
+
+    indicator = fake_indicators[0]
+    fake_graph = MagicMock()
+    fake_graph.invoke.return_value = {
+        "final_score": 3.0, "justification": "ok", "confidence": 0.9,
+        "recommendation": None, "reasoning_steps": [], "error": None,
+    }
+    semaphore = asyncio.Semaphore(5)
+
+    with (
+        patch("api.routes.assessment.log_reasoning_step"),
+        patch("api.routes.assessment.log_indicator_result"),
+        patch("api.routes.assessment.create_ollama_client_from_env", return_value=MagicMock()) as mock_create,
+        patch("api.routes.assessment.build_graph_auto", return_value=fake_graph) as mock_build,
+    ):
+        await _process_single_indicator(
+            indicator=indicator, session_id="s", semaphore=semaphore,
+            tenant_id=TENANT_ID, dokumen_id=DOKUMEN_ID,
+        )
+        await _process_single_indicator(
+            indicator=indicator, session_id="s", semaphore=semaphore,
+            tenant_id=TENANT_ID, dokumen_id=DOKUMEN_ID,
+        )
+
+    assert mock_create.call_count == 2
+    assert mock_build.call_count == 2
+
+
+@pytest.mark.asyncio
 async def test_process_single_indicator_handles_exception(fake_indicators):
     from api.routes.assessment import _process_single_indicator
 
@@ -406,9 +560,12 @@ async def test_process_single_indicator_handles_exception(fake_indicators):
 
     semaphore = asyncio.Semaphore(5)
 
-    with patch("api.routes.assessment.log_indicator_result") as mock_log:
+    with (
+        patch("api.routes.assessment.log_indicator_result") as mock_log,
+        patch("api.routes.assessment.create_ollama_client_from_env", return_value=MagicMock()),
+        patch("api.routes.assessment.build_graph_auto", return_value=fake_graph),
+    ):
         result = await _process_single_indicator(
-            graph=fake_graph,
             indicator=indicator,
             session_id="test-session",
             semaphore=semaphore,
@@ -421,6 +578,12 @@ async def test_process_single_indicator_handles_exception(fake_indicators):
     assert call_kwargs["error"] is not None
     assert call_kwargs["score"] is None
     assert call_kwargs["recommendation"] is None
+    # Regression test: raw exception text must not leak verbatim into the
+    # report-facing error field (full detail still goes to the server log
+    # via logger.exception) — only a safe, generic message naming the
+    # exception type.
+    assert "LLM unavailable" not in call_kwargs["error"]
+    assert "RuntimeError" in call_kwargs["error"]
 
 
 # ── GET /assessment/{session_id}/results ──────────────────────────────────────
@@ -553,20 +716,33 @@ async def test_run_assessment_pipeline_seeds_progress_from_initial_completed(fak
 
 
 @pytest.mark.asyncio
-async def test_run_assessment_pipeline_marks_failed_on_setup_exception():
-    """A failure before any indicator even starts (e.g. can't reach the LLM
-    provider) must mark the session failed, not leave it stuck 'running'."""
+async def test_run_assessment_pipeline_completes_even_when_every_indicator_fails_at_setup(fake_indicators):
+    """Each indicator now builds its own OllamaClient/graph (create_ollama_client_from_env
+    moved from _run_assessment_pipeline into _process_single_indicator — needed
+    so pick_ollama_endpoint()'s round-robin actually spreads concurrent
+    indicators across GPUs, instead of the whole batch sharing one client
+    built once). So a misconfigured provider (e.g. missing OLLAMA_BASE_URL)
+    now fails per-indicator rather than at pipeline setup — verify the
+    session still reaches a terminal status instead of getting stuck
+    'running' when every indicator fails this way."""
     from api.routes.assessment import _run_assessment_pipeline
 
     with (
         patch("api.routes.assessment.create_ollama_client_from_env", side_effect=RuntimeError("no provider")),
+        patch("api.routes.assessment.log_indicator_result") as mock_log,
         patch("api.routes.assessment.update_session_status") as mock_update,
     ):
         await _run_assessment_pipeline(
-            session_id="sess-1", indicators=[], max_parallel=5,
+            session_id="sess-1", indicators=fake_indicators, max_parallel=5,
             tenant_id=TENANT_ID, dokumen_id=DOKUMEN_ID,
         )
 
-    mock_update.assert_called_once()
-    assert mock_update.call_args.kwargs["status"] == "failed"
-    assert "no provider" in mock_update.call_args.kwargs["error"]
+    # Every indicator logged its own error instead of the pipeline crashing
+    # or silently dropping them.
+    assert mock_log.call_count == len(fake_indicators)
+    for call in mock_log.call_args_list:
+        assert call.kwargs["error"] is not None
+
+    # Session still reaches a terminal state — not left stuck "running".
+    final_call = mock_update.call_args_list[-1]
+    assert final_call.kwargs["status"] == "completed"

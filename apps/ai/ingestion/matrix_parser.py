@@ -224,12 +224,19 @@ def _process_table(
     current: Optional[_RowAccumulator],
     completed: list[IndicatorRubric],
     col_map: dict[str, int],
-) -> tuple[Optional[_RowAccumulator], dict[str, int]]:
+    last_kriteria: str = "",
+) -> tuple[Optional[_RowAccumulator], dict[str, int], str]:
     """
     Process one pdfplumber table.
 
-    Returns (updated_current_accumulator, updated_col_map).
+    Returns (updated_current_accumulator, updated_col_map, updated_last_kriteria).
     When a new indicator row is found, the previous one is flushed to `completed`.
+
+    `last_kriteria` carries the most recent non-empty kriteria text forward:
+    the source PDF has a vertically-merged "Kriteria" table cell spanning
+    several sibling indicator rows, and pdfplumber only returns that cell's
+    text on the first physical row of the merge — every indicator after the
+    first in the group would otherwise get kriteria="".
     """
     for row in table:
         if not row:
@@ -262,6 +269,11 @@ def _process_table(
             kriteria = _safe_get(row, kriteria_idx)
             indikator = _safe_get(row, indikator_idx)
 
+            if kriteria:
+                last_kriteria = kriteria
+            else:
+                kriteria = last_kriteria
+
             current = _RowAccumulator(no=no, kriteria=kriteria, indikator=indikator)
             for score_val, key in ((4, "s4"), (3, "s3"), (2, "s2"), (1, "s1"), (0, "s0")):
                 idx = col_map.get(key, -1)
@@ -291,7 +303,7 @@ def _process_table(
             elif ind_text:
                 current.indikator += " " + ind_text
 
-    return current, col_map
+    return current, col_map, last_kriteria
 
 
 # ---------------------------------------------------------------------------
@@ -316,6 +328,7 @@ def parse_matrix_pdf(pdf_path: str) -> list[IndicatorRubric]:
     completed: list[IndicatorRubric] = []
     current: Optional[_RowAccumulator] = None
     col_map: dict[str, int] = {}
+    last_kriteria: str = ""
 
     with pdfplumber.open(str(path)) as pdf:
         for page_num, page in enumerate(pdf.pages, start=1):
@@ -334,7 +347,9 @@ def parse_matrix_pdf(pdf_path: str) -> list[IndicatorRubric]:
                 if not table or len(table[0]) < 6:
                     continue
                 try:
-                    current, col_map = _process_table(table, current, completed, col_map)
+                    current, col_map, last_kriteria = _process_table(
+                        table, current, completed, col_map, last_kriteria
+                    )
                 except Exception as exc:
                     logger.warning(
                         "Page %d: row processing error — %s", page_num, exc

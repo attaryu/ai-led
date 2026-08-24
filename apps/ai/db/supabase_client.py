@@ -115,12 +115,16 @@ def log_indicator_result(
         )
 
 
-def get_completed_indicator_numbers(session_id: str) -> set[int]:
+def get_completed_indicator_numbers(session_id: str, retry_failed: bool = False) -> set[int]:
     """Return the set of indicator_no that already have a row in
     indicator_results for this session — i.e. their graph run finished
     (successfully or with a logged error), as opposed to never having
     started or being cut off mid-run by a crash/restart. Used by resume to
     decide what still needs (re-)processing.
+
+    retry_failed: if True, indicators whose logged result has a non-null
+    `error` are excluded from the "done" set too, so resume re-processes
+    them instead of leaving them permanently failed.
 
     Returns an empty set on any DB error — the conservative choice for a
     resume decision is to treat nothing as confirmed done and re-run it,
@@ -130,11 +134,14 @@ def get_completed_indicator_numbers(session_id: str) -> set[int]:
         resp = (
             get_supabase()
             .table("indicator_results")
-            .select("indicator_no")
+            .select("indicator_no, error")
             .eq("session_id", session_id)
             .execute()
         )
-        return {row["indicator_no"] for row in (resp.data or [])}
+        rows = resp.data or []
+        if retry_failed:
+            return {row["indicator_no"] for row in rows if not row.get("error")}
+        return {row["indicator_no"] for row in rows}
     except Exception:
         logger.exception("Failed to fetch completed indicators for session %s", session_id)
         return set()

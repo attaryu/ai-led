@@ -114,3 +114,102 @@ def test_create_from_env(monkeypatch):
     assert c.model == "qwen2.5:7b"
     assert c.timeout_seconds == 120
     assert c.api_key == "mykey"
+
+
+# ── 7 ──────────────────────────────────────────────────────────────────────────
+def test_get_available_models_splits_csv_ollama(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("OLLAMA_MODEL", "qwen3.6:35b, deepseek-r1:32b ,qwen2.5:7b")
+
+    from llm.ollama_client import get_available_models
+
+    assert get_available_models() == ["qwen3.6:35b", "deepseek-r1:32b", "qwen2.5:7b"]
+
+
+def test_get_available_models_splits_csv_openrouter(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_MODEL", "deepseek/deepseek-v4-pro,anthropic/claude-haiku-4.5")
+
+    from llm.ollama_client import get_available_models
+
+    assert get_available_models() == ["deepseek/deepseek-v4-pro", "anthropic/claude-haiku-4.5"]
+
+
+def test_create_from_env_picks_first_of_csv_when_no_override(monkeypatch):
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://vastai:11434")
+    monkeypatch.setenv("OLLAMA_MODEL", "qwen3.6:35b,deepseek-r1:32b")
+
+    from llm.ollama_client import create_ollama_client_from_env
+
+    c = create_ollama_client_from_env()
+    assert c.model == "qwen3.6:35b"
+
+
+# ── pick_ollama_endpoint (multi-GPU round-robin) ───────────────────────────────
+
+def test_pick_ollama_endpoint_single_url_is_unchanged():
+    """A single URL (today's format, no comma) must always return that same
+    URL — existing single-endpoint configs behave identically to before."""
+    from llm.ollama_client import pick_ollama_endpoint
+
+    for _ in range(3):
+        assert pick_ollama_endpoint("http://only-one:11434") == "http://only-one:11434"
+
+
+def test_pick_ollama_endpoint_round_robins_across_multiple():
+    """The counter is a module-level global shared across every call in the
+    process (by design — see pick_ollama_endpoint's docstring), so other
+    tests running earlier in the same session shift its starting phase.
+    Assert the rotation *property* (cycles through all N exactly once before
+    repeating, then repeats identically) rather than an exact 0-based
+    sequence, which would be order-dependent and flaky."""
+    from llm.ollama_client import pick_ollama_endpoint
+
+    raw = "http://gpu1:11435,http://gpu2:11436,http://gpu3:11437"
+    endpoints = raw.split(",")
+    picks = [pick_ollama_endpoint(raw) for _ in range(6)]
+
+    assert sorted(picks[0:3]) == sorted(endpoints)
+    assert sorted(picks[3:6]) == sorted(endpoints)
+    assert picks[0:3] == picks[3:6]
+
+
+def test_pick_ollama_endpoint_trims_whitespace_around_commas():
+    from llm.ollama_client import pick_ollama_endpoint
+
+    raw = "http://gpu1:11435 , http://gpu2:11436"
+    picks = {pick_ollama_endpoint(raw) for _ in range(4)}
+    assert picks == {"http://gpu1:11435", "http://gpu2:11436"}
+
+
+def test_pick_ollama_endpoint_raises_on_empty():
+    from llm.ollama_client import pick_ollama_endpoint
+
+    with pytest.raises(ValueError):
+        pick_ollama_endpoint("")
+
+
+def test_create_from_env_round_robins_across_multiple_endpoints(monkeypatch):
+    """OLLAMA_BASE_URL with multiple comma-separated endpoints spreads
+    successive create_ollama_client_from_env() calls across all of them —
+    this is what lets concurrent indicator-scoring tasks land on different
+    GPUs instead of all sharing one."""
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://gpu1:11435,http://gpu2:11436")
+    monkeypatch.setenv("OLLAMA_MODEL", "deepseek-r1:7b")
+
+    from llm.ollama_client import create_ollama_client_from_env
+
+    urls = {create_ollama_client_from_env().base_url for _ in range(4)}
+    assert urls == {"http://gpu1:11435", "http://gpu2:11436"}
+
+
+def test_create_from_env_uses_explicit_model_override(monkeypatch):
+    """A caller-supplied model wins over the configured default — used when
+    the frontend lets the user pick a model from GET /assessment/models."""
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://vastai:11434")
+    monkeypatch.setenv("OLLAMA_MODEL", "qwen3.6:35b,deepseek-r1:32b")
+
+    from llm.ollama_client import create_ollama_client_from_env
+
+    c = create_ollama_client_from_env(model="deepseek-r1:32b")
+    assert c.model == "deepseek-r1:32b"

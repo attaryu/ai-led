@@ -33,8 +33,8 @@ def test_read_returns_list_when_file_missing(tmp_path):
 
 # ── 2 ──────────────────────────────────────────────────────────────────────────
 def test_read_indicator_count(indicators):
-    assert len(indicators) == 78, (
-        f"Expected exactly 78 indicators, got {len(indicators)}. "
+    assert len(indicators) == 64, (
+        f"Expected exactly 64 indicators, got {len(indicators)}. "
         "Update this assertion if the workbook legitimately changed."
     )
 

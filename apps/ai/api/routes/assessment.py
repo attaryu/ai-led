@@ -2,7 +2,7 @@
 
 POST /assessment/start
     Optional JSON body with laporan_path. If provided, indicator subset is read
-    from the Laporan_AK.xlsx template; otherwise all 78 default indicators run.
+    from the Laporan_AK.xlsx template; otherwise all 64 default indicators run.
     Fires off the assessment pipeline in the background and returns a session_id
     immediately so the caller can poll for status.
 
@@ -45,7 +45,7 @@ from db.postgres_client import (
     update_session_status,
 )
 from excel.reader import read_indicator_rows
-from llm.ollama_client import create_ollama_client_from_env
+from llm.ollama_client import create_ollama_client_from_env, get_available_models
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,7 @@ class StartAssessmentRequest(BaseModel):
     created_by_user_id: str
     laporan_path: Optional[str] = None
     max_parallel: Optional[int] = None
+    model: Optional[str] = None
 
 
 class ResumeAssessmentRequest(BaseModel):
@@ -95,6 +96,11 @@ class ResumeAssessmentResponse(BaseModel):
     skipped_indicators: int
     remaining_indicators: int
     message: str
+
+
+class AvailableModelsResponse(BaseModel):
+    provider: str
+    models: list[str]
 
 
 class SessionStatusResponse(BaseModel):
@@ -182,6 +188,15 @@ def _derive_indicators(laporan_path: Optional[str]) -> list:
     return indicators
 
 
+@router.get("/models", response_model=AvailableModelsResponse)
+def get_assessment_models() -> AvailableModelsResponse:
+    """Return the configured assessment model list (OLLAMA_MODEL or
+    OPENROUTER_MODEL, comma-separated) — used to populate a model picker
+    before /assessment/start or /assessment/{id}/resume."""
+    provider = os.environ.get("LLM_PROVIDER", "ollama").lower()
+    return AvailableModelsResponse(provider=provider, models=get_available_models())
+
+
 @router.post("/start", response_model=StartAssessmentResponse)
 async def start_assessment(
     body: StartAssessmentRequest,
@@ -190,10 +205,18 @@ async def start_assessment(
     """Start an assessment pipeline.
 
     If ``laporan_path`` is provided, the indicator subset is extracted from that
-    Excel template. Otherwise, all 78 default indicators are evaluated.
+    Excel template. Otherwise, all 64 default indicators are evaluated.
     Results are persisted to Postgres only — nothing is written back to Excel.
     """
     indicators = _derive_indicators(body.laporan_path)
+
+    if body.model is not None:
+        available = get_available_models()
+        if body.model not in available:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown model: {body.model}. Available: {available}",
+            )
 
     session_id = str(uuid.uuid4())
     parallel = body.max_parallel or MAX_PARALLEL
@@ -213,6 +236,7 @@ async def start_assessment(
         max_parallel=parallel,
         tenant_id=body.tenant_id,
         dokumen_id=body.dokumen_id,
+        model=body.model,
     )
 
     return StartAssessmentResponse(
@@ -227,6 +251,8 @@ async def resume_assessment(
     session_id: str,
     body: ResumeAssessmentRequest,
     background_tasks: BackgroundTasks,
+    retry_failed: bool = False,
+    model: Optional[str] = None,
 ) -> ResumeAssessmentResponse:
     """Resume a session that was cut off mid-run (worker crash/restart).
 
@@ -236,14 +262,29 @@ async def resume_assessment(
     finished, successfully or with a logged error. Only indicators with no
     row at all (never started, or in-flight when the process died) are
     (re-)processed, under the SAME session_id.
+
+    retry_failed=true additionally re-processes indicators that finished
+    with a logged error (e.g. gave up after exhausting force-finalize
+    retries), instead of leaving them permanently failed.
+
+    model overrides the configured default for this resume run (must be one
+    of GET /assessment/models).
     """
+    if model is not None:
+        available = get_available_models()
+        if model not in available:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown model: {model}. Available: {available}",
+            )
+
     sess = get_session(session_id)
     if sess is None:
         raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
 
     all_indicators = _derive_indicators(body.laporan_path)
 
-    done = get_completed_indicator_numbers(session_id)
+    done = get_completed_indicator_numbers(session_id, retry_failed=retry_failed)
     remaining = [ind for ind in all_indicators if ind.indicator_no not in done]
 
     if not remaining:
@@ -270,6 +311,7 @@ async def resume_assessment(
         initial_completed=len(done),
         tenant_id=body.tenant_id,
         dokumen_id=body.dokumen_id,
+        model=model,
     )
 
     return ResumeAssessmentResponse(
@@ -356,19 +398,32 @@ async def get_session_results(session_id: str) -> SessionResultsResponse:
 
 
 async def _process_single_indicator(
-    graph,
     indicator,
     session_id: str,
     semaphore: asyncio.Semaphore,
     tenant_id: str,
     dokumen_id: str,
+    model: Optional[str] = None,
 ) -> bool:
     """Run the LangGraph agent for one indicator and persist results to Postgres.
+
+    Builds its own OllamaClient/graph rather than reusing one shared across
+    the whole batch — create_ollama_client_from_env() round-robins across a
+    multi-endpoint OLLAMA_BASE_URL (one Ollama instance per GPU), so each
+    concurrently-running indicator can land on a different GPU instead of
+    every parallel task funneling through the same single endpoint.
 
     Returns True on success, False on error (error is logged and stored in Postgres).
     """
     async with semaphore:
         try:
+            ollama_client = create_ollama_client_from_env(model=model)
+            logger.info(
+                "Indicator %d (session %s) using Ollama endpoint %s",
+                indicator.indicator_no, session_id, ollama_client.base_url,
+            )
+            graph = build_graph_auto(ollama_client)
+
             initial_state = {
                 "session_id": session_id,
                 "indicator_no": indicator.indicator_no,
@@ -426,6 +481,11 @@ async def _process_single_indicator(
                 indicator.indicator_no,
                 session_id,
             )
+            # Full exception detail goes to the server log above — the
+            # report-facing `error` field only gets a safe, generic message
+            # naming the exception type, never the raw exception text
+            # (which can contain low-level details like a bare socket error)
+            # verbatim.
             log_indicator_result(
                 session_id=session_id,
                 indicator_no=indicator.indicator_no,
@@ -433,7 +493,7 @@ async def _process_single_indicator(
                 justification=None,
                 confidence=None,
                 recommendation=None,
-                error=str(exc),
+                error=f"Gagal dinilai ({type(exc).__name__}) — lihat log server untuk detail.",
             )
             return False
 
@@ -446,6 +506,7 @@ async def _run_assessment_pipeline(
     dokumen_id: str,
     initial_completed: int = 0,
     on_progress: Optional[Callable[[int, int], Awaitable[None]]] = None,
+    model: Optional[str] = None,
 ) -> None:
     """Background task: score all `indicators` and update session status when
     done. `indicators` may be a subset (resume) — `initial_completed` seeds
@@ -458,20 +519,20 @@ async def _run_assessment_pipeline(
     second, separate channel a BullMQ job caller can wire to
     job.updateProgress() for the SSE gateway (job-events.service.ts) to
     forward live, without this module knowing BullMQ exists at all.
+
+    `model` overrides the configured default (see get_available_models()).
     """
     try:
-        ollama_client = create_ollama_client_from_env()
-        graph = build_graph_auto(ollama_client)
         semaphore = asyncio.Semaphore(max_parallel)
 
         tasks = [
             _process_single_indicator(
-                graph=graph,
                 indicator=indicator,
                 session_id=session_id,
                 semaphore=semaphore,
                 tenant_id=tenant_id,
                 dokumen_id=dokumen_id,
+                model=model,
             )
             for indicator in indicators
         ]

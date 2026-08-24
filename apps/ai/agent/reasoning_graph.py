@@ -67,7 +67,7 @@ PROTOKOL: setiap respons HARUS berupa JSON satu baris. Pilih salah satu:
 
 Tool yang tersedia:
 
-1. get_indicator_rubric  — args: {"indicator_no": <int 1-78>}
+1. get_indicator_rubric  — args: {"indicator_no": <int 1-64>}
 2. search_led_evidence   — args: {"query": "<id, WAJIB kaya konteks: nomor indikator + kata kunci konkret dari kriteria rubrik, bukan cuma topik umum>", "n_results": <int, default 5>}
 3. get_lkps_table        — args: {"table_reference": "<misal 'Tabel 2.a. LKPS' atau '6.f.2'>"}
 4. compute_formula_score — args: {"formula_expression": "<expr Python: BOP / 5000000>", "variables": {<key: value>}}
@@ -198,11 +198,14 @@ def _build_reasoning_llm(ollama_client: OllamaClient):
     if provider == "openrouter":
         from langchain_openai import ChatOpenAI
 
-        return ChatOpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=os.environ["OPENROUTER_API_KEY"],
-            model=os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-r1"),
-            temperature=0.1,
+        return (
+            ChatOpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=os.environ["OPENROUTER_API_KEY"],
+                model=ollama_client.model,
+                temperature=0.1,
+            )
+            .with_retry(stop_after_attempt=3)
         )
 
     from langchain_ollama import ChatOllama
@@ -215,7 +218,10 @@ def _build_reasoning_llm(ollama_client: OllamaClient):
     api_key = os.environ.get("OLLAMA_API_KEY")
     if api_key and not api_key.startswith("<"):
         kwargs["client_kwargs"] = {"headers": {"Authorization": f"Bearer {api_key}"}}
-    return ChatOllama(**kwargs)
+    # Retry transient connection failures (e.g. connection reset mid-request
+    # to the remote Ollama instance) instead of letting them propagate raw
+    # into the indicator's error field with zero retry.
+    return ChatOllama(**kwargs).with_retry(stop_after_attempt=3)
 
 
 # ---------------------------------------------------------------------------

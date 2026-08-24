@@ -11,7 +11,12 @@ dependencies = [
     "uvicorn[standard]>=0.29",
     "langgraph>=0.1",
     "langchain>=0.2",
-    "langchain-community>=0.2",
+    # <0.4: langchain-community 0.4.x dropped the chat_models.vertexai compat
+    # shim that ragas (as of 0.4.3, unfixed upstream — see
+    # https://github.com/vibrantlabsai/ragas/issues/2741) still unconditionally
+    # imports at module load time, crashing `import ragas` for every provider,
+    # not just Vertex AI users.
+    "langchain-community>=0.2,<0.4",
     "langchain-ollama>=0.1",
     "langchain-openai>=0.1",
     "pgvector>=0.3",

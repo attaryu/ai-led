@@ -55,6 +55,18 @@ def test_indicator_numbers_are_unique(rubrics):
     assert len(nos) == len(set(nos)), "Duplicate indicator numbers found"
 
 
+def test_no_indicator_has_empty_kriteria(rubrics):
+    """Every indicator must have non-empty kriteria text.
+
+    Regression test: the source PDF has a vertically-merged 'Kriteria' table
+    cell spanning several sibling indicator rows. pdfplumber only returns
+    that cell's text on the first physical row of the merge, blank on the
+    rest — without carry-forward, every indicator after the first in a
+    merged group ended up with kriteria="", rendered as "—" in reports."""
+    empty = [r.no for r in rubrics if not r.kriteria.strip()]
+    assert not empty, f"Indicators with empty kriteria: {empty}"
+
+
 def test_indicator_numbers_are_unique_and_ascending(rubrics):
     """Returned rubrics must be in ascending order with unique numbers."""
     nos = [r.no for r in rubrics]  # original order from parse
