@@ -47,17 +47,17 @@ def get_pedoman_for_bab(urutan_bab: int) -> list[dict]:
     """Guideline text points relevant to this chapter number.
 
     urutan_bab is a matching key here, not a FK (see schema.prisma's own
-    note on PanduanDetailBab) — plain relational lookup, no vector search:
+    note on GuideDetailChapter) — plain relational lookup, no vector search:
     pedoman/rubric are structured reference data, not free-text documents.
     """
     with get_conn().cursor() as cur:
         cur.execute(
             """
-            SELECT pd.kode_poin, pd.judul_poin, pd.isi_teks, pr.judul AS sumber
-            FROM panduan_detail_bab pdb
-            JOIN panduan_detail pd ON pd.id = pdb.panduan_detail_id
-            JOIN panduan_referensi pr ON pr.id = pd.panduan_id
-            WHERE pdb.urutan_bab = %s
+            SELECT gd.point_code, gd.point_title, gd.content_text, rg.title AS sumber
+            FROM guide_detail_chapters gdc
+            JOIN guide_details gd ON gd.id = gdc.guide_detail_id
+            JOIN guide_references rg ON rg.id = gd.guide_id
+            WHERE gdc.chapter_order = %s
             """,
             (urutan_bab,),
         )

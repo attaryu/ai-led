@@ -66,7 +66,7 @@ def _build_generasi_prompt(
     chunks: list[dict],
     user_prompt: str | None = None,
 ) -> str:
-    pedoman_text = "\n".join(f"- {p['judul_poin']}: {p['isi_teks'][:500]}" for p in pedoman) or "(tidak ada pedoman spesifik tersedia)"
+    pedoman_text = "\n".join(f"- {p['point_title']}: {p['content_text'][:500]}" for p in pedoman) or "(tidak ada pedoman spesifik tersedia)"
     rubric_text = "\n".join(f"- {r['criterion_code']}: {r['description'][:300]}" for r in rubric) or "(tidak ada rubrik spesifik tersedia)"
     checklist_text = "\n".join(f"- {c}" for c in checklist)
     evidence_text = "\n\n".join(f"[Bukti {i+1}] {c['text'][:800]}" for i, c in enumerate(chunks)) or "(tidak ada bukti dari dokumen LED yang ditemukan)"
@@ -127,7 +127,7 @@ async def _handle_generasi_bab(job) -> dict:
     rubric = get_rubrik_for_bab(bab["chapter_order"])
 
     # 2. Checklist + evidence chunks from the LED document itself.
-    checklist = [p["judul_poin"] for p in pedoman] or [f"Poin kunci untuk {bab['chapter_title']}"]
+    checklist = [p["point_title"] for p in pedoman] or [f"Poin kunci untuk {bab['chapter_title']}"]
     query = f"{bab['chapter_title']}: " + " ".join(checklist[:5])
     # search_led is synchronous (psycopg2 + blocking SentenceTransformer.encode) —
     # off the event loop, or it blocks BullMQ's lock-renewal long enough to stall.

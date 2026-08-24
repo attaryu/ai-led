@@ -388,42 +388,42 @@ model CriterionScoreResult {
 // ─────────────── Kelompok: Panduan Referensi (Master Data RAG) ───────────────
 
 /// docs/database.md §13
-model PanduanReferensi {
-  id         String      @id @default(cuid())
-  tipe       TipePanduan
-  judul      String
-  fileUrl    String      @map("file_url")
-  tipeFile   String      @map("tipe_file")
-  dibuatPada DateTime    @default(now()) @map("dibuat_pada")
+model ReferenceGuide {
+  id        String      @id @default(cuid())
+  type      TipePanduan
+  title     String
+  fileUrl   String      @map("file_url")
+  fileType  String      @map("tipe_file")
+  createdAt DateTime    @default(now()) @map("dibuat_pada")
 
-  detail PanduanDetail[]
+  details GuideDetail[]
 
-  @@map("panduan_referensi")
+  @@map("guide_references")
 }
 
 /// docs/database.md §14
-model PanduanDetail {
-  id        String @id @default(cuid())
-  panduanId String @map("panduan_id")
-  kodePoin  String @map("kode_poin")
-  judulPoin String @map("judul_poin")
-  isiTeks   String @map("isi_teks") @db.Text
+model GuideDetail {
+  id           String @id @default(cuid())
+  guideId      String @map("guide_id")
+  pointCode    String @map("point_code")
+  pointTitle   String @map("point_title")
+  contentText  String @map("content_text") @db.Text
 
-  panduan   PanduanReferensi   @relation(fields: [panduanId], references: [id])
-  detailBab PanduanDetailBab[]
+  guide          ReferenceGuide      @relation(fields: [guideId], references: [id])
+  detailChapters GuideDetailChapter[]
 
-  @@map("panduan_detail")
+  @@map("guide_details")
 }
 
-/// docs/database.md §15 — urutan_bab adalah matching key, BUKAN FK
-model PanduanDetailBab {
-  id              String @id @default(cuid())
-  panduanDetailId String @map("panduan_detail_id")
-  urutanBab       Int    @map("urutan_bab")
+/// docs/database.md §15 — chapterOrder adalah matching key, BUKAN FK
+model GuideDetailChapter {
+  id            String @id @default(cuid())
+  guideDetailId String @map("guide_detail_id")
+  chapterOrder  Int    @map("chapter_order")
 
-  panduanDetail PanduanDetail @relation(fields: [panduanDetailId], references: [id])
+  guideDetail GuideDetail @relation(fields: [guideDetailId], references: [id])
 
-  @@map("panduan_detail_bab")
+  @@map("guide_detail_chapters")
 }
 
 // ═══════════════════════════════════════════════════════════════════
