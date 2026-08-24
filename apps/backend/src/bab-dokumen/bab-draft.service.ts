@@ -60,13 +60,13 @@ export class BabDraftService {
     });
   }
 
-  /** Kriteria rubrik dicocokkan lewat urutanBab, bukan FK ke BabDokumen.id (database.md §11). */
+  /** Kriteria rubrik dicocokkan lewat chapterOrder, bukan FK ke BabDokumen.id (database.md §11). */
   async findRubrik(id: string) {
     const bab = await this.access.findOneScoped(id);
-    const rows = await this.prisma.rubrikKriteriaBab.findMany({
-      where: { urutanBab: bab.chapterOrder },
-      include: { kriteria: { include: { level: { orderBy: { skor: 'desc' } } } } },
+    const rows = await this.prisma.rubricCriterionChapter.findMany({
+      where: { chapterOrder: bab.chapterOrder },
+      include: { criterion: { include: { levels: { orderBy: { score: 'desc' } } } } },
     });
-    return rows.map((row) => row.kriteria);
+    return rows.map((row) => row.criterion);
   }
 }

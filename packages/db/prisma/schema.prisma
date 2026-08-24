@@ -151,7 +151,7 @@ model User {
 
   babDraftDibuat      ChapterDraft[]      @relation("BabDraftDibuatOleh")
   buktiDukungDiunggah Evidence[]          @relation("BuktiDukungDiunggahOleh")
-  hasilSkorDijalankan HasilSkorKriteria[] @relation("HasilSkorDijalankanOleh")
+  hasilSkorDijalankan CriterionScoreResult[] @relation("HasilSkorDijalankanOleh")
   chatMessages        ChatMessage[]
   jobsCreated         Job[]
   assessmentSessions  AssessmentSession[]
@@ -225,7 +225,7 @@ model DocumentChapter {
   activeCheckpoint  ChapterDraft?         @relation("ActiveCheckpoint", fields: [activeCheckpointId], references: [id])
   drafts            ChapterDraft[]        @relation("ChapterDrafts")
   buktiDukungBab    EvidenceChapterLink[]
-  hasilSkorKriteria HasilSkorKriteria[]
+  hasilSkorKriteria CriterionScoreResult[]
   ragasScores       RagasScore[]
   chatMessages      ChatMessage[]
 
@@ -251,7 +251,7 @@ model ChapterDraft {
   activeCheckpointOf DocumentChapter[] @relation("ActiveCheckpoint")
 
   buktiDukungDraft  EvidenceDraftLink[]
-  hasilSkorKriteria HasilSkorKriteria[]
+  hasilSkorKriteria CriterionScoreResult[]
   ragasScores       RagasScore[]
   generationRun     GenerationRun?
 
@@ -324,65 +324,65 @@ model EvidenceDraftLink {
 
 // ─────────────────── Kelompok: Skoring (Simulasi Penilaian) ───────────────────
 
-/// docs/database.md §10 — skor_maksimal sengaja TIDAK dibuat, diturunkan dari RubrikLevel
-model RubrikKriteria {
-  id           String @id @default(cuid())
-  kodeKriteria String @map("kode_kriteria")
-  deskripsi    String @db.Text
+/// docs/database.md §10 — skor_maksimal sengaja TIDAK dibuat, diturunkan dari RubricLevel
+model RubricCriterion {
+  id            String @id @default(cuid())
+  criterionCode String @map("criterion_code")
+  description   String @db.Text
 
-  level             RubrikLevel[]
-  kriteriaBab       RubrikKriteriaBab[]
-  hasilSkorKriteria HasilSkorKriteria[]
+  levels            RubricLevel[]
+  criterionChapters RubricCriterionChapter[]
+  scoreResults      CriterionScoreResult[]
 
-  @@map("rubrik_kriteria")
+  @@map("rubric_criteria")
 }
 
 /// docs/database.md §10a
-model RubrikLevel {
-  id         String @id @default(cuid())
-  kriteriaId String @map("kriteria_id")
-  skor       Int
-  deskripsi  String @db.Text
+model RubricLevel {
+  id          String @id @default(cuid())
+  criterionId String @map("criterion_id")
+  score       Int
+  description String @db.Text
 
-  kriteria RubrikKriteria @relation(fields: [kriteriaId], references: [id])
+  criterion RubricCriterion @relation(fields: [criterionId], references: [id])
 
-  @@unique([kriteriaId, skor])
-  @@map("rubrik_level")
+  @@unique([criterionId, score])
+  @@map("rubric_levels")
 }
 
-/// docs/database.md §11 — urutan_bab adalah matching key, BUKAN FK ke BabDokumen.id
-model RubrikKriteriaBab {
-  id         String @id @default(cuid())
-  kriteriaId String @map("kriteria_id")
-  urutanBab  Int    @map("urutan_bab")
+/// docs/database.md §11 — chapterOrder adalah matching key, BUKAN FK ke DocumentChapter.id
+model RubricCriterionChapter {
+  id           String @id @default(cuid())
+  criterionId  String @map("criterion_id")
+  chapterOrder Int    @map("chapter_order")
 
-  kriteria RubrikKriteria @relation(fields: [kriteriaId], references: [id])
+  criterion RubricCriterion @relation(fields: [criterionId], references: [id])
 
-  @@unique([kriteriaId, urutanBab])
-  @@map("rubrik_kriteria_bab")
+  @@unique([criterionId, chapterOrder])
+  @@map("rubric_criterion_chapters")
 }
 
 /// docs/database.md §12 — target BAB_AKTIF (ditimpa tiap re-run) atau BAB_DRAFT (permanen)
-model HasilSkorKriteria {
-  id                   String     @id @default(cuid())
-  kriteriaId           String     @map("kriteria_id")
-  targetTipe           TargetTipe @map("target_tipe")
-  babId                String?    @map("bab_id")
-  babDraftId           String?    @map("bab_draft_id")
-  skorDidapat          Int        @map("skor_didapat")
-  justifikasi          String?    @db.Text
-  dijalankanOlehUserId String     @map("dijalankan_oleh_user_id")
-  dijalankanOlehNama   String     @map("dijalankan_oleh_nama")
-  dijalankanPada       DateTime   @default(now()) @map("dijalankan_pada")
+model CriterionScoreResult {
+  id            String     @id @default(cuid())
+  criterionId   String     @map("criterion_id")
+  targetType    TargetTipe @map("target_type")
+  chapterId     String?    @map("chapter_id")
+  draftId       String?    @map("draft_id")
+  scoreObtained Int        @map("score_obtained")
+  justification String?    @db.Text
+  runByUserId   String     @map("run_by_user_id")
+  runByName     String     @map("run_by_name")
+  runAt         DateTime   @default(now()) @map("run_at")
 
-  kriteria       RubrikKriteria   @relation(fields: [kriteriaId], references: [id])
-  bab            DocumentChapter? @relation(fields: [babId], references: [id])
-  babDraft       ChapterDraft?    @relation(fields: [babDraftId], references: [id])
-  dijalankanOleh User             @relation("HasilSkorDijalankanOleh", fields: [dijalankanOlehUserId], references: [id])
+  criterion RubricCriterion  @relation(fields: [criterionId], references: [id])
+  chapter   DocumentChapter? @relation(fields: [chapterId], references: [id])
+  draft     ChapterDraft?    @relation(fields: [draftId], references: [id])
+  runBy     User             @relation("HasilSkorDijalankanOleh", fields: [runByUserId], references: [id])
 
-  @@index([babId])
-  @@index([babDraftId])
-  @@map("hasil_skor_kriteria")
+  @@index([chapterId])
+  @@index([draftId])
+  @@map("rubric_score_results")
 }
 
 // ─────────────── Kelompok: Panduan Referensi (Master Data RAG) ───────────────
@@ -455,7 +455,7 @@ model GenerationRun {
 }
 
 /// Skor RAGAS dinormalisasi — persis usulan §12a, menempel ke bab aktif
-/// ATAU checkpoint sesuai target_tipe (pola sama dengan HasilSkorKriteria).
+/// ATAU checkpoint sesuai target_tipe (pola sama dengan CriterionScoreResult).
 model RagasScore {
   id             String     @id @default(cuid())
   targetType     TargetTipe @map("target_type")

@@ -72,14 +72,14 @@ export function mapRagas(row: BackendRagasScore | undefined): RagasScore | null 
 export function mapHasilSkor(rows: BackendHasilSkorKriteria[] | undefined): ChapterScoreEntity[] {
 	return (rows ?? []).map((row) => ({
 		id: row.id,
-		kriteriaId: row.kriteriaId,
-		targetTipe: row.targetTipe,
-		babId: row.babId,
-		babDraftId: row.babDraftId,
-		skorDidapat: row.skorDidapat,
-		justifikasi: row.justifikasi ?? '',
-		dijalankanOlehUserId: row.dijalankanOlehUserId,
-		dijalankanOlehNama: row.dijalankanOlehNama,
-		dijalankanPada: row.dijalankanPada,
+		kriteriaId: row.criterionId,
+		targetTipe: row.targetType,
+		babId: row.chapterId,
+		babDraftId: row.draftId,
+		skorDidapat: row.scoreObtained,
+		justifikasi: row.justification ?? '',
+		dijalankanOlehUserId: row.runByUserId,
+		dijalankanOlehNama: row.runByName,
+		dijalankanPada: row.runAt,
 	}));
 }

@@ -30,14 +30,14 @@ type JobEvent = {
  */
 function mapKriteria(row: {
 	id: string;
-	kodeKriteria: string;
-	deskripsi: string;
-	level: { skor: number; deskripsi: string }[];
+	criterionCode: string;
+	description: string;
+	levels: { score: number; description: string }[];
 }): RubricCriterion {
 	return {
 		id: row.id,
 		// Field di bawah ini tidak dipakai `chapter-rubric-panel.tsx` sama sekali
-		// (lihat isi accordion-nya) — Postgres `RubrikKriteria` sungguhan tidak
+		// (lihat isi accordion-nya) — Postgres `RubricCriterion` sungguhan tidak
 		// punya kolomnya (beda dari data contoh `rubric-criterion.entity.ts`,
 		// yang dibuat lebih kaya dari yang pernah dipakai), jadi diisi placeholder
 		// yang jujur alih-alih mengarang.
@@ -45,9 +45,9 @@ function mapKriteria(row: {
 		kriteria: '',
 		tipeSkor: 'kualitatif',
 		tabelLkps: [],
-		kodeKriteria: row.kodeKriteria,
-		deskripsi: row.deskripsi,
-		levelSkor: row.level,
+		kodeKriteria: row.criterionCode,
+		deskripsi: row.description,
+		levelSkor: row.levels.map((level) => ({ skor: level.score, deskripsi: level.description })),
 		urutanBab: [],
 	};
 }

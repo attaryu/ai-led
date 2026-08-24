@@ -28,18 +28,18 @@ export type BackendRagasScore = {
 	computedAt: string;
 };
 
-/** Baris Prisma `HasilSkorKriteria`. */
+/** Baris Prisma `CriterionScoreResult`. */
 export type BackendHasilSkorKriteria = {
 	id: string;
-	kriteriaId: string;
-	targetTipe: 'BAB_AKTIF' | 'BAB_DRAFT';
-	babId: string | null;
-	babDraftId: string | null;
-	skorDidapat: number;
-	justifikasi: string | null;
-	dijalankanOlehUserId: string;
-	dijalankanOlehNama: string;
-	dijalankanPada: string;
+	criterionId: string;
+	targetType: 'BAB_AKTIF' | 'BAB_DRAFT';
+	chapterId: string | null;
+	draftId: string | null;
+	scoreObtained: number;
+	justification: string | null;
+	runByUserId: string;
+	runByName: string;
+	runAt: string;
 };
 
 /**
@@ -86,20 +86,20 @@ export type BackendBabDraft = {
 	hasilSkorKriteria: BackendHasilSkorKriteria[];
 };
 
-/** Baris Prisma `RubrikLevel`. */
+/** Baris Prisma `RubricLevel`. */
 export type BackendRubrikLevel = {
 	id: string;
-	kriteriaId: string;
-	skor: number;
-	deskripsi: string;
+	criterionId: string;
+	score: number;
+	description: string;
 };
 
-/** Baris Prisma `RubrikKriteria`, dikembalikan `GET bab/:id/rubrik`. */
+/** Baris Prisma `RubricCriterion`, dikembalikan `GET bab/:id/rubrik`. */
 export type BackendRubrikKriteria = {
 	id: string;
-	kodeKriteria: string;
-	deskripsi: string;
-	level: BackendRubrikLevel[];
+	criterionCode: string;
+	description: string;
+	levels: BackendRubrikLevel[];
 };
 
 export type CreateBabPayload = {

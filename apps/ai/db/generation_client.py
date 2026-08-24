@@ -69,10 +69,10 @@ def get_rubrik_for_bab(urutan_bab: int) -> list[dict]:
     with get_conn().cursor() as cur:
         cur.execute(
             """
-            SELECT rk.id, rk.kode_kriteria, rk.deskripsi
-            FROM rubrik_kriteria_bab rkb
-            JOIN rubrik_kriteria rk ON rk.id = rkb.kriteria_id
-            WHERE rkb.urutan_bab = %s
+            SELECT rc.id, rc.criterion_code, rc.description
+            FROM rubric_criterion_chapters rcc
+            JOIN rubric_criteria rc ON rc.id = rcc.criterion_id
+            WHERE rcc.chapter_order = %s
             """,
             (urutan_bab,),
         )
@@ -80,18 +80,18 @@ def get_rubrik_for_bab(urutan_bab: int) -> list[dict]:
 
 
 def get_rubrik_levels(kriteria_ids: list[str]) -> dict[str, list[dict]]:
-    """RubrikLevel rows (skor 4..0) for a set of criteria, grouped by kriteria_id."""
+    """RubricLevel rows (score 4..0) for a set of criteria, grouped by criterion_id."""
     if not kriteria_ids:
         return {}
     with get_conn().cursor() as cur:
         cur.execute(
-            "SELECT kriteria_id, skor, deskripsi FROM rubrik_level WHERE kriteria_id = ANY(%s) ORDER BY skor DESC",
+            "SELECT criterion_id, score, description FROM rubric_levels WHERE criterion_id = ANY(%s) ORDER BY score DESC",
             (kriteria_ids,),
         )
         by_kriteria: dict[str, list[dict]] = {}
         for row in cur.fetchall():
-            by_kriteria.setdefault(row["kriteria_id"], []).append(
-                {"skor": row["skor"], "deskripsi": row["deskripsi"]}
+            by_kriteria.setdefault(row["criterion_id"], []).append(
+                {"score": row["score"], "description": row["description"]}
             )
     return by_kriteria
 
@@ -115,7 +115,7 @@ def replace_hasil_skor_kriteria(
     dijalankan_oleh_user_id: str,
     dijalankan_oleh_nama: str,
 ) -> list[dict]:
-    """Delete existing HasilSkorKriteria for this exact target, insert fresh
+    """Delete existing CriterionScoreResult for this exact target, insert fresh
     rows — "main timpa" semantics matching every other active-state field in
     this schema (see BabDokumen.kontenKerja, BuktiDukungBab). Re-running the
     simulation for the same scope replaces its previous result, not appends.
@@ -125,12 +125,12 @@ def replace_hasil_skor_kriteria(
     with get_conn().cursor() as cur:
         if target_tipe == "BAB_AKTIF":
             cur.execute(
-                "DELETE FROM hasil_skor_kriteria WHERE bab_id = %s AND target_tipe = 'BAB_AKTIF'",
+                "DELETE FROM rubric_score_results WHERE chapter_id = %s AND target_type = 'BAB_AKTIF'",
                 (bab_id,),
             )
         else:
             cur.execute(
-                "DELETE FROM hasil_skor_kriteria WHERE bab_draft_id = %s AND target_tipe = 'BAB_DRAFT'",
+                "DELETE FROM rubric_score_results WHERE draft_id = %s AND target_type = 'BAB_DRAFT'",
                 (bab_draft_id,),
             )
 
@@ -139,9 +139,9 @@ def replace_hasil_skor_kriteria(
             row_id = str(uuid.uuid4())
             cur.execute(
                 """
-                INSERT INTO hasil_skor_kriteria
-                    (id, kriteria_id, target_tipe, bab_id, bab_draft_id, skor_didapat,
-                     justifikasi, dijalankan_oleh_user_id, dijalankan_oleh_nama)
+                INSERT INTO rubric_score_results
+                    (id, criterion_id, target_type, chapter_id, draft_id, score_obtained,
+                     justification, run_by_user_id, run_by_name)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,

@@ -67,7 +67,7 @@ def _build_generasi_prompt(
     user_prompt: str | None = None,
 ) -> str:
     pedoman_text = "\n".join(f"- {p['judul_poin']}: {p['isi_teks'][:500]}" for p in pedoman) or "(tidak ada pedoman spesifik tersedia)"
-    rubric_text = "\n".join(f"- {r['kode_kriteria']}: {r['deskripsi'][:300]}" for r in rubric) or "(tidak ada rubrik spesifik tersedia)"
+    rubric_text = "\n".join(f"- {r['criterion_code']}: {r['description'][:300]}" for r in rubric) or "(tidak ada rubrik spesifik tersedia)"
     checklist_text = "\n".join(f"- {c}" for c in checklist)
     evidence_text = "\n\n".join(f"[Bukti {i+1}] {c['text'][:800]}" for i, c in enumerate(chunks)) or "(tidak ada bukti dari dokumen LED yang ditemukan)"
     arahan_text = f"\n\nARAHAN TAMBAHAN DARI PENGGUNA:\n{user_prompt}" if user_prompt else ""
@@ -197,8 +197,8 @@ def _build_simulasi_skor_prompt(
     kriteria: list[dict],
 ) -> str:
     kriteria_text = "\n\n".join(
-        f"- {k['kode_kriteria']}: {k['deskripsi']}\n"
-        + "\n".join(f"  Skor {lvl['skor']}: {lvl['deskripsi']}" for lvl in k["level"])
+        f"- {k['criterion_code']}: {k['description']}\n"
+        + "\n".join(f"  Skor {lvl['score']}: {lvl['description']}" for lvl in k["level"])
         for k in kriteria
     )
 
@@ -276,8 +276,8 @@ async def _handle_simulasi_skor(job) -> dict:
     if not isinstance(dinilai, list):
         return {"status": "error", "error": "Model tidak mengembalikan hasil penilaian yang bisa dibaca"}
 
-    kode_ke_id = {k["kode_kriteria"]: k["id"] for k in kriteria}
-    skor_valid = {k["id"]: {lvl["skor"] for lvl in k["level"]} for k in kriteria}
+    kode_ke_id = {k["criterion_code"]: k["id"] for k in kriteria}
+    skor_valid = {k["id"]: {lvl["score"] for lvl in k["level"]} for k in kriteria}
 
     rows = []
     for item in dinilai:

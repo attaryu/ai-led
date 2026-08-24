@@ -70,7 +70,7 @@ export class BabDokumenService {
         document: { select: { studyProgramId: true } },
         buktiDukungBab: true,
         ragasScores: { orderBy: { computedAt: 'desc' }, take: 1 },
-        hasilSkorKriteria: { where: { targetTipe: 'BAB_AKTIF' } },
+        hasilSkorKriteria: { where: { targetType: 'BAB_AKTIF' } },
       },
     });
     if (!bab) {
