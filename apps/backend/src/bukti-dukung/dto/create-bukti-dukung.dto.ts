@@ -3,9 +3,9 @@ import { OwnerTipe } from '@ai-led/db';
 
 export class CreateBuktiDukungDto {
   @IsEnum(OwnerTipe)
-  ownerTipe!: OwnerTipe;
+  ownerType!: OwnerTipe;
 
-  // Required iff ownerTipe = PROGRAM_STUDI — validated in the service, depends on ownerTipe.
+  // Required iff ownerType = PROGRAM_STUDI — validated in the service, depends on ownerType.
   @IsOptional()
   @IsString()
   studyProgramId?: string;
@@ -14,7 +14,7 @@ export class CreateBuktiDukungDto {
   @IsOptional()
   @IsString()
   @MaxLength(255)
-  namaDokumen?: string;
+  documentName?: string;
 
   // R2 object key from POST /storage/presigned-upload — size/type are re-read from R2 in the service, not trusted here.
   @IsString()

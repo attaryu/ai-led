@@ -3,17 +3,17 @@ import { apiFetch } from '~/core/lib/api-client';
 /** Baris Prisma `BuktiDukungBab` — kondisi aktif, ditimpa tiap generate ulang. */
 export type BackendBuktiDukungBab = {
 	id: string;
-	buktiDukungId: string;
-	namaDokumen: string;
-	tipeFile: string;
+	evidenceId: string;
+	documentName: string;
+	fileType: string;
 };
 
 /** Baris Prisma `BuktiDukungDraft` — permanen, menempel ke satu checkpoint. */
 export type BackendBuktiDukungDraft = {
 	id: string;
-	buktiDukungId: string;
-	namaDokumen: string;
-	tipeFile: string;
+	evidenceId: string;
+	documentName: string;
+	fileType: string;
 };
 
 /** Baris Prisma `RagasScore`. */

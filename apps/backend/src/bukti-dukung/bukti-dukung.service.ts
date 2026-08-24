@@ -34,10 +34,10 @@ export class BuktiDukungService {
       throw new ForbiddenException('fileKey ini bukan milik tenant Anda');
     }
 
-    if (dto.ownerTipe === OwnerTipe.PROGRAM_STUDI) {
+    if (dto.ownerType === OwnerTipe.PROGRAM_STUDI) {
       if (!dto.studyProgramId) {
         throw new BadRequestException(
-          'studyProgramId wajib diisi untuk ownerTipe PROGRAM_STUDI',
+          'studyProgramId wajib diisi untuk ownerType PROGRAM_STUDI',
         );
       }
       if (SCOPED_TO_OWN_PRODI.includes(role) && dto.studyProgramId !== studyProgramId) {
@@ -53,7 +53,7 @@ export class BuktiDukungService {
       }
     } else if (dto.studyProgramId) {
       throw new BadRequestException(
-        'studyProgramId harus kosong untuk ownerTipe TENANT',
+        'studyProgramId harus kosong untuk ownerType TENANT',
       );
     } else if (SCOPED_TO_OWN_PRODI.includes(role)) {
       throw new ForbiddenException(
@@ -71,19 +71,19 @@ export class BuktiDukungService {
     const originalFileName = extractFileNameFromKey(dto.fileKey);
     const tipeFile = (originalFileName.split('.').pop() ?? '').toLowerCase();
 
-    const bukti = await this.prisma.buktiDukung.create({
+    const bukti = await this.prisma.evidence.create({
       data: {
         id,
-        ownerTipe: dto.ownerTipe,
+        ownerType: dto.ownerType,
         tenantId,
-        studyProgramId: dto.ownerTipe === OwnerTipe.PROGRAM_STUDI ? dto.studyProgramId : null,
-        namaDokumen: dto.namaDokumen || originalFileName,
+        studyProgramId: dto.ownerType === OwnerTipe.PROGRAM_STUDI ? dto.studyProgramId : null,
+        documentName: dto.documentName || originalFileName,
         fileUrl: dto.fileKey,
-        tipeFile,
-        ukuranBytes: sizeBytes,
-        statusEkstraksi: StatusEkstraksi.MENUNGGU,
-        diunggahOlehUserId: userId,
-        diunggahOlehNama: user.fullName,
+        fileType: tipeFile,
+        sizeBytes,
+        extractionStatus: StatusEkstraksi.MENUNGGU,
+        uploadedByUserId: userId,
+        uploadedByName: user.fullName,
       },
     });
 
@@ -108,9 +108,9 @@ export class BuktiDukungService {
           'Penyusun tidak punya akses ke perpustakaan bukti dukung level tenant',
         );
       }
-      return this.prisma.buktiDukung.findMany({
-        where: { tenantId, ownerTipe: OwnerTipe.TENANT },
-        orderBy: { waktuDiunggah: 'desc' },
+      return this.prisma.evidence.findMany({
+        where: { tenantId, ownerType: OwnerTipe.TENANT },
+        orderBy: { uploadedAt: 'desc' },
       });
     }
 
@@ -119,28 +119,28 @@ export class BuktiDukungService {
         'Penyusun hanya boleh melihat bukti dukung program studinya sendiri',
       );
     }
-    return this.prisma.buktiDukung.findMany({
+    return this.prisma.evidence.findMany({
       where: { tenantId, studyProgramId },
-      orderBy: { waktuDiunggah: 'desc' },
+      orderBy: { uploadedAt: 'desc' },
     });
   }
 
   async remove(id: string) {
     const { tenantId, userId, role } = this.tenantContext.getOrThrow();
 
-    const bukti = await this.prisma.buktiDukung.findFirst({
+    const bukti = await this.prisma.evidence.findFirst({
       where: { id, tenantId },
     });
     if (!bukti) {
       throw new NotFoundException('Bukti dukung tidak ditemukan');
     }
-    if (SCOPED_TO_OWN_PRODI.includes(role) && bukti.diunggahOlehUserId !== userId) {
+    if (SCOPED_TO_OWN_PRODI.includes(role) && bukti.uploadedByUserId !== userId) {
       throw new ForbiddenException(
         'Penyusun hanya boleh menghapus bukti dukung yang ia unggah sendiri',
       );
     }
 
-    await this.prisma.buktiDukung.delete({ where: { id } });
+    await this.prisma.evidence.delete({ where: { id } });
     try {
       await this.storage.deleteObject(bukti.fileUrl);
     } catch {

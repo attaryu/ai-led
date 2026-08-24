@@ -445,7 +445,7 @@ async def _handle_ingestion_bukti_dukung(job) -> dict:
     def _set_status(status: str, catatan: str | None) -> None:
         with get_conn().cursor() as cur:
             cur.execute(
-                "UPDATE bukti_dukung SET status_ekstraksi = %s, catatan_gagal = %s WHERE id = %s",
+                "UPDATE evidence_files SET extraction_status = %s, failure_note = %s WHERE id = %s",
                 (status, catatan, bukti_dukung_id),
             )
 

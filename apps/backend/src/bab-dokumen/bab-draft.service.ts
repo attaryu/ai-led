@@ -35,7 +35,7 @@ export class BabDraftService {
 
     const [user, buktiDukungBab, terakhir] = await Promise.all([
       this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { fullName: true } }),
-      this.prisma.buktiDukungBab.findMany({ where: { babDokumenId: id } }),
+      this.prisma.evidenceChapterLink.findMany({ where: { chapterId: id } }),
       this.prisma.chapterDraft.aggregate({ where: { chapterId: id }, _max: { version: true } }),
     ]);
 
@@ -50,9 +50,9 @@ export class BabDraftService {
         source: 'MANUAL',
         buktiDukungDraft: {
           create: buktiDukungBab.map((row) => ({
-            buktiDukungId: row.buktiDukungId,
-            namaDokumen: row.namaDokumen,
-            tipeFile: row.tipeFile,
+            evidenceId: row.evidenceId,
+            documentName: row.documentName,
+            fileType: row.fileType,
           })),
         },
       },

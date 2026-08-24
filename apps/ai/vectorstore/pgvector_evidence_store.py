@@ -1,6 +1,6 @@
-"""pgvector-backed store for BuktiDukung (evidence) chunks — same pattern as
-pgvector_store.py's LED chunks, different table (bukti_dukung_chunk_embeddings)
-and scope (bukti_dukung_id, not dokumen_id). Same embedding model/singleton
+"""pgvector-backed store for Evidence chunks — same pattern as
+pgvector_store.py's LED chunks, different table (evidence_chunk_embeddings)
+and scope (evidence_id, not document_id). Same embedding model/singleton
 so both share one loaded model, not two copies in memory.
 """
 
@@ -55,7 +55,7 @@ def index_evidence_chunks(chunks: list[dict], tenant_id: str, bukti_dukung_id: s
 
     with conn.cursor() as cur:
         cur.execute(
-            "DELETE FROM bukti_dukung_chunk_embeddings WHERE bukti_dukung_id = %s",
+            "DELETE FROM evidence_chunk_embeddings WHERE evidence_id = %s",
             (bukti_dukung_id,),
         )
 
@@ -85,8 +85,8 @@ def index_evidence_chunks(chunks: list[dict], tenant_id: str, bukti_dukung_id: s
         psycopg2.extras.execute_values(
             cur,
             """
-            INSERT INTO bukti_dukung_chunk_embeddings
-                (id, tenant_id, bukti_dukung_id, chunk_id, entity, text, embedding, confidence)
+            INSERT INTO evidence_chunk_embeddings
+                (id, tenant_id, evidence_id, chunk_id, entity, text, embedding, confidence)
             VALUES %s
             """,
             rows,
@@ -121,15 +121,15 @@ def search_evidence(
     if bukti_dukung_ids is not None:
         if not bukti_dukung_ids:
             return []
-        where.append("bukti_dukung_id = ANY(%s)")
+        where.append("evidence_id = ANY(%s)")
         params.append(bukti_dukung_ids)
 
     with conn.cursor() as cur:
         cur.execute(
             f"""
-            SELECT chunk_id, bukti_dukung_id, entity, text, confidence,
+            SELECT chunk_id, evidence_id, entity, text, confidence,
                    embedding <=> %s AS distance
-            FROM bukti_dukung_chunk_embeddings
+            FROM evidence_chunk_embeddings
             WHERE {" AND ".join(where)}
             ORDER BY embedding <=> %s
             LIMIT %s
@@ -143,7 +143,7 @@ def search_evidence(
             "text": row["text"],
             "entity": row["entity"],
             "chunk_id": row["chunk_id"],
-            "bukti_dukung_id": row["bukti_dukung_id"],
+            "bukti_dukung_id": row["evidence_id"],
             "confidence": row["confidence"],
             "distance": float(row["distance"]),
         }

@@ -38,9 +38,9 @@ export function mapBuktiDukungRef(
 	rows: BackendBuktiDukungBab[] | BackendBuktiDukungDraft[] | undefined,
 ): BuktiDukungRef[] {
 	return (rows ?? []).map((row) => ({
-		id: row.buktiDukungId,
-		namaDokumen: row.namaDokumen,
-		tipeFile: row.tipeFile,
+		id: row.evidenceId,
+		namaDokumen: row.documentName,
+		tipeFile: row.fileType,
 	}));
 }
 

@@ -95,9 +95,9 @@ export async function reportUploadComplete({
 		const row = await apiFetch<BuktiDukungApiRow>('/bukti-dukung', {
 			method: 'POST',
 			body: {
-				ownerTipe: target.ownerTipe,
+				ownerType: target.ownerTipe,
 				studyProgramId: target.ownerTipe === 'PROGRAM_STUDI' ? target.studyProgramId : undefined,
-				namaDokumen,
+				documentName: namaDokumen,
 				fileKey: objectKey,
 			},
 		});

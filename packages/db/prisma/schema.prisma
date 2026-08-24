@@ -123,11 +123,11 @@ model Tenant {
 
   users                      User[]
   studyPrograms              StudyProgram[]
-  buktiDukung                BuktiDukung[]
+  buktiDukung                Evidence[]
   jobs                       Job[]
   assessmentSessions         AssessmentSession[]
   ledChunkEmbeddings         LedChunkEmbedding[]
-  buktiDukungChunkEmbeddings BuktiDukungChunkEmbedding[]
+  buktiDukungChunkEmbeddings EvidenceChunkEmbedding[]
 
   @@map("org_tenants")
 }
@@ -150,7 +150,7 @@ model User {
   studyProgram StudyProgram? @relation(fields: [studyProgramId], references: [id], onDelete: Restrict)
 
   babDraftDibuat      ChapterDraft[]      @relation("BabDraftDibuatOleh")
-  buktiDukungDiunggah BuktiDukung[]       @relation("BuktiDukungDiunggahOleh")
+  buktiDukungDiunggah Evidence[]          @relation("BuktiDukungDiunggahOleh")
   hasilSkorDijalankan HasilSkorKriteria[] @relation("HasilSkorDijalankanOleh")
   chatMessages        ChatMessage[]
   jobsCreated         Job[]
@@ -178,7 +178,7 @@ model StudyProgram {
   tenant      Tenant        @relation(fields: [tenantId], references: [id])
   users       User[]
   dokumenLed  LedDocument[]
-  buktiDukung BuktiDukung[]
+  buktiDukung Evidence[]
 
   @@index([tenantId])
   @@map("org_study_programs")
@@ -221,10 +221,10 @@ model DocumentChapter {
   reviewSubmittedAt    DateTime? @map("review_submitted_at")
   lastSavedAt          DateTime  @updatedAt @map("last_saved_at")
 
-  document          LedDocument         @relation(fields: [documentId], references: [id])
-  activeCheckpoint  ChapterDraft?       @relation("ActiveCheckpoint", fields: [activeCheckpointId], references: [id])
-  drafts            ChapterDraft[]      @relation("ChapterDrafts")
-  buktiDukungBab    BuktiDukungBab[]
+  document          LedDocument           @relation(fields: [documentId], references: [id])
+  activeCheckpoint  ChapterDraft?         @relation("ActiveCheckpoint", fields: [activeCheckpointId], references: [id])
+  drafts            ChapterDraft[]        @relation("ChapterDrafts")
+  buktiDukungBab    EvidenceChapterLink[]
   hasilSkorKriteria HasilSkorKriteria[]
   ragasScores       RagasScore[]
   chatMessages      ChatMessage[]
@@ -250,7 +250,7 @@ model ChapterDraft {
   createdBy          User              @relation("BabDraftDibuatOleh", fields: [createdByUserId], references: [id])
   activeCheckpointOf DocumentChapter[] @relation("ActiveCheckpoint")
 
-  buktiDukungDraft  BuktiDukungDraft[]
+  buktiDukungDraft  EvidenceDraftLink[]
   hasilSkorKriteria HasilSkorKriteria[]
   ragasScores       RagasScore[]
   generationRun     GenerationRun?
@@ -263,63 +263,63 @@ model ChapterDraft {
 // ─────────────────────── Kelompok: Bukti Dukung ───────────────────────
 
 /// docs/database.md §7
-model BuktiDukung {
-  id                 String          @id @default(cuid())
-  ownerTipe          OwnerTipe       @map("owner_tipe")
-  tenantId           String?         @map("tenant_id")
-  studyProgramId     String?         @map("study_program_id")
-  namaDokumen        String          @map("nama_dokumen")
-  fileUrl            String          @map("file_url")
-  tipeFile           String          @map("tipe_file")
-  ukuranBytes        Int             @map("ukuran_bytes")
-  statusEkstraksi    StatusEkstraksi @map("status_ekstraksi")
-  catatanGagal       String?         @map("catatan_gagal")
-  diunggahOlehUserId String          @map("diunggah_oleh_user_id")
-  diunggahOlehNama   String          @map("diunggah_oleh_nama")
-  waktuDiunggah      DateTime        @default(now()) @map("waktu_diunggah")
+model Evidence {
+  id               String          @id @default(cuid())
+  ownerType        OwnerTipe       @map("owner_type")
+  tenantId         String?         @map("tenant_id")
+  studyProgramId   String?         @map("study_program_id")
+  documentName     String          @map("document_name")
+  fileUrl          String          @map("file_url")
+  fileType         String          @map("file_type")
+  sizeBytes        Int             @map("size_bytes")
+  extractionStatus StatusEkstraksi @map("extraction_status")
+  failureNote      String?         @map("failure_note")
+  uploadedByUserId String          @map("uploaded_by_user_id")
+  uploadedByName   String          @map("uploaded_by_name")
+  uploadedAt       DateTime        @default(now()) @map("uploaded_at")
 
   tenant       Tenant?       @relation(fields: [tenantId], references: [id])
   studyProgram StudyProgram? @relation(fields: [studyProgramId], references: [id])
-  diunggahOleh User          @relation("BuktiDukungDiunggahOleh", fields: [diunggahOlehUserId], references: [id])
+  uploadedBy   User          @relation("BuktiDukungDiunggahOleh", fields: [uploadedByUserId], references: [id])
 
-  buktiDukungBab     BuktiDukungBab[]
-  buktiDukungDraft   BuktiDukungDraft[]
+  chapterLinks       EvidenceChapterLink[]
+  draftLinks         EvidenceDraftLink[]
   assessmentSessions AssessmentSession[]
-  chunkEmbeddings    BuktiDukungChunkEmbedding[]
+  chunkEmbeddings    EvidenceChunkEmbedding[]
 
   @@index([tenantId])
   @@index([studyProgramId])
-  @@map("bukti_dukung")
+  @@map("evidence_files")
 }
 
 /// docs/database.md §8 — kondisi aktif, ditimpa tiap generate ulang
-model BuktiDukungBab {
-  id            String @id @default(cuid())
-  buktiDukungId String @map("bukti_dukung_id")
-  babDokumenId  String @map("bab_dokumen_id")
-  namaDokumen   String @map("nama_dokumen")
-  tipeFile      String @map("tipe_file")
+model EvidenceChapterLink {
+  id           String @id @default(cuid())
+  evidenceId   String @map("evidence_id")
+  chapterId    String @map("chapter_id")
+  documentName String @map("document_name")
+  fileType     String @map("file_type")
 
-  buktiDukung BuktiDukung     @relation(fields: [buktiDukungId], references: [id])
-  babDokumen  DocumentChapter @relation(fields: [babDokumenId], references: [id])
+  evidence Evidence        @relation(fields: [evidenceId], references: [id])
+  chapter  DocumentChapter @relation(fields: [chapterId], references: [id])
 
-  @@unique([buktiDukungId, babDokumenId])
-  @@map("bukti_dukung_bab")
+  @@unique([evidenceId, chapterId])
+  @@map("evidence_chapter_links")
 }
 
 /// docs/database.md §9 — permanen, menempel ke satu checkpoint
-model BuktiDukungDraft {
-  id            String @id @default(cuid())
-  buktiDukungId String @map("bukti_dukung_id")
-  babDraftId    String @map("bab_draft_id")
-  namaDokumen   String @map("nama_dokumen")
-  tipeFile      String @map("tipe_file")
+model EvidenceDraftLink {
+  id           String @id @default(cuid())
+  evidenceId   String @map("evidence_id")
+  draftId      String @map("draft_id")
+  documentName String @map("document_name")
+  fileType     String @map("file_type")
 
-  buktiDukung BuktiDukung  @relation(fields: [buktiDukungId], references: [id])
-  babDraft    ChapterDraft @relation(fields: [babDraftId], references: [id])
+  evidence Evidence     @relation(fields: [evidenceId], references: [id])
+  draft    ChapterDraft @relation(fields: [draftId], references: [id])
 
-  @@unique([buktiDukungId, babDraftId])
-  @@map("bukti_dukung_draft")
+  @@unique([evidenceId, draftId])
+  @@map("evidence_draft_links")
 }
 
 // ─────────────────── Kelompok: Skoring (Simulasi Penilaian) ───────────────────
@@ -539,10 +539,10 @@ model AssessmentSession {
   createdAt            DateTime         @default(now()) @map("created_at")
   updatedAt            DateTime         @updatedAt @map("updated_at")
 
-  tenant             Tenant       @relation(fields: [tenantId], references: [id])
-  dokumen            LedDocument  @relation(fields: [dokumenId], references: [id])
-  createdBy          User         @relation(fields: [createdByUserId], references: [id])
-  laporanBuktiDukung BuktiDukung? @relation(fields: [laporanBuktiDukungId], references: [id])
+  tenant             Tenant      @relation(fields: [tenantId], references: [id])
+  dokumen            LedDocument @relation(fields: [dokumenId], references: [id])
+  createdBy          User        @relation(fields: [createdByUserId], references: [id])
+  laporanBuktiDukung Evidence?   @relation(fields: [laporanBuktiDukungId], references: [id])
 
   indicatorResults            IndicatorResult[]
   reasoningSteps              ReasoningStep[]
@@ -675,23 +675,23 @@ model LedChunkEmbedding {
 /// Chunk + embedding untuk satu berkas BuktiDukung — pola sama dengan
 /// LedChunkEmbedding di atas. `onDelete: Cascade` (beda dari itu, yang
 /// Restrict) karena ini indeks turunan, bukan jejak audit.
-model BuktiDukungChunkEmbedding {
-  id            String                     @id @default(cuid())
-  tenantId      String                     @map("tenant_id")
-  buktiDukungId String                     @map("bukti_dukung_id")
-  chunkId       String                     @map("chunk_id")
-  entity        String                     @db.Text
-  text          String                     @db.Text
-  embedding     Unsupported("vector(384)")
+model EvidenceChunkEmbedding {
+  id         String                     @id @default(cuid())
+  tenantId   String                     @map("tenant_id")
+  evidenceId String                     @map("evidence_id")
+  chunkId    String                     @map("chunk_id")
+  entity     String                     @db.Text
+  text       String                     @db.Text
+  embedding  Unsupported("vector(384)")
   /// "HIGH" / "LOW" — hasil klasifikasi chunking dimas (evidence_chunking.py).
   /// `null` untuk chunk dari sumber yang tidak melewati jalur itu (excel/csv/txt).
-  confidence    String?
-  createdAt     DateTime                   @default(now()) @map("created_at")
+  confidence String?
+  createdAt  DateTime                   @default(now()) @map("created_at")
 
-  tenant      Tenant      @relation(fields: [tenantId], references: [id])
-  buktiDukung BuktiDukung @relation(fields: [buktiDukungId], references: [id], onDelete: Cascade)
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  evidence Evidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
 
-  @@unique([buktiDukungId, chunkId])
-  @@index([tenantId, buktiDukungId])
-  @@map("bukti_dukung_chunk_embeddings")
+  @@unique([evidenceId, chunkId])
+  @@index([tenantId, evidenceId])
+  @@map("evidence_chunk_embeddings")
 }
