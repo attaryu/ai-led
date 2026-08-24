@@ -145,9 +145,27 @@ export function useChapterGeneration({
 
 		setTerpilih(new Set(dipulihkan));
 		setDasar(new Set(dipulihkan));
-		// Berkas bisa dihapus, atau statusnya mundur karena ingestion diulang.
-		// Selisihnya ditampilkan, tidak dibuang diam-diam.
-		setJumlahGugur(chapter.buktiDukung.length - dipulihkan.length);
+
+		/**
+		 * Hanya yang **benar-benar lenyap** dari pustaka yang dihitung gugur —
+		 * bukan setiap yang gagal dipulihkan.
+		 *
+		 * Bukti yang tidak tercentang karena statusnya belum `SIAP` tetap ada di
+		 * daftar tepat di bawah kaki panel ini, lengkap dengan badge dan
+		 * `catatanGagal`-nya. Mengumumkannya lagi di sini berarti menerangkan dua
+		 * kali sesuatu yang sudah menerangkan diri — dan karena statusnya tidak
+		 * berubah sendiri, catatannya menyala terus dan berhenti terbaca sebagai
+		 * kabar. Efek auto-centang di bawah sudah memutuskan hal yang sama untuk
+		 * berkas `GAGAL`; dulu dua tempat di berkas ini berselisih soal itu.
+		 *
+		 * Yang dihapus dari pustaka lain perkara: tidak ada satu pun tempat di
+		 * layar yang bisa menunjukkannya, dan generate berikutnya akan berjalan
+		 * dengan konteks lebih sedikit tanpa pemberitahuan.
+		 */
+		const adaDiPustaka = new Set(pustaka.map((bukti) => bukti.id));
+		setJumlahGugur(
+			chapter.buktiDukung.filter((ref) => !adaDiPustaka.has(ref.id)).length,
+		);
 	}
 
 	/**

@@ -242,10 +242,17 @@ export function ChapterGenerationPanel({
 					</p>
 				)}
 
+				{/*
+				 * Hanya bicara soal berkas yang benar-benar lenyap dari pustaka. Yang
+				 * cuma belum selesai diproses tidak lagi disebut di sini — barisnya
+				 * terlihat di daftar atas lengkap dengan badge dan catatan gagalnya,
+				 * dan karena statusnya tidak berubah sendiri, catatan ini dulu menyala
+				 * permanen sampai berhenti terbaca sebagai kabar.
+				 */}
 				{jumlahGugur > 0 && (
 					<p className="text-xs leading-relaxed text-muted-foreground">
-						{jumlahGugur} bukti dari generate sebelumnya sudah tidak tersedia
-						atau belum selesai diproses, jadi tidak ikut tercentang.
+						{jumlahGugur} bukti dari generate sebelumnya sudah dihapus dari
+						pustaka, jadi tidak ikut tercentang.
 					</p>
 				)}
 
