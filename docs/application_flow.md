@@ -553,6 +553,26 @@ Mengikuti alasan yang sama dengan §6.1 — kolom yang selalu berisi "—" hanya
 - **Pencarian, urutan, halaman, dan jumlah baris hidup di URL** (`?q=&sort=&dir=&page=&limit=`), sama seperti §4.6. Penyaringan sampai pemotongan halaman dikerjakan repository, bukan komponen tabel.
 - `PENYUSUN` melihat daftar ini hanya untuk prodinya sendiri; `PIMPINAN` melihatnya lintas prodi tapi tanpa aksi apa pun.
 
+
+#### 5.3a Kolom Tahun Akademik — satu angka, bukan `YYYY/YYYY`
+
+Formulir Tambah/Ubah Dokumen LED **tidak** meminta `2025/2026` diketik utuh. Yang diminta satu angka tahun mulai; `tahun_akademik` yang tersimpan disusun darinya sebagai `${t}/${t+1}`, dan hasilnya diperlihatkan hidup di sebelah kolom sementara diketik.
+
+Sebelumnya kolom ini ketikan bebas yang divalidasi regex `^\d{4}/\d{4}$`. Regex itu menjaga **bentuk tulisannya**, bukan artinya, sehingga tiga hal berikut lolos: tahun kembar (`2026/2026`), urutan mundur (`2030/2020`), dan selisih yang bukan satu (`2025/2030`). Karena tahun kedua kini tidak pernah diketik pengguna, ketiganya bukan ditolak melainkan **tidak mungkin terbentuk**. Regex-nya tetap dipertahankan di `ledProjectSchema` sebagai lapis kedua untuk baris lama dan untuk data yang nanti datang dari API, bukan dari formulir.
+
+| Aturan | Nilai | Alasan |
+|---|---|---|
+| Batas bawah | `2015`, angka tetap | Siklus akreditasi lima tahunan; dua siklus arsip ke belakang. Sengaja **tidak** dihitung mundur dari tahun berjalan — batas yang bergeser tiap Januari membuat dokumen lama tiba-tiba ditolak, dan yang kena justru orang yang cuma mengubah tenggat |
+| Batas atas | tahun berjalan + 1 | LED disusun untuk tahun berjalan atau tahun berikutnya; lebih jauh dari itu bukti dukungnya belum ada |
+| Kembar per prodi | ditolak | Satu prodi tidak boleh punya dua `DOKUMEN_LED` dengan `tahun_akademik` sama — lihat catatan di bawah |
+
+Pratinjau di sebelah kolom bukan hiasan. Tanpa itu tidak ada cara mengetahui apakah yang diminta tahun awal atau tahun akhir, dan yang bermaksud menyusun 2025/2026 lalu mengetik `2026` akan meleset setahun tanpa pernah melihat kesalahannya.
+
+> **Catatan desain — kenapa tidak dropdown.** Rencana awal mengganti kolom ini dengan `Select` berisi tahun yang dibangkitkan. Ditolak karena daftar opsi pasti terbatas: dokumen contoh `2021/2022` sudah berada di luar jendela tahun berjalan ±2, sehingga formulir ubahnya akan membuka `Select` tanpa nilai terpilih dan bisa diam-diam mengganti tahunnya saat disimpan. Menambalnya butuh opsi "tahun lain" yang membuka ketikan bebas — yaitu kembali ke keadaan semula. Penurunan dari satu angka memberi jaminan yang sama tanpa daftar yang bisa kehabisan.
+
+> **Catatan desain — kenapa tahun kedua tidak bisa diketik.** Tahun akademik di Indonesia selalu dua tahun berurutan; `2025/2027` tidak ada. Selama itu berlaku, kolom kedua hanya punya satu jawaban benar untuk setiap tahun pertama — bukan isian, melainkan ujian yang menambah peluang salah tanpa menambah satu pun kemungkinan yang bisa dinyatakan. Kalau suatu saat ditemukan penulisan yang tidak berurutan, kolom keduanya ditambahkan di formulir dan **penyimpanannya tidak perlu berubah**: yang tersimpan tetap string `YYYY/YYYY` yang sama, jadi pengurutan, pencarian, dan kop PDF Penilaian AMI (§8.4a) tidak ikut tersentuh.
+
+> **Catatan desain — kembar per prodi baru ditolak sekarang.** Sebelum ini tidak ada apa pun yang mencegah satu prodi punya dua dokumen bertahun sama, dan akibatnya lebih merugikan daripada tahun yang salah bentuk. §5.1e menetapkan "penyusunan aktif" **diturunkan**, yaitu dokumen belum `SELESAI` dengan `tahun_akademik` terbesar. Dua dokumen bertahun sama membuat pemutusnya jatuh ke `createdAt`, sehingga salah satunya tidak pernah muncul di Dashboard Prodi — tanpa error dan tanpa tanda. Karena bukti dukung dipakai bersama seluruh dokumen prodi, tidak ada yang terasa janggal sampai ada yang bertanya kenapa pekerjaannya seperti hilang. Ditegakkan di formulir supaya pesannya menempel ke kolom tahun; di backend nanti ia jadi unique constraint `(program_studi_id, tahun_akademik)` (`database.md` §5).
 ### 5.4 Kasus Uji — Dashboard Prodi & Daftar Dokumen LED
 
 | #   | Kondisi                                                              | Aksi                                          | Hasil yang diharapkan                                                                                                          |
@@ -584,6 +604,11 @@ Mengikuti alasan yang sama dengan §6.1 — kolom yang selalu berisi "—" hanya
 | 21  | Penjamin Mutu di daftar prodi                                        | Klik Tambah Dokumen LED                       | Formulir terbuka dengan prodi tersebut sudah terpilih; simpan maupun Batal memulangkan ke daftar prodi, bukan ke lapis tenant   |
 | 22  | Tautan formulir dikarang dengan `?returnTo=https://situs-lain`       | Tekan Batal                                   | Dipulangkan ke `/dashboard/led-projects`; tujuan di luar aplikasi diabaikan                                                     |
 | 23  | Daftar berisi lebih dari satu halaman                                | Ketik kata kunci, ubah urutan, muat ulang     | Hasil benar-benar tersaring dan terurut, `Total n data` menyesuaikan, dan `q`/`sort`/`page` bertahan di URL                     |
+| 24  | Formulir Tambah/Ubah Dokumen LED                                     | Ketik `2025` di kolom Tahun Akademik          | Pratinjau di sebelahnya berbunyi "Tahun akademik 2025/2026"; tidak ada kolom kedua yang bisa diketik                             |
+| 25  | Tahun berjalan 2026                                                  | Isi `2014`, lalu `2028`                       | Keduanya ditolak dengan menyebut rentang yang berlaku; halaman tidak berpindah dan isian lain tidak hilang                       |
+| 26  | Formulir Tambah Dokumen LED                                          | Isi kurang dari empat angka, mis. `202`       | Ditolak dengan contoh pengisian satu angka tahun — bukan pesan format `YYYY/YYYY` yang lama                                      |
+| 27  | Prodi sudah punya dokumen untuk tahun akademik tersebut              | Buat dokumen baru dengan tahun yang sama      | Ditolak dengan menyebut nama prodi dan tahunnya; pesannya menempel di kolom Tahun Akademik, bukan muncul sebagai `alert`         |
+| 28  | Dokumen arsip lama (mis. `2021/2022`)                                | Buka Ubah, simpan tanpa mengubah apa pun      | Kolom berisi `2021` dengan pratinjau `2021/2022`; tersimpan tanpa ditolak — tahun arsip tetap sah dan dokumen tidak dianggap bentrok dengan dirinya sendiri |
 
 ---
 

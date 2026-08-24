@@ -26,7 +26,13 @@ import {
 	updateLedProjectSchema,
 	type UpdateLedProjectDto,
 } from '../../domain/dtos/update-led-project.dto';
-import { type LedProjectEntity } from '../../domain/entities/led-project.entity';
+import {
+	adaTahunAkademikGanda,
+	type LedProjectEntity,
+	susunTahunAkademik,
+	tahunMulaiDari,
+} from '../../domain/entities/led-project.entity';
+import { TahunAkademikField } from '../components/tahun-akademik-field';
 import { ledProjectRepository } from '../../data/repositories/led-project.repository';
 import { type StudyProgramEntity } from '../../../study-program/domain/entities/study-program.entity';
 import { studyProgramRepository } from '../../../study-program/data/repositories/study-program.repository';
@@ -65,13 +71,15 @@ export function EditLedProject() {
 		register,
 		handleSubmit,
 		reset,
+		setError,
+		watch,
 		formState: { errors, isSubmitting },
 	} = useForm<UpdateLedProjectDto>({
 		resolver: zodResolver(updateLedProjectSchema),
 		defaultValues: {
 			studyProgramId: '',
 			judul: '',
-			tahunAkademik: '',
+			tahunMulai: '',
 			statusKeseluruhan: 'DRAFT',
 			tenggat: '',
 		},
@@ -82,7 +90,7 @@ export function EditLedProject() {
 			reset({
 				studyProgramId: project.studyProgramId,
 				judul: project.judul,
-				tahunAkademik: project.tahunAkademik,
+				tahunMulai: tahunMulaiDari(project.tahunAkademik),
 				statusKeseluruhan: project.statusKeseluruhan,
 				tenggat: toDateInputValue(project.tenggat),
 			});
@@ -98,11 +106,30 @@ export function EditLedProject() {
 			return;
 		}
 
+		const tahunAkademik = susunTahunAkademik(Number(data.tahunMulai));
+
+		/*
+		 * `kecualiId` supaya dokumen ini tidak dianggap bentrok dengan dirinya
+		 * sendiri saat yang diubah cuma judul atau tenggat.
+		 */
+		if (
+			adaTahunAkademikGanda(ledProjectRepository.findAll(), {
+				studyProgramId: data.studyProgramId,
+				tahunAkademik,
+				kecualiId: projectId,
+			})
+		) {
+			setError('tahunMulai', {
+				message: `${prodi.studyProgramName} sudah punya Dokumen LED lain untuk tahun akademik ${tahunAkademik}`,
+			});
+			return;
+		}
+
 		ledProjectRepository.update(projectId, {
 			studyProgramId: data.studyProgramId,
 			studyProgramName: prodi.studyProgramName,
 			judul: data.judul,
-			tahunAkademik: data.tahunAkademik,
+			tahunAkademik,
 			statusKeseluruhan: data.statusKeseluruhan,
 			tenggat: fromDateInputValue(data.tenggat),
 		});
@@ -181,20 +208,12 @@ export function EditLedProject() {
 								)}
 							</Field>
 
-							<Field data-invalid={!!errors.tahunAkademik}>
-								<FieldLabel htmlFor="tahunAkademik">
-									Tahun Akademik
-								</FieldLabel>
-								<Input
-									id="tahunAkademik"
-									placeholder="Contoh: 2025/2026"
-									disabled={isSubmitting}
-									{...register('tahunAkademik')}
-								/>
-								{errors.tahunAkademik && (
-									<FieldError>{errors.tahunAkademik.message}</FieldError>
-								)}
-							</Field>
+							<TahunAkademikField
+								registrasi={register('tahunMulai')}
+								nilai={watch('tahunMulai')}
+								pesanGalat={errors.tahunMulai?.message}
+								disabled={isSubmitting}
+							/>
 
 							<Field data-invalid={!!errors.statusKeseluruhan}>
 								<FieldLabel htmlFor="statusKeseluruhan">

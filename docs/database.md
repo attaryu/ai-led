@@ -232,7 +232,7 @@ Ini adalah "pintu masuk" ke ruang kerja khusus — begitu user mengklik salah sa
 | `id` | string (PK) | Identitas unik dokumen |
 | `program_studi_id` | string (FK) | Prodi pemilik dokumen ini |
 | `judul` | string | Judul dokumen LED |
-| `tahun_akademik` | string | Contoh: "2026/2027" |
+| `tahun_akademik` | string | Contoh: "2026/2027". Selalu dua tahun berurutan; disusun aplikasi dari satu angka tahun, bukan diketik utuh |
 | `status_keseluruhan` | string | `DRAFT` \| `REVIEW` \| `SELESAI` — status agregat seluruh dokumen |
 | `tenggat` | date (nullable) | Target internal kapan dokumen ini harus selesai; kosong berarti tidak dipatok |
 | `dibuat_pada` | datetime | Waktu dokumen dibuat; dipakai sebagai kolom urut di daftar Dokumen LED |
@@ -242,6 +242,10 @@ Ini adalah "pintu masuk" ke ruang kerja khusus — begitu user mengklik salah sa
 > Kosong berarti **tidak dipatok**, bukan "tenggatnya hari ini". Tampilan tidak boleh menghitungnya sebagai keterlambatan, dan barisnya tidak dirender sama sekali alih-alih diisi "—".
 
 > **Catatan desain — tidak ada kolom "penyusunan aktif".** Dashboard Prodi perlu tahu dokumen mana yang sedang dikerjakan, tapi itu diturunkan (`status_keseluruhan != SELESAI` dengan `tahun_akademik` terbesar), bukan disimpan. Kolom `is_aktif` akan jadi sumber kebenaran kedua yang bisa tidak sinkron dengan `status_keseluruhan` — dokumen bisa tertandai aktif padahal sudah `SELESAI`. Alasannya sama dengan status bab di §6.1a.
+
+> **Catatan desain — `tahun_akademik` selalu dua tahun berurutan, dan itu dijaga di hulu.** Formulir tidak pernah menerima `YYYY/YYYY` diketik utuh: yang diminta satu angka tahun mulai, sisanya disusun aplikasi (`application_flow.md` §5.3a). Karena itu `2026/2026` dan `2030/2020` tidak bisa masuk lewat formulir. Bentuk stringnya sengaja dipertahankan — urutan leksikalnya sama dengan urutan kronologis, dan itulah yang dipakai penentuan "penyusunan aktif" di catatan sebelumnya.
+>
+> **Belum ada unique constraint `(program_studi_id, tahun_akademik)`, dan seharusnya ada.** Aturan "satu prodi satu dokumen per tahun akademik" saat ini hanya ditegakkan di formulir, yaitu lapis yang bisa dilewati kalau data datang dari API. Dua dokumen bertahun sama membuat pemutus penyusunan aktif jatuh ke `dibuat_pada`, sehingga salah satunya tidak pernah muncul di Dashboard Prodi — tanpa error dan tanpa tanda apa pun.
 
 ### Relasi
 - Satu dokumen LED dimiliki oleh satu `PROGRAM_STUDI`.
