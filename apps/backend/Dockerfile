@@ -11,6 +11,11 @@ FROM deps AS build
 COPY . .
 RUN npm run generate --workspace packages/db
 RUN npm run build --workspace apps/backend
+# devDependencies (nest/eslint/jest/typescript/prisma CLI, ...) are only
+# needed to generate the Prisma client and compile dist/ above — prune them
+# before the final stage copies node_modules, so the runtime image doesn't
+# carry build-only tooling.
+RUN npm prune --omit=dev
 
 FROM node:24-alpine
 WORKDIR /repo
