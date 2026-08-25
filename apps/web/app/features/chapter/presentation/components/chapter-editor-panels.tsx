@@ -145,8 +145,10 @@ export function ChapterEditorPanels({
 							aria-pressed={tab.value === tabAktif}
 							className={cn(
 								'shrink-0 cursor-pointer rounded-md px-2.5 py-1 text-sm font-medium whitespace-nowrap transition-colors',
+								// `text-white` menyamai tab lebar layar besar di
+								// `chapter-editor.tsx`; alasannya ditulis di sana.
 								tab.value === tabAktif
-									? 'bg-primary text-primary-foreground'
+									? 'bg-primary text-white'
 									: 'text-foreground/60 hover:text-foreground',
 							)}
 						>

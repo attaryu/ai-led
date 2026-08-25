@@ -417,7 +417,25 @@ function ChapterEditorWorkspace({
 							<TabsTrigger
 								key={tab.value}
 								value={tab.value}
-								className="px-3 data-active:bg-primary data-active:text-primary-foreground"
+								/*
+								 * `text-white`, bukan `text-primary-foreground`.
+								 * Token itu bernilai `oklch(0.962 0.018 272.314)` —
+								 * putih bersemu lavender yang di atas `bg-primary`
+								 * terbaca kusam pada layar proyektor. Tab ini penanda
+								 * panel mana yang sedang terbuka, jadi kontrasnya
+								 * dijaga penuh. Jangan dikembalikan ke token tanpa
+								 * mengubah nilai tokennya lebih dulu.
+								 *
+								 * `data-active:hover:text-white` **wajib ada**, bukan
+								 * pengulangan yang bisa dirapikan. Kelas dasar
+								 * `TabsTrigger` memuat `hover:text-foreground`, yang
+								 * spesifisitasnya sama persis dengan
+								 * `data-active:text-white` — pemenangnya jatuh ke
+								 * urutan CSS, dan `hover` yang menang. Tanpa baris
+								 * ini, tab yang sedang aktif berubah jadi tulisan
+								 * gelap di atas latar ungu begitu kursor lewat.
+								 */
+								className="px-3 data-active:bg-primary data-active:text-white data-active:hover:text-white"
 							>
 								{tab.label}
 							</TabsTrigger>
