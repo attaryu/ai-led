@@ -32,11 +32,19 @@ const sessionPerRole: Record<UserRole, SessionEntity> = {
 		studyProgramId: null,
 	},
 	Penyusun: {
-		userId: '2',
-		namaLengkap: 'Siti Rahmawati',
+		userId: '6',
+		namaLengkap: 'Nurul Hidayah',
 		role: 'Penyusun',
 		// Penyusun selalu terikat ke tepat satu prodi (docs/database.md → USER).
-		studyProgramId: '1',
+		//
+		// Prodi `2` (Sistem Informasi), bukan `1`: dokumen LED prodi inilah yang
+		// paling lengkap di seed — 12 dari 14 bab terisi, empat di antaranya
+		// terkunci, dan satu-satunya yang punya sesi Penilaian AMI
+		// (`SEED_DOKUMEN_ID` di `assessment-session.repository.ts`). Menaruh
+		// Penyusun contoh di prodi lain membuat pengalih role berpindah ke
+		// dokumen yang justru paling sedikit isinya, dan menutup akses ke satu-
+		// satunya sesi penilaian yang ada.
+		studyProgramId: '2',
 	},
 };
 

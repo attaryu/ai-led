@@ -17,6 +17,11 @@
  */
 
 import { type RagasScore } from '../../../domain/entities/ragas-score.entity';
+import {
+	kontenBab,
+	KONTEKS_BAWAAN,
+	type KontenBabKonteks,
+} from './chapter-content.mock';
 
 /** Cukup lama untuk memperlihatkan keadaan memuat, cukup pendek untuk dites. */
 export const GENERATE_DELAY_MS = 2800;
@@ -24,6 +29,14 @@ export const GENERATE_DELAY_MS = 2800;
 export type GenerateChapterInput = {
 	judulBab: string;
 	urutanBab: number;
+	/**
+	 * Nama prodi pemilik dokumen; `null` bila belum terbaca.
+	 *
+	 * Dipakai `kontenBab()` supaya draf menyebut prodinya sendiri alih-alih
+	 * berbunyi umum. Pada backend sungguhan ini tidak perlu dikirim — prodi bisa
+	 * diturunkan dari `bab_id` — tapi mock ini tidak punya akses ke sana.
+	 */
+	namaProdi: string | null;
 	/** Bukti dukung terpilih; hanya yang berstatus `SIAP` yang sampai ke sini. */
 	buktiDukung: { id: string; namaDokumen: string }[];
 	/** Arahan bebas dari penyusun; string kosong bila tidak diisi. */
@@ -89,8 +102,17 @@ function hitungRagas(
 	adaPrompt: boolean,
 ): Omit<RagasScore, 'dihitungPada'> {
 	const benih = sidikJari(html);
-	/** 0,72–0,96; cukup untuk membuat ketiganya tidak pernah kembar. */
-	const goyang = (offset: number) => ((benih >> offset) % 25) / 100;
+	/**
+	 * 0,72–0,96; cukup untuk membuat ketiganya tidak pernah kembar.
+	 *
+	 * Gesernya **tak bertanda** (`>>>`), bukan `>>`. `sidikJari` mengembalikan
+	 * uint32, tapi `>>` mengonversinya lebih dulu ke int32 — sidik jari yang bit
+	 * teratasnya menyala jadi negatif, sisa baginya ikut negatif di JavaScript,
+	 * dan nilainya mendarat di 0,48–0,72 alih-alih rentang yang ditulis di atas.
+	 * Akibatnya kira-kira separuh hasil generate tampil bermutu rendah tanpa ada
+	 * yang salah pada isinya.
+	 */
+	const goyang = (offset: number) => ((benih >>> offset) % 25) / 100;
 
 	return {
 		jumlahChunk,
@@ -138,6 +160,28 @@ export async function generateChapterContent(
 		.map((bukti) => `<li>${escapeHtml(bukti.namaDokumen)}</li>`)
 		.join('');
 
+	const konteks: KontenBabKonteks = {
+		prodi: input.namaProdi ?? KONTEKS_BAWAAN.prodi,
+		// Berkas yang paling mirip tabel LKPS di antara bukti terpilih; kalau tidak
+		// ada, jatuh ke nama bawaan. Yang dicari bunyinya, bukan tipe berkasnya —
+		// LKPS selalu ditulis di nama berkasnya sendiri.
+		lkps:
+			input.buktiDukung.find((bukti) => /lkps/i.test(bukti.namaDokumen))
+				?.namaDokumen ?? KONTEKS_BAWAAN.lkps,
+	};
+
+	/**
+	 * Kalimat pembuka menyebut nama berkas terpilih **di dalam kalimat**, bukan
+	 * cuma mendaftarnya di bawah. Inilah satu-satunya bagian yang memperlihatkan
+	 * draf memang disusun dari berkas yang dipilih penyusun — daftar di kaki
+	 * naskah bisa saja tempelan.
+	 */
+	const sebutanBukti = input.buktiDukung.length
+		? input.buktiDukung
+				.map((bukti) => escapeHtml(bukti.namaDokumen))
+				.join(', ')
+		: 'butir panduan penulisan LED';
+
 	const paragrafPrompt = input.prompt.trim()
 		? `<p>Penyusunan bagian ini mengikuti arahan tambahan berikut: <em>${escapeHtml(
 				input.prompt.trim(),
@@ -145,9 +189,9 @@ export async function generateChapterContent(
 		: '';
 
 	const html = [
-		`<p>Bagian ${input.urutanBab} — ${judul} — disusun berdasarkan ${input.buktiDukung.length} bukti dukung yang dipilih penyusun beserta butir panduan LAM Teknik yang relevan dengan nomor bab ini.</p>`,
-		`<p>Uraian berikut merangkum kondisi yang terekam pada dokumen pendukung, menautkannya dengan kriteria yang dituntut rubrik, lalu menutupnya dengan capaian yang sudah terukur pada periode berjalan. Setiap klaim pada paragraf ini dapat ditelusuri kembali ke berkas yang tercantum di bawah.</p>`,
+		`<p>Bagian ${input.urutanBab} — ${judul} — disusun dari ${sebutanBukti}, dipadukan dengan butir panduan penulisan dan matriks penilaian LAM Teknik yang relevan dengan nomor bab ini.</p>`,
 		paragrafPrompt,
+		kontenBab(input.urutanBab, input.judulBab, konteks),
 		`<p>Bukti dukung yang dipakai sebagai konteks:</p>`,
 		`<ul>${daftar}</ul>`,
 		`<p><em>Draf ini dihasilkan otomatis dan masih perlu ditinjau sebelum dikunci Penjamin Mutu.</em></p>`,

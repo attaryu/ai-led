@@ -6,6 +6,10 @@ import {
 	chapterSchema,
 	type ChapterEntity,
 } from '../../domain/entities/chapter.entity';
+import {
+	kontenBab,
+	type KontenBabKonteks,
+} from '../sources/remote/chapter-content.mock';
 import { chapterLocalSource } from '../sources/local/chapter-local.source';
 import { chapterDraftRepository } from './chapter-draft.repository';
 
@@ -123,9 +127,24 @@ function daysAgo(days: number): string {
 	return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
-function contohKonten(judulBab: string): string {
-	return `Narasi ${judulBab} untuk keperluan pratinjau antarmuka.`;
-}
+/**
+ * Prodi pemilik tiap dokumen contoh, beserta nama berkas LKPS-nya.
+ *
+ * Ditulis ulang di sini dengan alasan yang sama seperti `BUKTI` di atas: seed
+ * berjalan saat modul dimuat, dan mengimpor `led-project.repository.ts` untuk
+ * dua ruas teks membuat urutan inisialisasi keduanya saling bergantung. Kuncinya
+ * `ledProjectId` — cocokkan dengan seed di sana kalau daftar dokumen berubah.
+ *
+ * Gunanya bukan hiasan: tanpa ini keempat dokumen contoh berbunyi identik, dan
+ * dokumen Sistem Informasi akan menyebut LKPS Teknik Informatika sebagai
+ * sumber angkanya.
+ */
+const KONTEKS_DOKUMEN: Record<string, KontenBabKonteks> = {
+	'1': { prodi: 'Teknik Informatika', lkps: 'LKPS_Teknik_Informatika_2026.xlsx' },
+	'2': { prodi: 'Sistem Informasi', lkps: 'LKPS_Sistem_Informasi_2026.xlsx' },
+	'3': { prodi: 'Teknik Elektro', lkps: 'LKPS_Teknik_Elektro_2026.xlsx' },
+	'4': { prodi: 'Teknik Informatika', lkps: 'LKPS_Teknik_Informatika_2022.xlsx' },
+};
 
 /**
  * Kondisi awal tiap dokumen contoh, dibuat berbeda-beda supaya dashboard punya
@@ -198,6 +217,8 @@ function buildSeededChapters(ledProjectId: string): ChapterEntity[] {
 	const chapters = buildEmptyChapters(ledProjectId);
 	if (!state) return chapters;
 
+	const konteks = KONTEKS_DOKUMEN[ledProjectId];
+
 	return chapters.map((chapter) => {
 		const terisi = chapter.urutanBab <= state.babTerisi;
 		const terbengkalai = state.terbengkalai?.includes(chapter.urutanBab) ?? false;
@@ -205,7 +226,9 @@ function buildSeededChapters(ledProjectId: string): ChapterEntity[] {
 
 		return {
 			...chapter,
-			kontenKerja: terisi ? contohKonten(chapter.judulBab) : null,
+			kontenKerja: terisi
+				? kontenBab(chapter.urutanBab, chapter.judulBab, konteks)
+				: null,
 			terkunci: chapter.urutanBab <= state.babTerkunci,
 			catatanPenjaminMutu: catatan,
 			// Nama Penjamin Mutu di `session.repository.ts`, supaya atribusi di tab

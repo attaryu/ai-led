@@ -374,6 +374,7 @@ export function useChapterGeneration({
 				const { html, referensiChunkIds, ragas } = await generateChapterContent({
 					judulBab: chapter.judulBab,
 					urutanBab: chapter.urutanBab,
+					namaProdi,
 					buktiDukung: rujukan,
 					prompt,
 				});
@@ -419,7 +420,7 @@ export function useChapterGeneration({
 				);
 				return null;
 			}
-		}, [enabled, status, terpilih, pustaka, chapter, prompt]);
+		}, [enabled, status, terpilih, pustaka, chapter, prompt, namaProdi]);
 
 	/**
 	 * Mengamankan hasil generate terakhir jadi checkpoint bersumber `AI`
