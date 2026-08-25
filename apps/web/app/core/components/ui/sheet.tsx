@@ -1,7 +1,9 @@
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import { CaretLeftIcon, CaretRightIcon, XIcon } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
+import { useEscapeLayer } from '~/core/lib/escape-layer';
 import { cn } from '~/core/lib/utils';
 
 /**
@@ -33,18 +35,22 @@ export function Sheet({
 	className?: string;
 	children: React.ReactNode;
 }) {
-	React.useEffect(() => {
-		if (!open) return;
-		const onKeyDown = (event: KeyboardEvent) => {
-			if (event.key === 'Escape') onClose();
-		};
-		window.addEventListener('keydown', onKeyDown);
-		return () => window.removeEventListener('keydown', onKeyDown);
-	}, [open, onClose]);
+	// Lapis Escape bersama, bukan listener `window` sendiri: sejak Editor Bab
+	// menjadikan sidebar kanannya laci di bawah `lg`, laci ini bisa terbuka di
+	// atas laci lain. Dua listener di target yang sama berarti satu tekan menutup
+	// keduanya — dan yang hilang justru panel di bawahnya, yang tidak diminta
+	// siapa pun untuk ditutup.
+	useEscapeLayer(open, onClose);
 
-	if (!open) return null;
+	if (!open || typeof document === 'undefined') return null;
 
-	return (
+	// Diportalkan ke `body`, bukan dirender di tempat. Elemen ber-`translate`
+	// adalah containing block bagi keturunan `position: fixed` — dan sidebar
+	// kanan Editor Bab memakai `translate` untuk meluncur masuk di bawah `lg`.
+	// Tanpa portal, laci kutipan yang dibuka dari panel Bukti/Panduan berhenti
+	// menempel ke viewport dan terkurung di dalam panel yang membukanya. Portal
+	// menutup jebakan yang sama untuk pemakai `Sheet` berikutnya, siapa pun ia.
+	return createPortal(
 		<>
 			<div
 				className="fixed inset-0 z-40 bg-black/40"
@@ -53,6 +59,7 @@ export function Sheet({
 			/>
 
 			<aside
+				data-slot="sheet"
 				role="dialog"
 				aria-label={label}
 				className={cn(
@@ -62,7 +69,8 @@ export function Sheet({
 			>
 				{children}
 			</aside>
-		</>
+		</>,
+		document.body,
 	);
 }
 

@@ -1,6 +1,7 @@
-import { CaretRightIcon } from '@phosphor-icons/react';
+import { CaretRightIcon, XIcon } from '@phosphor-icons/react';
 import { Link } from 'react-router';
 
+import { Button } from '~/core/components/ui/button';
 import { ScrollArea } from '~/core/components/ui/scroll-area';
 import { cn } from '~/core/lib/utils';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
@@ -39,12 +40,17 @@ export function ChapterEditorToc({
 	chapterAktif,
 	terbentang,
 	onToggle,
+	terbuka,
+	onTutup,
 }: {
 	projectId: string;
 	chapters: ChapterEntity[];
 	chapterAktif: ChapterEntity;
 	terbentang: ReadonlySet<string>;
 	onToggle: (id: string) => void;
+	/** Hanya berlaku di bawah `lg`; di desktop kolomnya selalu menempel. */
+	terbuka: boolean;
+	onTutup: () => void;
 }) {
 	const jalurAktif = new Set(
 		findTocPathForChapter(chapterAktif.urutanBab).map((node) => node.id),
@@ -60,13 +66,47 @@ export function ChapterEditorToc({
 		// dokumen, dan menurunkannya jadi `div` menghilangkan satu titik lompat bagi
 		// pengguna pembaca layar demi perkara kosmetik.
 		<ScrollArea
-			render={<aside />}
-			className="w-72 shrink-0 border-r border-border bg-background"
+			render={<aside id="chapter-editor-toc" />}
+			className={cn(
+				'w-72 shrink-0 border-r border-border bg-background',
+				// Semua gaya laci ditulis `max-lg:`, bukan dibatalkan lagi dengan
+				// `lg:`. Di ≥ lg elemen ini lalu benar-benar tidak punya properti
+				// `translate` — dan itu bukan perkara rapi-rapian: elemen
+				// ber-`translate` jadi containing block bagi keturunan `fixed`,
+				// yang akan mengurung laci melayang mana pun di dalamnya.
+				// `fixed!` dengan tanda seru, satu-satunya di berkas ini: Base UI
+				// menulis `position: relative` sebagai **style inline** di
+				// `ScrollArea.Root` untuk menambatkan scrollbar-nya, dan style inline
+				// mengalahkan kelas apa pun. Deklarasi `!important` ini hidup di dalam
+				// `@media (width < 64rem)`, jadi di ≥ lg ia tidak pernah ikut
+				// diperhitungkan sama sekali.
+				'max-lg:fixed! max-lg:inset-y-0 max-lg:left-0 max-lg:z-30 max-lg:shadow-lg',
+				// `invisible`, bukan `opacity-0`: `visibility: hidden` mencabut
+				// isinya dari tab order sekaligus, dan ia properti CSS sehingga bisa
+				// dikendalikan media query — tidak seperti atribut `inert`.
+				'max-lg:invisible max-lg:-translate-x-full',
+				'max-lg:transition-[translate,visibility] max-lg:transition-discrete max-lg:duration-200 max-lg:ease-out max-lg:motion-reduce:transition-none',
+				terbuka && 'max-lg:visible max-lg:translate-x-0',
+			)}
 		>
-			<div className="px-5 py-4">
+			<div className="flex items-center justify-between px-5 py-4">
 				<h2 className="font-heading text-sm font-bold tracking-tight">
 					Daftar Isi
 				</h2>
+
+				{/*
+				 * Di ≥ lg tombolnya `display:none`, sehingga `justify-between`
+				 * dengan satu anak tersisa = rata kiri, persis seperti sebelumnya.
+				 */}
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					aria-label="Tutup Daftar Isi"
+					onClick={onTutup}
+					className="-mr-1.5 shrink-0 cursor-pointer lg:hidden"
+				>
+					<XIcon className="size-4" />
+				</Button>
 			</div>
 
 			<nav className="space-y-0.5 px-2 pb-8">

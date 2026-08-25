@@ -297,8 +297,13 @@ export function DataTable<TData, TValue>({
 			</div>
 			)}
 
-			{/* Table Container */}
-			<div className="bg-card rounded-lg border border-border shadow-xs overflow-hidden">
+			{/*
+			 * Kartu tabel. Bingkai dan radiusnya dibiarkan ke `Table` — dulu keduanya
+			 * memasang bingkai sendiri sehingga ada dua garis bertumpuk, dan
+			 * `overflow-hidden` di sini memotong kotak gulir di dalamnya sehingga
+			 * kolom yang tidak muat hilang diam-diam alih-alih bisa digeser.
+			 */}
+			<div className="bg-card shadow-xs">
 				<Table>
 					<TableHeader>
 						{table.getHeaderGroups().map((headerGroup) => (

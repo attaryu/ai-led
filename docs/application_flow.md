@@ -710,7 +710,7 @@ Tampilan mengikuti konsep dua-sidebar ala Figma:
 
 - Satu `BAB_DOKUMEN` = satu ruang kerja utuh dengan `konten_kerja` (jsonb) sebagai sumber kebenaran.
 - Meskipun secara visual bisa memuat banyak "kertas"/section yang memanjang (mis. bab yang berisi banyak sub-poin), **semua tetap satu kesatuan `konten_kerja`** milik bab tersebut — **tidak** dipecah jadi entitas terpisah per section. Ini disengaja agar fleksibel: satu bab bisa berisi satu poin singkat atau memanjang jadi banyak sub-bagian, tanpa mengubah model data.
-- **Autosave**: setiap perubahan ketikan langsung menimpa `konten_kerja`, ditandai indikator "Tersimpan X menit yang lalu" di header.
+- **Autosave**: setiap perubahan ketikan langsung menimpa `konten_kerja`, ditandai indikator simpan di header. **Nada indikatornya ikut menua**: selama semenit pertama ia pil hijau bercentang berbunyi "Tersimpan", sesudah itu turun jadi teks meredup tanpa pil — "Disimpan 2 hari lalu" — dan waktu persisnya pindah ke tooltip. Hijau bercentang adalah kosakata untuk peristiwa yang baru berhasil; dipertahankan berhari-hari ia justru berebut bacaan pertama dengan judul dokumen di sebelahnya. Labelnya juga sengaja pendek dan tidak boleh melipat: di 768 px teks panjang membuatnya jadi gumpalan tiga baris di dalam header setinggi 64 px.
 
 ### 7.3 Bab baru (kosong)
 

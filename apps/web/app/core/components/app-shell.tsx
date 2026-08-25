@@ -1,9 +1,13 @@
 import * as React from 'react';
-import { ArrowLeftIcon, type Icon } from '@phosphor-icons/react';
-import { Link, NavLink } from 'react-router';
+import { ArrowLeftIcon, ListIcon, type Icon } from '@phosphor-icons/react';
+import { Link, NavLink, useLocation } from 'react-router';
 
+import { Button } from '~/core/components/ui/button';
+import { useEscapeLayer } from '~/core/lib/escape-layer';
+import { cn } from '~/core/lib/utils';
 import {
 	Breadcrumb,
+	BreadcrumbEllipsis,
 	BreadcrumbItem,
 	BreadcrumbLink,
 	BreadcrumbList,
@@ -63,9 +67,48 @@ export function AppShell({
 	headerAction?: React.ReactNode;
 	children: React.ReactNode;
 }) {
+	/**
+	 * Laci sidebar, hanya berlaku di bawah `lg`.
+	 *
+	 * State lokal, bukan store: tidak ada konsumen lain, dan nilainya justru tidak
+	 * boleh bertahan lintas navigasi — lihat efek penutup di bawah.
+	 */
+	const [laciTerbuka, setLaciTerbuka] = React.useState(false);
+	const { pathname } = useLocation();
+
+	// Mengklik menu berarti pindah halaman, dan laci yang tertinggal terbuka akan
+	// menutupi halaman yang barusan diminta.
+	React.useEffect(() => {
+		setLaciTerbuka(false);
+	}, [pathname]);
+
+	useEscapeLayer(laciTerbuka, () => setLaciTerbuka(false));
+
 	return (
 		<div className="min-h-screen bg-background">
-			<aside className="fixed inset-y-0 left-0 z-20 flex w-64 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+			{/*
+			 * Backdrop hanya ada saat lacinya terbuka. `lg:hidden` menjaga kasus
+			 * "buka di 768 lalu lebarkan jendela": tanpa itu ia tertinggal menutupi
+			 * tata letak yang sudah kembali normal.
+			 */}
+			{laciTerbuka && (
+				<div
+					className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+					onClick={() => setLaciTerbuka(false)}
+					aria-hidden
+				/>
+			)}
+
+			<aside
+				className={cn(
+					'fixed inset-y-0 left-0 z-20 flex w-64 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground',
+					// Gaya laci ditulis `max-lg:`, bukan dibatalkan lagi dengan `lg:`,
+					// supaya di ≥ lg elemen ini benar-benar tidak punya properti
+					// `translate` — alasan lengkapnya di `chapter-editor-toc.tsx`.
+					'max-lg:z-40 max-lg:shadow-lg max-lg:transition-transform max-lg:duration-200 max-lg:ease-out max-lg:motion-reduce:transition-none',
+					laciTerbuka ? 'max-lg:translate-x-0' : 'max-lg:-translate-x-full',
+				)}
+			>
 				{/*
 				 * Identitas aplikasi, sama persis di ketiga lapis. Tingginya dikunci
 				 * `h-16` agar garis bawahnya sebidang dengan header konten di kanan.
@@ -176,33 +219,104 @@ export function AppShell({
 				</div>
 			</aside>
 
-			<div className="pl-64">
-				<header className="flex h-16 items-center justify-between border-b border-border bg-card px-8">
-					<Breadcrumb>
-						<BreadcrumbList>
-							{breadcrumbs.map((breadcrumb, index) => (
-								<React.Fragment
-									key={`${breadcrumb.to ?? 'current'}-${breadcrumb.label}`}
-								>
-									<BreadcrumbItem>
-										{breadcrumb.to && index < breadcrumbs.length - 1 ? (
-											<BreadcrumbLink render={<Link to={breadcrumb.to} />}>
-												{breadcrumb.label}
-											</BreadcrumbLink>
-										) : (
-											<BreadcrumbPage>{breadcrumb.label}</BreadcrumbPage>
+			<div className="lg:pl-64">
+				<header className="flex h-16 items-center justify-between gap-3 border-b border-border bg-card px-6 lg:px-8">
+					<Button
+						variant="ghost"
+						size="icon"
+						aria-label="Buka navigasi"
+						aria-expanded={laciTerbuka}
+						onClick={() => setLaciTerbuka(true)}
+						className="-ml-2 shrink-0 cursor-pointer lg:hidden"
+					>
+						<ListIcon className="size-5" />
+					</Button>
+
+					{/*
+					 * `min-w-0` supaya breadcrumb lapis 3 yang bertingkat tiga menyusut
+					 * alih-alih mendorong `headerAction` keluar layar di 768 px.
+					 */}
+					{/*
+					 * `flex-nowrap`: bawaan `BreadcrumbList` adalah `flex-wrap`, dan di
+					 * 768 px trail lapis 3 (`Dashboard › Teknik Informatika › Akreditasi
+					 * LED Teknik Informatika 2026`, 469 px) tidak muat di 412 px yang
+					 * tersisa — ia melipat, dan judulnya jatuh ke baris kedua di dalam
+					 * header setinggi `h-16`. Dua baris sesak itu lebih buruk daripada
+					 * trail yang diringkas.
+					 *
+					 * Yang diciutkan bagian **tengahnya**, bukan judulnya: nama dokumen
+					 * adalah satu-satunya jawaban atas "ini dokumen yang mana", dan di
+					 * bawah `lg` blok konteks sidebar yang biasanya ikut menyebutkannya
+					 * sedang tersembunyi di dalam laci. Hasilnya 361 px — muat dengan
+					 * sisa 51 px, dan jalan naik tetap ada lewat crumb pertama.
+					 */}
+					<Breadcrumb className="min-w-0 flex-1">
+						<BreadcrumbList className="flex-nowrap">
+							{breadcrumbs.map((breadcrumb, index) => {
+								const terakhir = index === breadcrumbs.length - 1;
+								const diTengah = index > 0 && !terakhir;
+
+								return (
+									<React.Fragment
+										key={`${breadcrumb.to ?? 'current'}-${breadcrumb.label}`}
+									>
+										<BreadcrumbItem
+											className={cn(
+												// `sr-only`, bukan `hidden`: crumb tengah tidak perlu
+												// memakan lebar, tapi tidak ada alasan mencabutnya
+												// dari pohon aksesibilitas juga — pembaca layar tetap
+												// mendapat trail yang utuh. Pemisahnya boleh benar-benar
+												// hilang; ia memang `aria-hidden` sejak awal.
+												diTengah && 'max-lg:sr-only',
+												// `min-w-0` supaya `truncate` di bawahnya punya
+												// sesuatu untuk dipotong; tanpa itu nama dokumen yang
+												// sangat panjang tetap mendorong header.
+												terakhir && 'min-w-0',
+											)}
+										>
+											{breadcrumb.to && !terakhir ? (
+												<BreadcrumbLink render={<Link to={breadcrumb.to} />}>
+													{breadcrumb.label}
+												</BreadcrumbLink>
+											) : (
+												<BreadcrumbPage className="truncate">
+													{breadcrumb.label}
+												</BreadcrumbPage>
+											)}
+										</BreadcrumbItem>
+
+										{!terakhir && (
+											<BreadcrumbSeparator
+												className={cn(
+													'shrink-0',
+													diTengah && 'max-lg:hidden',
+												)}
+											/>
 										)}
-									</BreadcrumbItem>
-									{index < breadcrumbs.length - 1 && <BreadcrumbSeparator />}
-								</React.Fragment>
-							))}
+
+										{/*
+										 * Elipsis pengganti seluruh crumb tengah. Dirender sekali,
+										 * tepat sesudah crumb pertama, dan hanya kalau memang ada
+										 * yang disembunyikan.
+										 */}
+										{index === 0 && breadcrumbs.length > 2 && (
+											<>
+												<BreadcrumbItem className="shrink-0 lg:hidden">
+													<BreadcrumbEllipsis />
+												</BreadcrumbItem>
+												<BreadcrumbSeparator className="shrink-0 lg:hidden" />
+											</>
+										)}
+									</React.Fragment>
+								);
+							})}
 						</BreadcrumbList>
 					</Breadcrumb>
 
 					{headerAction}
 				</header>
 
-				<main className="p-8">{children}</main>
+				<main className="p-6 lg:p-8">{children}</main>
 			</div>
 		</div>
 	);

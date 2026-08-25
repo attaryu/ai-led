@@ -39,8 +39,13 @@ export function ChapterEditorHeader({
 }) {
 	const session = useSession();
 
+	// Perampingan `max-lg:` di baris ini dipasang setelah diukur, bukan ditebak:
+	// di 768 px header muat untuk Penyusun, tapi meluber 49 px untuk Penjamin
+	// Mutu — role satu-satunya yang ikut membawa tombol kunci bab. Yang dilepas
+	// hanya teks yang sudah punya kembaran: label tautan yang ikonnya sudah
+	// bicara, dan nama yang inisialnya tampil tepat di sebelahnya.
 	return (
-		<header className="flex h-16 shrink-0 items-center gap-5 border-b border-border bg-card px-5">
+		<header className="flex h-16 shrink-0 items-center gap-5 border-b border-border bg-card px-5 max-lg:gap-3 max-lg:px-3">
 			{/*
 			 * Kembali ke Dashboard Project LED, bukan ke `/dashboard` harfiah seperti
 			 * tulisan di rancangan: lapis tenant tidak boleh diakses Penyusun (§2),
@@ -52,7 +57,8 @@ export function ChapterEditorHeader({
 				className="flex shrink-0 items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
 			>
 				<ArrowLeftIcon className="size-4" />
-				Dashboard
+				{/* `sr-only`, bukan `hidden`: panahnya sendiri tidak menyebut ke mana. */}
+				<span className="max-lg:sr-only">Dashboard</span>
 			</Link>
 
 			<h1 className="truncate font-heading text-lg font-bold tracking-tight">
@@ -61,7 +67,7 @@ export function ChapterEditorHeader({
 
 			<ChapterSaveIndicator status={status} savedAt={savedAt} />
 
-			<div className="ml-auto flex shrink-0 items-center gap-4">
+			<div className="ml-auto flex shrink-0 items-center gap-4 max-lg:gap-2">
 				{/*
 				 * Aksi utama Penjamin Mutu di halaman ini, jadi ia berdiri di header
 				 * alih-alih terkubur di balik tab yang harus diklik dulu. Catatannya
@@ -88,7 +94,11 @@ export function ChapterEditorHeader({
 						>
 							{initials(session.namaLengkap)}
 						</span>
-						<span className="text-sm font-medium">{session.namaLengkap}</span>
+						{/* Inisial di sebelahnya sudah mewakili; nama penuh hadir lagi di
+						    menu profil yang dibuka dari sini. */}
+						<span className="text-sm font-medium max-lg:hidden">
+							{session.namaLengkap}
+						</span>
 
 						{/*
 						 * Menu yang sama dengan card profil sidebar. Editor Bab tidak

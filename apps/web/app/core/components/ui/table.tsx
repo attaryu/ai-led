@@ -1,12 +1,28 @@
 import * as React from 'react';
 import { cn } from '~/core/lib/utils';
 
+/**
+ * Tabel beserta kotak gulirnya.
+ *
+ * Yang bergulir mendatar adalah kotak ini, **bukan halaman** — judul, toolbar,
+ * dan paginasi di sekelilingnya tetap diam saat kolom digeser. Tanpa itu tabel
+ * lebar akan mendorong `<body>` dan merusak seluruh halaman di layar sempit.
+ *
+ * `min-w-3xl` pada `<table>` bukan hiasan: `w-full` berarti tabel tidak pernah
+ * melampaui wadahnya, sehingga tanpa lantai ini kolom hanya memipih sampai tak
+ * terbaca alih-alih memicu gulir. Angkanya kira-kira lebar minimum tabel enam
+ * kolom sebelum isinya mulai terpotong.
+ *
+ * Bingkainya tinggal di sini karena empat dari lima pemakainya merender `Table`
+ * telanjang tanpa pembungkus apa pun. `DataTable` yang punya kartunya sendiri
+ * justru yang melepas bingkainya, bukan sebaliknya.
+ */
 function Table({ className, ...props }: React.ComponentProps<'table'>) {
 	return (
-		<div className="relative w-full overflow-auto rounded-md border border-border">
+		<div className="relative w-full overflow-x-auto rounded-md border border-border">
 			<table
 				data-slot="table"
-				className={cn('w-full caption-bottom text-sm', className)}
+				className={cn('w-full min-w-3xl caption-bottom text-sm', className)}
 				{...props}
 			/>
 		</div>
