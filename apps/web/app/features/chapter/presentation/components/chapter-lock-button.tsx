@@ -34,16 +34,21 @@ export function ChapterLockButton({
 	if (!review.boleh) return null;
 
 	const Ikon = chapter.terkunci ? LockSimpleOpenIcon : LockSimpleIcon;
+	const label = chapter.terkunci ? 'Buka Kunci' : 'Kunci Bab';
 
 	return (
 		<Button
 			variant="outline"
 			size="sm"
-			className="cursor-pointer"
+			// Di layar sempit tinggal ikonnya; `aria-label` menjaga namanya tetap
+			// terbaca pembaca layar, dan `max-sm:size-8` mengembalikan bentuk
+			// bujur sangkar supaya ia tidak jadi tombol lonjong berisi satu ikon.
+			aria-label={label}
+			className="cursor-pointer max-sm:size-8 max-sm:px-0"
 			onClick={review.toggleKunci}
 		>
 			<Ikon className="size-4" />
-			{chapter.terkunci ? 'Buka Kunci' : 'Kunci Bab'}
+			<span className="max-sm:hidden">{label}</span>
 		</Button>
 	);
 }

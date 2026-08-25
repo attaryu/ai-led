@@ -61,7 +61,14 @@ export function ChapterEditorHeader({
 				<span className="max-lg:sr-only">Dashboard</span>
 			</Link>
 
-			<h1 className="truncate font-heading text-lg font-bold tracking-tight">
+			{/*
+			 * `min-w-0 flex-1`: tanpa ini judul adalah satu-satunya anak yang boleh
+			 * menyusut — sisanya `shrink-0` — sehingga di 360 px ia tergencet jadi
+			 * 0 px dan nama dokumen hilang sama sekali. Editor Bab tidak punya
+			 * sidebar berkonteks seperti lapis 3, jadi baris ini satu-satunya
+			 * tempat yang menjawab "ini dokumen yang mana".
+			 */}
+			<h1 className="min-w-0 flex-1 truncate font-heading text-lg font-bold tracking-tight">
 				{judulDokumen}
 			</h1>
 
@@ -79,7 +86,18 @@ export function ChapterEditorHeader({
 					onReviewed={onReviewed}
 				/>
 
-				<RoleSwitcher />
+				{/*
+				 * Disembunyikan di layar sempit — hanya di sini, bukan di `AppShell`.
+				 * Baris ini yang paling padat di seluruh aplikasi (judul + indikator
+				 * simpan + aksi kunci + profil), dan pengalih role adalah satu-satunya
+				 * penghuninya yang bukan milik pengguna: ia alat pengembangan
+				 * sementara yang akan dihapus begitu autentikasi sungguhan jalan.
+				 * Lapis 1–3 tetap memuatnya karena header mereka masih lapang di
+				 * 360 px.
+				 */}
+				<div className="max-sm:hidden">
+					<RoleSwitcher />
+				</div>
 
 				{session && (
 					<div className="flex items-center gap-2">

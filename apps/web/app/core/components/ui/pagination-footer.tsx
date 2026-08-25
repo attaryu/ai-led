@@ -29,7 +29,11 @@ export function PaginationFooter({
 	const canNext = pageIndex + 1 < pageCount;
 
 	return (
-		<div className="flex items-center justify-between gap-4 py-1">
+		// `flex-wrap` + `gap-y`: di 360 px kedua kelompok tidak muat berdampingan
+		// (meluber 17 px), dan yang terpotong justru tombol halaman berikutnya —
+		// satu-satunya cara maju di daftar yang panjang. Turun ke baris kedua jauh
+		// lebih baik daripada hilang di luar layar.
+		<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-1">
 			<div className="flex items-center gap-4 text-sm text-muted-foreground">
 				<div className="flex items-center gap-2">
 					<span>Tampilkan</span>

@@ -107,7 +107,14 @@ function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
 				/>
 			</div>
 
-			<div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+			{/*
+			 * `minmax(0,1fr)` juga di lebar dasar, bukan hanya di `xl`. Tanpa itu
+			 * track satu kolomnya memakai `auto`, yang berarti "selebar min-content
+			 * anak terlebar" — dan track boleh melampaui wadahnya. Di 360 px itu
+			 * membuat seluruh baris ini meluber 31 px walau tiap anaknya sudah
+			 * `min-w-0`: yang meluber tracknya, bukan anaknya.
+			 */}
+			<div className="grid items-start gap-4 grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_20rem]">
 				{/*
 				 * Tabelnya diberi judul sendiri karena judul halaman sudah bicara di
 				 * level dokumen — tanpa ini ia jadi satu-satunya bagian tanpa label
