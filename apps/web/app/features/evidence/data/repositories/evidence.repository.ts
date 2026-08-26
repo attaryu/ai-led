@@ -286,21 +286,41 @@ export const evidenceRepository = {
 	 * yang ditugaskan ke salah satunya lewat peta lokal.
 	 *
 	 * Berkas dihapus lewat backend sungguhan (`evidenceRemoteSource.remove`),
-	 * satu per satu — bukan cuma dilupakan dari peta folder. Kegagalan satu
-	 * berkas tidak membatalkan sisanya: baris yang sudah hilang duluan di server
-	 * tidak boleh mengunci penghapusan foldernya sendiri.
+	 * satu per satu — bukan cuma dilupakan dari peta folder. Kegagalan satu berkas
+	 * (mis. bukan milik pengunggah yang sedang login — lihat aturan akses di
+	 * `bukti-dukung.controller.ts`) tidak membatalkan sisanya: dipindah ke folder
+	 * induk supaya tetap terlihat (bukan menunjuk folder yang sebentar lagi
+	 * lenyap), lalu error dilempar supaya pemanggil tahu foldernya tidak
+	 * bersih-bersih sepenuhnya.
 	 */
 	async deleteFolderCascade(folderId: string): Promise<void> {
-		const ids = keturunanIds(evidenceFolderRepository.findAll(), folderId);
+		const folders = evidenceFolderRepository.findAll();
+		const target = folders.find((folder) => folder.id === folderId);
+		const ids = keturunanIds(folders, folderId);
 		const evidenceIds = evidenceFolderRepository.evidenceIdsInFolders(ids);
 
+		const gagal = new Set<string>();
 		await Promise.all(
-			[...evidenceIds].map((id) => evidenceRemoteSource.remove(id).catch(() => {})),
+			[...evidenceIds].map((id) =>
+				evidenceRemoteSource.remove(id).catch(() => {
+					gagal.add(id);
+				}),
+			),
 		);
 
-		evidenceFolderRepository.clearAssignments(evidenceIds);
+		const berhasil = new Set([...evidenceIds].filter((id) => !gagal.has(id)));
+		evidenceFolderRepository.clearAssignments(berhasil);
+		if (gagal.size > 0) {
+			evidenceFolderRepository.assignMany(gagal, target?.parentId ?? null);
+		}
 		evidenceFolderRepository.removeMany(ids);
 		notify();
+
+		if (gagal.size > 0) {
+			throw new Error(
+				`Folder terhapus, tapi ${gagal.size} berkas di dalamnya gagal dihapus (mungkin bukan milik Anda) — dipindahkan ke folder induk.`,
+			);
+		}
 	},
 
 	/**
