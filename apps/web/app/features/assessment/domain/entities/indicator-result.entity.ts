@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * Hasil mesin untuk satu indikator pada satu sesi penilaian
+ * Hasil AI untuk satu indikator pada satu sesi penilaian
  * (docs/database.md → `IndicatorResult`).
  *
  * **Kebijakannya main timpa**, sama seperti `kontenKerja` dan
@@ -26,7 +26,7 @@ export const indicatorResultSchema = z.object({
 	 * merupakan vonis sungguhan bahwa tidak ada uraian sama sekali.
 	 */
 	skor: z.number().nullable(),
-	/** Alasan mesin memberi skor segitu; kosong bila penilainya tidak menjelaskan. */
+	/** Alasan AI memberi skor segitu; kosong bila penilainya tidak menjelaskan. */
 	justifikasi: z.string(),
 	/**
 	 * Seberapa yakin penilai pada angkanya, 0–1. `null` bila tidak dilaporkan.
@@ -75,7 +75,7 @@ export const confidenceLabels: Record<ConfidenceLevel, string> = {
  *
  * Namanya menyebut "diperiksa", bukan "ditinjau", dan itu penting: "ditinjau"
  * sudah dipakai untuk status pekerjaan Penjamin Mutu (sudah dilihat atau belum).
- * Yang ini dugaan mesin tentang angkanya — dua hal yang bisa berlawanan, dan dua
+ * Yang ini dugaan AI tentang angkanya — dua hal yang bisa berlawanan, dan dua
  * nama mirip untuk keduanya membuat layar tidak bisa dibaca.
  */
 export const SKOR_PERLU_DIPERIKSA = 2;

@@ -3,6 +3,10 @@ import * as React from 'react';
 import { evidenceRepository } from '~/features/evidence/data/repositories/evidence.repository';
 import { type EvidenceEntity } from '~/features/evidence/domain/entities/evidence.entity';
 import { chapterDraftRemoteSource } from '../../data/sources/remote/chapter-draft.remote-source';
+import {
+	kutipanUntukBukti,
+	type KutipanChunk,
+} from '../../data/sources/remote/chapter-chunk.mock';
 import { type BuktiDukungRef } from '../../domain/entities/bukti-dukung-ref.entity';
 import { type ChapterDraftEntity } from '../../domain/entities/chapter-draft.entity';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
@@ -15,11 +19,20 @@ export type BarisRujukan = {
 	 * diarsipkan di `ref`, dan itulah gunanya.
 	 */
 	live: EvidenceEntity | undefined;
+	/**
+	 * Bagian berkas yang dipakai AI saat menyusun bab ini (§11.1a).
+	 *
+	 * Ikut dihitung untuk berkas yang sudah dihapus juga: kutipannya diturunkan
+	 * dari `ref` yang diarsipkan, bukan dari berkas hidupnya, jadi jejaknya tetap
+	 * terbaca — alasan yang sama yang membuat barisnya tetap ditampilkan.
+	 */
+	kutipan: KutipanChunk[];
 };
 
 /**
- * Isi tab Rujukan: bukti dukung yang tercatat dipakai bab ini
- * (docs/application_flow.md §11.1).
+ * Isi tab Bukti: bukti dukung yang tercatat dipakai bab ini
+ * (docs/application_flow.md §11.1), beserta kutipan yang diambil dari
+ * masing-masing (§11.1a).
  *
  * Yang membuat hook ini tidak sekadar membaca satu larik: ada **dua sumber yang
  * sama-sama sah**. `ChapterEntity.buktiDukung` adalah kondisi aktif yang ditimpa
@@ -96,8 +109,18 @@ export function useChapterReference({
 				: (draftTerpilih?.buktiDukung ?? []);
 
 		const perId = new Map(pustaka.map((bukti) => [bukti.id, bukti]));
-		return sumber.map((ref) => ({ ref, live: perId.get(ref.id) }));
-	}, [lingkupEfektif, chapter.buktiDukung, draftTerpilih, pustaka]);
+		return sumber.map((ref) => ({
+			ref,
+			live: perId.get(ref.id),
+			kutipan: kutipanUntukBukti({ urutanBab: chapter.urutanBab, ref }),
+		}));
+	}, [
+		lingkupEfektif,
+		chapter.buktiDukung,
+		chapter.urutanBab,
+		draftTerpilih,
+		pustaka,
+	]);
 
 	const jumlahHilang = rujukan.filter((baris) => !baris.live).length;
 

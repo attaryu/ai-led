@@ -18,8 +18,15 @@ export type AssessmentBabSummary = {
 /**
  * Skor final AMI untuk **satu bab**, dari sesi penilaian terakhir dokumennya.
  *
- * Ada supaya tab Rubrik di Editor Bab bisa menunjukkan angka yang sama dengan
- * halaman Penilaian AMI, bukan angka keduanya sendiri.
+ * Ada supaya Editor Bab menunjukkan angka yang sama dengan halaman Penilaian
+ * AMI, bukan angka miliknya sendiri. Editor sengaja tidak punya penilaian
+ * terpisah: kalau ia menyimpan hasilnya sendiri, penyusun akan melihat satu
+ * angka di editor dan Penjamin Mutu melihat angka lain untuk bab yang sama,
+ * tanpa ada cara menjelaskan selisihnya.
+ *
+ * Yang ditampilkan **skor final** — sudah termasuk koreksi Penjamin Mutu.
+ * Itulah yang berlaku, dan menampilkan skor AI di editor sementara dokumen
+ * resmi menyebut angka lain akan membuat penyusun mengejar target yang salah.
  *
  * `null` bila dokumennya belum pernah dinilai atau bab ini memang tidak dinilai
  * indikator mana pun.

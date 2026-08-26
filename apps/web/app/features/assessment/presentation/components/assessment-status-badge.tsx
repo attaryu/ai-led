@@ -31,7 +31,7 @@ const visual: Record<
 		className:
 			'bg-amber-100 text-amber-800 border-amber-200/60 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800/40',
 		judul:
-			'Sudah pernah ditinjau, tapi penilaian ulang mengubah hitungan mesinnya — keputusan lamanya perlu ditegaskan atau diperbaiki.',
+			'Sudah pernah ditinjau, tapi penilaian ulang mengubah hitungan AI-nya — keputusan lamanya perlu ditegaskan atau diperbaiki.',
 	},
 };
 
@@ -40,7 +40,7 @@ const visual: Record<
  *
  * **Menjawab pertanyaan yang sebelumnya tidak punya jawaban.** Sebelum status ini
  * ada, "tidak ada koreksi" berarti dua hal sekaligus: belum ada yang melihat,
- * atau sudah dilihat dan mesinnya dianggap benar. Untuk dokumen akreditasi
+ * atau sudah dilihat dan AI-nya dianggap benar. Untuk dokumen akreditasi
  * keduanya sangat berbeda — yang satu pekerjaan yang belum selesai, yang lain
  * angka yang sudah dipertanggungjawabkan seseorang.
  *

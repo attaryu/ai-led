@@ -3,10 +3,22 @@ import { type EvidencePage, type EvidenceQueryDto } from '../../domain/dtos/evid
 import { type UploadEvidenceTargetDto } from '../../domain/dtos/upload-evidence.dto';
 import { evidenceRemoteSource } from '../sources/remote/evidence.remote-source';
 import {
+	folderAnak,
+	hitungIsiFolder,
+	jalurFolder,
+	keturunanIds,
+	type EvidenceNode,
+	type EvidenceScope,
+} from '../../domain/entities/evidence-folder.entity';
+import { evidenceFolderRepository } from './evidence-folder.repository';
+import {
 	reportUploadComplete,
 	requestPresignedUrl,
 	uploadToStorage,
 } from '../sources/remote/evidence-upload.remote-source';
+
+/** Tenant tunggal selama autentikasi belum terhubung ke backend. */
+const CURRENT_TENANT_ID = '1';
 
 /** Nilai urut yang dipakai kolom `status` supaya urutannya bermakna, bukan A-Z. */
 const statusOrder: Record<EvidenceStatus, number> = {
@@ -68,6 +80,42 @@ function pollForIngestion(): void {
 	}, POLL_INTERVAL_MS);
 }
 
+/**
+ * Cakupan perpustakaan dari apa yang dipegang lapis presentasi (`level` +
+ * `:programId` di URL).
+ *
+ * Diekspor karena bukan cuma `findPaged` yang membutuhkannya: membuat folder,
+ * memindahkan berkas, dan menelusuri jalur folder saat unggah semuanya bekerja
+ * per cakupan. Menyusunnya di tiap pemanggil berarti `CURRENT_TENANT_ID` bocor
+ * ke lapis presentasi, dan satu tempat yang lupa mengisinya berarti kebocoran
+ * antar prodi.
+ */
+export function evidenceScopeFor(input: {
+	ownerTipe: EvidenceEntity['ownerTipe'];
+	studyProgramId?: string | null;
+}): EvidenceScope {
+	return input.ownerTipe === 'TENANT'
+		? {
+				ownerTipe: 'TENANT',
+				tenantId: CURRENT_TENANT_ID,
+				studyProgramId: null,
+			}
+		: {
+				ownerTipe: 'PROGRAM_STUDI',
+				tenantId: null,
+				studyProgramId: input.studyProgramId ?? null,
+			};
+}
+
+/**
+ * Menimpa `folderId` satu baris bukti dukung dari peta lokal
+ * (`evidenceFolderRepository.assignedFolderId`) — backend belum punya
+ * kolomnya, jadi yang datang dari `evidenceRemoteSource` selalu `null`.
+ */
+function withFolderId(evidence: EvidenceEntity): EvidenceEntity {
+	return { ...evidence, folderId: evidenceFolderRepository.assignedFolderId(evidence.id) };
+}
+
 export const evidenceRepository = {
 	/**
 	 * Penyaringan, pencarian, pengurutan, dan pemotongan halaman semuanya di
@@ -75,35 +123,96 @@ export const evidenceRepository = {
 	 * localStorage: kolomnya (`namaDokumen`, `uploadedByName`, dst.) tidak
 	 * dipahami query backend, cuma cakupan (`ownerTipe`/`studyProgramId`) yang
 	 * sudah difilter server (lihat `bukti-dukung.service.ts::findAll`).
+	 *
+	 * **Dua mode, dipisah `q`** (docs/application_flow.md §4.6a):
+	 *
+	 * - `q` kosong → menjelajah satu folder: subfolder langsung `query.folderId`
+	 *   ditambah berkas yang `folderId`-nya sama
+	 * - `q` terisi → **seluruh cakupan, folder diabaikan**, dan tiap berkas
+	 *   dibawakan jalur foldernya
+	 *
+	 * `folderId` bukti dukung ditimpa dari peta lokal ({@link withFolderId})
+	 * sebelum dikelompokkan — evidenceRemoteSource tidak pernah mengisinya.
+	 *
+	 * **Folder selalu di depan berkas**, apa pun kunci dan arah urutannya, dan
+	 * antar folder selalu menurut nama. Halaman memotong daftar gabungan itu,
+	 * jadi `PaginationFooter` tidak perlu tahu ada dua macam baris.
 	 */
 	async findPaged(query: EvidenceQueryDto): Promise<EvidencePage> {
+		const cakupan = evidenceScopeFor(query);
 		const scoped = await evidenceRemoteSource.findAll({
 			ownerTipe: query.ownerTipe,
 			studyProgramId: query.studyProgramId,
 		});
+		const berkasCakupan = scoped.map(withFolderId);
+		const folderCakupan = evidenceFolderRepository.findByScope(cakupan);
 
 		const keyword = query.q?.trim().toLowerCase() ?? '';
-		const filtered = keyword
-			? scoped.filter(
+		const mencari = keyword !== '';
+		const folderAktif = query.folderId ?? null;
+
+		// Dihitung atas seluruh cakupan, bukan atas yang tampil: angka di kartu
+		// folder memang harus mencakup keturunan yang tidak sedang dirender.
+		const isi = hitungIsiFolder(folderCakupan, berkasCakupan);
+
+		const folderTampil = mencari
+			? folderCakupan
+					.filter((folder) => folder.nama.toLowerCase().includes(keyword))
+					.sort((a, b) => a.nama.localeCompare(b.nama, 'id'))
+			: folderAnak(folderCakupan, folderAktif);
+
+		const nodeFolder = folderTampil.map<EvidenceNode>((folder) => ({
+			tipe: 'FOLDER',
+			id: folder.id,
+			folder,
+			jumlahBerkas: isi.get(folder.id)?.berkas ?? 0,
+			jumlahPerluPerhatian: isi.get(folder.id)?.perluPerhatian ?? 0,
+		}));
+
+		const berkasTampil = mencari
+			? berkasCakupan.filter(
 					(evidence) =>
 						evidence.namaDokumen.toLowerCase().includes(keyword) ||
 						evidence.uploadedByName.toLowerCase().includes(keyword) ||
 						evidence.tipeFile.toLowerCase().includes(keyword),
 				)
-			: scoped;
+			: berkasCakupan.filter((evidence) => evidence.folderId === folderAktif);
 
 		// Tanpa pilihan urutan, yang terbaru di atas — kebiasaan umum daftar berkas.
 		const sortKey = query.sort ?? 'waktuDiunggah';
 		const descending = query.sort ? query.dir === 'desc' : true;
-		const sorted = [...filtered].sort((a, b) => {
+		const berkasUrut = [...berkasTampil].sort((a, b) => {
 			const result = compare(a, b, sortKey);
 			return descending ? -result : result;
 		});
 
+		// Dikunci per folder, bukan per berkas: jumlah foldernya belasan sementara
+		// berkasnya bisa ratusan, dan jalur keduanya sama.
+		const jalurPerFolder = new Map<string, string[]>();
+		if (mencari) {
+			for (const folder of folderCakupan) {
+				jalurPerFolder.set(
+					folder.id,
+					jalurFolder(folderCakupan, folder.id).map((simpul) => simpul.nama),
+				);
+			}
+		}
+
+		const nodeBerkas = berkasUrut.map<EvidenceNode>((evidence) => ({
+			tipe: 'BERKAS',
+			id: evidence.id,
+			evidence,
+			jalur:
+				mencari && evidence.folderId !== null
+					? (jalurPerFolder.get(evidence.folderId) ?? [])
+					: [],
+		}));
+
+		const gabungan = [...nodeFolder, ...nodeBerkas];
 		const start = (query.page - 1) * query.limit;
 		return {
-			items: sorted.slice(start, start + query.limit),
-			total: sorted.length,
+			items: gabungan.slice(start, start + query.limit),
+			total: gabungan.length,
 		};
 	},
 
@@ -152,6 +261,48 @@ export const evidenceRepository = {
 		notify();
 	},
 
+	/** Memindahkan sekumpulan berkas ke satu folder (`null` = akar cakupannya). */
+	moveMany(ids: Set<string>, folderId: string | null): void {
+		evidenceFolderRepository.assignMany(ids, folderId);
+	},
+
+	/**
+	 * Apa yang akan ikut terhapus bersama sebuah folder. Murni membaca — dipakai
+	 * menyusun kalimat konfirmasi sebelum ada yang dihapus.
+	 *
+	 * `subfolder` tidak menghitung folder itu sendiri, supaya angkanya bisa
+	 * langsung dibacakan apa adanya di konfirmasi. `berkas` dihitung dari peta
+	 * penugasan folder lokal, bukan dari baris bukti dukung sungguhan — itulah
+	 * satu-satunya tempat folder tiap berkas tercatat sekarang.
+	 */
+	rincianHapusFolder(folderId: string): { subfolder: number; berkas: number } {
+		const ids = keturunanIds(evidenceFolderRepository.findAll(), folderId);
+		const berkas = evidenceFolderRepository.evidenceIdsInFolders(ids).size;
+		return { subfolder: ids.size - 1, berkas };
+	},
+
+	/**
+	 * Menghapus folder beserta seluruh keturunannya — subfolder maupun berkas
+	 * yang ditugaskan ke salah satunya lewat peta lokal.
+	 *
+	 * Berkas dihapus lewat backend sungguhan (`evidenceRemoteSource.remove`),
+	 * satu per satu — bukan cuma dilupakan dari peta folder. Kegagalan satu
+	 * berkas tidak membatalkan sisanya: baris yang sudah hilang duluan di server
+	 * tidak boleh mengunci penghapusan foldernya sendiri.
+	 */
+	async deleteFolderCascade(folderId: string): Promise<void> {
+		const ids = keturunanIds(evidenceFolderRepository.findAll(), folderId);
+		const evidenceIds = evidenceFolderRepository.evidenceIdsInFolders(ids);
+
+		await Promise.all(
+			[...evidenceIds].map((id) => evidenceRemoteSource.remove(id).catch(() => {})),
+		);
+
+		evidenceFolderRepository.clearAssignments(evidenceIds);
+		evidenceFolderRepository.removeMany(ids);
+		notify();
+	},
+
 	/**
 	 * Tidak ada endpoint backend untuk memicu ulang ekstraksi satu baris
 	 * (`bukti-dukung.controller.ts` cuma POST/GET/DELETE) — jujur menolak,
@@ -178,6 +329,7 @@ export const evidenceRepository = {
 	async upload({
 		file,
 		target,
+		folderId,
 		onProgress,
 	}: {
 		file: File;
@@ -185,6 +337,15 @@ export const evidenceRepository = {
 		uploadedByUserId: string;
 		uploadedByName: string;
 		studyProgramName: string | null;
+		/**
+		 * Folder tujuan; `null` = akar cakupannya.
+		 *
+		 * **Per berkas, bukan per batch** — tidak seperti `target`. Satu unggahan
+		 * folder membawa berkas dari beberapa folder sekaligus, sementara cakupannya
+		 * tetap satu. Jalurnya sudah diselesaikan pemanggil lewat
+		 * `evidenceFolderRepository.ensureFolderPaths` sebelum batch dimulai.
+		 */
+		folderId: string | null;
 		onProgress: (percent: number) => void;
 	}): Promise<EvidenceEntity> {
 		const { uploadUrl, objectKey } = await requestPresignedUrl(file);
@@ -195,9 +356,13 @@ export const evidenceRepository = {
 			target,
 		});
 
+		if (folderId !== null) {
+			evidenceFolderRepository.assignMany(new Set([evidence.id]), folderId);
+		}
+
 		notify();
 		pollForIngestion();
 
-		return evidence;
+		return { ...evidence, folderId };
 	},
 };

@@ -5,13 +5,13 @@ import { formatRelativeTimeLong } from '~/core/lib/format-time';
 import { useAssessmentBabSummary } from '../hooks/use-assessment-bab-summary';
 
 /**
- * Pita "skor final AMI untuk bab ini" di kepala tab Rubrik.
+ * Pita "skor final AMI untuk bab ini" di tab Review Editor Bab.
  *
- * Menjawab pertanyaan yang selama ini tidak punya jawaban di dalam editor:
- * simulasi rubrik yang dijalankan penyusun itu latihan, sedangkan yang masuk
- * dokumen resmi adalah hasil Penilaian AMI beserta koreksi Penjamin Mutu. Tanpa
- * pita ini, penyusun bisa mengejar angka simulasinya sampai penuh tanpa pernah
- * tahu bahwa penilaian resmi bab yang sama memberi angka lain.
+ * Menjawab pertanyaan yang tidak punya jawaban lain di dalam editor: bab yang
+ * sedang ditulis ini dinilai berapa. Tanpa pita ini penyusun harus meninggalkan
+ * editor dan membuka halaman Penilaian AMI hanya untuk tahu apakah tulisannya
+ * sudah cukup — dan yang berlaku di dokumen akreditasi memang angka itu, sudah
+ * termasuk koreksi Penjamin Mutu.
  *
  * Murni baca, dan tanpa tombol jalankan: penilaian AMI menilai seluruh dokumen
  * sekaligus, jadi menjalankannya dari dalam satu bab akan menyesatkan tentang

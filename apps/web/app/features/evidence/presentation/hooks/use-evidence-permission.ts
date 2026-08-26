@@ -30,6 +30,19 @@ export type EvidencePermission = {
 	 * pernah jadi pilihan; untuk itu ada perpustakaan tenant (§4.4.1).
 	 */
 	canUploadTenant: boolean;
+	/**
+	 * Boleh menata isi perpustakaan: membuat folder, mengganti namanya,
+	 * memindahkan berkas, dan memilih beberapa sekaligus (§4.6a).
+	 *
+	 * Nilainya sama dengan `canUpload` — siapa pun yang boleh menaruh berkas di
+	 * sini boleh pula merapikannya, dan perpustakaan yang bisa diisi tapi tidak
+	 * bisa dirapikan hanya menumpuk. Tetap dinamai sendiri karena §15 tidak
+	 * menyebut folder sama sekali: kalau nanti aturannya memang berbeda, yang
+	 * berubah cukup satu baris di sini, bukan setiap komponen yang menanyakannya.
+	 *
+	 * Menghapus tidak ikut: ia sudah punya aturan sendiri per berkas.
+	 */
+	canManage: boolean;
 	canDelete: (evidence: EvidenceEntity) => boolean;
 	canRetry: (evidence: EvidenceEntity) => boolean;
 };
@@ -48,6 +61,7 @@ export function useEvidencePermission(
 			canView: false,
 			canUpload: false,
 			canUploadTenant: false,
+			canManage: false,
 			canDelete: () => false,
 			canRetry: () => false,
 		};
@@ -75,6 +89,7 @@ export function useEvidencePermission(
 		canView,
 		canUpload,
 		canUploadTenant: canUpload && isTenantWide,
+		canManage: canUpload,
 		canDelete,
 		// Ekstraksi ulang tidak menghapus apa pun, jadi cukup hak lihat + unggah.
 		canRetry: () => canUpload,

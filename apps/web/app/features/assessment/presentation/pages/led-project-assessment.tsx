@@ -1,6 +1,7 @@
 import * as React from 'react';
 import {
 	ClipboardTextIcon,
+	FilePdfIcon,
 	PencilSimpleIcon,
 	SealCheckIcon,
 	WarningCircleIcon,
@@ -8,6 +9,7 @@ import {
 import { useParams, useSearchParams } from 'react-router';
 
 import { PlaceholderPage } from '~/core/components/placeholder-page';
+import { Button } from '~/core/components/ui/button';
 import { StatCard } from '~/core/components/ui/stat-card';
 import {
 	Tabs,
@@ -17,10 +19,11 @@ import {
 } from '~/core/components/ui/tabs';
 import { ledProjectRepository } from '~/features/led-project/data/repositories/led-project.repository';
 import { type LedProjectEntity } from '~/features/led-project/domain/entities/led-project.entity';
+import { useActiveTenant } from '~/features/tenant/presentation/hooks/use-active-tenant';
 import { type PenilaianFinalRow } from '../../domain/entities/assessment-session.entity';
 import { AssessmentDetailSheet } from '../components/assessment-detail-sheet';
+import { AssessmentDownloadDialog } from '../components/assessment-download-dialog';
 import { AssessmentHistoryList } from '../components/assessment-history-list';
-import { AssessmentMatrixView } from '../components/assessment-matrix-view';
 import { AssessmentQualityPanel } from '../components/assessment-quality-panel';
 import { AssessmentResultList } from '../components/assessment-result-list';
 import { AssessmentRunPanel } from '../components/assessment-run-panel';
@@ -32,7 +35,7 @@ import { useAssessmentResults } from '../hooks/use-assessment-results';
 import { useAssessmentSession } from '../hooks/use-assessment-session';
 import { formatSkor } from '../utils/assessment-format';
 
-const TAB_VALID = ['penilaian', 'matriks', 'kualitas', 'riwayat'] as const;
+const TAB_VALID = ['penilaian', 'kualitas', 'riwayat'] as const;
 type TabValue = (typeof TAB_VALID)[number];
 
 /**
@@ -42,7 +45,7 @@ type TabValue = (typeof TAB_VALID)[number];
  * adalah foreign key ke `DokumenLed`, jadi lingkupnya sudah tertulis di bentuk
  * datanya: bukan per prodi (Dashboard Prodi), bukan pula per bab (Editor Bab).
  *
- * Empat tab, bukan empat menu sidebar seperti prototipe. Keempatnya menjawab
+ * Tiga tab, bukan tiga menu sidebar seperti prototipe. Ketiganya menjawab
  * pertanyaan tentang **dokumen yang sama**, dan menaikkannya jadi menu sederajat
  * akan menyatakan bahwa masing-masing berdiri sendiri — padahal Riwayat tanpa
  * konteks dokumen tidak berarti apa pun, dan Kualitas Penilaian selalu tentang
@@ -145,6 +148,9 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 		[],
 	);
 
+	const [unduhTerbuka, setUnduhTerbuka] = React.useState(false);
+	const tenant = useActiveTenant();
+
 	const posisiDibuka = urutanTampil.findIndex(
 		(row) => row.kriteria.no === indikatorDibuka,
 	);
@@ -171,13 +177,35 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 
 	return (
 		<div className="flex flex-col gap-6">
-			<div>
-				<h2 className="font-heading text-2xl font-bold tracking-tight">
-					Penilaian AMI
-				</h2>
-				<p className="text-sm text-muted-foreground">
-					Penilaian akreditasi otomatis untuk {ledProject.judul}.
-				</p>
+			<div className="flex flex-wrap items-start justify-between gap-4">
+				<div>
+					<h2 className="font-heading text-2xl font-bold tracking-tight">
+						Penilaian AMI
+					</h2>
+					<p className="text-sm text-muted-foreground">
+						Penilaian akreditasi otomatis untuk {ledProject.judul}.
+					</p>
+				</div>
+
+				{/*
+				 * Di kepala halaman, bukan di dalam tab Penilaian: yang diunduh seluruh
+				 * indikator, jadi tombolnya tidak boleh terasa milik satu tab saja.
+				 *
+				 * Disembunyikan — bukan dimatikan — saat belum ada sesi, mengikuti §1
+				 * dan tombol jalankan di `AssessmentRunPanel`. Tanpa sesi, `baris`
+				 * kosong dan yang terunduh cuma kop tanpa satu baris pun.
+				 */}
+				{sesiAktif !== undefined && baris.length > 0 && (
+					<Button
+						type="button"
+						variant="outline"
+						onClick={() => setUnduhTerbuka(true)}
+						className="shrink-0 cursor-pointer"
+					>
+						<FilePdfIcon />
+						Unduh PDF
+					</Button>
+				)}
 			</div>
 
 			<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -193,7 +221,7 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 					}
 				/>
 				{/*
-				 * Menggantikan kartu "Indikator Dinilai" (cakupan mesin), yang hampir
+				 * Menggantikan kartu "Indikator Dinilai" (cakupan AI), yang hampir
 				 * selalu penuh dan karena itu jarang jadi pertanyaan. Yang benar-benar
 				 * ditanyakan Penjamin Mutu tiap hari adalah seberapa jauh **dia** sudah
 				 * memeriksa — jadi itulah yang diangkat jadi angka besar beserta barnya.
@@ -220,7 +248,7 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 					value={String(ringkasan.jumlahDikoreksi)}
 					hint={
 						ringkasan.jumlahDikoreksi === 0
-							? 'Belum ada skor mesin yang diubah'
+							? 'Belum ada skor AI yang diubah'
 							: `${ringkasan.jumlahDisetujuiApaAdanya} lainnya disetujui apa adanya`
 					}
 				/>
@@ -232,7 +260,7 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 					// angkanya kini menyusut tiap kali Penjamin Mutu menyetujui sesuatu,
 					// dan daftar pemicu tanpa syarat itu akan membuat angkanya tampak
 					// tidak cocok dengan keterangannya sendiri.
-					hint="Temuan mesin yang belum disetujui Penjamin Mutu"
+					hint="Temuan AI yang belum disetujui Penjamin Mutu"
 					tone={ringkasan.jumlahPerluDiperiksa > 0 ? 'warning' : 'default'}
 				/>
 			</div>
@@ -243,7 +271,6 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 			>
 				<TabsList variant="line">
 					<TabsTrigger value="penilaian">Penilaian</TabsTrigger>
-					<TabsTrigger value="matriks">Matriks</TabsTrigger>
 					<TabsTrigger value="kualitas">Kualitas Penilaian</TabsTrigger>
 					<TabsTrigger value="riwayat">Riwayat</TabsTrigger>
 				</TabsList>
@@ -287,10 +314,6 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 						onBuka={(row) => setIndikatorDibuka(row.kriteria.no)}
 						onDaftarTampilBerubah={setUrutanTampil}
 					/>
-				</TabsContent>
-
-				<TabsContent value="matriks" className="pt-2">
-					<AssessmentMatrixView />
 				</TabsContent>
 
 				<TabsContent value="kualitas" className="pt-2">
@@ -338,6 +361,27 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 					if (rowDibuka) cabutKeputusan(rowDibuka.kriteria.no);
 				}}
 			/>
+
+			{/*
+			 * Dirender hanya saat terbuka, bukan disembunyikan lewat prop `open`:
+			 * membangkitkan PDF adalah pekerjaan yang tidak boleh berjalan untuk
+			 * dialog yang belum diminta siapa pun, dan efek di dalamnya memang
+			 * dipicu oleh pemasangan komponennya.
+			 */}
+			{unduhTerbuka && sesiAktif !== undefined && (
+				<AssessmentDownloadDialog
+					open={unduhTerbuka}
+					onOpenChange={setUnduhTerbuka}
+					input={{
+						baris,
+						ringkasan,
+						sesi: sesiAktif,
+						ledProject,
+						namaUniversitas: tenant.universityName,
+						melihatSesiTerbaru,
+					}}
+				/>
+			)}
 		</div>
 	);
 }

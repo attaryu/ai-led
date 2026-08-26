@@ -16,9 +16,9 @@ import { useSession } from '~/features/auth/presentation/hooks/use-session';
  * | Penyusun (prodinya) | ya | ya | — |
  *
  * **Penyusun boleh menjalankan, tidak boleh mengoreksi.** Menjalankan penilaian
- * itu memeriksa pekerjaan sendiri — hal yang sama yang sudah ia lakukan lewat tab
- * Rubrik, hanya untuk seluruh dokumen sekaligus. Mengubah angkanya lain perkara:
- * itu menyatakan vonis yang menggantikan hitungan mesin, dan sejalan dengan
+ * itu memeriksa pekerjaan sendiri, dan tidak mengubah apa pun selain angka yang
+ * dihitung AI atas tulisannya. Mengubah angkanya lain perkara:
+ * itu menyatakan vonis yang menggantikan hitungan AI, dan sejalan dengan
  * `canReview` §12.2 hanya Penjamin Mutu yang memegangnya.
  *
  * **Pimpinan memantau, tidak menyusun** (§15) — cakupannya seluas Penjamin Mutu,
@@ -29,7 +29,7 @@ export type AssessmentPermission = {
 	canRead: boolean;
 	/** Memulai sesi penilaian baru dan menjalankan evaluasi RAGAS-nya. */
 	canRun: boolean;
-	/** Mengubah skor final dan mencabut koreksi. */
+	/** Mengubah skor final dan membatalkan koreksi. */
 	canCorrect: boolean;
 };
 

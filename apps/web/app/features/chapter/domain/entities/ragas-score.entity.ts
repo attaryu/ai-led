@@ -4,12 +4,13 @@ import { z } from 'zod';
  * Penilaian mutu jawaban AI untuk satu kali generate (docs/application_flow.md
  * §10, docs/architecture.md §5.4).
  *
- * **Bukan penilaian akreditasi.** Tab Rubrik menilai apakah isi bab layak menurut
- * kriteria LAM Teknik; yang ini menilai apakah AI-nya bekerja dengan baik —
- * seberapa setia hasilnya pada potongan sumber yang diambil, seberapa nyambung ia
- * dengan yang diminta, seberapa tepat sasaran potongan yang di-retrieve. Dua hal
- * yang bisa berlawanan: jawaban yang sangat setia pada sumber tetap bisa dapat
- * skor rubrik rendah kalau sumbernya memang belum memadai.
+ * **Bukan penilaian akreditasi.** Penilaian AMI menilai apakah isi bab layak
+ * menurut kriteria LAM Teknik; yang ini menilai apakah AI-nya bekerja dengan
+ * baik — seberapa setia hasilnya pada potongan sumber yang diambil, seberapa
+ * nyambung ia dengan yang diminta, seberapa tepat sasaran potongan yang
+ * di-retrieve. Dua hal yang bisa berlawanan: jawaban yang sangat setia pada
+ * sumber tetap bisa dapat skor indikator rendah kalau sumbernya memang belum
+ * memadai.
  *
  * **Tidak punya tabel di docs/database.md.** Lima belas tabel di sana, tidak satu
  * pun menyimpannya, padahal `architecture.md §5.2` langkah 5 menuliskan hasilnya
@@ -51,9 +52,8 @@ export type RagasScore = z.infer<typeof ragasScoreSchema>;
  * Nama dan penjelasan tiap metrik.
  *
  * Kalimat "apa yang diukur" bukan hiasan. Tanpa itu, "Faithfulness 0,82" tidak
- * berarti apa pun bagi siapa pun di luar tim RAG — dan tab ini akan bernasib sama
- * dengan bagian "Penilaian" di tab Rubrik yang sempat menampilkan angka tanpa
- * keterangan yang menambah apa pun.
+ * berarti apa pun bagi siapa pun di luar tim RAG — angka telanjang yang hanya
+ * tampak berwibawa tanpa menambah apa pun bagi pembacanya.
  */
 export const RAGAS_METRIK_INFO: Record<
 	RagasMetrik,

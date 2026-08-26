@@ -90,10 +90,10 @@ export function AssessmentResultRow({
 				</span>
 
 				{/*
-				 * Skor mesin sengaja **tidak** disebut di sini, bahkan saat berbeda dari
+				 * Skor AI sengaja **tidak** disebut di sini, bahkan saat berbeda dari
 				 * yang berlaku. Baris ini menjawab "berapa nilai indikator ini", dan
 				 * jawabannya skor final — siapa yang menghitungnya urusan detail, dan
-				 * detail itu sudah lengkap di laci beserta alasan mesin, catatan koreksi,
+				 * detail itu sudah lengkap di laci beserta alasan AI, catatan koreksi,
 				 * dan atribusinya.
 				 */}
 				<span className="flex flex-wrap items-center gap-x-3 gap-y-1">

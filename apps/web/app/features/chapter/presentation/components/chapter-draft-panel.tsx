@@ -4,7 +4,6 @@ import {
 	CaretDownIcon,
 	DotsThreeVerticalIcon,
 	FloppyDiskIcon,
-	ListChecksIcon,
 	SparkleIcon,
 	WarningCircleIcon,
 } from '@phosphor-icons/react';
@@ -43,7 +42,7 @@ import {
  * - **Tombol hapus.** §8.1 melarangnya karena checkpoint adalah jejak audit
  *   akreditasi; `chapterDraftRepository` bahkan tidak punya methodnya.
  * - **Daftar bukti dukung tiap checkpoint.** Datanya tersimpan (itu inti
- *   `BUKTI_DUKUNG_DRAFT`), tapi yang menampilkannya nanti tab Rujukan — kolom
+ *   `BUKTI_DUKUNG_DRAFT`), tapi yang menampilkannya nanti tab Bukti — kolom
  *   selebar ini tidak cukup untuk riwayat sekaligus rinciannya.
  */
 export function ChapterDraftPanel({
@@ -51,15 +50,12 @@ export function ChapterDraftPanel({
 	izin,
 	ambilSnapshot,
 	onRestored,
-	onLihatSkor,
 }: {
 	chapter: ChapterEntity;
 	izin: ChapterPermission;
 	ambilSnapshot: () => Promise<ChapterEntity | undefined>;
 	/** Dipanggil setelah pemulihan tersimpan; halaman editor yang mendorongnya ke Tiptap. */
 	onRestored: (hasil: HasilPulih) => void;
-	/** Berpindah ke tab Rubrik dengan checkpoint ini terpilih (§8.1). */
-	onLihatSkor: (draftId: string) => void;
 }) {
 	const {
 		daftar,
@@ -113,7 +109,6 @@ export function ChapterDraftPanel({
 									sedangDipakai={chapter.checkpointAktifId === draft.id}
 									bolehPulihkan={izin.canEdit && !sibuk}
 									onPulihkan={() => handlePulihkan(draft)}
-									onLihatSkor={() => onLihatSkor(draft.id)}
 								/>
 							))}
 						</ul>
@@ -217,14 +212,12 @@ function BarisDraft({
 	sedangDipakai,
 	bolehPulihkan,
 	onPulihkan,
-	onLihatSkor,
 }: {
 	draft: ChapterDraftEntity;
 	/** Checkpoint yang terakhir dipulihkan ke bab ini (`checkpointAktifId`). */
 	sedangDipakai: boolean;
 	bolehPulihkan: boolean;
 	onPulihkan: () => void;
-	onLihatSkor: () => void;
 }) {
 	return (
 		<li className="flex items-start gap-2 rounded-md px-2 py-2 hover:bg-muted/60">
@@ -271,44 +264,35 @@ function BarisDraft({
 				)}
 			</span>
 
-			<DropdownMenu>
-				<DropdownMenuTrigger
-					aria-label={`Aksi untuk ${labelDraft(draft)}`}
-					className={cn(
-						buttonVariants({ variant: 'ghost', size: 'icon-sm' }),
-						'shrink-0 cursor-pointer',
-					)}
-				>
-					<DotsThreeVerticalIcon className="size-4" />
-				</DropdownMenuTrigger>
-				<DropdownMenuContent align="end" className="w-48 bg-popover">
-					{/*
-					 * "Gunakan draft ini" mengubah data, jadi ia mengikuti hak akses.
-					 * "Lihat skor" tidak, jadi menunya tetap ada untuk semua orang —
-					 * §12.2 menuntut seluruh tab tetap terbaca saat bab dikunci.
-					 */}
-					{bolehPulihkan && (
+			{/*
+			 * Seluruh menunya ikut hak akses, bukan hanya itemnya.
+			 *
+			 * "Gunakan draft ini" kini satu-satunya isi menu ini — dulu ia ditemani
+			 * "Lihat skor" yang murni baca, dan itulah yang membuat tombol "..."
+			 * tetap masuk akal bagi Pimpinan maupun bab terkunci. Begitu item itu
+			 * pergi bersama tab Rubrik, menyisakan pemicunya berarti menawarkan
+			 * tombol yang membuka daftar kosong. §1 menuntut yang tidak berhak tidak
+			 * dirender sama sekali, bukan dinonaktifkan — termasuk pemicunya.
+			 */}
+			{bolehPulihkan && (
+				<DropdownMenu>
+					<DropdownMenuTrigger
+						aria-label={`Aksi untuk ${labelDraft(draft)}`}
+						className={cn(
+							buttonVariants({ variant: 'ghost', size: 'icon-sm' }),
+							'shrink-0 cursor-pointer',
+						)}
+					>
+						<DotsThreeVerticalIcon className="size-4" />
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="end" className="w-48 bg-popover">
 						<DropdownMenuItem className="cursor-pointer" onClick={onPulihkan}>
 							<ArrowCounterClockwiseIcon className="size-4" />
 							Gunakan draft ini
 						</DropdownMenuItem>
-					)}
-
-					{/*
-					 * §8.1 menuliskannya sebagai **modal** berisi breakdown
-					 * `HASIL_SKOR_KRITERIA` milik checkpoint. Yang dilakukan di sini:
-					 * berpindah ke tab Rubrik dengan checkpoint ini terpilih. Hasil
-					 * akhirnya sama — breakdown yang sama, tanpa mengubah apa pun — tapi
-					 * tidak memperkenalkan pola modal yang belum dipakai satu pun panel
-					 * sidebar, dan menaruh skornya di tempat yang memang menjelaskan
-					 * kriterianya.
-					 */}
-					<DropdownMenuItem className="cursor-pointer" onClick={onLihatSkor}>
-						<ListChecksIcon className="size-4" />
-						Lihat skor
-					</DropdownMenuItem>
-				</DropdownMenuContent>
-			</DropdownMenu>
+					</DropdownMenuContent>
+				</DropdownMenu>
+			)}
 		</li>
 	);
 }

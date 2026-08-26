@@ -27,6 +27,11 @@ import {
 	createLedProjectSchema,
 	type CreateLedProjectDto,
 } from '../../domain/dtos/create-led-project.dto';
+import {
+	adaTahunAkademikGanda,
+	susunTahunAkademik,
+} from '../../domain/entities/led-project.entity';
+import { TahunAkademikField } from '../components/tahun-akademik-field';
 import { ledProjectRepository } from '../../data/repositories/led-project.repository';
 import { type StudyProgramEntity } from '../../../study-program/domain/entities/study-program.entity';
 import { studyProgramRepository } from '../../../study-program/data/repositories/study-program.repository';
@@ -57,13 +62,15 @@ export function CreateLedProject() {
 		register,
 		handleSubmit,
 		setValue,
+		setError,
+		watch,
 		formState: { errors, isSubmitting },
 	} = useForm<CreateLedProjectDto>({
 		resolver: zodResolver(createLedProjectSchema),
 		defaultValues: {
 			studyProgramId: '',
 			judul: '',
-			tahunAkademik: '',
+			tahunMulai: '',
 			tenggat: '',
 		},
 	});
@@ -87,6 +94,25 @@ export function CreateLedProject() {
 			return;
 		}
 
+		const tahunAkademik = susunTahunAkademik(Number(data.tahunMulai));
+
+		/*
+		 * Ditegakkan di sini, bukan di repository, supaya pesannya menempel ke
+		 * kolom tahun alih-alih muncul sebagai `alert` lepas. Lihat alasan
+		 * kenapa duplikat berbahaya di `adaTahunAkademikGanda`.
+		 */
+		if (
+			adaTahunAkademikGanda(await ledProjectRepository.findAll(), {
+				studyProgramId: data.studyProgramId,
+				tahunAkademik,
+			})
+		) {
+			setError('tahunMulai', {
+				message: `${prodi.studyProgramName} sudah punya Dokumen LED untuk tahun akademik ${tahunAkademik}`,
+			});
+			return;
+		}
+
 		setFormError(null);
 		try {
 			// Lewat repository, bukan langsung: di sanalah struktur bab standar ikut
@@ -94,7 +120,7 @@ export function CreateLedProject() {
 			await ledProjectRepository.create({
 				studyProgramId: data.studyProgramId,
 				judul: data.judul,
-				tahunAkademik: data.tahunAkademik,
+				tahunAkademik,
 				tenggat: fromDateInputValue(data.tenggat),
 			});
 			navigate(returnTo);
@@ -178,20 +204,12 @@ export function CreateLedProject() {
 								)}
 							</Field>
 
-							<Field data-invalid={!!errors.tahunAkademik}>
-								<FieldLabel htmlFor="tahunAkademik">
-									Tahun Akademik
-								</FieldLabel>
-								<Input
-									id="tahunAkademik"
-									placeholder="Contoh: 2025/2026"
-									disabled={isSubmitting}
-									{...register('tahunAkademik')}
-								/>
-								{errors.tahunAkademik && (
-									<FieldError>{errors.tahunAkademik.message}</FieldError>
-								)}
-							</Field>
+							<TahunAkademikField
+								registrasi={register('tahunMulai')}
+								nilai={watch('tahunMulai')}
+								pesanGalat={errors.tahunMulai?.message}
+								disabled={isSubmitting}
+							/>
 
 							<Field data-invalid={!!errors.tenggat}>
 								<FieldLabel htmlFor="tenggat">

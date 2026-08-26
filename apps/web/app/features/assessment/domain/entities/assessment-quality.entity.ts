@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * Mutu kerja mesin penilai untuk satu sesi AMI (`apps/ai/eval/ragas_eval.py`,
+ * Mutu kerja penilai AI untuk satu sesi AMI (`apps/ai/eval/ragas_eval.py`,
  * endpoint `POST /eval/run`).
  *
  * **Bukan penilaian akreditasi, dan bukan pula mutu generasi bab.** Tiga hal
@@ -74,7 +74,7 @@ export type AssessmentQuality = z.infer<typeof assessmentQualitySchema>;
  *
  * Justru metrik keempat itulah yang membuat tab ini pantas dilihat pengguna
  * biasa, bukan cuma pengembang: ia satu-satunya yang bisa membedakan "dokumen
- * saya memang kurang" dari "mesinnya tidak menemukan tulisan saya".
+ * saya memang kurang" dari "AI-nya tidak menemukan tulisan saya".
  */
 export const AMI_RAGAS_METRIK_INFO: Record<
 	AmiRagasMetrik,
@@ -98,7 +98,7 @@ export const AMI_RAGAS_METRIK_INFO: Record<
 	context_recall: {
 		label: 'Kelengkapan pencarian',
 		diukur:
-			'Seberapa lengkap bagian dokumen yang seharusnya dipakai berhasil ditemukan. Nilai rendah berarti ada tulisan yang relevan di LED tapi tidak terambil — skor indikatornya jadi rendah bukan karena dokumennya kurang, melainkan karena mesin tidak menemukannya. Periksa indikator ini secara manual sebelum menerima angkanya.',
+			'Seberapa lengkap bagian dokumen yang seharusnya dipakai berhasil ditemukan. Nilai rendah berarti ada tulisan yang relevan di LED tapi tidak terambil — skor indikatornya jadi rendah bukan karena dokumennya kurang, melainkan karena penilai AI tidak menemukannya. Periksa indikator ini secara manual sebelum menerima angkanya.',
 	},
 };
 

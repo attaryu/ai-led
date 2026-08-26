@@ -13,10 +13,8 @@ import { ragasBasi } from '../../domain/entities/ragas-score.entity';
  * otomatis begitu generate selesai, tanpa pemicu manual terpisah — jadi hook ini
  * murni membaca. Yang mengisinya adalah tab Generasi.
  *
- * Lingkupnya bisa dipilih seperti tab Rubrik dan Rujukan; state-nya dipegang
- * sendiri di sini karena tidak ada tab lain yang perlu mengarahkannya, berbeda
- * dari lingkup skor rubrik yang diangkat ke halaman editor demi menu "Lihat
- * skor".
+ * Lingkupnya bisa dipilih seperti tab Bukti; state-nya dipegang sendiri di
+ * sini karena tidak ada tab lain yang perlu mengarahkannya.
  */
 export function useChapterQuality({
 	chapter,

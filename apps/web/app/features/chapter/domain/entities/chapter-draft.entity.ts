@@ -59,8 +59,17 @@ export const chapterDraftSchema = z.object({
 	buktiDukung: z.array(buktiDukungRefSchema),
 	/**
 	 * Id chunk vector database yang jadi rujukan saat AI menyusun isinya. Kosong
-	 * untuk checkpoint `MANUAL`. Belum ditampilkan di mana pun — tab Rujukan
-	 * (§11.1) yang akan membacanya.
+	 * untuk checkpoint `MANUAL`.
+	 *
+	 * **Masih belum dibaca siapa pun, dan tab Bukti sengaja tidak membacanya.**
+	 * Dulu field ini dicadangkan untuk tab itu; §11.1a memutuskan sebaliknya
+	 * karena isinya opaque — id tanpa entitas di baliknya — dan kondisi aktif
+	 * tidak pernah menyimpan padanannya sama sekali, sehingga membacanya di sini
+	 * membuat checkpoint berperilaku beda dari kondisi aktif. Kutipan yang
+	 * ditampilkan tab itu diturunkan dari nomor bab + id berkas.
+	 *
+	 * Ia tetap ditulis dan disimpan: saat `generation_runs.chunks_used` yang
+	 * sungguhan ada, inilah tempat jejaknya sudah menunggu.
 	 */
 	referensiChunkIds: z.array(z.string()),
 	/**

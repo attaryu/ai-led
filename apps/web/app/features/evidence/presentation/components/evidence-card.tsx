@@ -1,11 +1,13 @@
 import {
 	ArrowClockwiseIcon,
+	ArrowsOutCardinalIcon,
 	DotsThreeVerticalIcon,
 	InfoIcon,
 	TrashIcon,
 } from '@phosphor-icons/react';
 
 import { buttonVariants } from '~/core/components/ui/button';
+import { Checkbox } from '~/core/components/ui/checkbox';
 import { cn } from '~/core/lib/utils';
 import {
 	DropdownMenu,
@@ -28,21 +30,36 @@ import { EvidenceStatusBadge } from './evidence-status-badge';
  */
 export function EvidenceCard({
 	evidence,
+	jalur,
 	showOwner,
+	canManage,
 	canDelete,
 	canRetry,
+	terpilih,
+	onPilih,
 	onOpen,
 	onDelete,
 	onRetry,
+	onPindahkan,
 }: {
 	evidence: EvidenceEntity;
+	/**
+	 * Jalur folder berkas ini; hanya terisi di mode pencarian, tempat barisnya
+	 * memang tercabut dari konteks foldernya (§4.6a).
+	 */
+	jalur: string[];
 	/** Level tenant tidak punya prodi; level prodi tidak perlu mengulang namanya. */
 	showOwner: boolean;
+	/** Boleh menata isi perpustakaan — menyalakan centang dan "Pindahkan ke…". */
+	canManage: boolean;
 	canDelete: boolean;
 	canRetry: boolean;
+	terpilih: boolean;
+	onPilih: (aktif: boolean) => void;
 	onOpen: (evidence: EvidenceEntity) => void;
 	onDelete: (evidence: EvidenceEntity) => void;
 	onRetry: (evidence: EvidenceEntity) => void;
+	onPindahkan: () => void;
 }) {
 	const { Icon: FileTypeIcon, className: iconClassName } = getFileVisual(
 		evidence.tipeFile,
@@ -60,13 +77,33 @@ export function EvidenceCard({
 					onOpen(evidence);
 				}
 			}}
-			className="group relative flex cursor-pointer flex-col gap-3 rounded-xl bg-card p-4 text-left shadow-xs ring-1 ring-foreground/10 transition-colors hover:bg-accent/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+			className={cn(
+				'group relative flex cursor-pointer flex-col gap-3 rounded-xl bg-card p-4 text-left shadow-xs ring-1 transition-colors hover:bg-accent/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+				terpilih ? 'ring-2 ring-primary' : 'ring-foreground/10',
+			)}
 		>
 			<div className="flex items-start justify-between gap-2">
-				<FileTypeIcon
-					weight="fill"
-					className={cn('size-10 shrink-0', iconClassName)}
-				/>
+				<div className="flex items-center gap-2">
+					{canManage && (
+						// Pembungkusnya menahan klik supaya mencentang tidak sekalian
+						// membuka panel detail — seluruh kartu ini sendiri sebuah tombol.
+						<span
+							onClick={(event) => event.stopPropagation()}
+							onKeyDown={(event) => event.stopPropagation()}
+						>
+							<Checkbox
+								checked={terpilih}
+								onCheckedChange={(nilai) => onPilih(nilai === true)}
+								aria-label={`Pilih ${evidence.namaDokumen}`}
+								className="cursor-pointer"
+							/>
+						</span>
+					)}
+					<FileTypeIcon
+						weight="fill"
+						className={cn('size-10 shrink-0', iconClassName)}
+					/>
+				</div>
 
 				<DropdownMenu>
 					<DropdownMenuTrigger
@@ -90,6 +127,18 @@ export function EvidenceCard({
 							<InfoIcon className="size-4" />
 							Lihat detail
 						</DropdownMenuItem>
+						{canManage && (
+							<DropdownMenuItem
+								className="cursor-pointer"
+								onClick={(event) => {
+									event.stopPropagation();
+									onPindahkan();
+								}}
+							>
+								<ArrowsOutCardinalIcon className="size-4" />
+								Pindahkan ke…
+							</DropdownMenuItem>
+						)}
 						{showRetry && (
 							<DropdownMenuItem
 								className="cursor-pointer"
@@ -132,6 +181,14 @@ export function EvidenceCard({
 					{formatBytes(evidence.ukuranBytes)} ·{' '}
 					{formatRelativeTime(evidence.waktuDiunggah)}
 				</p>
+				{jalur.length > 0 && (
+					<p
+						className="mt-0.5 truncate text-xs text-muted-foreground"
+						title={jalur.join(' / ')}
+					>
+						{jalur.join(' / ')}
+					</p>
+				)}
 				{showOwner && evidence.studyProgramName && (
 					<p className="mt-0.5 truncate text-xs text-muted-foreground">
 						{evidence.studyProgramName}

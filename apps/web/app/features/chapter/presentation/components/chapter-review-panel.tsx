@@ -10,6 +10,7 @@ import { Button } from '~/core/components/ui/button';
 import { ScrollArea } from '~/core/components/ui/scroll-area';
 import { Textarea } from '~/core/components/ui/textarea';
 import { formatRelativeTime } from '~/core/lib/format-time';
+import { AssessmentBabBanner } from '~/features/assessment/presentation/components/assessment-bab-banner';
 import {
 	deriveChapterProgress,
 	hasKonten,
@@ -124,6 +125,23 @@ export function ChapterReviewPanel({
 
 			<ScrollArea className="min-h-0 flex-1">
 				<div className="space-y-2 px-5 pb-4">
+					{/*
+					 * Skor resmi mendahului catatan, dan keduanya di panel yang sama.
+					 *
+					 * Pita ini dulu berdiri di kepala tab Rubrik, menemani simulasi skor
+					 * sebagai pembanding: yang di atas resmi, yang di bawah latihan.
+					 * Simulasinya sudah tidak ada, dan tab inilah rumah yang tersisa yang
+					 * memang soal **keadaan bab** — sama seperti status kunci dan catatan
+					 * Penjamin Mutu, skor AMI adalah penilaian yang sudah dijatuhkan atas
+					 * bab ini, bukan alat untuk menyusunnya. Ditaruh di dalam ScrollArea,
+					 * bukan di blok status yang `shrink-0`: kepalanya harus tetap ringkas,
+					 * dan pita ini merender `null` untuk dokumen yang belum dinilai.
+					 */}
+					<AssessmentBabBanner
+						ledProjectId={chapter.ledProjectId}
+						urutanBab={chapter.urutanBab}
+					/>
+
 					<p className="text-sm font-medium">Catatan Penjamin Mutu</p>
 
 					{review.boleh ? (

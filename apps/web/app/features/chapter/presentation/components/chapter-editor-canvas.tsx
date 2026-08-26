@@ -9,7 +9,7 @@ import {
 
 /**
  * Ikon dan kalimat lanjutan tiap alasan; frasa pembukanya dari `frasaBlokir`
- * supaya spanduk ini dan kaki tab Draft/Generasi/Rubrik menyebut sebab yang sama
+ * supaya spanduk ini dan kaki tab Draft/Generasi menyebut sebab yang sama
  * persis. `Record` menjadikan alasan baru compile error, bukan kalimat keliru.
  */
 const spandukBlokir: Record<AlasanBlokir, { icon: Icon; lanjutan: string }> = {
@@ -56,12 +56,19 @@ export function ChapterEditorCanvas({
 		// Yang disamakan hanya rupanya, lewat `data-slot` ini di app.css.
 		<main
 			data-slot="chapter-editor-canvas"
-			className="min-w-0 flex-1 overflow-y-auto bg-muted/40 p-8"
+			className="min-w-0 flex-1 overflow-y-auto bg-muted/40 p-4 sm:p-8"
 		>
 			<div className="mx-auto max-w-3xl space-y-3">
 				{blockedReason && <SpandukBlokir alasan={blockedReason} />}
 
-				<div className="rounded-md bg-card px-12 py-14 shadow-sm">
+				{/*
+				 * Margin "kertas" menyusut jauh di layar sempit. Di 360 px `p-8`
+				 * kanvas plus `px-12` kertas memakan 160 px dari 360, menyisakan
+				 * kolom teks 200 px — terlalu sempit untuk membaca, apalagi
+				 * meninjau. Menulis di lebar ini memang tetap urusan laptop, tapi
+				 * membaca tidak boleh ikut mustahil.
+				 */}
+				<div className="rounded-md bg-card px-5 py-8 shadow-sm sm:px-12 sm:py-14">
 					<h2 className="mb-6 font-heading text-xl font-bold tracking-tight">
 						{judulBab}
 					</h2>

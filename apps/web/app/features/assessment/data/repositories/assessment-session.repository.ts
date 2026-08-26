@@ -4,7 +4,7 @@ import { type AssessmentSessionEntity } from '../../domain/entities/assessment-s
 import { type IndicatorResultEntity } from '../../domain/entities/indicator-result.entity';
 
 /**
- * Sesi penilaian AMI beserta hasil mesinnya (docs/database.md →
+ * Sesi penilaian AMI beserta hasil AI-nya (docs/database.md →
  * `AssessmentSession`, `IndicatorResult`) — dibaca dari Postgres sungguhan
  * lewat NestJS, bukan lagi localStorage.
  *

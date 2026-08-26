@@ -1,9 +1,12 @@
 import { useEditor } from '@tiptap/react';
+import { ListIcon, SidebarSimpleIcon } from '@phosphor-icons/react';
 import * as React from 'react';
 import { Navigate, useParams } from 'react-router';
 
 import { PlaceholderPage } from '~/core/components/placeholder-page';
+import { Button } from '~/core/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '~/core/components/ui/tabs';
+import { useEscapeLayer } from '~/core/lib/escape-layer';
 import {
 	canAccessTenant,
 	useRoleGuard,
@@ -237,16 +240,52 @@ function ChapterEditorWorkspace({
 	const [babTerkini, setBabTerkini] = React.useState(chapter);
 
 	/**
-	 * Lingkup tab Rubrik, dipegang di sini alih-alih di dalam panelnya: menu
-	 * "Lihat skor" di tab Draft harus bisa mengatur keduanya sekaligus — tab mana
-	 * yang terbuka dan checkpoint mana yang ditampilkan (§8.1).
+	 * Laci mana yang terbuka di bawah `lg` — Daftar Isi, sidebar kanan, atau tidak
+	 * satu pun.
+	 *
+	 * Satu nilai, bukan dua boolean: dua laci melayang bersamaan dengan satu
+	 * backdrop membuat sasaran klik backdrop jadi ambigu. Bentuk ini membuat
+	 * saling-eksklusif mustahil dilanggar, bukan sekadar tidak disengaja.
+	 *
+	 * Tinggal di sini, bukan di `ChapterEditor` seperti `tocTerbentang`: ruang
+	 * kerja ini di-`key` oleh `chapter.id`, jadi mengklik bab di dalam laci Daftar
+	 * Isi memasangnya ulang dan lacinya menutup sendiri tanpa kode tambahan. Umur
+	 * kedua state itu memang berlawanan — cabang yang dibentangkan harus selamat
+	 * dari pergantian bab, laci yang terbuka justru tidak boleh.
 	 */
-	const [lingkupSkor, setLingkupSkor] = React.useState('aktif');
+	const [laci, setLaci] = React.useState<'toc' | 'panel' | null>(null);
+	const pemicuTocRef = React.useRef<HTMLButtonElement>(null);
+	const pemicuPanelRef = React.useRef<HTMLButtonElement>(null);
 
-	const lihatSkorCheckpoint = React.useCallback((draftId: string) => {
-		setLingkupSkor(draftId);
-		setTabAktif('rubrik');
+	const tutupLaci = React.useCallback(() => {
+		setLaci((sebelumnya) => {
+			// Fokus dikembalikan ke tombol yang membukanya; tanpa ini fokus
+			// terjatuh ke `<body>` dan Tab berikutnya mulai lagi dari atas halaman.
+			const pemicu = sebelumnya === 'toc' ? pemicuTocRef : pemicuPanelRef;
+			pemicu.current?.focus();
+			return null;
+		});
 	}, []);
+
+	useEscapeLayer(laci !== null, tutupLaci);
+
+	// `matchMedia` dipanggil di dalam efek dan tidak pernah dibaca saat render,
+	// jadi tidak ada nilai tebakan yang harus dikoreksi di pass kedua — tidak ada
+	// kedipan. Tata letaknya sendiri sudah benar tanpa ini (semua gaya laci hidup
+	// di `max-lg:`), yang dibereskan adalah `aria-expanded="true"` yang tertinggal
+	// pada tombol yang sedang `display:none`, dan laci yang muncul kembali saat
+	// jendela dikecilkan lagi. `64rem`, bukan `1024px`: itu nilai `lg` Tailwind apa
+	// adanya, supaya keduanya tidak bisa berpisah diam-diam.
+	React.useEffect(() => {
+		if (!laci) return;
+		const mq = window.matchMedia('(min-width: 64rem)');
+		const cek = () => {
+			if (mq.matches) setLaci(null);
+		};
+		cek();
+		mq.addEventListener('change', cek);
+		return () => mq.removeEventListener('change', cek);
+	}, [laci]);
 
 	const panel = usePanelResize();
 	// `babTerkini`, bukan prop `chapter`: halaman induk membaca repository saat
@@ -375,33 +414,106 @@ function ChapterEditorWorkspace({
 				className="flex min-h-0 flex-1 flex-col gap-0"
 			>
 				<div className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-card px-4">
-					{/* §1: yang tidak boleh dipakai disembunyikan, bukan ditampilkan mati. */}
-					{editor && izin.canEdit ? (
-						<ChapterEditorToolbar editor={editor} />
-					) : (
-						<div />
-					)}
+					<div className="flex items-center gap-2 max-lg:min-w-0 max-lg:flex-1">
+						{/*
+						 * Pemicu laci ditaruh di baris toolbar, bukan di header: baris ini
+						 * adalah tepi atas area kerja, dan yang dibukanya adalah kolom
+						 * pertama dan terakhir area kerja itu. Kiri membuka yang di kiri,
+						 * kanan membuka yang di kanan.
+						 */}
+						<Button
+							ref={pemicuTocRef}
+							variant="ghost"
+							size="icon-sm"
+							aria-label="Buka Daftar Isi"
+							aria-expanded={laci === 'toc'}
+							aria-controls="chapter-editor-toc"
+							onClick={() => setLaci('toc')}
+							className="shrink-0 cursor-pointer lg:hidden"
+						>
+							<ListIcon className="size-4" />
+						</Button>
 
-					<TabsList className="shrink-0">
+						{/* §1: yang tidak boleh dipakai disembunyikan, bukan ditampilkan mati. */}
+						{editor && izin.canEdit ? (
+							// Gulir mendatar hanya di bawah `lg`. Di desktop baris ini tidak
+							// pernah menggulung hari ini, dan menambahkannya di sana berarti
+							// mengubah tampilan yang justru harus tetap sama.
+							<div className="flex items-center max-lg:min-w-0 max-lg:flex-1 max-lg:overflow-x-auto max-lg:[scrollbar-width:none] max-lg:[&::-webkit-scrollbar]:hidden">
+								<ChapterEditorToolbar editor={editor} />
+							</div>
+						) : (
+							<div />
+						)}
+					</div>
+
+					<TabsList className="hidden shrink-0 lg:inline-flex">
 						{PANEL_TABS.map((tab) => (
 							<TabsTrigger
 								key={tab.value}
 								value={tab.value}
-								className="px-3 data-active:bg-primary data-active:text-primary-foreground"
+								/*
+								 * `text-white`, bukan `text-primary-foreground`.
+								 * Token itu bernilai `oklch(0.962 0.018 272.314)` —
+								 * putih bersemu lavender yang di atas `bg-primary`
+								 * terbaca kusam pada layar proyektor. Tab ini penanda
+								 * panel mana yang sedang terbuka, jadi kontrasnya
+								 * dijaga penuh. Jangan dikembalikan ke token tanpa
+								 * mengubah nilai tokennya lebih dulu.
+								 *
+								 * `data-active:hover:text-white` **wajib ada**, bukan
+								 * pengulangan yang bisa dirapikan. Kelas dasar
+								 * `TabsTrigger` memuat `hover:text-foreground`, yang
+								 * spesifisitasnya sama persis dengan
+								 * `data-active:text-white` — pemenangnya jatuh ke
+								 * urutan CSS, dan `hover` yang menang. Tanpa baris
+								 * ini, tab yang sedang aktif berubah jadi tulisan
+								 * gelap di atas latar ungu begitu kursor lewat.
+								 */
+								className="px-3 data-active:bg-primary data-active:text-white data-active:hover:text-white"
 							>
 								{tab.label}
 							</TabsTrigger>
 						))}
 					</TabsList>
+
+					{/* Labelnya nama tab aktif, jadi tombolnya sekaligus penunjuk. */}
+					<Button
+						ref={pemicuPanelRef}
+						variant="outline"
+						size="sm"
+						aria-expanded={laci === 'panel'}
+						aria-controls="chapter-editor-panels"
+						onClick={() => setLaci('panel')}
+						className="shrink-0 cursor-pointer lg:hidden"
+					>
+						<SidebarSimpleIcon className="size-4" />
+						{PANEL_TABS.find((tab) => tab.value === tabAktif)?.label}
+					</Button>
 				</div>
 
 				<div className="flex min-h-0 flex-1">
+					{/*
+					 * `lg:hidden` bukan pelengkap: `laci` bisa tertinggal terisi saat
+					 * jendela dilebarkan melewati `lg`, dan tanpa ini backdrop akan
+					 * tertinggal menutupi tata letak tiga kolom yang sudah normal lagi.
+					 */}
+					{laci && (
+						<div
+							className="fixed inset-0 z-20 bg-black/40 lg:hidden"
+							onClick={tutupLaci}
+							aria-hidden
+						/>
+					)}
+
 					<ChapterEditorToc
 						projectId={projectId}
 						chapters={chapters}
 						chapterAktif={chapter}
 						terbentang={tocTerbentang}
 						onToggle={onToggleTocNode}
+						terbuka={laci === 'toc'}
+						onTutup={tutupLaci}
 					/>
 
 					{editor ? (
@@ -425,12 +537,13 @@ function ChapterEditorWorkspace({
 						// `kontenKerja` sama sekali, dan mendorong isi ke kanvas hanya akan
 						// memicu autosave untuk tulisan yang tidak berubah.
 						onReviewed={setBabTerkini}
-						onLihatSkor={lihatSkorCheckpoint}
-						lingkupSkor={lingkupSkor}
-						setLingkupSkor={setLingkupSkor}
 						savedAt={autosave.savedAt}
 						lebar={panel.lebar}
 						handleProps={panel.handleProps}
+						terbuka={laci === 'panel'}
+						onTutup={tutupLaci}
+						tabAktif={tabAktif}
+						onPilihTab={setTabAktif}
 					/>
 				</div>
 			</Tabs>

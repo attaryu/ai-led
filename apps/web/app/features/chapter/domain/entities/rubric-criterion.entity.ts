@@ -17,9 +17,9 @@ import { z } from 'zod';
  *
  * **Dipakai dua permukaan sekaligus**, dan sengaja tetap satu daftar:
  *
- * - Tab Rubrik di Editor Bab menyaringnya lewat {@link findKriteriaForBab} untuk
- *   menilai satu bab saat ditulis (docs/application_flow.md §9).
  * - Penilaian AMI menilai **seluruh** indikator terhadap satu Dokumen LED.
+ * - Editor Bab menyaringnya lewat {@link findKriteriaForBab} untuk menampilkan
+ *   skor AMI bab yang sedang ditulis, di tab Review.
  *
  * Dua daftar sendiri-sendiri pasti akan berbeda isinya suatu saat, dan angka di
  * dua layar itu akan berhenti bisa dibandingkan.

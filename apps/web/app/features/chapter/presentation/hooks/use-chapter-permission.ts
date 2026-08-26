@@ -57,9 +57,9 @@ export type ChapterPermission = {
 
 /**
  * Frasa pembuka kalimat "kenapa aksi ini tidak ada", dipakai bersama spanduk
- * kanvas dan kaki tab Draft/Generasi/Rubrik.
+ * kanvas dan kaki tab Draft/Generasi.
  *
- * Satu sumber supaya keempatnya tidak menyimpang, dan `Record` supaya alasan
+ * Satu sumber supaya ketiganya tidak menyimpang, dan `Record` supaya alasan
  * baru jadi compile error alih-alih diam-diam jatuh ke kalimat yang keliru.
  */
 export const frasaBlokir: Record<AlasanBlokir, string> = {

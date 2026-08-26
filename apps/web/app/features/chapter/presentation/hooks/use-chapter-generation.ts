@@ -2,6 +2,11 @@ import * as React from 'react';
 
 import { streamSse } from '~/core/lib/sse-client';
 import { evidenceRepository } from '~/features/evidence/data/repositories/evidence.repository';
+import { evidenceFolderRepository } from '~/features/evidence/data/repositories/evidence-folder.repository';
+import {
+	jalurFolder,
+	type EvidenceFolderEntity,
+} from '~/features/evidence/domain/entities/evidence-folder.entity';
 import {
 	type EvidenceEntity,
 	type EvidenceStatus,
@@ -9,6 +14,7 @@ import {
 import { studyProgramRepository } from '~/features/study-program/data/repositories/study-program.repository';
 import { chapterRepository } from '../../data/repositories/chapter.repository';
 import { chapterRemoteSource } from '../../data/sources/remote/chapter.remote-source';
+import { cariRekomendasiBelumAda } from '../../domain/entities/evidence-recommendation.entity';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import { type ChapterPermission } from './use-chapter-permission';
 
@@ -107,8 +113,21 @@ export function useChapterGeneration({
 		ReadonlySet<string>
 	>(() => new Set());
 
+	/**
+	 * Folder bukti dukung, dibaca **seluruhnya** tanpa disaring cakupan.
+	 *
+	 * `pustaka` di sini memang melintasi dua cakupan sekaligus — berkas prodi ini
+	 * ditambah berkas universitas (§5.2) — jadi menyaring foldernya ke satu
+	 * cakupan akan membuat jalur separuh berkas tidak terbaca. Id folder unik
+	 * lintas cakupan, sehingga menaiki pohonnya tetap benar.
+	 */
+	const [folderPustaka, setFolderPustaka] = React.useState<
+		EvidenceFolderEntity[]
+	>([]);
+
 	const muat = React.useCallback(() => {
 		evidenceRepository.findAvailableForStudyProgram(studyProgramId).then(setPustaka);
+		setFolderPustaka(evidenceFolderRepository.findAll());
 	}, [studyProgramId]);
 
 	// Ingestion bukti dukung berjalan async lewat job worker backend, dan
@@ -143,9 +162,27 @@ export function useChapterGeneration({
 
 		setTerpilih(new Set(dipulihkan));
 		setDasar(new Set(dipulihkan));
-		// Berkas bisa dihapus, atau statusnya mundur karena ingestion diulang.
-		// Selisihnya ditampilkan, tidak dibuang diam-diam.
-		setJumlahGugur(chapter.buktiDukung.length - dipulihkan.length);
+
+		/**
+		 * Hanya yang **benar-benar lenyap** dari pustaka yang dihitung gugur —
+		 * bukan setiap yang gagal dipulihkan.
+		 *
+		 * Bukti yang tidak tercentang karena statusnya belum `SIAP` tetap ada di
+		 * daftar tepat di bawah kaki panel ini, lengkap dengan badge dan
+		 * `catatanGagal`-nya. Mengumumkannya lagi di sini berarti menerangkan dua
+		 * kali sesuatu yang sudah menerangkan diri — dan karena statusnya tidak
+		 * berubah sendiri, catatannya menyala terus dan berhenti terbaca sebagai
+		 * kabar. Efek auto-centang di bawah sudah memutuskan hal yang sama untuk
+		 * berkas `GAGAL`; dulu dua tempat di berkas ini berselisih soal itu.
+		 *
+		 * Yang dihapus dari pustaka lain perkara: tidak ada satu pun tempat di
+		 * layar yang bisa menunjukkannya, dan generate berikutnya akan berjalan
+		 * dengan konteks lebih sedikit tanpa pemberitahuan.
+		 */
+		const adaDiPustaka = new Set(pustaka.map((bukti) => bukti.id));
+		setJumlahGugur(
+			chapter.buktiDukung.filter((ref) => !adaDiPustaka.has(ref.id)).length,
+		);
 	}
 
 	/**
@@ -241,6 +278,53 @@ export function useChapterGeneration({
 	const jumlahSiap = React.useMemo(
 		() => pustaka.filter((bukti) => bukti.status === STATUS_TERPAKAI).length,
 		[pustaka],
+	);
+
+	/**
+	 * Jalur folder per berkas, untuk keterangan di bawah namanya (§4.6a).
+	 *
+	 * **Daftarnya tetap datar, tidak jadi pohon.** Pekerjaan panel ini memilih
+	 * berkas mana yang menyuapi AI, bukan menjelajahi perpustakaan; menuntut
+	 * penggunanya menelusuri folder di kolom 320 px menambah langkah tanpa
+	 * menambah kejelasan. Yang benar-benar hilang tanpa folder cuma satu hal —
+	 * kemampuan membedakan dua `LKPS_2026.xlsx` dari tempat berbeda — dan itu
+	 * dijawab satu baris jalur, bukan satu mode navigasi baru.
+	 *
+	 * Berkas di akar tidak masuk peta: barisnya memang tidak menampilkan apa pun.
+	 */
+	const jalurBukti = React.useMemo(() => {
+		const peta = new Map<string, string>();
+		for (const bukti of pustaka) {
+			if (bukti.folderId === null) continue;
+			const jalur = jalurFolder(folderPustaka, bukti.folderId);
+			if (jalur.length > 0) {
+				peta.set(bukti.id, jalur.map((folder) => folder.nama).join(' / '));
+			}
+		}
+		return peta;
+	}, [pustaka, folderPustaka]);
+
+	/**
+	 * Bukti dukung yang dituntut kriteria bab ini tapi belum ada padanannya di
+	 * pustaka (docs/application_flow.md §12.1b).
+	 *
+	 * Dihitung dari `pustaka` utuh, **bukan** dari `daftar` yang sudah tersaring
+	 * kata kunci: yang dijawabnya pertanyaan "berkas ini sudah diunggah atau
+	 * belum", bukan "sedang terlihat atau tidak". Membacanya dari `daftar` akan
+	 * membuat mengetik `lkps` seolah melenyapkan enam dokumen sekaligus.
+	 *
+	 * Statusnya juga tidak disaring; alasannya di JSDoc
+	 * `evidence-recommendation.entity.ts`. Karena ia menggantung pada `pustaka`,
+	 * ia ikut `storage-update` yang sama dengan daftarnya — begitu unggahan
+	 * mendarat, barisnya lenyap tanpa muat ulang dan tanpa spinner.
+	 */
+	const saranBukti = React.useMemo(
+		() =>
+			cariRekomendasiBelumAda({
+				urutanBab: chapter.urutanBab,
+				namaDokumen: pustaka.map((bukti) => bukti.namaDokumen),
+			}),
+		[chapter.urutanBab, pustaka],
 	);
 
 	/** Penjagaan kedua di luar atribut `disabled` pada checkbox-nya. */
@@ -349,6 +433,7 @@ export function useChapterGeneration({
 
 	return {
 		daftar,
+		jalurBukti,
 		/** Total bukti sebelum disaring kata kunci — pembeda "kosong" vs "tak cocok". */
 		totalPustaka: pustaka.length,
 		jumlahSiap,
@@ -361,6 +446,8 @@ export function useChapterGeneration({
 		/** `true` bila bab ini sudah pernah digenerate — mengubah label pembatalan. */
 		punyaDasar: dasar.size > 0,
 		jumlahGugur,
+		/** Bukti dukung yang biasanya jadi tumpuan bab ini tapi belum ada (§12.1b). */
+		saranBukti,
 		namaProdi,
 		tandaiUnggahanBaru,
 		/** Unggahan dari panel ini yang masih menunggu ekstraksinya selesai. */

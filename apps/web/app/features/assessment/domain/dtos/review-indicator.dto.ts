@@ -11,11 +11,11 @@ import { assessmentVerdictSchema } from '../entities/assessment-verdict.entity';
  * `skorMesinSaatDitinjau` dan `sesiIdSaatDitinjau` **tidak** diminta pemanggil
  * walau keduanya ada di entitas: repository yang mengisinya dari sesi yang sedang
  * dibuka. Kalau formulir yang menyetorkannya, dua nilai yang harus bersesuaian —
- * skor mesin dan sesi asalnya — bisa dikirim tidak sepasang, dan penanda "sudah
+ * skor AI dan sesi asalnya — bisa dikirim tidak sepasang, dan penanda "sudah
  * basi" akan berbohong tanpa ada yang bisa menangkapnya.
  *
  * Tidak ada field status maupun "menyetujui atau mengoreksi": keduanya diturunkan
- * dari perbandingan `skorFinal` dan snapshot skor mesin terhadap hasil yang
+ * dari perbandingan `skorFinal` dan snapshot skor AI terhadap hasil yang
  * berlaku (lihat `statusTinjauDari` dan `mengubahSkor`).
  */
 export const reviewIndicatorSchema = assessmentVerdictSchema.pick({

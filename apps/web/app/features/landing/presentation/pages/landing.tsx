@@ -41,9 +41,9 @@ const features: { title: string; description: string; icon: Icon }[] = [
 		icon: ArchiveIcon,
 	},
 	{
-		title: 'Simulasi Skor',
+		title: 'Penilaian AMI',
 		description:
-			'Perkiraan skor rubrik LAM-Teknik dan kualitas jawaban terbaca sejak dokumen masih disusun, bukan setelah diserahkan.',
+			'Audit mutu internal menilai dokumen terhadap indikator LAM-Teknik, lalu Penjamin Mutu mengoreksinya — sebelum diserahkan, bukan sesudah.',
 		icon: GaugeIcon,
 	},
 	{

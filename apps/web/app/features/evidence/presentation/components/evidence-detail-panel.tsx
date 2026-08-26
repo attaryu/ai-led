@@ -55,6 +55,7 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
 
 export function EvidenceDetailPanel({
 	evidence,
+	folderJalur,
 	canDelete,
 	canRetry,
 	onClose,
@@ -63,6 +64,15 @@ export function EvidenceDetailPanel({
 }: {
 	/** `null` → panel tertutup. */
 	evidence: EvidenceEntity | null;
+	/**
+	 * Nama folder dari akar sampai tempat berkas ini; kosong berarti di akar.
+	 *
+	 * Dititipkan pemanggil, bukan dibaca sendiri dari penyimpanan: panel ini
+	 * seluruhnya menampilkan apa yang diberikan padanya, dan menambah satu
+	 * langganan `storage-update` di sini hanya untuk satu baris teks membuatnya
+	 * punya sumber data sendiri yang harus dijaga sinkron dengan daftarnya.
+	 */
+	folderJalur: string[];
 	canDelete: boolean;
 	canRetry: boolean;
 	onClose: () => void;
@@ -113,6 +123,18 @@ export function EvidenceDetailPanel({
 							evidence.ownerTipe === 'TENANT'
 								? 'Universitas (lintas prodi)'
 								: `Prodi ${evidence.studyProgramName ?? '-'}`
+						}
+					/>
+					<DetailRow
+						label="Folder"
+						value={
+							folderJalur.length === 0 ? (
+								<span className="text-muted-foreground">
+									Di luar folder mana pun
+								</span>
+							) : (
+								folderJalur.join(' / ')
+							)
 						}
 					/>
 					<DetailRow

@@ -237,7 +237,7 @@ Dua kartu, diberi label kerangka waktunya sendiri supaya tidak terbaca sebagai u
 
 Mengikuti alasan yang sama dengan §5.1f dan §6.1 — kolom yang selalu berisi "—" hanya menambah derau:
 
-- **Ringkasan skor rubrik per prodi** — diminta PRD §3.8 ("skor rata-rata per prodi"), tapi `RUBRIK_KRITERIA`/`HASIL_SKOR_KRITERIA` belum ada. Masuk bersama Simulasi Skor (§9).
+- **Ringkasan skor rubrik per prodi** — diminta PRD §3.8 ("skor rata-rata per prodi"). Sumbernya kini Penilaian AMI, bukan simulasi skor bab yang sudah dihapus (§9): angka per prodi berarti merata-ratakan sesi penilaian seluruh Dokumen LED-nya, dan itu baru bermakna setelah lebih dari satu dokumen pernah dinilai.
 - **Grafik tren antar penyusunan** — baru bermakna setelah ada beberapa penyusunan dengan skor.
 - **Siapa sedang menyunting** — datanya hidup di Redis (§13), bukan di basis data.
 
@@ -347,6 +347,47 @@ Berlaku sama di lapis tenant maupun prodi:
 - **Detail berkas** dibuka lewat panel geser dari kanan (klik kartu atau baris): metadata lengkap, tahap pemrosesan, serta tombol coba lagi/hapus sesuai hak akses. Panelnya ikut memperbarui status bila ekstraksi selesai selagi panel terbuka.
 - **Keadaan kosong dibedakan**: "belum ada bukti dukung" (mengajak mengunggah, tombolnya hanya untuk yang berhak) berbeda dari "tidak ada yang cocok dengan pencarian" (mengajak membersihkan kata kunci).
 
+### 4.6a Folder bukti dukung
+
+Menjawab [Pertanyaan Terbuka #9](#16-pertanyaan-terbuka-yang-belum-diputuskan) — pengelompokan bukti dukung — dengan **folder**, model Google Drive: nama dan kedalaman bebas, plus unggah satu folder utuh yang membawa struktur relatifnya.
+
+**Satu pohon per cakupan, bukan satu pohon untuk semuanya.** Folder memakai `owner_tipe` + `tenant_id`/`program_studi_id` yang sama persis dengan berkasnya, jadi perpustakaan universitas dan tiap perpustakaan prodi punya akarnya masing-masing dan tidak ada folder yang melintasi batas itu. Bukan penyederhanaan: `database.md` §7 menetapkan isolasi antar prodi ditegakkan lewat kombinasi kolom itu, dan folder tenant yang memuat berkas prodi akan melubanginya.
+
+> **Catatan desain — folder disimpan terpisah dari berkas, bukan sebagai baris bertipe.** Godaan yang jelas adalah satu koleksi dengan pembeda `tipe = FOLDER | BERKAS`. Itu ditolak karena tujuh tempat di luar fitur ini menghitung tiap baris `BUKTI_DUKUNG` sebagai berkas — yang paling tegas `summarizeEvidence`, yang memasukkan **setiap** baris ke salah satu ember status lalu membaginya jadi persentase kesiapan. Folder tidak punya status ekstraksi, sehingga satu folder akan terhitung sebagai dokumen yang belum siap dan **menarik turun angka kesiapan institusi** — kesalahan yang tidak muncul sebagai error, hanya sebagai angka yang salah. Tabel `FOLDER_BUKTI` yang berdiri sendiri (`database.md` §7a) membuat ketujuhnya tidak berubah sama sekali. Pembeda `tipe` tetap ada, tapi hanya di lapis tampilan, tempat daftar memang harus merender dua macam baris berdampingan.
+
+- **Folder aktif hidup di URL** (`?folder=<id>`), tanpa nilai berarti akar — menyambung §4.6, tempat `q`/`sort`/`dir`/`page`/`limit` sudah lebih dulu di URL. Rutenya sendiri tidak berubah; id folder itu opaque, jadi ia tidak layak jadi segmen path. Masuk folder mengubah tiga hal sekaligus: set `folder`, kembali ke halaman 1, dan **bersihkan kata kunci**.
+- **Navigasi lewat remah tautan**, bukan kolom pohon di kiri. Halaman ini sudah berada di dalam sidebar aplikasi, dan sidebar kedua membuat isinya terjepit di layar sempit.
+- **Pencarian merata ke seluruh cakupan, mengabaikan folder.** Ini titik terpenting rancangannya: satu-satunya bahaya nyata dari folder adalah berkas jadi hilang di dalamnya, dan pencarian yang hanya melihat folder yang sedang dibuka justru memperkuat bahaya itu. Selagi mencari, remah tautan diganti keterangan "hasil pencarian di seluruh perpustakaan", nama folder ikut dicocokkan, dan tiap baris berkas membawa jalur foldernya.
+- **Folder selalu di depan berkas**, apa pun kunci dan arah urutannya, dan antar folder selalu menurut nama. Ukuran/status/tipe/pengunggah tidak punya arti bagi folder; memaksakannya menghasilkan urutan yang tidak terbaca. Halaman memotong daftar gabungan itu, jadi penomoran halaman tidak perlu tahu ada dua macam baris.
+- **Jumlah berkas di kartu folder dihitung rekursif** — seluruh keturunan, bukan anak langsung. Folder yang isinya hanya subfolder akan berbunyi "0 berkas" kalau tidak, dan terbaca kosong padahal memuat puluhan.
+- **Folder ikut mengabarkan kegagalan di dalamnya** lewat penanda "*n* perlu perhatian". Folder menyembunyikan kegagalan, sementara seluruh guna kolom status adalah menjawab "bukti saya sudah siap belum" — satu berkas `GAGAL` tiga tingkat di dalam akan lenyap dari pandangan begitu daftarnya bertingkat.
+- **Keadaan kosong jadi tiga, bukan dua**: perpustakaan yang memang belum berisi, folder yang kosong, dan pencarian yang tidak menemukan apa pun. Yang kedua perlu dibedakan — folder kosong yang menampilkan ajakan "belum ada bukti dukung" terbaca seolah seluruh perpustakaan kosong, padahal isinya cuma ada di cabang sebelah.
+
+#### Unggah folder
+
+Modal unggah punya dua tombol pilih: berkas, dan **folder** beserta seluruh isinya. Struktur foldernya diselesaikan **sekali, sebelum batch dimulai** — kalau tiap berkas menyelesaikan jalurnya sendiri saat unggahannya jalan, dua berkas dalam satu folder akan berlomba membuat folder yang sama dua kali.
+
+- **Cakupan satu per batch, folder per berkas.** Pembagian itulah yang membuat satu folder utuh bisa mendarat apa adanya, karena berkasnya memang tersebar ke beberapa folder sekaligus.
+- **Nama yang sama di bawah induk yang sama dipakai ulang, tidak diduplikasi.** Berbeda dari Google Drive, yang menduplikasi — di sini mengunggah ulang `Kriteria 4/` yang sudah ada jauh lebih sering berarti "tambahkan isinya" daripada "buatkan folder kembar".
+- **Folder kosong tidak bisa terbawa.** Peramban hanya memancarkan berkas; direktori tanpa berkas tidak meninggalkan jejak apa pun untuk dibaca. Yang tercipta hanya folder yang memuat setidaknya satu berkas yang lolos validasi. Ini batas peramban, bukan pilihan rancangan — dan dicatat supaya tidak "diperbaiki" nanti.
+- **Berkas terbuang diringkas per alasan**, tidak lagi satu baris per berkas: folder nyata selalu berisi `.DS_Store`, `Thumbs.db`, dan sejenisnya, dan daftar satu-satu berhenti terbaca pada 150 penolakan. Rinciannya tetap bisa dibuka.
+- **Batas 100 berkas per unggahan**, dinyatakan di modal, dan sisanya dilaporkan — bukan dipotong diam-diam. Daftar yang tiba-tiba lebih pendek dari yang dipilih terbaca seperti berkas yang hilang.
+- **Target ke prodi lain mendarat di akar prodi itu.** §4.4.1 membolehkan lapis tenant menyasar prodi mana pun; pohon prodi itu sedang tidak terlihat, dan memilih folder di perpustakaan yang tidak kelihatan adalah menebak. Dalam keadaan itu pemilih foldernya tidak dirender dan diganti keterangannya. Struktur folder yang ikut diunggah tetap terbawa.
+
+#### Menata isi
+
+- **Buat folder & ganti nama** memakai satu dialog yang sama; bentuknya identik, dan dua dialog berarti dua salinan pesan validasi yang harus dijaga tetap sama. Nama ditolak bila kosong, lebih dari 100 karakter, memuat garis miring, atau sudah dipakai saudara di induk yang sama (tanpa peduli besar-kecil huruf).
+- **Pindah lewat dialog "Pindahkan ke…"**, bukan tarik-lepas. Tarik-lepas hanya menjangkau folder yang kebetulan sedang terlihat di layar yang sama, tidak bisa dipakai tanpa tetikus, dan menuntut tiga sasaran jatuh berbeda. Dialog dengan pohon ciut menjawab ketiganya, dan ia pula yang membuat memindahkan dua belas berkas sekaligus mungkin. Folder yang sedang dipindahkan beserta keturunannya **tidak dirender** di pemilih — tujuan yang tampak ada tapi tidak bisa dipilih mengabarkan pilihan yang tidak pernah ada.
+- **Pilih massal** lewat centang di kartu maupun baris tabel, dengan satu bilah aksi. Seleksi dibersihkan saat berpindah folder, berpindah halaman, dan saat kata kunci berubah: aksi massal atas berkas yang tidak terlihat di layar adalah cara paling mudah menghapus hal yang salah. Tombol hapus massal mati bila sebagian pilihan bukan unggahan penggunanya sendiri (§15) — menghapus sebagiannya diam-diam adalah hasil yang tidak diminta siapa pun.
+- **Hapus folder ikut menghapus isinya**, dengan jumlah subfolder dan berkas disebut di konfirmasi sebelum apa pun dihapus. Tidak ada tempat sampah, jadi angka itulah satu-satunya penahan. Peringatan rujukan bab yang sama seperti hapus satu berkas ikut ditampilkan.
+- **Ganti nama berkas sengaja belum ada.** `nama_dokumen` adalah nama berkas lengkap dengan ekstensinya sementara `file_url` adalah object key yang tidak ikut berubah — satu berkas akan punya dua nama, dan yang dilihat pengguna bukan yang ada di penyimpanan. Itu keputusan sendiri, bukan efek samping folder.
+
+#### Di luar perpustakaan
+
+Pemilih bukti dukung di tab Generasi Editor Bab (§12.1) **tetap datar**, hanya ditambah jalur folder sebagai keterangan di bawah nama berkas. Pekerjaan panel itu memilih berkas mana yang menyuapi AI, bukan menjelajahi perpustakaan; menuntut penggunanya menelusuri pohon di kolom 320 px menambah langkah tanpa menambah kejelasan. Yang benar-benar hilang tanpa folder cuma satu hal — kemampuan membedakan dua `LKPS_2026.xlsx` dari tempat berbeda — dan itu dijawab satu baris jalur, bukan satu mode navigasi baru.
+
+Unggah dari tab Generasi (§12.1a) dan dari halaman Penilaian AMI tetap memakai modal yang sama, lengkap dengan pemilih folder tujuannya; bawaannya akar, karena keduanya memang tidak sedang menjelajahi perpustakaan.
+
 ### 4.7 Kasus Uji — Perpustakaan & Unggah Bukti Dukung
 
 | #   | Kondisi                                          | Aksi                                          | Hasil yang diharapkan                                                                                                     |
@@ -365,6 +406,24 @@ Berlaku sama di lapis tenant maupun prodi:
 | 12  | Penyusun melihat berkas unggahan orang lain      | Buka menu aksi berkas tersebut                | Tombol hapus tidak dirender untuk berkas itu, tapi dirender untuk unggahannya sendiri                                       |
 | 13  | Berkas sedang `DIPROSES`, panel detail terbuka   | Tunggu sampai ekstraksi selesai               | Badge status dan tahap pemrosesan di panel ikut berubah tanpa menutup panel                                                 |
 | 14  | Perpustakaan prodi yang belum punya bukti dukung | Buka halamannya                               | Keadaan kosong berisi ajakan mengunggah (tombol hanya untuk yang berhak), bukan daftar kosong tanpa konteks                 |
+
+Kasus uji folder (§4.6a):
+
+| #   | Kondisi                                          | Aksi                                          | Hasil yang diharapkan                                                                                                     |
+| --- | ------------------------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 15  | Dashboard Utama, angka kesiapan tercatat         | Buat tiga folder, kembali ke Dashboard        | Angka "n dari m berkas siap dipakai AI" **sama persis**. Folder tidak pernah terhitung sebagai berkas — ini uji terpenting |
+| 16  | Sedang di dalam sebuah folder                    | Muat ulang halaman                            | Tetap di folder itu; `?folder=` dibaca dari URL seperti `q`/`sort`/`page`                                                  |
+| 17  | URL memuat `?folder=` yang folder-nya tak ada    | Buka URL itu                                  | Dipulangkan ke akar dan `?folder=` dibersihkan dari URL, bukan menampilkan folder kosong yang tak bisa dijelaskan          |
+| 18  | Sedang di dalam folder A                         | Cari kata kunci yang cocok di folder B        | Hasil dari seluruh cakupan, remah tautan diganti keterangan, tiap baris membawa jalur foldernya; kosongkan → kembali ke A  |
+| 19  | Sudah ada folder "Laporan & Notulen" di akar     | Buat folder "LAPORAN & notulen" di akar       | Ditolak beserta alasannya; nama yang sama di induk berbeda tetap diterima                                                 |
+| 20  | Direktori berisi `Kriteria 4/SK/a.pdf`, `Kriteria 4/b.docx`, satu `.txt`, dan satu subfolder kosong | Pilih folder lalu unggah | Dua folder tercipta bersarang benar, `.txt` diringkas sebagai penolakan per alasan, **subfolder kosong tidak ikut**        |
+| 21  | Lanjutan #20                                     | Unggah ulang jalur yang sama                  | Folder dipakai ulang, tidak jadi kembar                                                                                    |
+| 22  | Beberapa berkas tercentang                       | Pindahkan ke folder lain                      | Semuanya pindah dalam satu langkah; bilah seleksi hilang setelahnya                                                        |
+| 23  | Memindahkan sebuah folder                        | Buka pemilih tujuan                           | Folder itu beserta seluruh keturunannya **tidak dirender** — bukan sekadar dinonaktifkan                                   |
+| 24  | Folder berisi 2 subfolder dan 3 berkas           | Hapus folder itu                              | Konfirmasi menyebut angka pastinya; setelah dihapus tak satu pun keturunannya tersisa dan tak ada berkas yatim             |
+| 25  | Penyusun memilih berkasnya sendiri + milik orang | Lihat bilah aksi terpilih                     | Tombol hapus mati beserta alasannya; memilih hanya miliknya sendiri membuatnya hidup lagi                                  |
+| 26  | Folder baru yang masih kosong                    | Masuk ke dalamnya                             | "Folder ini masih kosong", bukan ajakan yang sama dengan perpustakaan yang memang belum berisi                             |
+| 27  | Editor Bab → tab Generasi                        | Lihat daftar bukti dukung                     | Daftarnya tetap datar, tiap berkas membawa jalur foldernya; berkas di akar tidak menampilkan apa pun                       |
 
 ---
 
@@ -468,7 +527,7 @@ Tiga nilai yang menggerakkan halaman ini semuanya dihitung saat render:
 
 Mengikuti alasan yang sama dengan §6.1 — kolom yang selalu berisi "—" hanya menambah derau:
 
-- **Ringkasan skor rubrik prodi** — `RUBRIK_KRITERIA`/`HASIL_SKOR_KRITERIA` belum ada. Masuk bersama Simulasi Skor (§9).
+- **Ringkasan skor rubrik prodi** — sumbernya kini Penilaian AMI, bukan simulasi skor bab yang sudah dihapus (§9); menunggu ada beberapa Dokumen LED yang sudah dinilai supaya rata-ratanya berarti.
 - **Data kuantitatif LKPS** — model datanya masih Pertanyaan Terbuka #3.
 - **Grafik tren antar penyusunan** — baru bermakna setelah ada beberapa penyusunan dengan skor; sampai itu, bar persentase sudah cukup.
 
@@ -501,6 +560,26 @@ Mengikuti alasan yang sama dengan §6.1 — kolom yang selalu berisi "—" hanya
 - **Pencarian, urutan, halaman, dan jumlah baris hidup di URL** (`?q=&sort=&dir=&page=&limit=`), sama seperti §4.6. Penyaringan sampai pemotongan halaman dikerjakan repository, bukan komponen tabel.
 - `PENYUSUN` melihat daftar ini hanya untuk prodinya sendiri; `PIMPINAN` melihatnya lintas prodi tapi tanpa aksi apa pun.
 
+
+#### 5.3a Kolom Tahun Akademik — satu angka, bukan `YYYY/YYYY`
+
+Formulir Tambah/Ubah Dokumen LED **tidak** meminta `2025/2026` diketik utuh. Yang diminta satu angka tahun mulai; `tahun_akademik` yang tersimpan disusun darinya sebagai `${t}/${t+1}`, dan hasilnya diperlihatkan hidup di sebelah kolom sementara diketik.
+
+Sebelumnya kolom ini ketikan bebas yang divalidasi regex `^\d{4}/\d{4}$`. Regex itu menjaga **bentuk tulisannya**, bukan artinya, sehingga tiga hal berikut lolos: tahun kembar (`2026/2026`), urutan mundur (`2030/2020`), dan selisih yang bukan satu (`2025/2030`). Karena tahun kedua kini tidak pernah diketik pengguna, ketiganya bukan ditolak melainkan **tidak mungkin terbentuk**. Regex-nya tetap dipertahankan di `ledProjectSchema` sebagai lapis kedua untuk baris lama dan untuk data yang nanti datang dari API, bukan dari formulir.
+
+| Aturan | Nilai | Alasan |
+|---|---|---|
+| Batas bawah | `2015`, angka tetap | Siklus akreditasi lima tahunan; dua siklus arsip ke belakang. Sengaja **tidak** dihitung mundur dari tahun berjalan — batas yang bergeser tiap Januari membuat dokumen lama tiba-tiba ditolak, dan yang kena justru orang yang cuma mengubah tenggat |
+| Batas atas | tahun berjalan + 1 | LED disusun untuk tahun berjalan atau tahun berikutnya; lebih jauh dari itu bukti dukungnya belum ada |
+| Kembar per prodi | ditolak | Satu prodi tidak boleh punya dua `DOKUMEN_LED` dengan `tahun_akademik` sama — lihat catatan di bawah |
+
+Pratinjau di sebelah kolom bukan hiasan. Tanpa itu tidak ada cara mengetahui apakah yang diminta tahun awal atau tahun akhir, dan yang bermaksud menyusun 2025/2026 lalu mengetik `2026` akan meleset setahun tanpa pernah melihat kesalahannya.
+
+> **Catatan desain — kenapa tidak dropdown.** Rencana awal mengganti kolom ini dengan `Select` berisi tahun yang dibangkitkan. Ditolak karena daftar opsi pasti terbatas: dokumen contoh `2021/2022` sudah berada di luar jendela tahun berjalan ±2, sehingga formulir ubahnya akan membuka `Select` tanpa nilai terpilih dan bisa diam-diam mengganti tahunnya saat disimpan. Menambalnya butuh opsi "tahun lain" yang membuka ketikan bebas — yaitu kembali ke keadaan semula. Penurunan dari satu angka memberi jaminan yang sama tanpa daftar yang bisa kehabisan.
+
+> **Catatan desain — kenapa tahun kedua tidak bisa diketik.** Tahun akademik di Indonesia selalu dua tahun berurutan; `2025/2027` tidak ada. Selama itu berlaku, kolom kedua hanya punya satu jawaban benar untuk setiap tahun pertama — bukan isian, melainkan ujian yang menambah peluang salah tanpa menambah satu pun kemungkinan yang bisa dinyatakan. Kalau suatu saat ditemukan penulisan yang tidak berurutan, kolom keduanya ditambahkan di formulir dan **penyimpanannya tidak perlu berubah**: yang tersimpan tetap string `YYYY/YYYY` yang sama, jadi pengurutan, pencarian, dan kop PDF Penilaian AMI (§8.4a) tidak ikut tersentuh.
+
+> **Catatan desain — kembar per prodi baru ditolak sekarang.** Sebelum ini tidak ada apa pun yang mencegah satu prodi punya dua dokumen bertahun sama, dan akibatnya lebih merugikan daripada tahun yang salah bentuk. §5.1e menetapkan "penyusunan aktif" **diturunkan**, yaitu dokumen belum `SELESAI` dengan `tahun_akademik` terbesar. Dua dokumen bertahun sama membuat pemutusnya jatuh ke `createdAt`, sehingga salah satunya tidak pernah muncul di Dashboard Prodi — tanpa error dan tanpa tanda. Karena bukti dukung dipakai bersama seluruh dokumen prodi, tidak ada yang terasa janggal sampai ada yang bertanya kenapa pekerjaannya seperti hilang. Ditegakkan di formulir supaya pesannya menempel ke kolom tahun; di backend nanti ia jadi unique constraint `(program_studi_id, tahun_akademik)` (`database.md` §5).
 ### 5.4 Kasus Uji — Dashboard Prodi & Daftar Dokumen LED
 
 | #   | Kondisi                                                              | Aksi                                          | Hasil yang diharapkan                                                                                                          |
@@ -532,6 +611,11 @@ Mengikuti alasan yang sama dengan §6.1 — kolom yang selalu berisi "—" hanya
 | 21  | Penjamin Mutu di daftar prodi                                        | Klik Tambah Dokumen LED                       | Formulir terbuka dengan prodi tersebut sudah terpilih; simpan maupun Batal memulangkan ke daftar prodi, bukan ke lapis tenant   |
 | 22  | Tautan formulir dikarang dengan `?returnTo=https://situs-lain`       | Tekan Batal                                   | Dipulangkan ke `/dashboard/led-projects`; tujuan di luar aplikasi diabaikan                                                     |
 | 23  | Daftar berisi lebih dari satu halaman                                | Ketik kata kunci, ubah urutan, muat ulang     | Hasil benar-benar tersaring dan terurut, `Total n data` menyesuaikan, dan `q`/`sort`/`page` bertahan di URL                     |
+| 24  | Formulir Tambah/Ubah Dokumen LED                                     | Ketik `2025` di kolom Tahun Akademik          | Pratinjau di sebelahnya berbunyi "Tahun akademik 2025/2026"; tidak ada kolom kedua yang bisa diketik                             |
+| 25  | Tahun berjalan 2026                                                  | Isi `2014`, lalu `2028`                       | Keduanya ditolak dengan menyebut rentang yang berlaku; halaman tidak berpindah dan isian lain tidak hilang                       |
+| 26  | Formulir Tambah Dokumen LED                                          | Isi kurang dari empat angka, mis. `202`       | Ditolak dengan contoh pengisian satu angka tahun — bukan pesan format `YYYY/YYYY` yang lama                                      |
+| 27  | Prodi sudah punya dokumen untuk tahun akademik tersebut              | Buat dokumen baru dengan tahun yang sama      | Ditolak dengan menyebut nama prodi dan tahunnya; pesannya menempel di kolom Tahun Akademik, bukan muncul sebagai `alert`         |
+| 28  | Dokumen arsip lama (mis. `2021/2022`)                                | Buka Ubah, simpan tanpa mengubah apa pun      | Kolom berisi `2021` dengan pratinjau `2021/2022`; tersimpan tanpa ditolak — tahun arsip tetap sah dan dokumen tidak dianggap bentrok dengan dirinya sendiri |
 
 ---
 
@@ -560,7 +644,7 @@ Halaman tersusun dari tiga bagian, dari atas ke bawah:
 
 Klik judul bab → masuk ke **Editor Bab** di `/editor/:projectId/:chapterId` (§7). Yang ditautkan judulnya, bukan seluruh baris: baris yang hanya bereaksi pada klik tidak bisa dicapai lewat keyboard dan tidak punya alamat untuk dibuka di tab baru. Bab yang terkunci tetap ditautkan — §12.2 memblokir aksi ubah, bukan membaca.
 
-**Menyusul**: ringkasan skor rubrik per bab belum ditampilkan karena `RUBRIK_KRITERIA`/`HASIL_SKOR_KRITERIA` belum ada — kolom yang selalu berisi "—" hanya menambah derau. Masuk bersamaan dengan fitur Simulasi Skor (§9). Begitu pula indikator "siapa sedang menyunting": datanya hidup di Redis (§13), bukan di basis data, jadi menunggu backend.
+**Menyusul**: ringkasan skor rubrik per bab belum ditampilkan di tabel ini — kolom yang selalu berisi "—" hanya menambah derau. Sumbernya kini Penilaian AMI, bukan simulasi skor bab yang sudah dihapus (§9), dan skor AMI per bab sudah bisa dilihat dari tab Review di Editor Bab. Begitu pula indikator "siapa sedang menyunting": datanya hidup di Redis (§13), bukan di basis data, jadi menunggu backend.
 
 ### 6.1a Status bab adalah turunan, bukan kolom
 
@@ -620,7 +704,7 @@ Tampilan mengikuti konsep dua-sidebar ala Figma:
 └────────────┴─────────────────────────────┴──────────────────────┘
 ```
 
-> **Catatan — penamaan dan urutan tab.** Bagian ini semula menulis "Generate | Rujukan | Rubrik | Skor | Draft". Yang dipakai sekarang: **"Generate" jadi "Generasi"** supaya seluruh label berbahasa Indonesia, **Draft naik ke urutan kedua** karena ia pasangan langsung dari hasil generate, dan **"Skor" jadi "Kualitas AI"** karena nama lamanya tertukar rasanya dengan "Rubrik" — justru tab itu yang menampilkan skor 1–4 beserta totalnya, sedangkan yang ini mengukur mutu kerja AI-nya (§10.1). Urutan tampilnya kini **Draft | Generasi | Rujukan | Rubrik | Kualitas AI**. Isi pasal 8–12 di bawah tidak berubah, hanya label dan urutannya. Satu-satunya sumber urutan dan label di kode ada di `PANEL_TABS` (`features/chapter/presentation/components/chapter-editor-panels.tsx`); `value` tiap tab tetap memakai nama lamanya karena ia kunci internal.
+> **Catatan — penamaan dan urutan tab.** Bagian ini semula menulis "Generate | Rujukan | Rubrik | Skor | Draft". Yang dipakai sekarang: **"Generate" jadi "Generasi"** supaya seluruh label berbahasa Indonesia, **Draft naik ke urutan kedua** karena ia pasangan langsung dari hasil generate, dan **"Skor" jadi "Kualitas AI"** karena nama lamanya tertukar rasanya dengan "Rubrik" — justru tab itu yang menampilkan skor 1–4 beserta totalnya, sedangkan yang ini mengukur mutu kerja AI-nya (§10.1). Urutan tampilnya kini **Draft | Generasi | Rujukan | Kualitas AI | Review** — tab **Review** menyusul sesudah catatan ini ditulis (keadaan bab: kunci dan catatan Penjamin Mutu, ditaruh paling akhir karena ia bukan alat menyusun), dan tab **Rubrik** kemudian dihapus (§9). Isi pasal 8–12 di bawah tidak berubah, hanya label dan urutannya. Satu-satunya sumber urutan dan label di kode ada di `PANEL_TABS` (`features/chapter/presentation/components/chapter-editor-panels.tsx`); `value` tiap tab tetap memakai nama lamanya karena ia kunci internal.
 >
 > **Catatan — serialisasi `konten_kerja`.** Editor menulis **string HTML**, bukan JSON ProseMirror, walau docs/database.md menyebut kolomnya `jsonb` (kolom JSON nanti tinggal memuat `{ format: 'html', body: '<p>…</p>' }`). Alasannya bab yang lahir sebelum editor ada — termasuk seluruh data contoh — berisi kalimat biasa: sebagai HTML ia dibungkus jadi paragraf tanpa kode migrasi apa pun, sedangkan `JSON.parse` akan melempar dan memaksa cabang penyelamat permanen di tiap tempat baca.
 
@@ -633,7 +717,7 @@ Tampilan mengikuti konsep dua-sidebar ala Figma:
 
 - Satu `BAB_DOKUMEN` = satu ruang kerja utuh dengan `konten_kerja` (jsonb) sebagai sumber kebenaran.
 - Meskipun secara visual bisa memuat banyak "kertas"/section yang memanjang (mis. bab yang berisi banyak sub-poin), **semua tetap satu kesatuan `konten_kerja`** milik bab tersebut — **tidak** dipecah jadi entitas terpisah per section. Ini disengaja agar fleksibel: satu bab bisa berisi satu poin singkat atau memanjang jadi banyak sub-bagian, tanpa mengubah model data.
-- **Autosave**: setiap perubahan ketikan langsung menimpa `konten_kerja`, ditandai indikator "Tersimpan X menit yang lalu" di header.
+- **Autosave**: setiap perubahan ketikan langsung menimpa `konten_kerja`, ditandai indikator simpan di header. **Nada indikatornya ikut menua**: selama semenit pertama ia pil hijau bercentang berbunyi "Tersimpan", sesudah itu turun jadi teks meredup tanpa pil — "Disimpan 2 hari lalu" — dan waktu persisnya pindah ke tooltip. Hijau bercentang adalah kosakata untuk peristiwa yang baru berhasil; dipertahankan berhari-hari ia justru berebut bacaan pertama dengan judul dokumen di sebelahnya. Labelnya juga sengaja pendek dan tidak boleh melipat: di 768 px teks panjang membuatnya jadi gumpalan tiga baris di dalam header setinggi 64 px.
 
 ### 7.3 Bab baru (kosong)
 
@@ -713,6 +797,16 @@ Tampilan mengikuti konsep dua-sidebar ala Figma:
 > - **Bab tanpa kriteria menyatakan dirinya begitu.** database.md §10 memang menyebut bab tanpa baris `RUBRIK_KRITERIA_BAB` otomatis tidak punya hasil skor; tampilannya harus membedakan itu dari kegagalan memuat data.
 > - **Penilaiannya masih tiruan** di `features/chapter/data/sources/remote/chapter-scoring.mock.ts`, dan **deterministik** — skor diturunkan dari isi konten, bukan diacak. Penilai acak akan membuat janji "skor checkpoint tidak berubah kecuali di-run ulang" jadi bohong, karena menjalankan ulang pada `konten_snapshot` yang sama persis akan memberi angka berbeda.
 
+> **Catatan — tab Rubrik dihapus dari produk.** Ditulis sesudah kedua catatan di atas, dan menggantikan hasilnya, bukan pasal §9.1–§9.3 yang tetap dibiarkan utuh sebagai catatan keputusan.
+>
+> **Yang pergi:** tab Rubrik di sidebar kanan beserta tombol "Jalankan Simulasi", seluruh penulisan `HASIL_SKOR_KRITERIA` dari frontend (`chapter-score.entity.ts`, repository, dan sumber lokalnya dihapus), dan item **"Lihat skor"** di menu tab Draft — satu-satunya alasan item itu ada adalah membuka tab ini dengan checkpoint terpilih, jadi ia ikut pergi bersama tujuannya. Sidebar kanan kini enam tab: **Draft | Generasi | Panduan | Bukti | Kualitas AI | Review** — label "Bukti" ditetapkan belakangan di §11.1a menggantikan "Rujukan", dan tab **Panduan** menyusul di §11.1c. Yang terakhir itu bukan tab Rubrik ini yang kembali: ia murni baca, tanpa simulasi skor dan tanpa satu pun penulisan.
+>
+> **Yang tinggal:** `RUBRIK_KRITERIA` beserta deskripsi tiap level skor tetap jadi master data di `rubric-criterion.entity.ts` — pembacanya sekarang Penilaian AMI. Mesin penilainya juga tetap di `chapter-scoring.mock.ts` dan tetap deterministik; hanya pembungkus `scoreChapterContent()` yang dibuang, sedangkan `nilaiKriteria()` dipanggil `assessment-run.mock.ts`. Skor final AMI **per bab** tetap terlihat dari dalam editor lewat pita di **tab Review** (`assessment-bab-banner.tsx`), murni baca, dengan tautan ke halaman Penilaian AMI.
+>
+> **Kenapa:** dua angka resmi untuk bab yang sama, dan tidak ada cara menjelaskan selisihnya. Simulasi di editor memakai indikator dan mesin skor yang sama dengan Penilaian AMI, tapi menilai satu bab atas isinya saat itu, sementara yang masuk dokumen akreditasi adalah hasil AMI beserta koreksi Penjamin Mutu. Penyusun bisa mengejar angka simulasinya sampai penuh dan tetap mendapati penilaian resmi bab yang sama menyebut angka lain — sesuatu yang pita di §9 sendiri sudah dipasang untuk menambal. Menyisakan satu angka yang benar-benar berlaku lebih jujur daripada menerangkan dua.
+>
+> Catatan di atas (`§8.1`, `§9`) sengaja **tidak** disunting: keduanya mencatat keputusan yang memang pernah diambil, dan menulis ulangnya akan menghapus jejak kenapa fitur ini pernah ada.
+
 ---
 
 ## 10. Mekanisme Skor RAGAS
@@ -749,10 +843,50 @@ Tampilan mengikuti konsep dua-sidebar ala Figma:
 >
 > - **Lingkupnya bisa dipilih: kondisi aktif atau salah satu checkpoint.** Pasal ini hanya menyebut `BUKTI_DUKUNG_BAB`, tapi tiap `BAB_DRAFT` menyimpan `BUKTI_DUKUNG_DRAFT`-nya sendiri yang permanen dan **berbeda-beda antar versi** — dan §8.1 sudah menunda penampilannya justru ke tab ini. Kalau tab ini berhenti di kondisi aktif, arsip per checkpoint tidak akan pernah terlihat di mana pun. Pemilihnya hanya muncul untuk bab yang memang punya riwayat checkpoint.
 > - **Bagian "Panduan" belum dibangun.** Ia menuntut `PANDUAN_REFERENSI`/`PANDUAN_DETAIL`/`PANDUAN_DETAIL_BAB` yang belum ada sama sekali di kode, dan `referensi_chunk_ids` yang tersimpan sekarang masih string tiruan tanpa entitas di baliknya — menyeed panduan lebih dulu berarti mengarang keterkaitan yang belum ada. Ketiadaannya **dinyatakan di kaki panel**, bukan didiamkan, supaya tidak terbaca sebagai fitur yang terlupa.
+>   *(Sudah tidak berlaku — §11.1c membangunnya sebagai tab tersendiri. Butir ini dibiarkan sebagai jejak kenapa ia menunggu selama itu.)*
 > - **Rujukan menyimpan nama dan tipe berkas, bukan hanya id.** Bukti dukung bisa dihapus dari Perpustakaan; kalau yang tersimpan cuma id, rujukan yang berkasnya hilang berhenti bisa dibaca sama sekali — tidak ada tempat lain di sistem yang masih tahu namanya. Karena itu `BUKTI_DUKUNG_BAB` maupun `BUKTI_DUKUNG_DRAFT` di sini berbentuk `{ id, nama_dokumen, tipe_file }`, dengan preseden yang sama seperti `BAB_DRAFT.dibuat_oleh_user_id` yang juga menyimpan namanya. `ukuran_bytes` dan `status` sengaja **tidak** ikut: keduanya berubah sepanjang umur berkas, jadi menyalinnya berarti mengarsipkan keadaan yang langsung basi — keduanya dibaca langsung dari Perpustakaan saat ditampilkan.
 > - **Berkas yang sudah dihapus tetap ditampilkan**, memakai nama arsipnya, dengan badge "Sudah dihapus" dan barisnya diredupkan. Menghilangkannya akan membuat riwayat berbohong: bab itu memang pernah disusun dari berkas tersebut, dan justru itu yang perlu diketahui saat dokumennya diperiksa asesor.
 > - **Tidak ada tautan langsung ke satu bukti dukung.** Seleksi berkas di Perpustakaan masih state lokal komponennya, jadi yang ditawarkan hanya tombol membuka pustakanya. Jangan berpura-pura lebih dari itu sampai deep-link-nya benar-benar ada.
 > - **Kalimat "bukti dukung yang diambil otomatis oleh AI di luar pilihan eksplisit user"** belum punya data di baliknya: jalur generate yang ada sekarang hanya mencatat berkas yang dicentang user. Baris itu menunggu retrieval sungguhan.
+
+#### 11.1a Kutipan yang dipakai tiap bukti dukung
+
+Menyusul permintaan agar tab ini tidak berhenti pada **berkas apa** yang dipakai, tapi juga menunjukkan **bagian mana** yang dipakai. Selama daftarnya cuma nama berkas, janji ketertelusuran `referensi_chunk_ids` — yang docs/database.md sebut sebagai bagian dari "jejak audit lengkap" — tidak pernah benar-benar sampai ke layar.
+
+- **Satu baris tetap satu dokumen; kutipannya di laci.** Menampilkan satu baris per kutipan sempat dipertimbangkan dan ditolak: hitungan di kepala panel akan berhenti berarti "berapa berkas" — pertanyaan pertama yang dijawab tab ini — dan satu berkas dengan empat kutipan akan mendominasi daftarnya. Barisnya kini menyebut jumlah kutipannya dan bisa ditekan; lacinya memakai bentuk yang sama persis dengan laci detail indikator Penilaian AMI, lengkap dengan navigasi ‹ › supaya meninjau berkas berurutan tidak menuntut tutup-buka satu per satu.
+- **Ini memperluas kalimat "tanpa detail isi" di atas, bukan melanggarnya.** Yang dibuka bukan isi berkasnya, melainkan potongan yang dipakai menyusun bab. Membuka berkas utuhnya tetap lewat Perpustakaan.
+- **Kutipannya diturunkan, bukan dibaca dari `referensi_chunk_ids`.** Itu terpaksa, dan perlu dinyatakan: untuk **kondisi aktif** id chunk sama sekali tidak tersimpan — `BAB_DOKUMEN` tidak punya kolomnya, generate tidak menuliskannya, dan restore checkpoint tidak memulihkannya. Untuk **checkpoint** id-nya memang tersimpan, tapi hanya untuk yang bersumber `AI`, isinya opaque tanpa entitas di baliknya, dan data contohnya sendiri sudah berselisih dengan `jumlah_chunk` di RAGAS-nya. Menurunkannya dari nomor bab + id berkas adalah satu-satunya cara kedua lingkup berperilaku sama. **Isinya tiruan**, dan lacinya menyatakan itu di kakinya sendiri.
+- **Satu berkas memberi kutipan berbeda di bab yang berbeda**, karena benih penurunannya memuat nomor bab — meniru retrieval sungguhan, yang mencari bagian paling relevan dengan bab yang sedang disusun.
+- **Berkas yang sudah dihapus tetap bisa dibuka kutipannya**, dengan alasan yang sama yang membuat barisnya tetap ditampilkan: keduanya diturunkan dari `{ id, nama_dokumen, tipe_file }` yang diarsipkan, bukan dari berkas hidupnya.
+- **Total kutipan sengaja tidak ditampilkan** di kepala panel — hanya jumlah per berkas. Tab Kualitas AI sudah menyebut "N potongan sumber" dari `jumlah_chunk`, dan angka itu di data contoh pun sudah tidak cocok dengan panjang `referensi_chunk_ids`. Menambah angka ketiga yang tidak bisa dicocokkan dengan keduanya hanya menimbulkan pertanyaan yang tidak ada jawabannya.
+- **Bagian "Panduan" tetap belum ada.** Kutipan yang ditampilkan seluruhnya dari bukti dukung; panduan LAM Teknik tidak ikut dikarang. *(Sudah tidak berlaku — lihat §11.1c.)*
+- **Label tabnya jadi "Bukti"**, sementara `value`-nya tetap `rujukan` — kunci internal yang tidak pernah dilihat pengguna, preseden yang sama dengan `skor`/"Kualitas AI". Labelnya dipendekkan karena barisnya dibagi dengan bilah alat editor; judul di dalam panel, laci, dan seluruh kalimatnya tetap berbunyi "bukti dukung" lengkap. Kata "rujukan" hilang dari layar, tapi §11 tetap bernama "Mekanisme Rujukan" karena daftar isi menautkan anchornya.
+
+> **Status implementasi.** Jalan. Isi kutipannya tiruan deterministik di `features/chapter/data/sources/remote/chapter-chunk.mock.ts`, dipilih dari pustaka prosa yang dikunci kata kunci nama berkas — batas yang sama dengan §12.1b, dan tertaut ke Pertanyaan Terbuka #9 yang sama. Bentuk datanya sengaja meniru chunk sungguhan yang sudah ada di `apps/ai` (`LEDChunk`: teks, halaman, judul bagian), dikurangi `char_start` yang tak berguna bagi pembaca dan skor kemiripan yang, kalau dikarang, hanya terlihat presisi tanpa dasar. **Sengaja tidak asinkron**: panel ini dilepas dari pohon tiap kali tab berpindah, jadi sumber asinkron berarti spinner tiap kali tab dibuka. Saat backend siap, yang menggantikannya `generation_runs.chunks_used`.
+
+#### 11.1c Tab "Panduan"
+
+Menyusul permintaan agar panduan yang dipakai AI ikut terlihat, lengkap dengan kutipannya — separuh janji §11.1 yang selama ini menganggur. Mock generate bahkan sudah memancarkan `chunk-panduan-{urutan_bab}-01` sejak awal: konsepnya setengah ada, tapi tak pernah sampai ke layar.
+
+- **Tab tersendiri, bukan bagian kedua tab Bukti.** §11.1 merancang keduanya sebagai dua bagian satu tab, dan itu ditulis saat bagian panduan belum punya apa pun untuk ditampilkan. Begitu tiap butirnya membawa kutipan sendiri, menumpuk keduanya di satu panel 320 px membuat hitungan di kepala tab Bukti berhenti berarti "berapa berkas" — kesalahan yang sama yang sudah ditolak §11.1a. Keduanya juga menjawab pertanyaan berbeda: *apa yang seharusnya ditulis* versus *dari mana tulisannya berasal*. Tabnya diletakkan **sebelum** Bukti, mengikuti urutan pipeline sungguhan. Ini bukan tab Rubrik §9 yang kembali: yang itu menjalankan simulasi skor dan menulis `HASIL_SKOR_KRITERIA`; yang ini murni baca.
+- **Dua kelompok, karena pipeline-nya memang dua.** *Pedoman penulisan* dan *Rubrik penilaian* memetakan satu-satu ke `generation_runs.pedoman_used` (RAG 1) dan `rubric_used` (RAG 2) — dua kolom terpisah yang diambil dua fungsi retrieval berbeda. Menyatukannya berarti membuang perbedaan yang backend-nya sendiri pelihara. Kelompok kosong tidak dirender sama sekali.
+- **Barisnya poin LED-PS, bukan indikator.** Memetakan indikator jadi baris membuat bab 7 dapat dua belas baris, padahal `search_pedoman` mengambil `k=5` per bagian. Jalan keluarnya bukan memotong daftar, melainkan memakai satuan yang benar: barisnya lima poin per bab kriteria (`{n}.1`–`{n}.5`), dan nama indikator hidup **di dalam** poin IKU sebagai kutipan. Tidak ada baris yang dibuang, dan tiap bab mendarat di 1–8 baris.
+- **Nomor indikator sengaja tidak pernah dicetak.** Repo ini punya dua penomoran yang tidak kompatibel: `RUBRIK_KRITERIA.no` (1–18, karangan, dipakai sebagai kunci hasil AMI) dan matriks LAM sungguhan (1–60, sumber nama-namanya). Mencetak nomor yang kedua akan membuat bab yang sama menyebut indikator bernomor berbeda di tab Panduan dan tab Review. Yang dipakai hanya **namanya**, persis cara `RINCIAN_C1` menuliskan `a) Kekhasan VMTS` tanpa nomor.
+- **Apa yang nyata dan apa yang tiruan**, dipisah tegas — ini fitur pertama yang isinya **normatif**, jadi pemisahan itu syarat ia boleh ada:
+  - **Nyata**: kerangka LED-PS (`CHAPTER_TOC` menguraikan C.1 penuh), 60 nama indikator LAM beserta tipe skornya (`apps/ai/data/reference_scores_claude.csv`), rincian aspek S4 untuk tiga indikator (`penilaian_10_rubrik_sarjana_terapan.csv`), dan seluruh isi kelompok rubrik (turunan `RUBRIK_KRITERIA`, nol karangan).
+  - **Inferensi**: pengulangan kerangka lima poin ke C.2–C.9, dan pemetaan bab → indikator. CSV-nya tidak membawa pengelompokan kriteria sama sekali.
+  - **Tiruan**: seluruh kalimat `isi_teks`. Tidak ada satu kalimat pedoman LAM pun di repo ini.
+  - Penambatnya: nama indikator 1–3 cocok persis dengan `a) b) c)` di `RINCIAN_C1` — dua berkas yang tidak saling tahu menyebut hal yang sama.
+- **Kalimat tiruannya memerikan, tidak mewajibkan.** Kata *wajib*, *harus*, *minimal*, *sekurang-kurangnya*, dan angka ambang apa pun dilarang: bedanya bukan nada melainkan modus kalimat, dan keterangan tidak bisa menyesatkan soal kepatuhan karena ia tidak mengklaim apa pun tentang kepatuhan. Yang membawa isi nyata — daftar IKU — satu-satunya yang menyebut sumbernya, jadi atribusi itu sendiri jadi penanda.
+- **Kutipan rubrik tidak punya halaman, dan itu bukan kelalaian.** Matriks penilaian sebuah **tabel**; `search_rubric` pun mengembalikan potongan bermetadata `sub_bab` tanpa halaman. Nomor halaman untuk satu sel rubrik tidak punya dasar apa pun, sejenis dengan skor kemiripan yang sengaja ditinggalkan §11.1a. Asalnya diisi provenans — `Bunyi kriteria`, `Skor 4`, `Sumber angka`.
+- **Halaman pedoman dihitung, bukan diacak.** Urutannya sudah intrinsik — poin `4.1` mendahului `4.5` — jadi tidak ada yang perlu dijinakkan `sidikJari`, mengikuti aturan yang sudah ditulis §12.1b.
+- **`D.2` dipetakan ke dua bab sekaligus** (2 dan 13). Bab 2 bernama "Kondisi Eksternal" dan simpul Daftar Isi yang menunjuknya berbunyi "B. Analisis Lingkungan Eksternal" — poin yang sama, dibaca dari sudut berbeda. Ini satu-satunya hal di fitur ini yang membuktikan `PANDUAN_DETAIL_BAB` memang many-to-many, bukan larik hiasan.
+- **Bab 6 sengaja tipis dan tidak ditambal.** Yang tersisa untuk Kriteria 3 cuma dua nama, dan keduanya tidak menyentuh keketatan seleksi maupun layanan kemahasiswaan yang justru ditanya rubrik untuk bab yang sama. Selisih itu keterangan jujur tentang seberapa sebagian data yang terparsing, dan akan jadi yang pertama terkoreksi saat matriks aslinya masuk.
+- **Bab 1, 3, dan 14 kosong**, dengan kalimat yang menyatakan sebabnya: panduan LAM memang tidak mengatur setiap bab. Tanpa kalimat itu, panel kosong terbaca seperti pemuatan yang gagal.
+- **Tanpa pemilih lingkup.** Bukti dukung berbeda antar checkpoint karena penyusunnya yang memilih; panduan murni turunan `urutan_bab` dan sama di setiap checkpoint. Pemilih yang seluruh pilihannya menghasilkan daftar identik menyiratkan variasi yang tidak ada.
+- **Tanpa tombol membuka dokumen sumbernya.** `PANDUAN_REFERENSI.file_url` ada di skema, tapi berkasnya belum ada di mana pun — tombol unduh yang mati lebih buruk daripada tidak ada tombol.
+
+> **Status implementasi.** Jalan. Katalognya konstanta modul di `features/chapter/domain/entities/guidance-point.entity.ts`, sejajar `RUBRIK_KRITERIA` dan dengan alasan yang sama: master data global, di-seed sekali, tidak pernah disunting lewat UI. Kutipannya di `chapter-guidance.mock.ts`, terpisah dari `chapter-chunk.mock.ts` karena keduanya menggantikan kolom yang berbeda — satu berkas gabungan nantinya cuma separuhnya yang boleh dihapus. **Sengaja tidak asinkron**, alasan yang sama dengan §11.1a. Yang menggantikannya saat backend siap: `generation_runs.pedoman_used` dan `rubric_used`.
 
 ---
 
@@ -768,7 +902,9 @@ Tampilan mengikuti konsep dua-sidebar ala Figma:
 > **Catatan — yang ditambahkan saat tab ini dibangun.** Bagian di atas ditulis sebelum implementasinya ada; tiga hal berikut menyusul dan tidak menggantikannya.
 >
 > - **Prompt tambahan (opsional).** Di bawah daftar bukti dukung ada satu textarea bebas, sebaris dengan tombol Generate. Isinya ikut dikirim sebagai arahan ke pipeline RAG; dikosongkan berarti generate berjalan hanya dari bukti dukung + panduan, persis seperti tulisan asli pasal ini.
-> - **Bukti dukung yang belum `SIAP`.** Sesuai §4.5 seluruh berkas tetap tampil, tapi yang statusnya bukan `SIAP` dinonaktifkan dengan badge statusnya ikut terlihat — badge itulah keterangan kenapa ia belum bisa dicentang. Berkas `GAGAL` menampilkan `catatan_gagal`-nya. Daftarnya punya pencarian sendiri (nama berkas, pengunggah, tipe) dan mengurutkan yang `SIAP` paling atas. Saat tab dibuka, pilihan generate terakhir (`BUKTI_DUKUNG_BAB`) tercentang kembali; id yang sudah hilang atau statusnya mundur dilaporkan sebagai catatan, bukan dibuang diam-diam.
+> - **Bukti dukung yang belum `SIAP`.** Sesuai §4.5 seluruh berkas tetap tampil, tapi yang statusnya bukan `SIAP` dinonaktifkan dengan badge statusnya ikut terlihat — badge itulah keterangan kenapa ia belum bisa dicentang. Berkas `GAGAL` menampilkan `catatan_gagal`-nya. Daftarnya punya pencarian sendiri (nama berkas, pengunggah, tipe) dan mengurutkan yang `SIAP` paling atas. Saat tab dibuka, pilihan generate terakhir (`BUKTI_DUKUNG_BAB`) tercentang kembali; id yang sudah **hilang dari pustaka** dilaporkan sebagai catatan, bukan dibuang diam-diam.
+>
+>   Yang statusnya sekadar mundur **tidak** ikut dilaporkan — semula ia dilaporkan, dan itu keliru dua kali: barisnya masih tampil persis di daftar atas dengan badge dan `catatan_gagal`-nya sendiri, sedangkan status seperti `GAGAL` tidak berubah sendiri sehingga catatannya menyala terus-menerus sampai berhenti terbaca sebagai kabar. Alasan yang sama sudah dipakai auto-centang §12.1a saat memilih diam untuk berkas `GAGAL`. Berkas yang benar-benar dihapus lain perkara: tidak ada satu pun tempat di layar yang bisa menunjukkannya, dan generate berikutnya akan berjalan dengan konteks lebih sedikit tanpa pemberitahuan.
 > - **Lebar sidebar kanan bisa diseret** (320–560 px, tersimpan per browser). Sketsa di §7 menggambarnya tetap; 320 px tidak cukup memuat daftar bukti dukung, pencarian, dan prompt sekaligus.
 >
 > **Status implementasi.** Yang sudah jalan: pemilihan bukti dukung, prompt, dan generate yang menimpa `konten_kerja` sekaligus memperbarui `BUKTI_DUKUNG_BAB` — mengikuti pasal ini, **bukan** `docs/database.md` §4 yang menyimpan hasilnya sebagai `BAB_DRAFT` baru untuk di-restore user. Keduanya berselisih dan yang dipakai kode adalah pasal ini; §4 di `database.md` menunggu iterasi checkpoint. Yang **belum**: skor RAGAS otomatis (butuh tab Skor) dan kunci `lock:bab:{bab_id}` di §13 (belum ada lapis Redis). Pemanggilan AI-nya sendiri masih tiruan di `features/chapter/data/sources/remote/chapter-generation.mock.ts`.
@@ -782,6 +918,23 @@ Menyusul permintaan agar bukti dukung bisa diunggah **sambil menulis**, tidak ha
 - **Targetnya**: bawaannya prodi pemilik dokumen. Pengunggah level tenant (`PIMPINAN`, `PENJAMIN_MUTU`) mendapat pilihan kedua, **Universitas**. Prodi lain tidak pernah jadi pilihan dari sini — untuk itu ada perpustakaan tenant (§4.4.1) — karena dari dalam editor sebuah prodi, mengunggah ke prodi tetangga hampir selalu salah pencet, bukan niat.
 - **Auto-centang.** Berkas yang diunggah dari tab ini tercentang sendiri begitu status ekstraksinya `SIAP`; sepanjang menunggu, ada keterangan yang mengumumkannya supaya centang yang muncul belakangan tidak terasa datang sendiri. Yang `GAGAL` tidak dicentang — badge dan `catatan_gagal`-nya sudah jadi keterangannya. Pilihan ini terhitung "baru", jadi ikut terangkut tombol pembatalan seperti centang manual.
 - **Batasnya**: berpindah bab selagi unggahan berjalan tidak membatalkan apa pun — berkasnya tetap tuntas dan masuk pustaka — tapi auto-centangnya hangus. Ia memang milik bab tempat berkas itu diunggah.
+
+#### 12.1b Rekomendasi bukti dukung yang belum ada
+
+Menyusul permintaan agar tab ini tidak cuma memperlihatkan bukti dukung yang **ada**, tapi juga menyebut yang **kurang**. Sebelum ini, penyusun tidak punya cara tahu berkas apa yang sebenarnya dicari kriteria babnya: daftar centang hanya bisa menjawab itu untuk berkas yang sudah telanjur diunggah, dan rekomendasi Penilaian AMI pun tidak pernah menyebut nama dokumen — cuma "Lampirkan bukti dukung".
+
+Bentuknya satu blok di puncak daftar, berisi kartu-kartu bernama. **Ia nasihat, bukan gerbang** — Generate tidak pernah dihalanginya.
+
+- **Isinya diturunkan dari rubrik, bukan dikarang per bab.** Tiap butir katalog menempel pada satu atau beberapa `RUBRIK_KRITERIA.no`, dan bab mendapat rekomendasinya lewat `findKriteriaForBab(urutan_bab)` yang sudah dipakai tab Review. Akibatnya bab yang memang tidak dinilai rubrik — 1, 2, 3, dan 14 — tidak pernah memunculkan blok ini, tanpa perlu daftar pengecualian kedua yang harus dijaga selaras.
+- **"Belum ada" dicocokkan atas nama berkas.** `BUKTI_DUKUNG` belum punya kolom kategori — itu Pertanyaan Terbuka #9 di §16 — jadi tiap butir katalog membawa daftar penanda yang dicocokkan sebagai frasa utuh di batas kata atas `nama_dokumen`. Daftarnya sengaja murah hati: keliru menganggap sebuah dokumen sudah ada hanya berarti satu dorongan yang tidak muncul, sedangkan keliru menyatakan sebuah dokumen belum ada **sementara barisnya terlihat di daftar yang sama** adalah pertentangan di satu layar. Batasnya jujur: berkas yang dinamai tak terduga mengalahkannya, dan **blok itu tidak menerangkan dirinya sendiri** — kalimat kepala yang dulu menyebutkan "belum ada yang *namanya* cocok" sudah dibuang karena terlalu penuh untuk kolom selebar 320 px. Salah-positif karena itu tampil tanpa penjelasan; pertukaran yang diambil sadar, dengan taruhan sekadar satu saran yang keliru muncul.
+- **Panduan bukan bukti.** Berkas yang menamai dirinya `panduan`, `pedoman`, `template`, atau `format` tidak dianggap memenuhi kebutuhan yang menuntut **hasil**: `Panduan_Tracer_Study.pdf` menerangkan cara melakukan tracer study, ia bukan hasilnya. Pengecualian ini hanya berlaku untuk butir yang memang menuntut hasil — sebagian kebutuhan justru berupa pedoman, dan di sana pedoman adalah pemenuhan yang sah.
+- **Status berkas tidak ikut disaring.** Yang `MENUNGGU`, `DIPROSES`, maupun `GAGAL` tetap terhitung ada — semuanya sudah diunggah, dan §4.5 menampilkan semuanya di daftar tepat di bawah blok ini. Untuk yang `GAGAL` ini ketidaktepatan yang disengaja: yang dibutuhkannya **ekstraksi ulang, bukan unggah ulang**, dan barisnya sudah menyediakan itu. Daftar itu otoritas soal kesiapan; blok ini hanya soal kepemilikan.
+- **Muncul hanya ketika perlu.** Tidak ada rekomendasi tersisa → blok hilang, dan **tidak** diganti pengumuman "sudah lengkap": pencocokan atas nama berkas tidak cukup kuat untuk menyatakan itu, dan baris hijau permanen akan menyewa ruang daftar selamanya. Kotak cari terisi → blok juga hilang, karena saat itu badan panel sedang berarti "hasil pencarian" dan acuannya ke daftar di bawah berhenti benar. Bab terkunci, bab yang sedang diajukan, dan pembaca yang tidak berhak unggah **tetap** melihatnya — ini keterangan, bukan aksi; yang hilang untuk mereka hanya tombolnya (§1).
+- **Paling banyak tiga kartu terlihat**, sisanya dilipat di balik "N kebutuhan lain" dengan pola disclosure yang sama seperti prompt tambahan. Kebutuhan yang bersandar tabel LKPS diurutkan paling atas dan keterangannya selalu berbunyi "angka indikator, bukan narasi" — itu seluruh argumen indikator kuantitatif dalam empat kata, dan pembacanya belajar bedanya dari dua kartu tanpa legenda.
+- **Nadanya netral, bukan peringatan.** Tanpa ikon peringatan, tanpa warna amber, tanpa kata *wajib*, *harus*, atau *kurang*. Bukti dukung yang belum lengkap adalah keadaan normal sebuah dokumen yang sedang disusun — pelajaran dari panel "Perlu Perhatian", yang merender setiap barisnya dengan ikon peringatan sehingga kabar baik pun terbaca seperti alarm.
+- **Dua butir §12.1a berubah karenanya.** Tombol unggah di kepala tab kini **berlabel**, tidak lagi ikon telanjang 24 px — begitu pustakanya terisi, keadaan kosong tidak lagi dirender dan tombol itulah satu-satunya jalan unggah dari dalam tab, sementara tidak ada apa pun di layar yang menamainya. Dan ajakan unggah pada keadaan kosong **tidak dirender** saat blok rekomendasi sedang tampil: tombol "Unggah sekarang" di kaki blok membuka modal yang sama sambil menyebut berkas apa yang dicari, jadi ajakan kedua di bawahnya cuma menambah keraguan. Modal, antrean, dan auto-centangnya tetap persis yang di §4.5 — tidak ada alur unggah kedua.
+
+> **Status implementasi.** Katalognya konstanta modul di `features/chapter/domain/entities/evidence-recommendation.entity.ts`, sejajar dengan `RUBRIK_KRITERIA` di berkas tetangganya dan dengan alasan yang sama: master data global, di-seed sekali, tidak pernah disunting lewat UI. Belum ada panggilan AI sungguhan di baliknya — **dan sengaja belum ada tiruan asinkronnya**, tidak seperti generate. Panel ini dilepas dari pohon setiap kali tab berpindah (`Tabs.Panel` tanpa `keepMounted`), jadi sumber asinkron berarti spinner di kolom selebar 320 px pada tiap kali tab dibuka; sementara pencocokan "sudah ada atau belum" justru harus menyegar seketika saat unggahan selesai, dan itu hanya bisa kalau ia turunan murni dari pustaka yang sudah dimuat. Saat endpoint sungguhan ada, yang berubah `useChapterGeneration` — bukan panelnya, yang sudah menampilkan larik kosong sebagai "tidak ada apa-apa".
 
 ### 12.2 Penguncian bab (`terkunci`)
 
@@ -894,6 +1047,8 @@ Kedua lapis ini **independen** dan bisa aktif bersamaan (misal bab sedang di-loc
 
 _\* Admin hanya bisa membuat user, belum tentu punya kemampuan assign ke prodi — perlu dikonfirmasi ulang bila ada kebutuhan lanjutan._
 
+> **Catatan desain — baris "Jalankan simulasi skor (Rubrik)" tidak berlaku lagi.** Tab Rubrik dihapus dari produk (§9), jadi tidak ada lagi aksi yang diatur baris itu. Barisnya sengaja dibiarkan alih-alih dihapus, sama seperti §9.1–§9.3 yang tetap utuh. Penggantinya baris **"Jalankan Penilaian AMI"** dengan pembagian yang sama persis (`PENJAMIN_MUTU` dan `PENYUSUN` menjalankan, `PIMPINAN` read-only) ditambah satu hak yang tidak pernah ada di simulasi: **mengoreksi skor mesin**, yang hanya dipegang `PENJAMIN_MUTU` — menjalankan penilaian itu memeriksa pekerjaan sendiri, sedangkan mengubah angkanya menyatakan vonis. Penilaian AMI sendiri belum punya pasalnya di berkas ini (lihat catatan §9).
+
 > **Catatan desain — dua baris bukti dukung yang ditetapkan menyusul.** Baris "Hapus bukti dukung" dan "Ulangi ekstraksi" tidak ada di matriks awal. PRD hanya menyebut penghapusan dilakukan "pengguna berwenang" tanpa merinci siapa. Keputusannya: `PIMPINAN`/`PENJAMIN_MUTU` boleh menghapus apa pun di cakupannya karena keduanya memang beroperasi di level tenant, sedangkan `PENYUSUN` dibatasi pada unggahannya sendiri — cukup untuk membereskan salah unggah, tanpa memberinya kuasa menghapus bukti yang dipakai prodi secara keseluruhan. Mengulang ekstraksi tidak menghapus apa pun dan tidak mengubah isi berkas, jadi haknya disamakan dengan hak unggah di lapis bersangkutan.
 
 > **Catatan desain — penyusunan Dokumen LED milik Penjamin Mutu.** Baris "Buat Dokumen LED baru" ditetapkan menyusul karena matriks awal tidak memuatnya. Wewenangnya diberikan ke `PENJAMIN_MUTU` saja agar konsisten dengan dua baris di bawahnya (kunci bab dan ubah status dokumen): satu role memegang seluruh daur hidup dokumen dari pembuatan sampai penyelesaian. `PIMPINAN` tetap read-only di level ini (§6.2), dan `PENYUSUN` tidak pernah masuk Dashboard Utama sehingga tidak punya jalan ke form pembuatan.
@@ -919,6 +1074,16 @@ Bagian ini mencatat hal-hal yang belum diputuskan/dibahas tuntas, untuk didiskus
 
 5. **Export dokumen LED** — fitur ekspor (kemungkinan ke Word/PDF) disebutkan ada, tapi detail mekanismenya belum dibahas sama sekali (format, apakah per bab atau seluruh dokumen, styling, dsb) — dilupakan dulu sesuai kesepakatan, dibahas belakangan.
 
+   > **Catatan — yang sudah ada: ekspor *hasil penilaian*, bukan dokumen LED-nya.** Halaman Penilaian AMI kini punya tombol **Unduh PDF** di kepalanya. Yang diekspor tabel hasil per indikator: **No, Kriteria, Skor, Justifikasi, Rekomendasi, Confidence** — A4 tegak, dipenggal otomatis antar halaman, dengan kop berisi universitas, prodi, dokumen, tahun akademik, waktu penilaian, siapa yang menjalankan, dan sumber LED-nya, ditambah baris ringkasan skor.
+   >
+   > Tiga keputusan yang menempel padanya:
+   >
+   > - **Selalu seluruh indikator, urut nomor** — tidak mengikuti saringan dan pengurutan di daftar. Saringan itu keadaan tampilan yang sengaja tidak masuk URL, dan pembaca yang menerima PDF berisi empat baris tidak punya cara tahu bahwa yang lain disaring.
+   > - **Kolom Skor berisi skor final**, yakni angka yang berlaku termasuk koreksi Penjamin Mutu, bertanda `*` bila dikoreksi beserta catatan kakinya. Justifikasi, rekomendasi, dan confidence tetap milik AI — dan catatan kakinya menyatakan itu, supaya satu baris tidak terbaca seolah AI yang memberi angka hasil koreksi.
+   > - **Dibangkitkan di peramban, tanpa backend** (`jspdf` + `jspdf-autotable`, diimpor dinamis di `presentation/utils/assessment-pdf.ts`). Seluruh bahannya memang sudah ada di memori halaman. Fontnya Helvetica bawaan PDF, bukan DM Sans milik aplikasi.
+   >
+   > Ekspor **dokumen LED** — isi babnya — tetap belum ada, dan pasal ini masih berlaku sepenuhnya untuk itu.
+
 6. **Validasi perubahan status dokumen** — saat ini murni manual tanpa syarat. Apakah ke depannya perlu ditambah validasi (misal tidak bisa set `SELESAI` jika masih ada bab yang belum `terkunci`)?
 
 7. **Menghapus bukti dukung yang sedang dipakai suatu bab** — bukti dukung bisa sedang tercatat di `BUKTI_DUKUNG_BAB` (kondisi aktif) maupun `BUKTI_DUKUNG_DRAFT` (checkpoint permanen, jejak audit akreditasi). Apakah penghapusan diblokir selama masih dirujuk, atau tetap diizinkan dengan rujukan yang jadi menggantung? Untuk sekarang UI hanya memperingatkan lewat dialog konfirmasi.
@@ -928,5 +1093,9 @@ Bagian ini mencatat hal-hal yang belum diputuskan/dibahas tuntas, untuk didiskus
 8. **Batas ukuran dan kuota penyimpanan** — batas 25 MB per berkas dipakai sebagai angka awal yang belum divalidasi ke kebutuhan nyata (LKPS hasil pindai bisa jauh lebih besar). Apakah perlu kuota total per tenant/prodi, dan apa yang terjadi saat kuota habis?
 
 9. **Pengelompokan bukti dukung** — perpustakaan saat ini datar dengan pencarian sebagai satu-satunya alat penyaring. Apakah nanti perlu folder, tag, atau kategori (mis. per kriteria LAM Teknik) begitu jumlah berkasnya membesar?
+
+   > **Catatan —** §12.1b sudah menjawabnya sementara dengan pencocokan **nama berkas** terhadap katalog penanda, karena ia butuh tahu bukti dukung apa yang belum ada dan tidak ada kolom kategori untuk ditanyai. Itu tambalan, bukan jawaban: begitu kategori sungguhan ada, daftar penanda di `evidence-recommendation.entity.ts` adalah yang pertama dihapus.
+
+   > **Terjawab sebagian di §4.6a — folder, bukan tag maupun kategori.** Perpustakaan sekarang berupa pohon dengan nama dan kedalaman bebas, satu pohon per cakupan, plus unggah folder utuh. Yang **masih terbuka**: folder menempatkan satu berkas di **satu** tempat, sehingga berkas yang relevan ke beberapa kriteria LAM sekaligus — SK yang sama dipakai kriteria 2 dan kriteria 6 — tetap tidak punya jawaban. Itu kebutuhan tag, bukan folder, dan keduanya bisa hidup berdampingan. Karena itu tambalan §12.1b di atas **belum boleh dihapus**: folder tidak memberi kolom kategori untuk ditanyai.
 
 10. **Pembatalan unggahan yang sedang berjalan** — panel progres saat ini hanya bisa disembunyikan, bukan membatalkan unggahan, karena pembatalan perlu dukungan pembatalan permintaan ke object storage sekaligus pembersihan objek separuh jalan di sisi backend.

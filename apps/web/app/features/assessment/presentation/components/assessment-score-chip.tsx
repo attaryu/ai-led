@@ -11,8 +11,8 @@ import { formatSkor } from '../utils/assessment-format';
  * lebih dulu, jadi warnanya harus menandai skor.
  *
  * Nadanya mengikuti **skor final** — yang berlaku setelah keputusan Penjamin
- * Mutu, bukan angka mesin. Baris ini menjawab "berapa nilai indikator ini",
- * bukan "berapa tebakan mesinnya".
+ * Mutu, bukan angka AI. Baris ini menjawab "berapa nilai indikator ini",
+ * bukan "berapa tebakan AI-nya".
  */
 function nada(skor: number | null, maksimal: number): string {
 	if (skor === null) {

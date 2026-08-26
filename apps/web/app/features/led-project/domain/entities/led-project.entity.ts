@@ -10,6 +10,12 @@ export const ledProjectSchema = z.object({
 	studyProgramId: z.string().min(1, 'Program studi wajib dipilih'),
 	studyProgramName: z.string().min(1, 'Nama program studi wajib diisi'),
 	judul: z.string().min(1, 'Judul proyek wajib diisi').max(200, 'Judul proyek maksimal 200 karakter'),
+	/**
+	 * Selalu dua tahun berurutan, `YYYY/YYYY`. Tidak pernah diketik utuh oleh
+	 * pengguna: formulir meminta satu angka tahun mulai lalu menyusunnya lewat
+	 * `susunTahunAkademik`. Regex di bawah karena itu berperan sebagai lapis
+	 * kedua — untuk baris lama di localStorage dan untuk data dari API nanti.
+	 */
 	tahunAkademik: z
 		.string()
 		.min(1, 'Tahun akademik wajib diisi')
@@ -29,6 +35,105 @@ export const ledProjectSchema = z.object({
 });
 
 export type LedProjectEntity = z.infer<typeof ledProjectSchema>;
+
+/**
+ * Batas bawah tahun akademik yang boleh dimasukkan lewat formulir.
+ *
+ * Sengaja angka tetap, bukan hitungan mundur dari tahun berjalan. Batas yang
+ * ikut bergeser tiap Januari membuat dokumen lama yang tadinya sah tiba-tiba
+ * ditolak — dan yang kena bukan orang yang sedang mengganti tahunnya, melainkan
+ * orang yang cuma mengubah tenggat lalu gagal menyimpan gara-gara kolom yang
+ * tidak ia sentuh. Siklus akreditasi lima tahunan, jadi 2015 menampung sekitar
+ * dua siklus arsip ke belakang sambil tetap menolak salah ketik seperti `225`.
+ */
+export const TAHUN_AKADEMIK_MIN = 2015;
+
+/**
+ * Batas atas: tahun berjalan ditambah satu. LED disusun untuk tahun yang sedang
+ * berjalan atau tahun berikutnya; lebih jauh dari itu bukti dukungnya belum ada.
+ */
+export function tahunAkademikMaks(now: number = Date.now()): number {
+	return new Date(now).getFullYear() + 1;
+}
+
+/**
+ * Menyusun tahun akademik tersimpan dari satu angka tahun mulai.
+ *
+ * **Asumsi yang ditumpangi seluruh formulir:** tahun akademik selalu dua tahun
+ * berurutan (`2025/2026`), tidak pernah `2025/2027`. Karena itu tahun keduanya
+ * tidak pernah diketik pengguna, sehingga `2026/2026` dan `2030/2020` bukan
+ * ditolak melainkan **tidak mungkin terbentuk** — beda dengan regex pada
+ * `ledProjectSchema.tahunAkademik`, yang cuma menjaga bentuk tulisannya.
+ *
+ * Kalau suatu saat ternyata ada penulisan yang tidak berurutan, di sinilah titik
+ * patahnya, dan perbaikannya cukup di formulir: yang tersimpan tetap string
+ * `YYYY/YYYY` yang sama, jadi pengurutan, pencarian, dan kop PDF Penilaian AMI
+ * tidak ikut tersentuh.
+ */
+export function susunTahunAkademik(tahunMulai: number): string {
+	return `${tahunMulai}/${tahunMulai + 1}`;
+}
+
+/**
+ * Kebalikan `susunTahunAkademik`, dipakai formulir ubah untuk mengisi kolomnya
+ * dari data tersimpan. Mengembalikan string kosong bila nilainya tidak berbentuk
+ * `YYYY/YYYY` — kolomnya lalu tampil kosong dan wajib diisi ulang, alih-alih
+ * membawa angka karangan yang tampak sah.
+ */
+export function tahunMulaiDari(tahunAkademik: string): string {
+	const cocok = /^(\d{4})\/\d{4}$/.exec(tahunAkademik);
+	return cocok ? cocok[1] : '';
+}
+
+/**
+ * Skema kolom "Tahun Akademik" di formulir — satu angka tahun, bukan
+ * `YYYY/YYYY`. Regex pada `ledProjectSchema` tetap dipertahankan sebagai lapis
+ * kedua untuk baris lama di localStorage dan untuk data yang nanti datang dari
+ * API, bukan dari formulir ini.
+ *
+ * Rentangnya dibaca sekali saat modul dimuat; tidak ada halaman yang hidup
+ * cukup lama untuk melewati pergantian tahun tanpa dimuat ulang.
+ */
+export const tahunMulaiSchema = z
+	.string()
+	.min(1, 'Tahun akademik wajib diisi')
+	.regex(/^\d{4}$/, 'Isi tahun mulainya saja, empat angka — contoh: 2025')
+	.refine(
+		(nilai) => {
+			const tahun = Number(nilai);
+			return tahun >= TAHUN_AKADEMIK_MIN && tahun <= tahunAkademikMaks();
+		},
+		{
+			error: `Tahun harus antara ${TAHUN_AKADEMIK_MIN} dan ${tahunAkademikMaks()}`,
+		},
+	);
+
+/**
+ * Apakah prodi ini sudah punya dokumen LED untuk tahun akademik tersebut.
+ *
+ * Tidak ada yang menjaganya sebelum ini, dan akibatnya lebih merugikan daripada
+ * tahun yang salah bentuk: `pickPenyusunanAktif` memilih satu dokumen dengan
+ * tahun terbesar, jadi dokumen kedua bertahun sama tidak akan pernah muncul di
+ * Dashboard Prodi — tanpa error dan tanpa tanda apa pun. Bukti dukung dipakai
+ * bersama seluruh dokumen milik prodi (docs/application_flow.md §5.3), sehingga
+ * tidak ada yang terasa janggal sampai ada yang bertanya kenapa pekerjaannya
+ * seperti hilang.
+ *
+ * Ditegakkan di formulir, bukan di repository, supaya pesannya bisa menempel ke
+ * kolom yang salah. `kecualiId` dipakai formulir ubah supaya dokumen tidak
+ * bentrok dengan dirinya sendiri.
+ */
+export function adaTahunAkademikGanda(
+	projects: LedProjectEntity[],
+	input: { studyProgramId: string; tahunAkademik: string; kecualiId?: string },
+): boolean {
+	return projects.some(
+		(project) =>
+			project.id !== input.kecualiId &&
+			project.studyProgramId === input.studyProgramId &&
+			project.tahunAkademik === input.tahunAkademik,
+	);
+}
 
 /** Ambang "tenggat sudah dekat" untuk penandaan di Dashboard Prodi. */
 export const PROJECT_DEADLINE_SOON_DAYS = 30;

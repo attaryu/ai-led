@@ -297,8 +297,13 @@ export function DataTable<TData, TValue>({
 			</div>
 			)}
 
-			{/* Table Container */}
-			<div className="bg-card rounded-lg border border-border shadow-xs overflow-hidden">
+			{/*
+			 * Kartu tabel. Bingkai dan radiusnya dibiarkan ke `Table` — dulu keduanya
+			 * memasang bingkai sendiri sehingga ada dua garis bertumpuk, dan
+			 * `overflow-hidden` di sini memotong kotak gulir di dalamnya sehingga
+			 * kolom yang tidak muat hilang diam-diam alih-alih bisa digeser.
+			 */}
+			<div className="bg-card shadow-xs">
 				<Table>
 					<TableHeader>
 						{table.getHeaderGroups().map((headerGroup) => (
@@ -349,7 +354,10 @@ export function DataTable<TData, TValue>({
 
 			{/* Pagination Controls */}
 			{showFooter && (
-			<div className="flex items-center justify-between gap-4 py-1">
+			// `flex-wrap` dengan alasan yang sama seperti `pagination-footer.tsx`:
+			// di 360 px kedua kelompok meluber 17 px, dan yang terdorong keluar
+			// layar justru tombol halaman berikutnya.
+			<div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-1">
 				<div className="flex items-center gap-4 text-sm text-muted-foreground">
 					<div className="flex items-center gap-2">
 						<span>Tampilkan</span>
