@@ -54,6 +54,11 @@ def mineru_extract(pdf_path: Path, out_dir: Path) -> Path:
         md_files = list(out_dir.rglob(f"{stem}*/**/*.md"))
     md_files = sorted(set(md_files), key=lambda p: len(str(p)))
     if proc.returncode != 0 or not md_files:
-        stderr_tail = "\n".join(proc.stderr.strip().splitlines()[-8:])
+        stderr_full = proc.stderr or ""
+        if "Incorrect password" in stderr_full or "PdfiumError" in stderr_full:
+            raise RuntimeError(
+                f"{pdf_path.name} terkunci kata sandi -- hapus proteksi PDF-nya lalu unggah ulang."
+            )
+        stderr_tail = "\n".join(stderr_full.strip().splitlines()[-8:])
         raise RuntimeError(f"MinerU gagal untuk {pdf_path.name}: {stderr_tail}")
     return md_files[0]
