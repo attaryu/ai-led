@@ -292,6 +292,132 @@ def test_checklist_generation_failure_does_not_block_flow():
     assert result["final_score"] == 2.0
 
 
+# ── score_type scenarios (quantitative / composite, share the same tool loop) ───
+
+
+def test_graph_uses_formula_tool_result_for_quantitative_indicator():
+    """A quantitative indicator's final score should come from
+    compute_formula_score's real clamped_score, not just LLM-authored text."""
+    from langchain_core.messages import AIMessage
+    from llm.ollama_client import OllamaClient
+    from agent.graph import build_graph
+
+    rubric_tool_call = AIMessage(
+        content="",
+        tool_calls=[
+            {"name": "get_indicator_rubric", "args": {"indicator_no": 1}, "id": "call_1"}
+        ],
+    )
+    checklist_response = AIMessage(content="- BOP tercatat di LKPS\n- Formula dihitung benar")
+    formula_tool_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "compute_formula_score",
+                "args": {"formula_expression": "BOP / 5000000", "variables": {"BOP": 25000000}},
+                "id": "call_2",
+            }
+        ],
+    )
+    final_answer = AIMessage(
+        content=(
+            "SKOR: 4\nJUSTIFIKASI: BOP/mahasiswa memenuhi standar tertinggi.\n"
+            "CONFIDENCE: 0.9\nREKOMENDASI: Pertahankan."
+        )
+    )
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = [
+        rubric_tool_call, checklist_response, formula_tool_call, final_answer
+    ]
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
+
+    with (
+        patch("agent.graph._build_llm", return_value=fake_llm),
+        patch("agent.tools.rubric_tool._get_rubrics") as mock_rubrics,
+    ):
+        mock_rubrics.return_value = [
+            MagicMock(
+                no=1, kriteria="Pembiayaan", indikator="...", score_type="quantitative",
+                score_criteria={}, formula="BOP / 5000000", lkps_table_ref=["Tabel 2.b"],
+                sub_score_formula=None,
+            )
+        ]
+        graph = build_graph(fake_client)
+        result = graph.invoke(_make_state(), config={"recursion_limit": 40})
+
+    assert result["final_score"] == 4.0
+    formula_results = [
+        m for m in result["messages"]
+        if getattr(m, "name", None) == "compute_formula_score"
+    ]
+    assert len(formula_results) == 1
+    assert '"clamped_score": 4.0' in formula_results[0].content
+
+
+def test_graph_uses_formula_tool_result_for_composite_indicator():
+    """A composite indicator's sub_score_formula is passed to the SAME
+    compute_formula_score tool the agent already uses for quantitative
+    indicators — no separate composite-specific code path exists."""
+    from langchain_core.messages import AIMessage
+    from llm.ollama_client import OllamaClient
+    from agent.graph import build_graph
+
+    rubric_tool_call = AIMessage(
+        content="",
+        tool_calls=[
+            {"name": "get_indicator_rubric", "args": {"indicator_no": 1}, "id": "call_1"}
+        ],
+    )
+    checklist_response = AIMessage(content="- Sub-skor I dari narasi LED\n- Sub-skor II dari LKPS")
+    formula_tool_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "compute_formula_score",
+                "args": {"formula_expression": "(I * 2 + II) / 3", "variables": {"I": 3, "II": 2}},
+                "id": "call_2",
+            }
+        ],
+    )
+    final_answer = AIMessage(
+        content=(
+            "SKOR: 2.67\nJUSTIFIKASI: Kombinasi sub-skor I dan II sesuai formula.\n"
+            "CONFIDENCE: 0.75\nREKOMENDASI: Tingkatkan sub-skor II."
+        )
+    )
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = [
+        rubric_tool_call, checklist_response, formula_tool_call, final_answer
+    ]
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
+
+    with (
+        patch("agent.graph._build_llm", return_value=fake_llm),
+        patch("agent.tools.rubric_tool._get_rubrics") as mock_rubrics,
+    ):
+        mock_rubrics.return_value = [
+            MagicMock(
+                no=1, kriteria="Kualitas Dosen", indikator="...", score_type="composite",
+                score_criteria={}, formula=None, lkps_table_ref=["Tabel 3.a"],
+                sub_score_formula="(I * 2 + II) / 3",
+            )
+        ]
+        graph = build_graph(fake_client)
+        result = graph.invoke(_make_state(), config={"recursion_limit": 40})
+
+    assert result["final_score"] == 2.67
+    formula_results = [
+        m for m in result["messages"]
+        if getattr(m, "name", None) == "compute_formula_score"
+    ]
+    assert len(formula_results) == 1
+    assert '"clamped_score": 2.67' in formula_results[0].content
+
+
 # ── independent judge ───────────────────────────────────────────────────────
 
 def test_judge_runs_after_parse_output_and_lowers_confidence_when_ungrounded():

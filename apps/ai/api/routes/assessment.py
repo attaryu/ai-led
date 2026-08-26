@@ -70,6 +70,8 @@ class StartAssessmentRequest(BaseModel):
     laporan_path: Optional[str] = None
     max_parallel: Optional[int] = None
     model: Optional[str] = None
+    # Cap on how many cached rubrics run, overrides laporan_path's subset. For fast experiments.
+    first_n_indicators: Optional[int] = None
 
 
 class ResumeAssessmentRequest(BaseModel):
@@ -157,9 +159,25 @@ class _SimpleIndicator:
 # ---------------------------------------------------------------------------
 
 
-def _derive_indicators(laporan_path: Optional[str]) -> list:
+def _derive_indicators(
+    laporan_path: Optional[str], first_n_indicators: Optional[int] = None
+) -> list:
     """Shared by /start and /resume: laporan_path -> Excel-derived subset,
-    otherwise every cached rubric. Raises HTTPException on failure."""
+    otherwise every cached rubric. first_n_indicators overrides both. Raises
+    HTTPException on failure."""
+    if first_n_indicators is not None:
+        rubrics = _get_rubrics()
+        indicators = [
+            _SimpleIndicator(indicator_no=r.no, kriteria=r.kriteria)
+            for r in rubrics[:first_n_indicators]
+        ]
+        if not indicators:
+            raise HTTPException(
+                status_code=500,
+                detail="No rubrics available — has the matrix been parsed?",
+            )
+        return indicators
+
     if laporan_path:
         if not os.path.exists(laporan_path):
             raise HTTPException(
@@ -208,7 +226,7 @@ async def start_assessment(
     Excel template. Otherwise, all 64 default indicators are evaluated.
     Results are persisted to Postgres only — nothing is written back to Excel.
     """
-    indicators = _derive_indicators(body.laporan_path)
+    indicators = _derive_indicators(body.laporan_path, body.first_n_indicators)
 
     if body.model is not None:
         available = get_available_models()

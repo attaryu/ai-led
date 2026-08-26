@@ -219,6 +219,71 @@ def test_start_without_laporan_path_uses_default_rubrics():
     assert resp.json()["total_indicators"] == 2
 
 
+def test_start_with_first_n_indicators_limits_default_rubrics():
+    """first_n_indicators, without laporan_path, runs only the first N cached rubrics."""
+    from main import app
+
+    fake_rubric_a = MagicMock()
+    fake_rubric_a.no = 1
+    fake_rubric_a.kriteria = "K1"
+    fake_rubric_b = MagicMock()
+    fake_rubric_b.no = 2
+    fake_rubric_b.kriteria = "K2"
+    fake_rubric_c = MagicMock()
+    fake_rubric_c.no = 3
+    fake_rubric_c.kriteria = "K3"
+
+    captured = {}
+
+    async def fake_pipeline(**kwargs):
+        captured.update(kwargs)
+
+    with (
+        patch(
+            "api.routes.assessment._get_rubrics",
+            return_value=[fake_rubric_a, fake_rubric_b, fake_rubric_c],
+        ),
+        patch("api.routes.assessment.create_session"),
+        patch("api.routes.assessment._run_assessment_pipeline", new=AsyncMock(side_effect=fake_pipeline)),
+    ):
+        with TestClient(app) as c:
+            resp = c.post(
+                "/assessment/start", json=_start_body(laporan_path=None, first_n_indicators=2)
+            )
+
+    assert resp.status_code == 200
+    assert resp.json()["total_indicators"] == 2
+    assert [i.indicator_no for i in captured["indicators"]] == [1, 2]
+
+
+def test_start_first_n_indicators_overrides_laporan_path(fake_indicators):
+    """first_n_indicators wins over laporan_path when both are given."""
+    from main import app
+
+    fake_rubric_a = MagicMock()
+    fake_rubric_a.no = 1
+    fake_rubric_a.kriteria = "K1"
+
+    captured = {}
+
+    async def fake_pipeline(**kwargs):
+        captured.update(kwargs)
+
+    with (
+        patch("api.routes.assessment.os.path.exists", return_value=True),
+        patch("api.routes.assessment.read_indicator_rows", return_value=fake_indicators),
+        patch("api.routes.assessment._get_rubrics", return_value=[fake_rubric_a]),
+        patch("api.routes.assessment.create_session"),
+        patch("api.routes.assessment._run_assessment_pipeline", new=AsyncMock(side_effect=fake_pipeline)),
+    ):
+        with TestClient(app) as c:
+            resp = c.post("/assessment/start", json=_start_body(first_n_indicators=1))
+
+    assert resp.status_code == 200
+    assert resp.json()["total_indicators"] == 1
+    assert [i.indicator_no for i in captured["indicators"]] == [1]
+
+
 # ── POST /assessment/{session_id}/resume ──────────────────────────────────────
 
 

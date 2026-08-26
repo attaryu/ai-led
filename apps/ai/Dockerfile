@@ -12,6 +12,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml .
+# CPU-only torch/torchvision so mineru's resolver doesn't pull the CUDA wheels (no GPU here).
+# Must pair from the same index or transformers-loading code hits a torchvision ABI mismatch.
+RUN --mount=type=cache,target=/root/.cache/pip pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 # Cache mount, not --no-cache-dir: any pyproject.toml change (a version bump,
 # swapping one package) invalidates this whole layer, and without a cache
 # mount that means re-downloading every dependency from scratch — torch and
@@ -30,6 +33,9 @@ ENV HF_HOME=/root/.cache/huggingface \
 RUN --mount=type=secret,id=hf_token \
     HF_TOKEN="$(cat /run/secrets/hf_token 2>/dev/null || true)" python -c "from sentence_transformers import SentenceTransformer; \
     SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
+
+# Pre-download MinerU's OCR models too, same reason as the embedding model above.
+RUN mineru-models-download -s huggingface -m pipeline || true
 
 COPY . .
 

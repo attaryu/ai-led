@@ -42,7 +42,13 @@ def mineru_extract(pdf_path: Path, out_dir: Path) -> Path:
         _mineru_bin(), "-p", str(pdf_path), "-o", str(out_dir),
         "-b", MINERU_BACKEND, "-m", MINERU_METHOD, "-l", MINERU_LANG,
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    timeout = int(os.environ.get("MINERU_TIMEOUT_SECONDS", "300"))
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"MinerU timeout setelah {timeout}s untuk {pdf_path.name}"
+        ) from exc
     md_files = list((out_dir / stem).rglob("*.md"))
     if not md_files:
         md_files = list(out_dir.rglob(f"{stem}*/**/*.md"))
