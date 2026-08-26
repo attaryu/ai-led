@@ -14,6 +14,7 @@ import asyncio
 import logging
 import os
 import signal
+import sys
 import time
 
 from bullmq import Worker
@@ -23,10 +24,30 @@ from dotenv import load_dotenv
 # for native/local runs, which never had a loader anywhere for this process.
 load_dotenv()
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+# Warna per level (dimatikan otomatis kalau stdout bukan terminal, mis. saat
+# di-pipe ke file log -- kode ANSI mentah di file cuma bikin sulit dibaca).
+class _ColorFormatter(logging.Formatter):
+    _COLORS = {
+        logging.DEBUG: "[90m",
+        logging.INFO: "[36m",
+        logging.WARNING: "[33m",
+        logging.ERROR: "[31m",
+        logging.CRITICAL: "[1;31m",
+    }
+    _RESET = "[0m"
+    _use_color = sys.stdout.isatty()
+
+    def format(self, record: logging.LogRecord) -> str:
+        message = super().format(record)
+        color = self._COLORS.get(record.levelno) if self._use_color else None
+        return f"{color}{message}{self._RESET}" if color else message
+
+
+_handler = logging.StreamHandler()
+_handler.setFormatter(
+    _ColorFormatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 )
+logging.basicConfig(level=logging.INFO, handlers=[_handler])
 logger = logging.getLogger("apps.ai.worker")
 
 QUEUE_NAMES = ["generation-queue", "assessment-queue", "ingestion-queue"]

@@ -22,11 +22,16 @@ export class PrismaService
   async onModuleInit(): Promise<void> {
     await this.$connect();
 
-    this.$on('query' as never, (event: Prisma.QueryEvent) => {
-      this.logger.debug(
-        `${event.query} +${event.params} (${event.duration}ms)`,
-      );
-    });
+    // Setiap query mentah dulu selalu tercetak — di apps run sungguhan itu
+    // ratusan baris SQL per request, menenggelamkan log yang lebih penting.
+    // Opt-in lewat env var, bukan default.
+    if (process.env.PRISMA_LOG_QUERIES === 'true') {
+      this.$on('query' as never, (event: Prisma.QueryEvent) => {
+        this.logger.debug(
+          `${event.query} +${event.params} (${event.duration}ms)`,
+        );
+      });
+    }
   }
 
   async onModuleDestroy(): Promise<void> {
