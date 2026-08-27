@@ -14,6 +14,7 @@ function makeService(context: {
 }) {
   const prisma = {
     studyProgram: { findFirst: jest.fn() },
+    evidenceFolder: { findFirst: jest.fn() },
     user: { findUniqueOrThrow: jest.fn().mockResolvedValue({ fullName: 'Test User' }) },
     evidence: {
       create: jest.fn().mockImplementation(({ data }) => Promise.resolve(data)),
@@ -107,6 +108,35 @@ describe('BuktiDukungService.create', () => {
     expect(result.fileUrl).toBe(FILE_KEY);
     expect(result.documentName).toBe('bukti.txt');
     expect(result.sizeBytes).toBe(123);
+    expect(result.folderId).toBeNull();
+  });
+
+  it('rejects a folderId that does not belong to the caller tenant', async () => {
+    const { service, prisma } = makeService({ tenantId: 't1', role: Role.PENJAMIN_MUTU, studyProgramId: null });
+    prisma.evidenceFolder.findFirst.mockResolvedValue(null);
+    await expect(
+      service.create({ ownerType: OwnerTipe.TENANT, fileKey: FILE_KEY, folderId: 'fld-other-tenant' }),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('rejects a folderId from a different scope than the upload target', async () => {
+    const { service, prisma } = makeService({ tenantId: 't1', role: Role.PENJAMIN_MUTU, studyProgramId: null });
+    prisma.evidenceFolder.findFirst.mockResolvedValue({
+      id: 'fld1', ownerType: OwnerTipe.PROGRAM_STUDI, studyProgramId: 'p1',
+    });
+    await expect(
+      service.create({ ownerType: OwnerTipe.TENANT, fileKey: FILE_KEY, folderId: 'fld1' }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('stores a folderId that matches the upload scope', async () => {
+    const { service, prisma } = makeService({ tenantId: 't1', role: Role.PENJAMIN_MUTU, studyProgramId: null });
+    prisma.evidenceFolder.findFirst.mockResolvedValue({
+      id: 'fld1', ownerType: OwnerTipe.TENANT, studyProgramId: null,
+    });
+
+    const result = await service.create({ ownerType: OwnerTipe.TENANT, fileKey: FILE_KEY, folderId: 'fld1' });
+    expect(result.folderId).toBe('fld1');
   });
 });
 

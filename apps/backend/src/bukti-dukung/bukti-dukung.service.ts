@@ -65,6 +65,23 @@ export class BuktiDukungService {
       where: { id: userId },
     });
 
+    // Folder tujuan (bila ada) harus berada di cakupan yang sama, dan sudah
+    // ditegakkan tenant/prodi-nya sendiri lewat query `tenantId` di sini —
+    // bukan dipercaya dari body (evidence-folder.service.ts::getAccessibleFolder
+    // menegakkan hal yang sama untuk endpoint folder itu sendiri).
+    if (dto.folderId) {
+      const folder = await this.prisma.evidenceFolder.findFirst({
+        where: { id: dto.folderId, tenantId },
+      });
+      if (!folder) {
+        throw new NotFoundException('Folder tidak ditemukan');
+      }
+      const targetStudyProgramId = dto.ownerType === OwnerTipe.PROGRAM_STUDI ? dto.studyProgramId : null;
+      if (folder.ownerType !== dto.ownerType || folder.studyProgramId !== targetStudyProgramId) {
+        throw new BadRequestException('Folder tujuan harus berada di cakupan yang sama');
+      }
+    }
+
     const id = randomUUID();
     // Read back from R2, not trusted from the body — a 404 here means the client's PUT never finished.
     const { sizeBytes } = await this.storage.headObject(dto.fileKey);
@@ -84,6 +101,7 @@ export class BuktiDukungService {
         extractionStatus: StatusEkstraksi.MENUNGGU,
         uploadedByUserId: userId,
         uploadedByName: user.fullName,
+        folderId: dto.folderId ?? null,
       },
     });
 

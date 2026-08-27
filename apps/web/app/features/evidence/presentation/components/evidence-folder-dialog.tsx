@@ -60,30 +60,39 @@ export function EvidenceFolderDialog({
 		setGalat(null);
 	}, [open, folder]);
 
-	const simpan = () => {
-		const induk = mengganti ? folder.parentId : parentId;
-		const saudara = folderAnak(
-			evidenceFolderRepository.findByScope(cakupan),
-			induk,
-		);
+	const [menyimpan, setMenyimpan] = React.useState(false);
 
-		const pesan = validateFolderName(nama, saudara, folder?.id);
-		if (pesan) {
-			setGalat(pesan);
-			return;
+	const simpan = async () => {
+		setMenyimpan(true);
+		try {
+			const induk = mengganti ? folder.parentId : parentId;
+			const saudara = folderAnak(
+				await evidenceFolderRepository.findByScope(cakupan),
+				induk,
+			);
+
+			const pesan = validateFolderName(nama, saudara, folder?.id);
+			if (pesan) {
+				setGalat(pesan);
+				return;
+			}
+
+			if (mengganti) await evidenceFolderRepository.rename(folder.id, nama);
+			else {
+				await evidenceFolderRepository.create({
+					cakupan,
+					nama,
+					parentId,
+					pembuat,
+				});
+			}
+
+			onOpenChange(false);
+		} catch (error) {
+			setGalat(error instanceof Error ? error.message : 'Gagal menyimpan folder.');
+		} finally {
+			setMenyimpan(false);
 		}
-
-		if (mengganti) evidenceFolderRepository.rename(folder.id, nama);
-		else {
-			evidenceFolderRepository.create({
-				cakupan,
-				nama,
-				parentId,
-				pembuat,
-			});
-		}
-
-		onOpenChange(false);
 	};
 
 	return (
@@ -137,7 +146,7 @@ export function EvidenceFolderDialog({
 					<Button
 						type="button"
 						onClick={simpan}
-						disabled={nama.trim() === ''}
+						disabled={nama.trim() === '' || menyimpan}
 						className="cursor-pointer"
 					>
 						{mengganti ? 'Simpan' : 'Buat folder'}

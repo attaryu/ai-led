@@ -1,7 +1,7 @@
 import * as React from 'react';
 
 import { streamSse } from '~/core/lib/sse-client';
-import { evidenceRepository } from '~/features/evidence/data/repositories/evidence.repository';
+import { evidenceRepository, evidenceScopeFor } from '~/features/evidence/data/repositories/evidence.repository';
 import { evidenceFolderRepository } from '~/features/evidence/data/repositories/evidence-folder.repository';
 import {
 	jalurFolder,
@@ -127,7 +127,19 @@ export function useChapterGeneration({
 
 	const muat = React.useCallback(() => {
 		evidenceRepository.findAvailableForStudyProgram(studyProgramId).then(setPustaka);
-		setFolderPustaka(evidenceFolderRepository.findAll());
+
+		// Cakupan tenant + prodi ini sendiri, sama seperti `findAvailableForStudyProgram`
+		// di atas — foldernya melintasi keduanya juga (lihat JSDoc `folderPustaka`).
+		// Bagian tenant jatuh ke larik kosong bila ditolak (mis. role PENYUSUN),
+		// mengikuti kendala yang sama.
+		Promise.all([
+			evidenceFolderRepository
+				.findByScope(evidenceScopeFor({ ownerTipe: 'TENANT' }))
+				.catch(() => []),
+			evidenceFolderRepository.findByScope(
+				evidenceScopeFor({ ownerTipe: 'PROGRAM_STUDI', studyProgramId }),
+			),
+		]).then(([tenant, prodi]) => setFolderPustaka([...tenant, ...prodi]));
 	}, [studyProgramId]);
 
 	// Ingestion bukti dukung berjalan async lewat job worker backend, dan

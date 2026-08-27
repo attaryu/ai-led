@@ -145,26 +145,29 @@ export function EvidenceLibrary({
 	 * Konfirmasi hapus folder menyebut angka pastinya sebelum apa pun dihapus —
 	 * itulah satu-satunya penahan, karena tidak ada tempat sampah untuk memulihkan.
 	 */
-	const handleHapusFolder = React.useCallback((node: EvidenceNode) => {
-		if (node.tipe !== 'FOLDER') return;
+	const handleHapusFolder = React.useCallback(
+		async (node: EvidenceNode) => {
+			if (node.tipe !== 'FOLDER') return;
 
-		const rincian = evidenceRepository.rincianHapusFolder(node.id);
-		const isi = [
-			rincian.subfolder > 0 && `${rincian.subfolder} subfolder`,
-			rincian.berkas > 0 && `${rincian.berkas} berkas`,
-		]
-			.filter(Boolean)
-			.join(' dan ');
+			const rincian = await evidenceRepository.rincianHapusFolder(cakupan, node.id);
+			const isi = [
+				rincian.subfolder > 0 && `${rincian.subfolder} subfolder`,
+				rincian.berkas > 0 && `${rincian.berkas} berkas`,
+			]
+				.filter(Boolean)
+				.join(' dan ');
 
-		const pesan = isi
-			? `Hapus folder "${node.folder.nama}" beserta ${isi} di dalamnya?\n\n${PERINGATAN_RUJUKAN}`
-			: `Hapus folder "${node.folder.nama}"? Folder ini kosong.`;
+			const pesan = isi
+				? `Hapus folder "${node.folder.nama}" beserta ${isi} di dalamnya?\n\n${PERINGATAN_RUJUKAN}`
+				: `Hapus folder "${node.folder.nama}"? Folder ini kosong.`;
 
-		if (!confirm(pesan)) return;
-		evidenceRepository.deleteFolderCascade(node.id).catch((error: unknown) => {
-			alert(error instanceof Error ? error.message : 'Gagal menghapus folder.');
-		});
-	}, []);
+			if (!confirm(pesan)) return;
+			evidenceRepository.deleteFolderCascade(cakupan, node.id).catch((error: unknown) => {
+				alert(error instanceof Error ? error.message : 'Gagal menghapus folder.');
+			});
+		},
+		[cakupan],
+	);
 
 	const nodeTerpilih = React.useMemo(
 		() => items.filter((node) => terpilih.has(node.id)),
@@ -184,7 +187,7 @@ export function EvidenceLibrary({
 				: permission.canDelete(node.evidence),
 		);
 
-	const handleHapusMassal = () => {
+	const handleHapusMassal = async () => {
 		const folderDihapus = nodeTerpilih.filter((node) => node.tipe === 'FOLDER');
 		const berkasDihapus = nodeTerpilih.filter((node) => node.tipe === 'BERKAS');
 
@@ -193,7 +196,7 @@ export function EvidenceLibrary({
 		let subfolder = 0;
 		let berkasIkut = 0;
 		for (const node of folderDihapus) {
-			const rincian = evidenceRepository.rincianHapusFolder(node.id);
+			const rincian = await evidenceRepository.rincianHapusFolder(cakupan, node.id);
 			subfolder += rincian.subfolder;
 			berkasIkut += rincian.berkas;
 		}
@@ -220,7 +223,7 @@ export function EvidenceLibrary({
 
 		for (const node of berkasDihapus) evidenceRepository.delete(node.id);
 		for (const node of folderDihapus) {
-			evidenceRepository.deleteFolderCascade(node.id).catch((error: unknown) => {
+			evidenceRepository.deleteFolderCascade(cakupan, node.id).catch((error: unknown) => {
 				alert(error instanceof Error ? error.message : 'Gagal menghapus folder.');
 			});
 		}

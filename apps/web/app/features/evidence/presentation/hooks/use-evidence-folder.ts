@@ -45,13 +45,9 @@ export function useEvidenceFolder(cakupan: EvidenceScope) {
 	);
 
 	const muat = React.useCallback(() => {
-		setFolders(
-			evidenceFolderRepository.findByScope({
-				ownerTipe,
-				tenantId,
-				studyProgramId,
-			}),
-		);
+		evidenceFolderRepository
+			.findByScope({ ownerTipe, tenantId, studyProgramId })
+			.then(setFolders);
 	}, [ownerTipe, tenantId, studyProgramId]);
 
 	React.useEffect(() => {

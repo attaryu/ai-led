@@ -175,7 +175,7 @@ export function EvidenceUploadDialog({
 		setPemilihTerbuka(false);
 		setTolakanTerbuka(false);
 		setDilewati(0);
-		setFolders(evidenceFolderRepository.findByScope(cakupan));
+		evidenceFolderRepository.findByScope(cakupan).then(setFolders);
 	}, [open, targetBawaan, folderAktif, cakupan]);
 
 	const addFiles = React.useCallback((files: FileList | null) => {
@@ -255,7 +255,9 @@ export function EvidenceUploadDialog({
 		return jalur.length > 0 ? jalur.map((f) => f.nama).join(' / ') : labelAkar;
 	}, [folders, tujuanFolder, labelAkar]);
 
-	const handleSubmit = () => {
+	const [mengirim, setMengirim] = React.useState(false);
+
+	const handleSubmit = async () => {
 		const parsed = uploadEvidenceTargetSchema.safeParse(targetTerpilih);
 		if (!parsed.success) {
 			setTargetError(parsed.error.issues[0]?.message ?? 'Target tidak valid');
@@ -293,15 +295,26 @@ export function EvidenceUploadDialog({
 			),
 		].map((kunci) => kunci.split('/'));
 
-		const petaFolder =
-			jalurUnik.length > 0
-				? evidenceFolderRepository.ensureFolderPaths({
-						cakupan: cakupanTujuan,
-						parentId: indukTujuan,
-						daftarJalur: jalurUnik,
-						pembuat: { userId: uploader.userId, nama: uploader.name },
-					})
-				: new Map<string, string | null>();
+		setMengirim(true);
+		let petaFolder: Map<string, string | null>;
+		try {
+			petaFolder =
+				jalurUnik.length > 0
+					? await evidenceFolderRepository.ensureFolderPaths({
+							cakupan: cakupanTujuan,
+							parentId: indukTujuan,
+							daftarJalur: jalurUnik,
+							pembuat: { userId: uploader.userId, nama: uploader.name },
+						})
+					: new Map<string, string | null>();
+		} catch (error) {
+			setMengirim(false);
+			setTargetError(
+				error instanceof Error ? error.message : 'Gagal menyiapkan struktur folder.',
+			);
+			return;
+		}
+		setMengirim(false);
 
 		startBatch({
 			files: validFiles.map((item) => ({
@@ -628,7 +641,7 @@ export function EvidenceUploadDialog({
 					<Button
 						type="button"
 						onClick={handleSubmit}
-						disabled={validFiles.length === 0}
+						disabled={validFiles.length === 0 || mengirim}
 						className="cursor-pointer"
 					>
 						Unggah {validFiles.length > 0 && `${validFiles.length} berkas`}

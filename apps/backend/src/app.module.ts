@@ -11,6 +11,7 @@ import { BabDokumenModule } from './bab-dokumen/bab-dokumen.module';
 import { JobsModule } from './jobs/jobs.module';
 import { UsersModule } from './users/users.module';
 import { BuktiDukungModule } from './bukti-dukung/bukti-dukung.module';
+import { EvidenceFolderModule } from './evidence-folder/evidence-folder.module';
 import { StorageModule } from './storage/storage.module';
 import { AssessmentModule } from './assessment/assessment.module';
 
@@ -26,6 +27,7 @@ import { AssessmentModule } from './assessment/assessment.module';
     JobsModule,
     UsersModule,
     BuktiDukungModule,
+    EvidenceFolderModule,
     StorageModule,
     AssessmentModule,
   ],

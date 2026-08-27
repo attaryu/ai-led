@@ -77,9 +77,15 @@ export function EvidenceMoveDialog({
 
 	const pindahkan = () => {
 		const idBerkas = new Set(berkasDipindah.map((baris) => baris.id));
-		if (idBerkas.size > 0) evidenceRepository.moveMany(idBerkas, tujuan);
+		if (idBerkas.size > 0) {
+			evidenceRepository.moveMany(idBerkas, tujuan).catch((error: unknown) => {
+				alert(error instanceof Error ? error.message : 'Gagal memindahkan berkas.');
+			});
+		}
 		for (const baris of folderDipindah) {
-			evidenceFolderRepository.moveFolder(baris.id, tujuan);
+			evidenceFolderRepository.moveFolder(baris.id, tujuan).then((berhasil) => {
+				if (!berhasil) alert('Gagal memindahkan folder.');
+			});
 		}
 
 		onOpenChange(false);

@@ -124,6 +124,7 @@ model Tenant {
   users                      User[]
   studyPrograms              StudyProgram[]
   buktiDukung                Evidence[]
+  buktiDukungFolders         EvidenceFolder[]
   jobs                       Job[]
   assessmentSessions         AssessmentSession[]
   ledChunkEmbeddings         LedChunkEmbedding[]
@@ -149,13 +150,13 @@ model User {
   // prodi diam-diam mengosongkan study_program_id penghuninya.
   studyProgram StudyProgram? @relation(fields: [studyProgramId], references: [id], onDelete: Restrict)
 
-  babDraftDibuat      ChapterDraft[]      @relation("BabDraftDibuatOleh")
-  buktiDukungDiunggah Evidence[]          @relation("BuktiDukungDiunggahOleh")
+  babDraftDibuat      ChapterDraft[]         @relation("BabDraftDibuatOleh")
+  buktiDukungDiunggah Evidence[]             @relation("BuktiDukungDiunggahOleh")
   hasilSkorDijalankan CriterionScoreResult[] @relation("HasilSkorDijalankanOleh")
   chatMessages        ChatMessage[]
   jobsCreated         Job[]
   assessmentSessions  AssessmentSession[]
-  assessmentVerdicts  AssessmentVerdict[] @relation("AssessmentVerdictDitinjauOleh")
+  assessmentVerdicts  AssessmentVerdict[]    @relation("AssessmentVerdictDitinjauOleh")
 
   @@index([tenantId])
   @@map("org_users")
@@ -175,10 +176,11 @@ model StudyProgram {
   accreditationValidUntil   DateTime?           @map("accreditation_valid_until") @db.Date
   createdAt                 DateTime            @default(now()) @map("created_at")
 
-  tenant      Tenant        @relation(fields: [tenantId], references: [id])
-  users       User[]
-  dokumenLed  LedDocument[]
-  buktiDukung Evidence[]
+  tenant             Tenant           @relation(fields: [tenantId], references: [id])
+  users              User[]
+  dokumenLed         LedDocument[]
+  buktiDukung        Evidence[]
+  buktiDukungFolders EvidenceFolder[]
 
   @@index([tenantId])
   @@map("org_study_programs")
@@ -221,9 +223,9 @@ model DocumentChapter {
   reviewSubmittedAt    DateTime? @map("review_submitted_at")
   lastSavedAt          DateTime  @updatedAt @map("last_saved_at")
 
-  document          LedDocument           @relation(fields: [documentId], references: [id])
-  activeCheckpoint  ChapterDraft?         @relation("ActiveCheckpoint", fields: [activeCheckpointId], references: [id])
-  drafts            ChapterDraft[]        @relation("ChapterDrafts")
+  document          LedDocument            @relation(fields: [documentId], references: [id])
+  activeCheckpoint  ChapterDraft?          @relation("ActiveCheckpoint", fields: [activeCheckpointId], references: [id])
+  drafts            ChapterDraft[]         @relation("ChapterDrafts")
   buktiDukungBab    EvidenceChapterLink[]
   hasilSkorKriteria CriterionScoreResult[]
   ragasScores       RagasScore[]
@@ -277,10 +279,15 @@ model Evidence {
   uploadedByUserId String          @map("uploaded_by_user_id")
   uploadedByName   String          @map("uploaded_by_name")
   uploadedAt       DateTime        @default(now()) @map("uploaded_at")
+  /// `null` = akar cakupannya. Folder deletion never cascades here — see
+  /// EvidenceFolder doc comment: the caller reassigns/deletes rows first, this
+  /// `SetNull` is only a backstop against an FK violation if it doesn't.
+  folderId         String?         @map("folder_id")
 
-  tenant       Tenant?       @relation(fields: [tenantId], references: [id])
-  studyProgram StudyProgram? @relation(fields: [studyProgramId], references: [id])
-  uploadedBy   User          @relation("BuktiDukungDiunggahOleh", fields: [uploadedByUserId], references: [id])
+  tenant       Tenant?         @relation(fields: [tenantId], references: [id])
+  studyProgram StudyProgram?   @relation(fields: [studyProgramId], references: [id])
+  uploadedBy   User            @relation("BuktiDukungDiunggahOleh", fields: [uploadedByUserId], references: [id])
+  folder       EvidenceFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
 
   chapterLinks       EvidenceChapterLink[]
   draftLinks         EvidenceDraftLink[]
@@ -289,7 +296,38 @@ model Evidence {
 
   @@index([tenantId])
   @@index([studyProgramId])
+  @@index([folderId])
   @@map("evidence_files")
+}
+
+/// docs/database.md §7a — folder bukti dukung. Koleksi terpisah dari
+/// `Evidence` (evidence-folder.entity.ts kepala berkas): 7 tempat lain
+/// menghitung tiap baris Evidence sebagai dokumen untuk persenSiap, dan
+/// sebuah folder ikut jadi baris di sana akan melubangi angka itu. Tidak ada
+/// `status`, tidak ada path/depth tersimpan (diturunkan dari `parentId`), dan
+/// tidak ada tempat sampah — hapus permanen.
+model EvidenceFolder {
+  id              String    @id @default(cuid())
+  ownerType       OwnerTipe @map("owner_type")
+  tenantId        String?   @map("tenant_id")
+  studyProgramId  String?   @map("study_program_id")
+  name            String
+  /// `null` = folder ini di akar cakupannya.
+  parentId        String?   @map("parent_id")
+  createdByUserId String    @map("created_by_user_id")
+  createdByName   String    @map("created_by_name")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  tenant       Tenant?          @relation(fields: [tenantId], references: [id])
+  studyProgram StudyProgram?    @relation(fields: [studyProgramId], references: [id])
+  parent       EvidenceFolder?  @relation("EvidenceFolderChildren", fields: [parentId], references: [id], onDelete: SetNull)
+  children     EvidenceFolder[] @relation("EvidenceFolderChildren")
+  evidences    Evidence[]
+
+  @@index([tenantId])
+  @@index([studyProgramId])
+  @@index([parentId])
+  @@map("evidence_folders")
 }
 
 /// docs/database.md §8 — kondisi aktif, ditimpa tiap generate ulang
@@ -403,13 +441,13 @@ model ReferenceGuide {
 
 /// docs/database.md §14
 model GuideDetail {
-  id           String @id @default(cuid())
-  guideId      String @map("guide_id")
-  pointCode    String @map("point_code")
-  pointTitle   String @map("point_title")
-  contentText  String @map("content_text") @db.Text
+  id          String @id @default(cuid())
+  guideId     String @map("guide_id")
+  pointCode   String @map("point_code")
+  pointTitle  String @map("point_title")
+  contentText String @map("content_text") @db.Text
 
-  guide          ReferenceGuide      @relation(fields: [guideId], references: [id])
+  guide          ReferenceGuide       @relation(fields: [guideId], references: [id])
   detailChapters GuideDetailChapter[]
 
   @@map("guide_details")
@@ -544,8 +582,8 @@ model AssessmentSession {
   createdBy      User        @relation(fields: [createdByUserId], references: [id])
   reportEvidence Evidence?   @relation(fields: [reportEvidenceId], references: [id])
 
-  indicatorResults IndicatorResult[]
-  reasoningSteps   ReasoningStep[]
+  indicatorResults            IndicatorResult[]
+  reasoningSteps              ReasoningStep[]
   /// Verdict yang lahir SAAT sesi ini — bukan berarti verdict itu masih
   /// "milik" sesi ini kalau dokumennya dinilai ulang lagi setelahnya, lihat
   /// AssessmentVerdict.

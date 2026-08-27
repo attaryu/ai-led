@@ -19,6 +19,7 @@ export type BuktiDukungApiRow = {
 	uploadedByUserId: string;
 	uploadedByName: string;
 	uploadedAt: string;
+	folderId: string | null;
 };
 
 /**
@@ -34,9 +35,7 @@ export function mapBuktiDukungToEvidence(row: BuktiDukungApiRow): EvidenceEntity
 		tenantId: row.ownerType === 'TENANT' ? row.tenantId : null,
 		studyProgramId: row.studyProgramId,
 		studyProgramName: null,
-		// Backend belum punya kolom folder_id — evidenceRepository menimpanya dari
-		// peta lokal (evidence-folder.repository.ts::assignedFolderId).
-		folderId: null,
+		folderId: row.folderId,
 		namaDokumen: row.documentName,
 		fileUrl: row.fileUrl,
 		tipeFile: row.fileType,

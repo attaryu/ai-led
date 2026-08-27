@@ -86,10 +86,13 @@ export async function reportUploadComplete({
 	objectKey,
 	namaDokumen,
 	target,
+	folderId,
 }: {
 	objectKey: string;
 	namaDokumen: string;
 	target: UploadEvidenceTargetDto;
+	/** Folder tujuan; `null` = akar cakupannya. Ditulis langsung ke baris baru — tidak ada lagi susulan `assignMany`. */
+	folderId: string | null;
 }): Promise<EvidenceEntity> {
 	try {
 		const row = await apiFetch<BuktiDukungApiRow>('/bukti-dukung', {
@@ -99,6 +102,7 @@ export async function reportUploadComplete({
 				studyProgramId: target.ownerTipe === 'PROGRAM_STUDI' ? target.studyProgramId : undefined,
 				documentName: namaDokumen,
 				fileKey: objectKey,
+				folderId: folderId ?? undefined,
 			},
 		});
 		return mapBuktiDukungToEvidence(row);

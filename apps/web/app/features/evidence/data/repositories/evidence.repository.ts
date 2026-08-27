@@ -107,15 +107,6 @@ export function evidenceScopeFor(input: {
 			};
 }
 
-/**
- * Menimpa `folderId` satu baris bukti dukung dari peta lokal
- * (`evidenceFolderRepository.assignedFolderId`) — backend belum punya
- * kolomnya, jadi yang datang dari `evidenceRemoteSource` selalu `null`.
- */
-function withFolderId(evidence: EvidenceEntity): EvidenceEntity {
-	return { ...evidence, folderId: evidenceFolderRepository.assignedFolderId(evidence.id) };
-}
-
 export const evidenceRepository = {
 	/**
 	 * Penyaringan, pencarian, pengurutan, dan pemotongan halaman semuanya di
@@ -131,21 +122,17 @@ export const evidenceRepository = {
 	 * - `q` terisi → **seluruh cakupan, folder diabaikan**, dan tiap berkas
 	 *   dibawakan jalur foldernya
 	 *
-	 * `folderId` bukti dukung ditimpa dari peta lokal ({@link withFolderId})
-	 * sebelum dikelompokkan — evidenceRemoteSource tidak pernah mengisinya.
-	 *
 	 * **Folder selalu di depan berkas**, apa pun kunci dan arah urutannya, dan
 	 * antar folder selalu menurut nama. Halaman memotong daftar gabungan itu,
 	 * jadi `PaginationFooter` tidak perlu tahu ada dua macam baris.
 	 */
 	async findPaged(query: EvidenceQueryDto): Promise<EvidencePage> {
 		const cakupan = evidenceScopeFor(query);
-		const scoped = await evidenceRemoteSource.findAll({
+		const berkasCakupan = await evidenceRemoteSource.findAll({
 			ownerTipe: query.ownerTipe,
 			studyProgramId: query.studyProgramId,
 		});
-		const berkasCakupan = scoped.map(withFolderId);
-		const folderCakupan = evidenceFolderRepository.findByScope(cakupan);
+		const folderCakupan = await evidenceFolderRepository.findByScope(cakupan);
 
 		const keyword = query.q?.trim().toLowerCase() ?? '';
 		const mencari = keyword !== '';
@@ -262,8 +249,8 @@ export const evidenceRepository = {
 	},
 
 	/** Memindahkan sekumpulan berkas ke satu folder (`null` = akar cakupannya). */
-	moveMany(ids: Set<string>, folderId: string | null): void {
-		evidenceFolderRepository.assignMany(ids, folderId);
+	async moveMany(ids: Set<string>, folderId: string | null): Promise<void> {
+		await evidenceFolderRepository.assignMany(ids, folderId);
 	},
 
 	/**
@@ -271,49 +258,58 @@ export const evidenceRepository = {
 	 * menyusun kalimat konfirmasi sebelum ada yang dihapus.
 	 *
 	 * `subfolder` tidak menghitung folder itu sendiri, supaya angkanya bisa
-	 * langsung dibacakan apa adanya di konfirmasi. `berkas` dihitung dari peta
-	 * penugasan folder lokal, bukan dari baris bukti dukung sungguhan — itulah
-	 * satu-satunya tempat folder tiap berkas tercatat sekarang.
+	 * langsung dibacakan apa adanya di konfirmasi. `berkas` dihitung dari
+	 * `evidence.folderId` sungguhan sekarang — bukan peta lokal lagi.
 	 */
-	rincianHapusFolder(folderId: string): { subfolder: number; berkas: number } {
-		const ids = keturunanIds(evidenceFolderRepository.findAll(), folderId);
-		const berkas = evidenceFolderRepository.evidenceIdsInFolders(ids).size;
+	async rincianHapusFolder(
+		cakupan: EvidenceScope,
+		folderId: string,
+	): Promise<{ subfolder: number; berkas: number }> {
+		const [folders, evidences] = await Promise.all([
+			evidenceFolderRepository.findByScope(cakupan),
+			evidenceRemoteSource.findAll({ ownerTipe: cakupan.ownerTipe, studyProgramId: cakupan.studyProgramId }),
+		]);
+		const ids = keturunanIds(folders, folderId);
+		const berkas = evidences.filter((evidence) => evidence.folderId !== null && ids.has(evidence.folderId)).length;
 		return { subfolder: ids.size - 1, berkas };
 	},
 
 	/**
 	 * Menghapus folder beserta seluruh keturunannya — subfolder maupun berkas
-	 * yang ditugaskan ke salah satunya lewat peta lokal.
+	 * yang `folderId`-nya menunjuk salah satunya.
 	 *
 	 * Berkas dihapus lewat backend sungguhan (`evidenceRemoteSource.remove`),
-	 * satu per satu — bukan cuma dilupakan dari peta folder. Kegagalan satu berkas
+	 * satu per satu — bukan cuma dilepas dari foldernya. Kegagalan satu berkas
 	 * (mis. bukan milik pengunggah yang sedang login — lihat aturan akses di
 	 * `bukti-dukung.controller.ts`) tidak membatalkan sisanya: dipindah ke folder
 	 * induk supaya tetap terlihat (bukan menunjuk folder yang sebentar lagi
 	 * lenyap), lalu error dilempar supaya pemanggil tahu foldernya tidak
 	 * bersih-bersih sepenuhnya.
 	 */
-	async deleteFolderCascade(folderId: string): Promise<void> {
-		const folders = evidenceFolderRepository.findAll();
+	async deleteFolderCascade(cakupan: EvidenceScope, folderId: string): Promise<void> {
+		const [folders, evidences] = await Promise.all([
+			evidenceFolderRepository.findByScope(cakupan),
+			evidenceRemoteSource.findAll({ ownerTipe: cakupan.ownerTipe, studyProgramId: cakupan.studyProgramId }),
+		]);
 		const target = folders.find((folder) => folder.id === folderId);
 		const ids = keturunanIds(folders, folderId);
-		const evidenceIds = evidenceFolderRepository.evidenceIdsInFolders(ids);
+		const evidenceIds = evidences
+			.filter((evidence) => evidence.folderId !== null && ids.has(evidence.folderId))
+			.map((evidence) => evidence.id);
 
 		const gagal = new Set<string>();
 		await Promise.all(
-			[...evidenceIds].map((id) =>
+			evidenceIds.map((id) =>
 				evidenceRemoteSource.remove(id).catch(() => {
 					gagal.add(id);
 				}),
 			),
 		);
 
-		const berhasil = new Set([...evidenceIds].filter((id) => !gagal.has(id)));
-		evidenceFolderRepository.clearAssignments(berhasil);
 		if (gagal.size > 0) {
-			evidenceFolderRepository.assignMany(gagal, target?.parentId ?? null);
+			await evidenceFolderRepository.assignMany(gagal, target?.parentId ?? null);
 		}
-		evidenceFolderRepository.removeMany(ids);
+		await evidenceFolderRepository.removeMany(ids);
 		notify();
 
 		if (gagal.size > 0) {
@@ -369,15 +365,12 @@ export const evidenceRepository = {
 			objectKey,
 			namaDokumen: file.name,
 			target,
+			folderId,
 		});
-
-		if (folderId !== null) {
-			evidenceFolderRepository.assignMany(new Set([evidence.id]), folderId);
-		}
 
 		notify();
 		pollForIngestion();
 
-		return { ...evidence, folderId };
+		return evidence;
 	},
 };

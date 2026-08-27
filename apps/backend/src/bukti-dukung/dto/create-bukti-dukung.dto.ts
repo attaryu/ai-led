@@ -20,4 +20,9 @@ export class CreateBuktiDukungDto {
   @IsString()
   @IsNotEmpty()
   fileKey!: string;
+
+  // `undefined`/`null` = root of the target scope. Verified against ownerType/studyProgramId in the service.
+  @IsOptional()
+  @IsString()
+  folderId?: string | null;
 }
