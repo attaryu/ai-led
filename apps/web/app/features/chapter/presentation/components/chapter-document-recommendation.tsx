@@ -120,36 +120,54 @@ export function ChapterDocumentRecommendation({
 				)}
 			</div>
 
-			{rekomendasi.recommendationText && (
-				<p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-					{rekomendasi.recommendationText}
-				</p>
-			)}
+			{/*
+			 * Teks DAN kartu digulung BERSAMA, dibatasi tinggi total-nya di sini —
+			 * bukan cuma daftar kartunya. recommendationText sendirian bisa
+			 * beberapa baris, dan menaruhnya di luar batas membuat tinggi blok ini
+			 * tetap tak terduga (paragraf panjang + tinggi maksimal kartu bisa
+			 * gabungannya lebih tinggi dari seluruh panel), sehingga daftar bukti
+			 * dukung di chapter-generation-panel.tsx ikut terdesak nyaris nol
+			 * tinggi dan footer-nya sendiri meluber keluar batas overflow-hidden
+			 * panel — bukan cuma "tidak bisa digulung", tapi kartu paling bawah
+			 * ikut terpotong/tertimpa baris tombol Konfirmasi/Generate di
+			 * bawahnya. Satu ScrollArea dengan batas tetap membuat tinggi total
+			 * blok ini — dan sisa ruang untuk daftar bukti dukung — bisa diduga.
+			 */}
+			{(rekomendasi.recommendationText || rekomendasi.items.length > 0) && (
+				<ScrollArea className="mt-1.5 max-h-48">
+					<div className="pr-2.5">
+						{rekomendasi.recommendationText && (
+							<p className="text-xs leading-relaxed text-muted-foreground">
+								{rekomendasi.recommendationText}
+							</p>
+						)}
 
-			{rekomendasi.items.length > 0 && (
-				/*
-				 * Dibatasi tinggi + ScrollArea sendiri (pola sama dengan daftar bukti
-				 * dukung di chapter-generation-panel.tsx): tanpa batas, kartu 5-7 item
-				 * ini bisa lebih tinggi dari sisa layar dan mendorong tombol Konfirmasi
-				 * serta Generate di bawahnya keluar dari pandangan, di panel yang
-				 * footernya sengaja tidak ikut bergulir bersama sisanya.
-				 */
-				<ScrollArea className="mt-2 max-h-56">
-					<ul className="space-y-1.5 pr-2.5">
-						{rekomendasi.items.map((item) => (
-							<li
-								key={item.id}
-								className="rounded-md border border-border bg-background p-2"
+						{rekomendasi.items.length > 0 && (
+							<ul
+								className={
+									rekomendasi.recommendationText
+										? 'mt-2 space-y-1.5'
+										: 'space-y-1.5'
+								}
 							>
-								<p className="text-sm leading-tight font-medium">{item.label}</p>
-								{item.reason && (
-									<p className="mt-0.5 text-xs text-muted-foreground">
-										{item.reason}
-									</p>
-								)}
-							</li>
-						))}
-					</ul>
+								{rekomendasi.items.map((item) => (
+									<li
+										key={item.id}
+										className="rounded-md border border-border bg-background p-2"
+									>
+										<p className="text-sm leading-tight font-medium">
+											{item.label}
+										</p>
+										{item.reason && (
+											<p className="mt-0.5 text-xs text-muted-foreground">
+												{item.reason}
+											</p>
+										)}
+									</li>
+								))}
+							</ul>
+						)}
+					</div>
 				</ScrollArea>
 			)}
 
