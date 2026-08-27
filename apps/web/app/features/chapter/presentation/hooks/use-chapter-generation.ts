@@ -1,6 +1,11 @@
 import * as React from 'react';
 
 import { streamSse } from '~/core/lib/sse-client';
+import {
+	ambilJobTertunda,
+	hapusJobTertunda,
+	simpanJobTertunda,
+} from '~/core/lib/pending-job-storage';
 import { evidenceRepository, evidenceScopeFor } from '~/features/evidence/data/repositories/evidence.repository';
 import { evidenceFolderRepository } from '~/features/evidence/data/repositories/evidence-folder.repository';
 import {
@@ -46,6 +51,8 @@ const URUTAN_STATUS: Record<EvidenceStatus, number> = {
 
 export type StatusGenerate = 'diam' | 'berjalan' | 'gagal';
 
+const JENIS_JOB = 'generate';
+
 export type HasilGenerate = {
 	html: string;
 	chapter: ChapterEntity;
@@ -69,14 +76,31 @@ export function useChapterGeneration({
 	chapter,
 	studyProgramId,
 	izin,
+	onGenerated,
 }: {
 	chapter: ChapterEntity;
 	/** `studyProgramId` milik dokumennya — menentukan pustaka mana yang terbaca. */
 	studyProgramId: string;
 	/** Hak akses bab; `canEdit` mematikan generate, `session` mengisi pembuat draft. */
 	izin: ChapterPermission;
+	/**
+	 * Dipanggil dari DALAM hook (bukan lewat nilai balik `jalankanGenerate`)
+	 * supaya jalur pemicu manual dan jalur menyambung ulang job lama setelah
+	 * refresh sama-sama mendorong hasilnya ke editor — refresh di tengah
+	 * generate dulunya membuang jalur ini sepenuhnya karena nilai baliknya
+	 * cuma didengar oleh pemanggil yang menunggunya secara langsung.
+	 */
+	onGenerated?: (hasil: HasilGenerate) => void;
 }) {
 	const enabled = izin.canEdit;
+	// Ref, bukan dependency langsung di `tunggu`/`jalankanGenerate` di bawah —
+	// `onGenerated` yang dioper `chapter-generation-panel.tsx` adalah closure
+	// baru tiap render (menutup `onGenerated` milik `ChapterGenerationPanel`
+	// sendiri, dari `LedEditorPage`), dan menaruhnya di dependency array akan
+	// membongkar-pasang callback `jalankanGenerate` tiap render induk berganti,
+	// bukan cuma saat bab/izin sungguhan berubah.
+	const onGeneratedRef = React.useRef(onGenerated);
+	onGeneratedRef.current = onGenerated;
 	const [pustaka, setPustaka] = React.useState<EvidenceEntity[]>([]);
 	const [kataKunci, setKataKunci] = React.useState('');
 	const [prompt, setPrompt] = React.useState('');
@@ -345,43 +369,14 @@ export function useChapterGeneration({
 		[terpilih, dasar],
 	);
 
-	/**
-	 * Memicu GENERASI_BAB sungguhan (Producer NestJS -> Worker FastAPI) lalu
-	 * menunggu selesainya lewat `GET jobs/:id/events` (`streamSse`). Bukan lagi
-	 * `generateChapterContent` (mock) + `chapterRepository.applyGenerate`
-	 * (localStorage) — `chapter.id` di sini adalah id `BabDokumen` sungguhan,
-	 * dan `applyGenerate` hanya menulis ke larik data contoh yang tidak
-	 * memuatnya sama sekali (lihat catatan migrasi di `chapter.repository.ts`).
-	 *
-	 * Pemilihan bukti dukung & prompt tambahan: prompt sudah ikut terkirim ke
-	 * worker (lihat `worker.py::_build_generasi_prompt`), tapi pemilihan bukti
-	 * dukung **belum** — worker menjalankan pencarian bukti LED sendiri lewat
-	 * pgvector, bukan menyaring dari `terpilih`. Daftarnya tetap ditampilkan
-	 * sebagai konteks yang relevan buat penyusun, bukan kontrol yang benar-benar
-	 * mengarahkan generate — celah ini dicatat di tracker, bukan ditutupi diam-diam.
-	 *
-	 * `draftId`, bila diisi pemanggil (`chapter-generation-panel.tsx`, gerbang
-	 * konfirmasi rekomendasi dokumen), justru **membatasi** pencarian itu ke
-	 * `selectedEvidenceIds` milik rekomendasi yang sudah `DIKONFIRMASI` — lihat
-	 * `worker.py::_handle_generasi_bab`. Bab yang tidak pernah memicu alur
-	 * rekomendasi memanggil ini tanpa argumen, tidak berubah dari sebelumnya.
-	 */
-	const jalankanGenerate =
-		React.useCallback(async (draftId?: string): Promise<HasilGenerate | null> => {
-			if (!enabled || status === 'berjalan' || terpilih.size === 0) return null;
-
-			setStatus('berjalan');
-			setPesanGagal(null);
-
+	/** Menunggu satu job GENERASI_BAB sampai kelar — dipakai baik saat baru
+	 * dipicu maupun saat menyambung ulang ke job id lama dari sessionStorage
+	 * (lihat efek "Sambung ulang" di bawah). */
+	const tunggu = React.useCallback(
+		async (jobId: string): Promise<HasilGenerate | null> => {
 			try {
-				const job = await chapterRemoteSource.generate(
-					chapter.id,
-					prompt.trim() || undefined,
-					draftId,
-				);
-
 				let hasilJob: JobEvent | null = null;
-				for await (const event of streamSse<JobEvent>(`/jobs/${job.id}/events`)) {
+				for await (const event of streamSse<JobEvent>(`/jobs/${jobId}/events`)) {
 					if (event.status === 'completed' || event.status === 'failed') {
 						hasilJob = event;
 						break;
@@ -416,15 +411,89 @@ export function useChapterGeneration({
 				// tambahan seperti draf manual dulu.
 				setVersiTersimpan(hasilJob.result?.versi ?? null);
 
-				return { html: diperbarui.kontenKerja ?? '', chapter: diperbarui };
+				const hasil: HasilGenerate = {
+					html: diperbarui.kontenKerja ?? '',
+					chapter: diperbarui,
+				};
+				onGeneratedRef.current?.(hasil);
+				return hasil;
 			} catch {
 				setStatus('gagal');
 				setPesanGagal(
 					'Generate gagal diselesaikan. Periksa koneksi lalu coba lagi.',
 				);
 				return null;
+			} finally {
+				hapusJobTertunda(chapter.id, JENIS_JOB);
 			}
-		}, [enabled, status, terpilih, chapter, prompt]);
+		},
+		[chapter.id, terpilih],
+	);
+
+	/**
+	 * Sambung ulang ke job GENERASI_BAB yang belum sempat selesai saat halaman
+	 * ini dimuat/di-refresh — sekali per bab, bukan tiap render. Refresh di
+	 * tengah generate dulunya membuang seluruh state "sedang berjalan" tanpa
+	 * jejak walau job-nya sendiri tetap jalan di worker (lihat JSDoc serupa di
+	 * `useChapterRecommendation`); `jobs.gateway.ts` sudah mengirim status
+	 * TERKINI job begitu stream dibuka, jadi cukup menyambung ke job id yang
+	 * sama, bukan memicu job baru.
+	 */
+	React.useEffect(() => {
+		const jobId = ambilJobTertunda(chapter.id, JENIS_JOB);
+		if (!jobId) return;
+
+		setStatus('berjalan');
+		setPesanGagal(null);
+		void tunggu(jobId);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [chapter.id]);
+
+	/**
+	 * Memicu GENERASI_BAB sungguhan (Producer NestJS -> Worker FastAPI) lalu
+	 * menunggu selesainya lewat `tunggu` di atas. Bukan lagi
+	 * `generateChapterContent` (mock) + `chapterRepository.applyGenerate`
+	 * (localStorage) — `chapter.id` di sini adalah id `BabDokumen` sungguhan,
+	 * dan `applyGenerate` hanya menulis ke larik data contoh yang tidak
+	 * memuatnya sama sekali (lihat catatan migrasi di `chapter.repository.ts`).
+	 *
+	 * Pemilihan bukti dukung & prompt tambahan: prompt sudah ikut terkirim ke
+	 * worker (lihat `worker.py::_build_generasi_prompt`), tapi pemilihan bukti
+	 * dukung **belum** — worker menjalankan pencarian bukti LED sendiri lewat
+	 * pgvector, bukan menyaring dari `terpilih`. Daftarnya tetap ditampilkan
+	 * sebagai konteks yang relevan buat penyusun, bukan kontrol yang benar-benar
+	 * mengarahkan generate — celah ini dicatat di tracker, bukan ditutupi diam-diam.
+	 *
+	 * `draftId`, bila diisi pemanggil (`chapter-generation-panel.tsx`, gerbang
+	 * konfirmasi rekomendasi dokumen), justru **membatasi** pencarian itu ke
+	 * `selectedEvidenceIds` milik rekomendasi yang sudah `DIKONFIRMASI` — lihat
+	 * `worker.py::_handle_generasi_bab`. Bab yang tidak pernah memicu alur
+	 * rekomendasi memanggil ini tanpa argumen, tidak berubah dari sebelumnya.
+	 */
+	const jalankanGenerate =
+		React.useCallback(async (draftId?: string): Promise<HasilGenerate | null> => {
+			if (!enabled || status === 'berjalan' || terpilih.size === 0) return null;
+
+			setStatus('berjalan');
+			setPesanGagal(null);
+
+			try {
+				const job = await chapterRemoteSource.generate(
+					chapter.id,
+					prompt.trim() || undefined,
+					draftId,
+				);
+				simpanJobTertunda(chapter.id, JENIS_JOB, job.id);
+				return await tunggu(job.id);
+			} catch {
+				setStatus('gagal');
+				setPesanGagal(
+					'Generate gagal diselesaikan. Periksa koneksi lalu coba lagi.',
+				);
+				hapusJobTertunda(chapter.id, JENIS_JOB);
+				return null;
+			}
+		}, [enabled, status, terpilih, chapter, prompt, tunggu]);
 
 	return {
 		daftar,

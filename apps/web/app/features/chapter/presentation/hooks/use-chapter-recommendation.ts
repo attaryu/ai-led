@@ -1,6 +1,11 @@
 import * as React from 'react';
 
 import { streamSse } from '~/core/lib/sse-client';
+import {
+	ambilJobTertunda,
+	hapusJobTertunda,
+	simpanJobTertunda,
+} from '~/core/lib/pending-job-storage';
 import { chapterRepository } from '../../data/repositories/chapter.repository';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import { type DocumentRecommendationEntity } from '../../domain/entities/document-recommendation.entity';
@@ -20,6 +25,8 @@ type JobEvent = {
 };
 
 export type StatusRekomendasi = 'diam' | 'berjalan' | 'gagal';
+
+const JENIS_JOB = 'recommend';
 
 /**
  * Alur "Rekomendasikan Dokumen -> Konfirmasi" (docs port origin/led-wiriting
@@ -42,6 +49,15 @@ export type StatusRekomendasi = 'diam' | 'berjalan' | 'gagal';
  * centang untuk satu berkas yang sama, atau dua Set yang harus dijaga selaras
  * tanpa mekanisme yang memaksanya. `konfirmasi()` sebagai gantinya menerima
  * pilihan itu sebagai argumen dari pemanggil (`chapter-generation-panel.tsx`).
+ *
+ * **Tersambung ulang setelah refresh.** Job id disimpan ke `sessionStorage`
+ * (`pending-job-storage.ts`) begitu dipicu, dan dibaca ulang saat hook ini
+ * mount — refresh di tengah AI mencari rekomendasi dulunya membuang seluruh
+ * state "sedang berjalan" tanpa jejak walau job-nya sendiri tetap jalan di
+ * worker, membuat penyusun mengira sistemnya berhenti. `jobs.gateway.ts`
+ * sudah mengirim status TERKINI job begitu stream dibuka (`startWith`), jadi
+ * yang perlu dilakukan di sini cuma menyambung ulang ke job id yang sama,
+ * bukan memicu job baru.
  */
 export function useChapterRecommendation({
 	chapter,
@@ -85,6 +101,64 @@ export function useChapterRecommendation({
 		};
 	}, [chapter.id, chapter.checkpointAktifId]);
 
+	/** Menunggu satu job REKOMENDASI_DOKUMEN sampai kelar — dipakai baik saat
+	 * baru dipicu maupun saat menyambung ulang ke job id lama dari sessionStorage. */
+	const tunggu = React.useCallback(
+		async (jobId: string) => {
+			try {
+				let hasilJob: JobEvent | null = null;
+				for await (const event of streamSse<JobEvent>(`/jobs/${jobId}/events`)) {
+					if (event.status === 'completed' || event.status === 'failed') {
+						hasilJob = event;
+						break;
+					}
+				}
+
+				if (
+					!hasilJob ||
+					hasilJob.status === 'failed' ||
+					hasilJob.result?.status === 'error'
+				) {
+					setStatus('gagal');
+					setPesanGagal(
+						hasilJob?.result?.error ??
+							hasilJob?.error ??
+							'Mencari rekomendasi dokumen gagal diselesaikan. Coba lagi.',
+					);
+					return;
+				}
+
+				const draftId = hasilJob.result?.babDraftId;
+				const rec = draftId
+					? await chapterRepository.findRecommendation(chapter.id, draftId)
+					: null;
+
+				setRekomendasi(rec);
+				setStatus('diam');
+			} catch {
+				setStatus('gagal');
+				setPesanGagal(
+					'Mencari rekomendasi dokumen gagal diselesaikan. Periksa koneksi lalu coba lagi.',
+				);
+			} finally {
+				hapusJobTertunda(chapter.id, JENIS_JOB);
+			}
+		},
+		[chapter.id],
+	);
+
+	/** Sambung ulang ke job yang belum sempat selesai saat halaman ini
+	 * dimuat/di-refresh — sekali per bab, bukan tiap render. */
+	React.useEffect(() => {
+		const jobId = ambilJobTertunda(chapter.id, JENIS_JOB);
+		if (!jobId) return;
+
+		setStatus('berjalan');
+		setPesanGagal(null);
+		void tunggu(jobId);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [chapter.id]);
+
 	const trigger = React.useCallback(async () => {
 		if (!izin.canEdit || status === 'berjalan') return;
 
@@ -93,43 +167,16 @@ export function useChapterRecommendation({
 
 		try {
 			const job = await chapterRepository.triggerRecommendDocuments(chapter.id);
-
-			let hasilJob: JobEvent | null = null;
-			for await (const event of streamSse<JobEvent>(`/jobs/${job.id}/events`)) {
-				if (event.status === 'completed' || event.status === 'failed') {
-					hasilJob = event;
-					break;
-				}
-			}
-
-			if (
-				!hasilJob ||
-				hasilJob.status === 'failed' ||
-				hasilJob.result?.status === 'error'
-			) {
-				setStatus('gagal');
-				setPesanGagal(
-					hasilJob?.result?.error ??
-						hasilJob?.error ??
-						'Mencari rekomendasi dokumen gagal diselesaikan. Coba lagi.',
-				);
-				return;
-			}
-
-			const draftId = hasilJob.result?.babDraftId;
-			const rec = draftId
-				? await chapterRepository.findRecommendation(chapter.id, draftId)
-				: null;
-
-			setRekomendasi(rec);
-			setStatus('diam');
+			simpanJobTertunda(chapter.id, JENIS_JOB, job.id);
+			await tunggu(job.id);
 		} catch {
 			setStatus('gagal');
 			setPesanGagal(
 				'Mencari rekomendasi dokumen gagal diselesaikan. Periksa koneksi lalu coba lagi.',
 			);
+			hapusJobTertunda(chapter.id, JENIS_JOB);
 		}
-	}, [izin.canEdit, status, chapter.id]);
+	}, [izin.canEdit, status, chapter.id, tunggu]);
 
 	/**
 	 * `DocumentRecommendation` yang sudah `DIKONFIRMASI` tidak bisa dikonfirmasi

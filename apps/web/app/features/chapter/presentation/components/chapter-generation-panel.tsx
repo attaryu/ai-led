@@ -55,7 +55,7 @@ export function ChapterGenerationPanel({
 	/** Dipanggil setelah hasilnya tersimpan; halaman editor yang mendorongnya ke Tiptap. */
 	onGenerated: (hasil: HasilGenerate) => void;
 }) {
-	const generasi = useChapterGeneration({ chapter, studyProgramId, izin });
+	const generasi = useChapterGeneration({ chapter, studyProgramId, izin, onGenerated });
 	const rekomendasiDokumen = useChapterRecommendation({ chapter, izin });
 
 	const {
@@ -116,11 +116,14 @@ export function ChapterGenerationPanel({
 	const menungguKonfirmasi =
 		rekomendasi !== null && rekomendasi.status !== 'DIKONFIRMASI';
 
+	// `onGenerated` sekarang dipanggil dari DALAM `useChapterGeneration`
+	// (lihat JSDoc `onGenerated` di sana) supaya jalur menyambung ulang job
+	// lama setelah refresh juga mendorong hasilnya ke editor, bukan cuma
+	// jalur klik manual ini.
 	async function handleGenerate() {
-		const hasil = await jalankanGenerate(
+		await jalankanGenerate(
 			rekomendasi?.status === 'DIKONFIRMASI' ? rekomendasi.chapterDraftId : undefined,
 		);
-		if (hasil) onGenerated(hasil);
 	}
 
 	return (
