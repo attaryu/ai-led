@@ -633,6 +633,7 @@ async def _handle_generasi_bab(job) -> dict:
         get_pedoman_for_bab,
         get_rubrik_for_bab,
         get_user_nama,
+        link_evidence_to_chapter_and_draft,
         update_bab_dokumen_aktif,
     )
     from eval.ragas_eval import score_single_sample
@@ -751,6 +752,13 @@ async def _handle_generasi_bab(job) -> dict:
         konten_snapshot=konten,
         referensi_chunk_ids=[c["chunk_id"] for c in chunks],
     )
+    # Records which confirmed Bukti Dukung actually backed this generate —
+    # no-op if selected_ids is empty (manual generate, no recommendation).
+    # This never happened at all before, silently: apps/web reads these rows
+    # for chapter.buktiDukung (the count shown after generate, and the
+    # checkbox baseline restored on reload), so it always read 0/empty
+    # regardless of whether evidence was actually retrieved for the prompt.
+    link_evidence_to_chapter_and_draft(bab_id, draft["id"], selected_ids)
     update_bab_dokumen_aktif(bab_id, konten, draft["id"])
     create_generation_run(
         bab_draft_id=draft["id"],

@@ -202,16 +202,76 @@ def create_bab_draft(
 
 def update_bab_dokumen_aktif(bab_id: str, konten_kerja: dict, checkpoint_aktif_id: str) -> None:
     """Overwrite the chapter's active content — same 'always overwrite'
-    policy as every other active-state field in this schema."""
+    policy as every other active-state field in this schema.
+
+    `last_saved_at` set explicitly: schema.prisma declares it @updatedAt,
+    but that's a Prisma CLIENT convenience (stamped by Prisma's own query
+    engine on .update() calls), not a Postgres trigger — raw SQL from this
+    module bypasses it entirely and silently leaves the column frozen at
+    whatever it was last set to (traced live: a chapter regenerated today
+    still showed 'last_saved_at' from its original seed date, days earlier,
+    because nothing here had ever set it)."""
     with get_conn().cursor() as cur:
         cur.execute(
             """
             UPDATE writing_document_chapters
-            SET working_content = %s, active_checkpoint_id = %s
+            SET working_content = %s, active_checkpoint_id = %s, last_saved_at = NOW()
             WHERE id = %s
             """,
             (json.dumps(konten_kerja), checkpoint_aktif_id, bab_id),
         )
+
+
+def link_evidence_to_chapter_and_draft(
+    chapter_id: str, draft_id: str, evidence_ids: list[str]
+) -> None:
+    """Records which confirmed Bukti Dukung actually backed one generate —
+    evidence_chapter_links/evidence_draft_links (schema.prisma), what
+    apps/web reads for 'chapter.buktiDukung' (the count shown after
+    generate, and the checkbox baseline restored on reload). No-op if
+    evidence_ids is empty (chapter never went through recommend+confirm,
+    or nothing was selected) — never was writing anything here before this,
+    which silently broke both of those regardless of whether evidence was
+    actually retrieved for the prompt.
+
+    evidence_chapter_links is the chapter's ACTIVE state (docs/database.md
+    §8) — replaced wholesale each regenerate, same 'always overwrite'
+    policy as update_bab_dokumen_aktif. evidence_draft_links is this one
+    draft's permanent record — inserted once, never touched again.
+    """
+    if not evidence_ids:
+        return
+
+    with get_conn().cursor() as cur:
+        cur.execute(
+            "SELECT id, document_name, file_type FROM evidence_files WHERE id = ANY(%s)",
+            (evidence_ids,),
+        )
+        rows = cur.fetchall()
+        if not rows:
+            return
+
+        cur.execute(
+            "DELETE FROM evidence_chapter_links WHERE chapter_id = %s", (chapter_id,)
+        )
+        for row in rows:
+            cur.execute(
+                """
+                INSERT INTO evidence_chapter_links
+                    (id, evidence_id, chapter_id, document_name, file_type)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (str(uuid.uuid4()), row["id"], chapter_id, row["document_name"], row["file_type"]),
+            )
+            cur.execute(
+                """
+                INSERT INTO evidence_draft_links
+                    (id, evidence_id, draft_id, document_name, file_type)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (evidence_id, draft_id) DO NOTHING
+                """,
+                (str(uuid.uuid4()), row["id"], draft_id, row["document_name"], row["file_type"]),
+            )
 
 
 def create_generation_run(
