@@ -217,8 +217,9 @@ export const chapterRemoteSource = {
 	/**
 	 * `draftId` diisi -> rekomendasi terbaru untuk checkpoint itu, apa pun
 	 * statusnya (dipakai segera sesudah job REKOMENDASI_DOKUMEN selesai).
-	 * Dikosongkan -> rekomendasi yang sudah DIKONFIRMASI untuk checkpoint aktif
-	 * bab, atau `null` bila tidak ada.
+	 * Dikosongkan -> rekomendasi DIKONFIRMASI terbaru milik BAB ini (lepas
+	 * dari draft mana yang jadi checkpoint aktif sekarang — lihat JSDoc
+	 * `bab-pipeline.service.ts::findRecommendation`), atau `null` bila tidak ada.
 	 */
 	findRecommendation(
 		id: string,

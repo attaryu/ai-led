@@ -54,8 +54,26 @@ export class BabPipelineService {
    * (any status, e.g. right after triggering, before it's confirmed).
    * Omitted -> the chapter's active checkpoint's confirmed recommendation.
    */
+  /**
+   * `draftId` diisi: rekomendasi milik draft ITU PERSIS, status apapun —
+   * dipakai begitu `recommend-documents` baru selesai, sebelum ada yang
+   * dikonfirmasi, saat pemanggil sudah tahu persis draft kosong mana yang
+   * baru dibuat (`babDraftId` dari hasil job).
+   *
+   * `draftId` kosong: rekomendasi DIKONFIRMASI terbaru milik BAB ini —
+   * lepas dari draft mana yang jadi checkpoint aktif sekarang. Worker.py
+   * TIDAK mengisi draft kosong hasil rekomendasi in-place saat generate —
+   * ia selalu membuat versi draft baru (baris 71 tracker mencatat ini
+   * sebagai simplifikasi sengaja) — jadi begitu generate pertama sukses,
+   * `activeCheckpointId` bab pindah ke draft BARU itu, sementara baris
+   * DocumentRecommendation tetap menunjuk draft kosong LAMA. Mencocokkan ke
+   * `activeCheckpointId` persis (perilaku lama) berarti rekomendasi yang
+   * sudah dikonfirmasi "hilang" tepat setelah generate pertama berhasil —
+   * lalu generate kedua berjalan tanpa `draftId`, jadi tanpa bukti dukung
+   * sama sekali, walau penyusun sudah mengonfirmasinya sebelumnya.
+   */
   async findRecommendation(id: string, draftId?: string) {
-    const bab = await this.access.findOneScoped(id);
+    await this.access.findOneScoped(id);
 
     if (draftId) {
       const draft = await this.prisma.chapterDraft.findFirst({
@@ -71,11 +89,11 @@ export class BabPipelineService {
       });
     }
 
-    if (!bab.activeCheckpointId) {
-      return null;
-    }
     return this.prisma.documentRecommendation.findFirst({
-      where: { chapterDraftId: bab.activeCheckpointId, status: StatusRekomendasi.DIKONFIRMASI },
+      where: {
+        status: StatusRekomendasi.DIKONFIRMASI,
+        chapterDraft: { chapterId: id },
+      },
       orderBy: { createdAt: 'desc' },
       include: { items: { orderBy: { order: 'asc' } } },
     });

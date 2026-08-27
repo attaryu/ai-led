@@ -72,23 +72,24 @@ export function useChapterRecommendation({
 	const [pesanGagal, setPesanGagal] = React.useState<string | null>(null);
 
 	/**
-	 * Checkpoint aktif berganti tiap kali alur ini dipicu — worker langsung
-	 * menunjuk draft kosong barunya (lihat `worker.py::_handle_rekomendasi_dokumen`
-	 * langkah 7) — begitu juga generate biasa yang membuat checkpoint sendiri.
-	 * Rekomendasi lama tidak relevan lagi begitu checkpoint aktifnya berubah,
-	 * jadi dibaca ulang setiap kali `checkpointAktifId` berubah, termasuk saat
-	 * halaman baru dimuat di tengah alur (sebelum sempat dikonfirmasi).
+	 * Rekomendasi DIKONFIRMASI terbaru milik bab ini — bukan milik checkpoint
+	 * aktifnya. `findRecommendation` TANPA argumen draftId (lihat JSDoc
+	 * `bab-pipeline.service.ts::findRecommendation`) sengaja dicari per bab,
+	 * bukan dicocokkan ke `checkpointAktifId` persis: worker.py selalu
+	 * membuat draft baru tiap generate, jadi checkpoint aktif bab pindah
+	 * begitu generate pertama sukses, sementara rekomendasi yang dikonfirmasi
+	 * tetap menunjuk draft kosong lama — mencocokkan persis berarti
+	 * rekomendasi yang sudah dikonfirmasi "hilang" tepat setelah generate
+	 * pertama berhasil, dan generate kedua kehilangan cakupan buktinya tanpa
+	 * penyusun sadar. Tetap dibaca ulang tiap `checkpointAktifId` berubah
+	 * (sinyal "ada sesuatu yang baru saja terjadi"), termasuk saat halaman
+	 * baru dimuat di tengah alur.
 	 */
 	React.useEffect(() => {
 		let dibatalkan = false;
 
-		if (!chapter.checkpointAktifId) {
-			setRekomendasi(null);
-			return;
-		}
-
 		chapterRepository
-			.findRecommendation(chapter.id, chapter.checkpointAktifId)
+			.findRecommendation(chapter.id)
 			.then((rec) => {
 				if (!dibatalkan) setRekomendasi(rec);
 			})

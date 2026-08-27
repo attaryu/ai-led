@@ -191,7 +191,7 @@ export const chapterRepository = {
 		return chapterRemoteSource.recommendDocuments(chapterId, draftId);
 	},
 
-	/** `GET bab/:id/recommendation` — `null` bila belum ada rekomendasi untuk `draftId`/checkpoint aktif. */
+	/** `GET bab/:id/recommendation` — `null` bila belum ada rekomendasi untuk `draftId` (bila diisi) atau untuk bab ini (lihat sumbernya). */
 	async findRecommendation(
 		chapterId: string,
 		draftId?: string,
