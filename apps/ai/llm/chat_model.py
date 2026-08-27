@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import os
 
+from llm.ollama_client import pick_ollama_endpoint
+
 
 def build_plain_llm():
     provider = os.environ.get("LLM_PROVIDER", "ollama").lower()
@@ -24,9 +26,14 @@ def build_plain_llm():
 
     from langchain_ollama import ChatOllama
 
+    # OLLAMA_MODEL/OLLAMA_BASE_URL can be comma-separated (multi-GPU pool,
+    # multiple candidate models) — same convention as
+    # llm/ollama_client.py::create_ollama_client_from_env, first entry wins
+    # here since this path has no per-request model override.
+    raw_model = os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b")
     kwargs: dict = {
-        "base_url": os.environ["OLLAMA_BASE_URL"],
-        "model": os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b"),
+        "base_url": pick_ollama_endpoint(os.environ["OLLAMA_BASE_URL"]),
+        "model": raw_model.split(",")[0].strip(),
         "temperature": 0.2,
     }
     api_key = os.environ.get("OLLAMA_API_KEY")
@@ -58,9 +65,11 @@ def build_judge_llm():
 
     from langchain_ollama import ChatOllama
 
+    # Same comma-separated-list handling as build_plain_llm above.
+    raw_model = os.environ.get("JUDGE_OLLAMA_MODEL", os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b"))
     kwargs: dict = {
-        "base_url": os.environ["OLLAMA_BASE_URL"],
-        "model": os.environ.get("JUDGE_OLLAMA_MODEL", os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b")),
+        "base_url": pick_ollama_endpoint(os.environ["OLLAMA_BASE_URL"]),
+        "model": raw_model.split(",")[0].strip(),
         "temperature": 0.0,
     }
     api_key = os.environ.get("OLLAMA_API_KEY")
