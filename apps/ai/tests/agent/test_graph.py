@@ -46,7 +46,7 @@ def test_build_graph_returns_compiled_graph():
     assert hasattr(graph, "invoke")
 
 
-def test_build_llm_wraps_ollama_with_retry():
+def test_build_llm_wraps_ollama_with_retry(monkeypatch):
     """Transient connection errors talking to the Ollama backend (e.g. a
     connection reset mid-request) must be retried by the LLM runnable itself,
     not propagate raw up into the indicator's error field. Verifies
@@ -58,6 +58,7 @@ def test_build_llm_wraps_ollama_with_retry():
     from llm.ollama_client import OllamaClient
     from agent.graph import _build_llm
 
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
     fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
 
     with patch("langchain_ollama.ChatOllama") as mock_chat_ollama_cls:

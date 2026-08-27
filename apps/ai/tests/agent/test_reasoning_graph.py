@@ -163,7 +163,7 @@ def test_build_reasoning_graph_returns_compiled():
     assert hasattr(graph, "invoke")
 
 
-def test_build_reasoning_llm_wraps_ollama_with_retry():
+def test_build_reasoning_llm_wraps_ollama_with_retry(monkeypatch):
     """Same regression as _build_llm in graph.py: a transient connection
     error talking to Ollama must be retried by the LLM runnable, not
     propagate raw with zero retry."""
@@ -171,6 +171,7 @@ def test_build_reasoning_llm_wraps_ollama_with_retry():
     from llm.ollama_client import OllamaClient
     from agent.reasoning_graph import _build_reasoning_llm
 
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
     fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
 
     with patch("langchain_ollama.ChatOllama") as mock_chat_ollama_cls:

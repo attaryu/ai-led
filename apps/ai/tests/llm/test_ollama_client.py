@@ -102,6 +102,7 @@ async def test_api_key_header_sent(client):
 # ── 6 ──────────────────────────────────────────────────────────────────────────
 def test_create_from_env(monkeypatch):
     """create_ollama_client_from_env reads environment variables correctly."""
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
     monkeypatch.setenv("OLLAMA_BASE_URL", "http://vastai:11434")
     monkeypatch.setenv("OLLAMA_MODEL", "qwen2.5:7b")
     monkeypatch.setenv("OLLAMA_TIMEOUT_SECONDS", "120")
@@ -136,6 +137,7 @@ def test_get_available_models_splits_csv_openrouter(monkeypatch):
 
 
 def test_create_from_env_picks_first_of_csv_when_no_override(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
     monkeypatch.setenv("OLLAMA_BASE_URL", "http://vastai:11434")
     monkeypatch.setenv("OLLAMA_MODEL", "qwen3.6:35b,deepseek-r1:32b")
 
