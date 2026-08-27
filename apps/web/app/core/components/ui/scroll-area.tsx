@@ -11,7 +11,18 @@ function ScrollArea({
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
-      className={cn("relative", className)}
+      // overflow-hidden as a backstop: Viewport is size-full (height:100%),
+      // which only resolves reliably against a Root with a DEFINITE height
+      // (e.g. h-* or flex-1 in a bounded flex parent). A Root sized only by
+      // max-h-* has an auto height capped by the max — percentage heights on
+      // an auto-height ancestor don't reliably resolve, so Viewport can grow
+      // to its content's natural height instead of the intended cap, with
+      // no overflow-hidden here to clip the excess: it paints past Root's
+      // own box into whatever comes after it in the flow, and the library's
+      // own overflow detection reports "no overflow" since nothing overflows
+      // an auto-grown box. Prefer h-* over max-h-* on ScrollArea for this
+      // reason; this is a backstop for when that is missed, not a fix for it.
+      className={cn("relative overflow-hidden", className)}
       {...props}
     >
       <ScrollAreaPrimitive.Viewport

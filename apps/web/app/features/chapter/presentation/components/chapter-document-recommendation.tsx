@@ -134,7 +134,7 @@ export function ChapterDocumentRecommendation({
 			 * blok ini — dan sisa ruang untuk daftar bukti dukung — bisa diduga.
 			 */}
 			{(rekomendasi.recommendationText || rekomendasi.items.length > 0) && (
-				<ScrollArea className="mt-1.5 max-h-48">
+				<ScrollArea className="mt-1.5 h-48">
 					<div className="pr-2.5">
 						{rekomendasi.recommendationText && (
 							<p className="text-xs leading-relaxed text-muted-foreground">
