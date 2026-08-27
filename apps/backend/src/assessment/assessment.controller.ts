@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   Body,
   Controller,
   Delete,
@@ -11,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@ai-led/db';
+import { requireEnv } from '../config/env';
 import { Protected } from '../tenant/protected.decorator';
 import { AssessmentService } from './assessment.service';
 import { UpsertVerdictDto } from './dto/upsert-verdict.dto';
@@ -22,6 +24,26 @@ const READ_ROLES = [Role.PIMPINAN, Role.PENJAMIN_MUTU, Role.PENYUSUN];
 @Controller()
 export class AssessmentController {
   constructor(private readonly assessmentService: AssessmentService) {}
+
+  /** Proxy to apps/ai's GET /assessment/indicators — the 78 AMI indicators live only in its cached rubric matrix, no Postgres master table. */
+  @Get('assessment/indicators')
+  @Protected(...READ_ROLES)
+  async findIndicators() {
+    const aiServiceUrl = requireEnv('AI_SERVICE_URL');
+
+    let upstream: globalThis.Response;
+    try {
+      upstream = await fetch(`${aiServiceUrl}/assessment/indicators`);
+    } catch {
+      throw new BadGatewayException('AI service tidak dapat dihubungi');
+    }
+
+    if (!upstream.ok) {
+      throw new BadGatewayException('Gagal memuat daftar indikator dari AI service');
+    }
+
+    return upstream.json();
+  }
 
   @Get('dokumen/:dokumenId/assessment-sessions')
   @Protected(...READ_ROLES)

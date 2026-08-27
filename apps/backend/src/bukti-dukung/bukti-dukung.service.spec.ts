@@ -23,6 +23,9 @@ function makeService(context: {
       delete: jest.fn().mockResolvedValue(undefined),
       update: jest.fn().mockImplementation(({ data }) => Promise.resolve(data)),
     },
+    evidenceIndicatorTag: {
+      createMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
   };
   const tenantContext: Pick<TenantContextService, 'getOrThrow'> = {
     getOrThrow: jest.fn().mockReturnValue({ userId: 'u1', ...context }),
@@ -137,6 +140,32 @@ describe('BuktiDukungService.create', () => {
 
     const result = await service.create({ ownerType: OwnerTipe.TENANT, fileKey: FILE_KEY, folderId: 'fld1' });
     expect(result.folderId).toBe('fld1');
+  });
+
+  it('bulk-creates EvidenceIndicatorTag rows when indicatorNos is given', async () => {
+    const { service, prisma } = makeService({ tenantId: 't1', role: Role.PENJAMIN_MUTU, studyProgramId: null });
+
+    const result = await service.create({
+      ownerType: OwnerTipe.TENANT,
+      fileKey: FILE_KEY,
+      indicatorNos: [3, 7],
+    });
+
+    expect(prisma.evidenceIndicatorTag.createMany).toHaveBeenCalledWith({
+      data: [
+        { evidenceId: result.id, indicatorNo: 3 },
+        { evidenceId: result.id, indicatorNo: 7 },
+      ],
+      skipDuplicates: true,
+    });
+  });
+
+  it('skips EvidenceIndicatorTag creation when indicatorNos is omitted', async () => {
+    const { service, prisma } = makeService({ tenantId: 't1', role: Role.PENJAMIN_MUTU, studyProgramId: null });
+
+    await service.create({ ownerType: OwnerTipe.TENANT, fileKey: FILE_KEY });
+
+    expect(prisma.evidenceIndicatorTag.createMany).not.toHaveBeenCalled();
   });
 });
 

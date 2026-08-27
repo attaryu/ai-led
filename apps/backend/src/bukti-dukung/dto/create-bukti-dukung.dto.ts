@@ -1,4 +1,4 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 import { OwnerTipe } from '@ai-led/db';
 
 export class CreateBuktiDukungDto {
@@ -25,4 +25,9 @@ export class CreateBuktiDukungDto {
   @IsOptional()
   @IsString()
   folderId?: string | null;
+
+  // AMI indicator numbers this evidence is tagged for (evidence-indicator-tag.entity.ts) — invisible to the assessment agent for any indicator not listed here.
+  @IsOptional()
+  @IsInt({ each: true })
+  indicatorNos?: number[];
 }

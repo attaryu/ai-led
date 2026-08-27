@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Res,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -20,9 +21,11 @@ import { BabDraftService } from './bab-draft.service';
 import { BabPipelineService } from './bab-pipeline.service';
 import { BabReviewService } from './bab-review.service';
 import { ChatMessageDto } from './dto/chat-message.dto';
+import { ConfirmRecommendationDto } from './dto/confirm-recommendation.dto';
 import { CreateBabDokumenDto } from './dto/create-bab-dokumen.dto';
 import { CreateBabDraftDto } from './dto/create-bab-draft.dto';
 import { GenerateBabDto } from './dto/generate-bab.dto';
+import { RecommendDocumentsDto } from './dto/recommend-documents.dto';
 import { SimulateScoreDto } from './dto/simulate-score.dto';
 import { UpdateBabDokumenDto } from './dto/update-bab-dokumen.dto';
 import { ReviewStatusDto } from './dto/review-status.dto';
@@ -84,7 +87,29 @@ export class BabDokumenController {
     summary: 'Trigger generasi konten AI untuk bab (Producer GENERASI_BAB)',
   })
   generate(@Param('id') id: string, @Body() dto: GenerateBabDto) {
-    return this.babPipelineService.triggerGenerate(id, dto.prompt);
+    return this.babPipelineService.triggerGenerate(id, dto.prompt, dto.draftId);
+  }
+
+  @Post('bab/:id/recommend-documents')
+  @Protected(...WRITE_ROLES)
+  @HttpCode(202)
+  @ApiOperation({
+    summary: 'Trigger rekomendasi dokumen untuk bab (Producer REKOMENDASI_DOKUMEN)',
+  })
+  recommendDocuments(@Param('id') id: string, @Body() dto: RecommendDocumentsDto) {
+    return this.babPipelineService.triggerRecommendDocuments(id, dto.draftId);
+  }
+
+  @Get('bab/:id/recommendation')
+  @Protected(...READ_ROLES)
+  findRecommendation(@Param('id') id: string, @Query('draftId') draftId?: string) {
+    return this.babPipelineService.findRecommendation(id, draftId);
+  }
+
+  @Post('bab/:id/recommend-documents/confirm')
+  @Protected(...WRITE_ROLES)
+  confirmRecommendation(@Param('id') id: string, @Body() dto: ConfirmRecommendationDto) {
+    return this.babPipelineService.confirmRecommendation(id, dto);
   }
 
   @Get('bab/:id/drafts')

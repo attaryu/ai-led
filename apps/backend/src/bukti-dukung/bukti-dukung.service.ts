@@ -112,6 +112,14 @@ export class BuktiDukungService {
       tipeFile,
     });
 
+    if (dto.indicatorNos?.length) {
+      // skipDuplicates so re-uploading/re-tagging the same evidence+indicator pair doesn't 500.
+      await this.prisma.evidenceIndicatorTag.createMany({
+        data: dto.indicatorNos.map((indicatorNo) => ({ evidenceId: bukti.id, indicatorNo })),
+        skipDuplicates: true,
+      });
+    }
+
     return bukti;
   }
 

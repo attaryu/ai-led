@@ -105,6 +105,11 @@ class AvailableModelsResponse(BaseModel):
     models: list[str]
 
 
+class IndicatorListItem(BaseModel):
+    no: int
+    kriteria: str
+
+
 class SessionStatusResponse(BaseModel):
     session_id: str
     status: str
@@ -213,6 +218,12 @@ def get_assessment_models() -> AvailableModelsResponse:
     before /assessment/start or /assessment/{id}/resume."""
     provider = os.environ.get("LLM_PROVIDER", "ollama").lower()
     return AvailableModelsResponse(provider=provider, models=get_available_models())
+
+
+@router.get("/indicators", response_model=list[IndicatorListItem])
+def get_indicators() -> list[IndicatorListItem]:
+    """Return the 78 AMI indicators (no, kriteria) from the cached rubric matrix — backend has no Postgres-side master table for these."""
+    return [IndicatorListItem(no=r.no, kriteria=r.kriteria) for r in _get_rubrics()]
 
 
 @router.post("/start", response_model=StartAssessmentResponse)
