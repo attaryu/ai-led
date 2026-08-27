@@ -787,3 +787,21 @@ def test_parse_output_recommendation_handles_markdown_bold():
     )
     result = _parse_output(content)
     assert result["recommendation"] == "Lengkapi dokumen kerjasama industri."
+
+
+def test_search_evidence_documents_registered_in_tools():
+    from agent.graph import TOOLS
+
+    assert any(t.name == "search_evidence_documents" for t in TOOLS)
+
+
+def test_collect_evidence_text_includes_evidence_tool_by_default():
+    from agent.graph import collect_evidence_text
+    from langchain_core.messages import ToolMessage
+
+    messages = [
+        ToolMessage(content="LED bilang X", name="search_led_evidence", tool_call_id="1"),
+        ToolMessage(content="Sertifikat menunjukkan Y", name="search_evidence_documents", tool_call_id="2"),
+    ]
+    combined = collect_evidence_text(messages)
+    assert "Sertifikat menunjukkan Y" in combined

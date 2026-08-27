@@ -1,6 +1,7 @@
 import { ApiError } from '~/core/lib/api-client';
-import { CHAPTER_TEMPLATE } from '~/features/chapter/data/repositories/chapter.repository';
+import { CHAPTER_TEMPLATE, chapterRepository } from '~/features/chapter/data/repositories/chapter.repository';
 import { chapterRemoteSource } from '~/features/chapter/data/sources/remote/chapter.remote-source';
+import { kontenBab } from '~/features/chapter/data/sources/remote/chapter-content.mock';
 import { studyProgramRepository } from '~/features/study-program/data/repositories/study-program.repository';
 import {
 	type LedProjectPage,
@@ -89,10 +90,9 @@ export const ledProjectRepository = {
 	},
 
 	/**
-	 * Satu-satunya jalan membuat Dokumen LED, supaya tidak ada dokumen yang lolos
-	 * tanpa struktur bab standar (§7.3) — backend tidak membuatnya otomatis
-	 * (dikonfirmasi dari `dokumen-led.service.ts`), jadi 14 bab dipateraikan di
-	 * sini lewat request terpisah begitu dokumennya sendiri berhasil dibuat.
+	 * Satu-satunya jalan membuat Dokumen LED — backend tidak membuat 14 bab
+	 * standar otomatis, jadi dipateraikan di sini, tiap bab langsung terisi
+	 * contoh prosa LED lewat {@link kontenBab} (dulu jalan di localStorage).
 	 */
 	async create(data: {
 		studyProgramId: string;
@@ -100,19 +100,29 @@ export const ledProjectRepository = {
 		tahunAkademik: string;
 		tenggat: string | null;
 	}): Promise<LedProjectEntity> {
-		const created = await ledProjectRemoteSource.create(data.studyProgramId, {
+		const dokumen = await ledProjectRemoteSource.create(data.studyProgramId, {
 			title: data.judul,
 			academicYear: data.tahunAkademik,
 			deadline: data.tenggat ?? undefined,
 		});
 
+		const program = await studyProgramRepository.findById(data.studyProgramId);
+		const prodi = program?.studyProgramName ?? '(Prodi tidak diketahui)';
+		const tahunAkhir = /^\d{4}\/(\d{4})$/.exec(data.tahunAkademik)?.[1] ?? data.tahunAkademik;
+		const konteks = { prodi, lkps: `LKPS_${prodi.replace(/\s+/g, '_')}_${tahunAkhir}.xlsx` };
+
 		await Promise.all(
-			CHAPTER_TEMPLATE.map((bab) => chapterRemoteSource.create(created.id, bab)),
+			CHAPTER_TEMPLATE.map(async (bab) => {
+				const dibuat = await chapterRemoteSource.create(dokumen.id, bab);
+				await chapterRepository.updateKonten(
+					dibuat.id,
+					kontenBab(bab.chapterOrder, bab.chapterTitle, konteks),
+				);
+			}),
 		);
 
-		const program = await studyProgramRepository.findById(data.studyProgramId);
 		window.dispatchEvent(new Event('storage-update'));
-		return toEntity(created, program?.studyProgramName ?? '(Prodi tidak diketahui)');
+		return toEntity(dokumen, prodi);
 	},
 
 	async delete(id: string): Promise<void> {

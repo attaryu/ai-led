@@ -100,6 +100,26 @@ def index_evidence_chunks(chunks: list[dict], tenant_id: str, bukti_dukung_id: s
     )
 
 
+def list_available_evidence_ids(tenant_id: str, study_program_id: str | None) -> list[str]:
+    """Evidence ids visible to one program studi: tenant-wide rows plus that
+    prodi's own — mirrors evidence.repository.ts::findAvailableForStudyProgram's
+    scope (NOT bukti-dukung.service.ts::findAll, which excludes tenant-wide
+    rows once a studyProgramId is given — this query runs straight against
+    Postgres, so it isn't subject to that endpoint's PENYUSUN 403 either).
+    `None` (no prodi in context) returns every evidence id in the tenant.
+    """
+    conn = _conn()
+    with conn.cursor() as cur:
+        if study_program_id:
+            cur.execute(
+                "SELECT id FROM evidence_files WHERE tenant_id = %s AND (owner_type = 'TENANT' OR study_program_id = %s)",
+                (tenant_id, study_program_id),
+            )
+        else:
+            cur.execute("SELECT id FROM evidence_files WHERE tenant_id = %s", (tenant_id,))
+        return [row["id"] for row in cur.fetchall()]
+
+
 def search_evidence(
     query: str,
     tenant_id: str,

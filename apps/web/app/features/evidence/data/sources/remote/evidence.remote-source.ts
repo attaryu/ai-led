@@ -27,4 +27,8 @@ export const evidenceRemoteSource = {
 	async remove(id: string): Promise<void> {
 		await apiFetch(`/bukti-dukung/${id}`, { method: 'DELETE' });
 	},
+
+	async retry(id: string): Promise<void> {
+		await apiFetch(`/bukti-dukung/${id}/retry`, { method: 'POST' });
+	},
 };

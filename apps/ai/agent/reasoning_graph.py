@@ -33,6 +33,7 @@ from agent.graph import (
     parse_judge_verdict,
 )
 from agent.state import AssessmentState
+from agent.tools.evidence_tool import search_evidence_documents
 from agent.tools.formula_tool import compute_formula_score
 from agent.tools.led_tool import search_led_evidence
 from agent.tools.lkps_tool import get_lkps_table
@@ -45,6 +46,7 @@ logger = logging.getLogger(__name__)
 _TOOL_REGISTRY = {
     "get_indicator_rubric": get_indicator_rubric,
     "search_led_evidence": search_led_evidence,
+    "search_evidence_documents": search_evidence_documents,
     "get_lkps_table": get_lkps_table,
     "compute_formula_score": compute_formula_score,
 }
@@ -69,16 +71,19 @@ Tool yang tersedia:
 
 1. get_indicator_rubric  — args: {"indicator_no": <int 1-64>}
 2. search_led_evidence   — args: {"query": "<id, WAJIB kaya konteks: nomor indikator + kata kunci konkret dari kriteria rubrik, bukan cuma topik umum>", "n_results": <int, default 5>}
-3. get_lkps_table        — args: {"table_reference": "<misal 'Tabel 2.a. LKPS' atau '6.f.2'>"}
-4. compute_formula_score — args: {"formula_expression": "<expr Python: BOP / 5000000>", "variables": {<key: value>}}
+3. search_evidence_documents — args: {"query": "<id, sama seperti search_led_evidence>", "n_results": <int, default 5>} — cek dokumen Bukti Dukung (SK, sertifikat, MoU) yang diunggah untuk prodi ini; hasil kosong itu normal, bukan error
+4. get_lkps_table        — args: {"table_reference": "<misal 'Tabel 2.a. LKPS' atau '6.f.2'>"}
+5. compute_formula_score — args: {"formula_expression": "<expr Python: BOP / 5000000>", "variables": {<key: value>}}
 
 ALUR WAJIB:
 1. Mulai: get_indicator_rubric untuk pahami kriteria scoring
 2. Lanjut: search_led_evidence untuk bukti kualitatif — query harus kaya
    konteks (nomor indikator + kata kunci kriteria rubrik), bukan keyword pendek
-3. (Opsional) get_lkps_table jika rubrik merujuk tabel LKPS
-4. (Opsional) compute_formula_score jika rubrik berbasis formula
-5. SELESAI dengan {"action": "final", ...}
+3. (Opsional) search_evidence_documents untuk verifikasi klaim LED terhadap
+   dokumen Bukti Dukung yang sudah diunggah untuk prodi ini
+4. (Opsional) get_lkps_table jika rubrik merujuk tabel LKPS
+5. (Opsional) compute_formula_score jika rubrik berbasis formula
+6. SELESAI dengan {"action": "final", ...}
 
 LARANGAN KETAT:
 - DILARANG output teks selain JSON (tidak ada penjelasan, tidak ada markdown ```json)
@@ -170,7 +175,7 @@ def _find_reasoning_tool_result(messages: list, tool_name: str) -> Optional[str]
 
 def _collect_reasoning_evidence_text(
     messages: list,
-    tool_names: tuple[str, ...] = ("search_led_evidence", "get_lkps_table"),
+    tool_names: tuple[str, ...] = ("search_led_evidence", "search_evidence_documents", "get_lkps_table"),
 ) -> str:
     """Reasoning-mode equivalent of agent.graph.collect_evidence_text — tool
     results here are plain HumanMessages prefixed "Tool result (<name>):",
@@ -330,6 +335,9 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
             if "table" in args and "table_reference" not in args:
                 args["table_reference"] = args.pop("table")
         elif action == "search_led_evidence":
+            if "q" in args and "query" not in args:
+                args["query"] = args.pop("q")
+        elif action == "search_evidence_documents":
             if "q" in args and "query" not in args:
                 args["query"] = args.pop("q")
         elif action == "compute_formula_score":

@@ -16,6 +16,9 @@ from dataclasses import dataclass
 class AssessmentContext:
     tenant_id: str
     dokumen_id: str
+    # None when the caller doesn't know/care (e.g. scripts/run_benchmark.py) —
+    # search_evidence_documents then falls back to the whole tenant.
+    study_program_id: str | None = None
 
 
 current_assessment_context: contextvars.ContextVar[AssessmentContext | None] = (

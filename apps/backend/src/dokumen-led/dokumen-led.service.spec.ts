@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { JobType, Role } from '@ai-led/db';
 import { DokumenLedService } from './dokumen-led.service';
 import type { JobsService } from '../jobs/jobs.service';
@@ -10,8 +11,19 @@ function makeService(context: {
 }) {
   const findMany = jest.fn().mockResolvedValue([]);
   const findFirst = jest.fn().mockResolvedValue(null);
+  const count = jest.fn().mockResolvedValue(0);
+  const deleteOne = jest.fn().mockResolvedValue(undefined);
+  const deleteManyVerdict = jest.fn().mockResolvedValue({ count: 0 });
+  const deleteManySession = jest.fn().mockResolvedValue({ count: 0 });
+  const deleteManyChunk = jest.fn().mockResolvedValue({ count: 0 });
+  const transaction = jest.fn().mockImplementation((ops: Promise<unknown>[]) => Promise.all(ops));
   const prisma = {
-    ledDocument: { findMany, findFirst },
+    ledDocument: { findMany, findFirst, delete: deleteOne },
+    documentChapter: { count },
+    assessmentVerdict: { deleteMany: deleteManyVerdict },
+    assessmentSession: { deleteMany: deleteManySession },
+    ledChunkEmbedding: { deleteMany: deleteManyChunk },
+    $transaction: transaction,
   };
   const tenantContext: Pick<TenantContextService, 'getOrThrow'> = {
     getOrThrow: jest.fn().mockReturnValue({ userId: 'u1', ...context }),
@@ -24,7 +36,18 @@ function makeService(context: {
     tenantContext as TenantContextService,
     jobsService as JobsService,
   );
-  return { service, findMany, findFirst, jobsService };
+  return {
+    service,
+    findMany,
+    findFirst,
+    count,
+    deleteOne,
+    deleteManyVerdict,
+    deleteManySession,
+    deleteManyChunk,
+    transaction,
+    jobsService,
+  };
 }
 
 describe('DokumenLedService.findAllForTenant', () => {
@@ -129,5 +152,35 @@ describe('DokumenLedService.triggerAssessment', () => {
     await expect(
       service.triggerAssessment('invalid-id'),
     ).rejects.toThrow('Dokumen LED tidak ditemukan');
+  });
+});
+
+describe('DokumenLedService.remove', () => {
+  it('rejects while the document still has chapters, without touching assessment/chunk tables', async () => {
+    const { service, findFirst, count, transaction } = makeService({
+      tenantId: 't1',
+      role: Role.PENJAMIN_MUTU,
+      studyProgramId: null,
+    });
+    findFirst.mockResolvedValue({ id: 'doc-123', studyProgramId: 'prodi-1' });
+    count.mockResolvedValue(2);
+
+    await expect(service.remove('doc-123')).rejects.toThrow(ConflictException);
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('cascades assessment sessions/verdicts and LED chunk embeddings once chapters are gone', async () => {
+    const { service, findFirst, count, deleteManyVerdict, deleteManySession, deleteManyChunk, deleteOne, transaction } =
+      makeService({ tenantId: 't1', role: Role.PENJAMIN_MUTU, studyProgramId: null });
+    findFirst.mockResolvedValue({ id: 'doc-123', studyProgramId: 'prodi-1' });
+    count.mockResolvedValue(0);
+
+    await service.remove('doc-123');
+
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(deleteManyVerdict).toHaveBeenCalledWith({ where: { documentId: 'doc-123' } });
+    expect(deleteManySession).toHaveBeenCalledWith({ where: { documentId: 'doc-123' } });
+    expect(deleteManyChunk).toHaveBeenCalledWith({ where: { documentId: 'doc-123' } });
+    expect(deleteOne).toHaveBeenCalledWith({ where: { id: 'doc-123' } });
   });
 });

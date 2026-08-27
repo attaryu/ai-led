@@ -99,17 +99,33 @@ export class DokumenLedService {
     return this.prisma.ledDocument.update({ where: { id }, data: dto });
   }
 
+  /** Bab tetap wajib dihapus manual dulu; sesi AMI/verdict/chunk LED tidak punya endpoint hapus sendiri jadi dibereskan di sini. */
   async remove(id: string) {
     await this.findOne(id);
+
+    const chapterCount = await this.prisma.documentChapter.count({
+      where: { documentId: id },
+    });
+    if (chapterCount > 0) {
+      throw new ConflictException(
+        'Dokumen LED ini masih punya bab — hapus seluruh babnya terlebih dahulu',
+      );
+    }
+
     try {
-      await this.prisma.ledDocument.delete({ where: { id } });
+      await this.prisma.$transaction([
+        this.prisma.assessmentVerdict.deleteMany({ where: { documentId: id } }),
+        this.prisma.assessmentSession.deleteMany({ where: { documentId: id } }),
+        this.prisma.ledChunkEmbedding.deleteMany({ where: { documentId: id } }),
+        this.prisma.ledDocument.delete({ where: { id } }),
+      ]);
     } catch (err) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === 'P2003'
       ) {
         throw new ConflictException(
-          'Dokumen LED ini masih punya bab — hapus seluruh babnya terlebih dahulu',
+          'Dokumen LED ini masih terpakai baris lain yang belum bisa dihapus otomatis',
         );
       }
       throw err;

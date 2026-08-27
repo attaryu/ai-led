@@ -1,11 +1,7 @@
 /**
- * Isi bab contoh berbentuk prosa LED, dipakai bersama oleh dua tempat:
- * `chapter.repository.ts` (isi awal bab yang sudah terisi di seed) dan
- * `chapter-generation.mock.ts` (keluaran generate AI).
- *
- * Ini **berkas tiruan**, sama seperti tetangganya di folder ini: saat backend
- * siap, isi bab datang dari `BAB_DOKUMEN.konten_kerja` dan keluaran generate
- * datang dari pipeline RAG, sehingga berkas ini ikut dihapus.
+ * Isi bab contoh berbentuk prosa LED. Dipakai nyata oleh
+ * `led-project.repository.ts` (isi awal 14 bab saat dokumen dibuat) dan masih
+ * mock untuk `chapter-generation.mock.ts` (keluaran generate AI).
  *
  * **Kenapa panjang, dan kenapa selalu menyebut nama berkas.** Bukan selera
  * menulis: `nilaiKriteria()` di `chapter-scoring.mock.ts` menurunkan skor dari

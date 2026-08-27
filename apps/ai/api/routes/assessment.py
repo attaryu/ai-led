@@ -421,6 +421,7 @@ async def _process_single_indicator(
     semaphore: asyncio.Semaphore,
     tenant_id: str,
     dokumen_id: str,
+    study_program_id: Optional[str] = None,
     model: Optional[str] = None,
 ) -> bool:
     """Run the LangGraph agent for one indicator and persist results to Postgres.
@@ -462,7 +463,9 @@ async def _process_single_indicator(
 
             # run_in_executor doesn't inherit context by default — copy it
             # explicitly so search_led_evidence/get_lkps_table see this.
-            current_assessment_context.set(AssessmentContext(tenant_id, dokumen_id))
+            current_assessment_context.set(
+                AssessmentContext(tenant_id, dokumen_id, study_program_id)
+            )
             ctx = contextvars.copy_context()
             result = await asyncio.get_event_loop().run_in_executor(
                 None, ctx.run, graph.invoke, initial_state
@@ -522,6 +525,7 @@ async def _run_assessment_pipeline(
     max_parallel: int,
     tenant_id: str,
     dokumen_id: str,
+    study_program_id: Optional[str] = None,
     initial_completed: int = 0,
     on_progress: Optional[Callable[[int, int], Awaitable[None]]] = None,
     model: Optional[str] = None,
@@ -550,6 +554,7 @@ async def _run_assessment_pipeline(
                 semaphore=semaphore,
                 tenant_id=tenant_id,
                 dokumen_id=dokumen_id,
+                study_program_id=study_program_id,
                 model=model,
             )
             for indicator in indicators

@@ -33,4 +33,10 @@ export class BuktiDukungController {
   remove(@Param('id') id: string) {
     return this.buktiDukungService.remove(id);
   }
+
+  @Post(':id/retry')
+  @Protected(...BUKTI_DUKUNG_ROLES)
+  retry(@Param('id') id: string) {
+    return this.buktiDukungService.retryIngestion(id);
+  }
 }

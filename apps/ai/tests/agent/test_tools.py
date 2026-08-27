@@ -258,3 +258,67 @@ def test_led_tool_no_context_raises():
             led_tool.search_led_evidence.invoke({"query": "visi misi"})
     finally:
         current_assessment_context.reset(token)
+
+
+# ── evidence_tool ────────────────────────────────────────────────────────────
+
+
+def test_search_evidence_documents_returns_json_list(monkeypatch):
+    from agent.tools import evidence_tool
+
+    def fake_ids(tenant_id, study_program_id):
+        assert tenant_id == "tenant-x"
+        return ["ev1"]
+
+    def fake_search(query, tenant_id, bukti_dukung_ids, n_results):
+        assert bukti_dukung_ids == ["ev1"]
+        return [
+            {
+                "text": "Sertifikat akreditasi B untuk program studi",
+                "entity": "sertifikat.pdf",
+                "chunk_id": "c1",
+                "bukti_dukung_id": "ev1",
+                "confidence": None,
+                "distance": 0.1,
+            }
+        ]
+
+    monkeypatch.setattr(evidence_tool, "list_available_evidence_ids", fake_ids)
+    monkeypatch.setattr(evidence_tool, "search_evidence", fake_search)
+
+    result = json.loads(
+        evidence_tool.search_evidence_documents.invoke({"query": "akreditasi"})
+    )
+    assert len(result) == 1
+    assert result[0]["entity"] == "sertifikat.pdf"
+    assert result[0]["relevance_score"] == pytest.approx(0.9)
+
+
+def test_search_evidence_documents_empty_when_no_evidence_available(monkeypatch):
+    """Prodi belum punya bukti dukung sama sekali — bukan error, dan tidak
+    perlu memanggil search_evidence (tidak ada id untuk dicari)."""
+    from agent.tools import evidence_tool
+
+    monkeypatch.setattr(evidence_tool, "list_available_evidence_ids", lambda *a: [])
+    monkeypatch.setattr(
+        evidence_tool,
+        "search_evidence",
+        lambda **kw: pytest.fail("search_evidence should not be called"),
+    )
+
+    result = json.loads(
+        evidence_tool.search_evidence_documents.invoke({"query": "apapun"})
+    )
+    assert result == []
+
+
+def test_search_evidence_documents_no_context_raises():
+    from agent.context import current_assessment_context
+    from agent.tools import evidence_tool
+
+    token = current_assessment_context.set(None)
+    try:
+        with pytest.raises(RuntimeError):
+            evidence_tool.search_evidence_documents.invoke({"query": "apapun"})
+    finally:
+        current_assessment_context.reset(token)

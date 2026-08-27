@@ -147,4 +147,54 @@ export class BuktiDukungService {
       // Object already gone (or a pre-R2 row) — not a reason to fail the row delete.
     }
   }
+
+  /**
+   * Memicu ulang ekstraksi satu baris yang gagal — sama seperti `create()`:
+   * kembalikan ke MENUNGGU lalu enqueue INGESTION_BUKTI_DUKUNG dengan berkas
+   * yang sama, tanpa unggah ulang. `index_evidence_chunks` (worker) sudah
+   * menghapus chunk lama untuk `evidence_id` yang sama sebelum menulis yang
+   * baru, jadi tidak ada pembersihan tambahan yang perlu dilakukan di sini.
+   *
+   * Cakupannya beda dari `remove()`: docs/application_flow.md §15 menyamakan
+   * hak ulangi ekstraksi dengan hak unggah, bukan hak hapus — Penyusun boleh
+   * memproses ulang bukti dukung apa pun di prodinya, bukan cuma unggahannya
+   * sendiri (mengulang ekstraksi tidak menghapus atau mengubah isi berkas).
+   */
+  async retryIngestion(id: string) {
+    const { tenantId, role, studyProgramId: ownProdiId } = this.tenantContext.getOrThrow();
+
+    const bukti = await this.prisma.evidence.findFirst({
+      where: { id, tenantId },
+    });
+    if (!bukti) {
+      throw new NotFoundException('Bukti dukung tidak ditemukan');
+    }
+    if (
+      SCOPED_TO_OWN_PRODI.includes(role) &&
+      (bukti.ownerType !== OwnerTipe.PROGRAM_STUDI || bukti.studyProgramId !== ownProdiId)
+    ) {
+      throw new ForbiddenException(
+        'Penyusun hanya boleh memproses ulang bukti dukung program studinya sendiri',
+      );
+    }
+    if (bukti.extractionStatus !== StatusEkstraksi.GAGAL) {
+      throw new BadRequestException(
+        'Hanya bukti dukung berstatus GAGAL yang bisa diproses ulang',
+      );
+    }
+
+    const updated = await this.prisma.evidence.update({
+      where: { id },
+      data: { extractionStatus: StatusEkstraksi.MENUNGGU, failureNote: null },
+    });
+
+    await this.jobsService.enqueue(JobType.INGESTION_BUKTI_DUKUNG, {
+      buktiDukungId: bukti.id,
+      tenantId,
+      fileUrl: bukti.fileUrl,
+      tipeFile: bukti.fileType,
+    });
+
+    return updated;
+  }
 }

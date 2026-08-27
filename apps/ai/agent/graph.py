@@ -21,6 +21,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
 
 from agent.state import AssessmentState
+from agent.tools.evidence_tool import search_evidence_documents
 from agent.tools.formula_tool import compute_formula_score
 from agent.tools.led_tool import search_led_evidence
 from agent.tools.lkps_tool import get_lkps_table
@@ -29,7 +30,13 @@ from llm.ollama_client import OllamaClient
 
 logger = logging.getLogger(__name__)
 
-TOOLS = [get_indicator_rubric, search_led_evidence, get_lkps_table, compute_formula_score]
+TOOLS = [
+    get_indicator_rubric,
+    search_led_evidence,
+    search_evidence_documents,
+    get_lkps_table,
+    compute_formula_score,
+]
 
 # Reasoning models that emit <think>...</think> and lack native tool-calling
 # on Ollama. Override per-deployment with REASONING_MODEL_PATTERNS env var
@@ -127,9 +134,13 @@ ALUR YANG WAJIB DIIKUTI per indikator:
    query WAJIB kaya konteks: masukkan nomor indikator + kata kunci konkret
    dari kriteria rubrik (bukan cuma topik umum seperti "visi misi"), supaya
    hasil pencarian semantik lebih relevan
-3. (Opsional) Panggil get_lkps_table(table_id) jika rubrik merujuk tabel LKPS
-4. (Opsional) Panggil compute_formula_score(...) jika rubrik berbasis formula
-5. Output skor final dengan format yang dijelaskan di bawah
+3. (Opsional) Panggil search_evidence_documents(query) untuk cek dokumen
+   Bukti Dukung (SK, sertifikat, MoU) yang sudah diunggah untuk prodi ini —
+   pakai ini untuk VERIFIKASI klaim LED terhadap sumber asli, bukan
+   pengganti search_led_evidence. Hasil kosong itu normal, lanjutkan tanpa itu.
+4. (Opsional) Panggil get_lkps_table(table_id) jika rubrik merujuk tabel LKPS
+5. (Opsional) Panggil compute_formula_score(...) jika rubrik berbasis formula
+6. Output skor final dengan format yang dijelaskan di bawah
 
 PRINSIP CROSS-REFERENCING:
 - VERIFIKASI klaim LED dengan data LKPS jika ada referensi tabel
@@ -208,7 +219,7 @@ def find_tool_result(messages: list, tool_name: str) -> Optional[str]:
 
 def collect_evidence_text(
     messages: list,
-    tool_names: tuple[str, ...] = ("search_led_evidence", "get_lkps_table"),
+    tool_names: tuple[str, ...] = ("search_led_evidence", "search_evidence_documents", "get_lkps_table"),
 ) -> str:
     """Concatenate the content of every ToolMessage from the given tools —
     i.e. the actual evidence retrieved this run, as opposed to the rubric

@@ -55,12 +55,12 @@ function compare(a: EvidenceEntity, b: EvidenceEntity, sort: string): number {
  * sedang terpasang (Perpustakaan, tab Generasi, tab Rujukan) menyegarkan diri
  * sendiri saat MENUNGGU/DIPROSES berubah jadi SIAP/GAGAL.
  *
- * ponytail: polling buta 90 detik lalu berhenti sendiri, bukan SSE — upgrade
- * ke job.updateProgress()/event 'progress' (job-events.service.ts) kalau
- * ekstraksi rutin makan waktu lebih lama dari itu di produksi.
+ * ponytail: polling buta, bukan SSE — upgrade ke job.updateProgress()/event
+ * 'progress' (job-events.service.ts) kalau MINERU_TIMEOUT_SECONDS dinaikkan lagi.
  */
 const POLL_INTERVAL_MS = 4000;
-const POLL_DURATION_MS = 90_000;
+/** MINERU_TIMEOUT_SECONDS (apps/ai/.env) + buffer — lihat ponytail note di atas. */
+const POLL_DURATION_MS = 960_000;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 function notify(): void {
@@ -323,16 +323,11 @@ export const evidenceRepository = {
 		}
 	},
 
-	/**
-	 * Tidak ada endpoint backend untuk memicu ulang ekstraksi satu baris
-	 * (`bukti-dukung.controller.ts` cuma POST/GET/DELETE) — jujur menolak,
-	 * bukan berpura-pura berhasil seperti simulasi timer sebelumnya. Satu-
-	 * satunya jalan sekarang: hapus baris yang gagal, unggah ulang berkasnya.
-	 */
-	async retryIngestion(_id: string): Promise<never> {
-		throw new Error(
-			'Coba proses ulang belum tersedia di backend. Hapus berkas ini lalu unggah ulang.',
-		);
+	/** Mengembalikan baris GAGAL ke MENUNGGU dan memicu ulang job ekstraksinya di backend. */
+	async retryIngestion(id: string): Promise<void> {
+		await evidenceRemoteSource.retry(id);
+		notify();
+		pollForIngestion();
 	},
 
 	/**

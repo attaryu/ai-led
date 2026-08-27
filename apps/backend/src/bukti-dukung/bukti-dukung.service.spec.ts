@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { OwnerTipe, Role } from '@ai-led/db';
+import { OwnerTipe, Role, StatusEkstraksi } from '@ai-led/db';
 import { BuktiDukungService } from './bukti-dukung.service';
 import type { TenantContextService } from '../tenant/tenant-context.service';
 import type { JobsService } from '../jobs/jobs.service';
@@ -20,6 +20,7 @@ function makeService(context: {
       findMany: jest.fn().mockResolvedValue([]),
       findFirst: jest.fn(),
       delete: jest.fn().mockResolvedValue(undefined),
+      update: jest.fn().mockImplementation(({ data }) => Promise.resolve(data)),
     },
   };
   const tenantContext: Pick<TenantContextService, 'getOrThrow'> = {
@@ -148,5 +149,75 @@ describe('BuktiDukungService.remove', () => {
     await service.remove('b1');
     expect(prisma.evidence.delete).toHaveBeenCalledWith({ where: { id: 'b1' } });
     expect(storage.deleteObject).toHaveBeenCalledWith('x');
+  });
+});
+
+describe('BuktiDukungService.retryIngestion', () => {
+  it('throws NotFoundException when the row does not exist in the caller tenant', async () => {
+    const { service, prisma } = makeService({ tenantId: 't1', role: Role.PENJAMIN_MUTU, studyProgramId: null });
+    prisma.evidence.findFirst.mockResolvedValue(null);
+    await expect(service.retryIngestion('b1')).rejects.toThrow(NotFoundException);
+  });
+
+  it('rejects a PENYUSUN retrying a bukti dukung from a different prodi', async () => {
+    const { service, prisma } = makeService({ tenantId: 't1', role: Role.PENYUSUN, studyProgramId: 'p1' });
+    prisma.evidence.findFirst.mockResolvedValue({
+      id: 'b1', uploadedByUserId: 'someone-else', ownerType: OwnerTipe.PROGRAM_STUDI,
+      studyProgramId: 'p2', extractionStatus: StatusEkstraksi.GAGAL,
+    });
+    await expect(service.retryIngestion('b1')).rejects.toThrow(ForbiddenException);
+  });
+
+  it('rejects a PENYUSUN retrying a TENANT-level bukti dukung', async () => {
+    const { service, prisma } = makeService({ tenantId: 't1', role: Role.PENYUSUN, studyProgramId: 'p1' });
+    prisma.evidence.findFirst.mockResolvedValue({
+      id: 'b1', uploadedByUserId: 'someone-else', ownerType: OwnerTipe.TENANT,
+      studyProgramId: null, extractionStatus: StatusEkstraksi.GAGAL,
+    });
+    await expect(service.retryIngestion('b1')).rejects.toThrow(ForbiddenException);
+  });
+
+  it('allows a PENYUSUN to retry a bukti dukung from their own prodi even if uploaded by someone else', async () => {
+    const { service, prisma, jobsService } = makeService({ tenantId: 't1', role: Role.PENYUSUN, studyProgramId: 'p1' });
+    prisma.evidence.findFirst.mockResolvedValue({
+      id: 'b1', uploadedByUserId: 'someone-else', ownerType: OwnerTipe.PROGRAM_STUDI,
+      studyProgramId: 'p1', extractionStatus: StatusEkstraksi.GAGAL, fileUrl: 'x', fileType: 'pdf',
+    });
+    await service.retryIngestion('b1');
+    expect(jobsService.enqueue).toHaveBeenCalledWith(
+      'INGESTION_BUKTI_DUKUNG',
+      expect.objectContaining({ buktiDukungId: 'b1' }),
+    );
+  });
+
+  it('rejects retrying a row that is not GAGAL', async () => {
+    const { service, prisma } = makeService({ tenantId: 't1', role: Role.PENJAMIN_MUTU, studyProgramId: null });
+    prisma.evidence.findFirst.mockResolvedValue({
+      id: 'b1', uploadedByUserId: 'u1', extractionStatus: StatusEkstraksi.SIAP,
+    });
+    await expect(service.retryIngestion('b1')).rejects.toThrow(BadRequestException);
+  });
+
+  it('resets a GAGAL row to MENUNGGU and re-enqueues INGESTION_BUKTI_DUKUNG', async () => {
+    const { service, prisma, jobsService } = makeService({ tenantId: 't1', role: Role.PENJAMIN_MUTU, studyProgramId: null });
+    prisma.evidence.findFirst.mockResolvedValue({
+      id: 'b1',
+      uploadedByUserId: 'u1',
+      extractionStatus: StatusEkstraksi.GAGAL,
+      fileUrl: 'x',
+      fileType: 'pdf',
+    });
+
+    const result = await service.retryIngestion('b1');
+
+    expect(prisma.evidence.update).toHaveBeenCalledWith({
+      where: { id: 'b1' },
+      data: { extractionStatus: StatusEkstraksi.MENUNGGU, failureNote: null },
+    });
+    expect(jobsService.enqueue).toHaveBeenCalledWith(
+      'INGESTION_BUKTI_DUKUNG',
+      { buktiDukungId: 'b1', tenantId: 't1', fileUrl: 'x', tipeFile: 'pdf' },
+    );
+    expect(result.extractionStatus).toBe(StatusEkstraksi.MENUNGGU);
   });
 });

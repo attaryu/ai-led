@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import signal
 import sys
 import time
@@ -79,35 +80,78 @@ async def process_job(job, token: str):
     return result
 
 
+# Pedoman LAM Teknik selalu menyebut eksplisit "(Tabel X.Y LKPS)" di poin
+# yang butuh data LKPS, dan tidak pernah menyebutnya kalau tidak — jadi ini
+# gerbang pasti kedua arah, bukan sekadar hint (diadaptasi dari
+# origin/led-wiriting(dimas) commit f0ecbf3, generator.py::_pedoman_mentions_lkps).
+_LKPS_MENTION_RE = re.compile(r"\(?\s*Tabel\s+[\dA-Za-z.]+\s+LKPS\s*\)?", re.IGNORECASE)
+
+
+def _lkps_refs_in_pedoman(pedoman: list[dict]) -> list[str]:
+    refs: list[str] = []
+    for p in pedoman:
+        for m in _LKPS_MENTION_RE.finditer(p.get("content_text") or ""):
+            ref = m.group(0)
+            if ref not in refs:
+                refs.append(ref)
+    return refs
+
+
+def _led_citation_label(chunk: dict) -> str:
+    """Nama sumber literal yang boleh dipakai LLM di penanda '(sumber: ...)'
+    — LED cuma satu dokumen per bab, jadi labelnya lokasi (halaman/paragraf),
+    bukan nama berkas seperti Bukti Dukung."""
+    metadata = chunk.get("metadata") or {}
+    page_start = metadata.get("page_start", -1)
+    if page_start is not None and page_start >= 0:
+        return f"LED hal. {page_start}"
+    para_start = metadata.get("para_start", -1)
+    if para_start is not None and para_start >= 0:
+        return f"LED para. {para_start}"
+    return "LED"
+
+
 def _build_generasi_prompt(
     judul_bab: str,
     pedoman: list[dict],
     rubric: list[dict],
     checklist: list[str],
     chunks: list[dict],
+    lkps_tables: list[str],
     user_prompt: str | None = None,
 ) -> str:
     pedoman_text = "\n".join(f"- {p['point_title']}: {p['content_text'][:500]}" for p in pedoman) or "(tidak ada pedoman spesifik tersedia)"
     rubric_text = "\n".join(f"- {r['criterion_code']}: {r['description'][:300]}" for r in rubric) or "(tidak ada rubrik spesifik tersedia)"
     checklist_text = "\n".join(f"- {c}" for c in checklist)
-    evidence_text = "\n\n".join(f"[Bukti {i+1}] {c['text'][:800]}" for i, c in enumerate(chunks)) or "(tidak ada bukti dari dokumen LED yang ditemukan)"
+    evidence_text = "\n\n".join(
+        f"[Bukti {i+1}] (sumber: {_led_citation_label(c)}) {c['text'][:800]}"
+        for i, c in enumerate(chunks)
+    ) or "(tidak ada bukti dari dokumen LED yang ditemukan)"
+    lkps_text = "\n\n".join(lkps_tables) or "(tidak ada data LKPS relevan)"
     arahan_text = f"\n\nARAHAN TAMBAHAN DARI PENGGUNA:\n{user_prompt}" if user_prompt else ""
 
-    return f"""Anda menulis draf Bab "{judul_bab}" untuk Laporan Evaluasi Diri (LED) akreditasi.
+    return f"""Anda menulis draf Bab "{judul_bab}" untuk Laporan Evaluasi Diri (LED) akreditasi program studi di Indonesia.
 
 PEDOMAN:
 {pedoman_text}
 
-RUBRIK PENILAIAN:
+RUBRIK PENILAIAN (target kualitas, BUKAN sumber fakta — jangan mengklaim prodi memenuhi suatu skor kalau tidak didukung BUKTI/DATA LKPS di bawah):
 {rubric_text}
 
-CHECKLIST FAKTA YANG HARUS DIPENUHI:
+CHECKLIST FAKTA YANG SEBAIKNYA DIBAHAS (panduan cakupan, bukan wajib semua terjawab — item tanpa dukungan BUKTI/DATA LKPS boleh dilewati, jangan mengarang jawaban supaya checklist "kelihatan terpenuhi"):
 {checklist_text}
+
+DATA KUANTITATIF (LKPS):
+{lkps_text}
 
 BUKTI DARI DOKUMEN LED:
 {evidence_text}{arahan_text}
 
-Tulis draf bab dalam format Markdown, berdasarkan bukti di atas. Jangan mengarang data yang tidak ada di BUKTI. Gunakan heading, paragraf, dan daftar poin sesuai kebutuhan."""
+ATURAN WAJIB:
+1. WAJIB Bahasa Indonesia 100% — dilarang menulis paragraf berbahasa Inggris (akronim teknis seperti LED/SK/SKS/IPK boleh tetap dipakai).
+2. Setiap klaim faktual harus diikuti penanda sumber: "(sumber: NAMA_FILE)" untuk BUKTI, atau "(sumber: LKPS <referensi tabel>)" untuk DATA KUANTITATIF. Penanda HANYA boleh dipakai kalau nama/referensi itu BENAR-BENAR muncul literal di bagian BUKTI/DATA KUANTITATIF di atas — dilarang menebak atau mengarang nama sumber.
+3. Jika BUKTI dan DATA KUANTITATIF sama-sama kosong/minim, tulis narasi singkat dan umum berdasarkan PEDOMAN/RUBRIK saja tanpa klaim faktual bersitasi — jangan dipaksakan panjang dengan fakta karangan.
+4. OUTPUT MURNI NARASI SAJA dalam format Markdown (heading/paragraf/daftar poin sesuai kebutuhan) — dilarang menambahkan catatan, disclaimer, atau ringkasan proses di luar narasi."""
 
 
 async def _handle_generasi_bab(job) -> dict:
@@ -154,9 +198,29 @@ async def _handle_generasi_bab(job) -> dict:
     # off the event loop, or it blocks BullMQ's lock-renewal long enough to stall.
     chunks = await asyncio.to_thread(search_led, query, bab["tenant_id"], bab["document_id"], n_results=5)
 
+    # 2b. LKPS tables the pedoman explicitly references — only when it does
+    # (see _lkps_refs_in_pedoman), so bab yang murni naratif tidak ikut
+    # menyeret data LKPS yang tidak relevan ke prompt.
+    lkps_tables: list[str] = []
+    lkps_refs = _lkps_refs_in_pedoman(pedoman)
+    if lkps_refs:
+        from api.routes.upload import _doc_dir
+        from ingestion.lkps_loader import load_lkps
+
+        lkps_path = os.path.join(_doc_dir(bab["tenant_id"], bab["document_id"]), "lkps.xlsx")
+        if os.path.exists(lkps_path):
+            try:
+                registry = load_lkps(lkps_path)
+                for ref in lkps_refs:
+                    df = registry.get_by_ref(ref)
+                    if df is not None:
+                        lkps_tables.append(f"{ref}:\n{df.head(30).to_markdown(index=False)}")
+            except Exception:
+                logger.exception("Gagal memuat LKPS untuk bab %s", bab_id)
+
     # 3. LLM call, then Markdown -> HTML.
     prompt = _build_generasi_prompt(
-        bab["chapter_title"], pedoman, rubric, checklist, chunks, payload.get("prompt")
+        bab["chapter_title"], pedoman, rubric, checklist, chunks, lkps_tables, payload.get("prompt")
     )
     llm = build_plain_llm()
     response = await llm.ainvoke(prompt)
@@ -363,6 +427,7 @@ async def _handle_assessment_ami(job) -> dict:
     dokumen_id = payload["dokumenId"]
     tenant_id = payload["tenantId"]
     user_id = payload["createdByUserId"]
+    study_program_id = payload.get("programStudiId")
     indikator_list = payload.get("indikatorList")
 
     lkps_path = os.path.join(_doc_dir(tenant_id, dokumen_id), "lkps.xlsx")
@@ -419,6 +484,7 @@ async def _handle_assessment_ami(job) -> dict:
         max_parallel=max_parallel,
         tenant_id=tenant_id,
         dokumen_id=dokumen_id,
+        study_program_id=study_program_id,
         on_progress=_report_progress,
     )
 
@@ -445,11 +511,9 @@ async def _handle_ingestion_bukti_dukung(job) -> dict:
     tidak pernah membiarkan barisnya nyangkut di MENUNGGU, pelajaran yang
     sama dengan stub yang digantikan handler ini.
 
-    ponytail: belum ada tool agent yang membaca bukti_dukung_chunk_embeddings
-    ini — search_led_evidence yang sudah ada mencari isi Dokumen LED sendiri,
-    BUKAN Bukti Dukung, dua hal beda meski namanya mirip. Upgrade: tool baru
-    (mis. search_bukti_dukung) + daftarkan ke agent/graph.py kalau fitur
-    "AI baca bukti dukung saat generate" dibutuhkan.
+    ponytail: agent/tools/evidence_tool.py sekarang baca tabel ini saat
+    ASESMEN AMI (agent/graph.py). GENERASI_BAB (nulis bab) masih belum —
+    itu pipeline RAG terpisah, bukan agent tool-calling ini.
     """
     import tempfile
     from pathlib import Path

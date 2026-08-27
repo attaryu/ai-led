@@ -455,3 +455,21 @@ def test_judge_failure_does_not_block_result():
     assert result["final_score"] == 2.0
     assert result["confidence"] == 0.7
     assert "error" in (result["judge_verdict"] or {})
+
+
+def test_search_evidence_documents_registered_in_tool_registry():
+    from agent.reasoning_graph import _TOOL_REGISTRY
+
+    assert "search_evidence_documents" in _TOOL_REGISTRY
+
+
+def test_collect_reasoning_evidence_text_includes_evidence_tool_by_default():
+    from agent.reasoning_graph import _collect_reasoning_evidence_text
+    from langchain_core.messages import HumanMessage
+
+    messages = [
+        HumanMessage(content="Tool result (search_led_evidence): LED bilang X"),
+        HumanMessage(content="Tool result (search_evidence_documents): Sertifikat menunjukkan Y"),
+    ]
+    combined = _collect_reasoning_evidence_text(messages)
+    assert "Sertifikat menunjukkan Y" in combined
