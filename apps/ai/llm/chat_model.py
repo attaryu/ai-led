@@ -33,3 +33,37 @@ def build_plain_llm():
     if api_key and not api_key.startswith("<"):
         kwargs["client_kwargs"] = {"headers": {"Authorization": f"Bearer {api_key}"}}
     return ChatOllama(**kwargs)
+
+
+def build_judge_llm():
+    """Separate model for GENERASI_BAB's judge stage (SYSTEM_JUDGE, worker.py)
+    — same fallback idiom as eval/ragas_eval.py's _build_ragas_llm: JUDGE_*
+    env vars first, falling back to the assessment model (LLM_PROVIDER /
+    OLLAMA_MODEL / OPENROUTER_MODEL) if unset. Deterministic (temperature=0)
+    like Dimas's get_llm_for_judge — judge output must parse as clean JSON.
+    """
+    provider = os.environ.get("JUDGE_PROVIDER", os.environ.get("LLM_PROVIDER", "ollama")).lower()
+
+    if provider == "openrouter":
+        from langchain_openai import ChatOpenAI
+
+        return ChatOpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.environ["OPENROUTER_API_KEY"],
+            model=os.environ.get(
+                "JUDGE_OPENROUTER_MODEL", os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-r1")
+            ),
+            temperature=0.0,
+        )
+
+    from langchain_ollama import ChatOllama
+
+    kwargs: dict = {
+        "base_url": os.environ["OLLAMA_BASE_URL"],
+        "model": os.environ.get("JUDGE_OLLAMA_MODEL", os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b")),
+        "temperature": 0.0,
+    }
+    api_key = os.environ.get("OLLAMA_API_KEY")
+    if api_key and not api_key.startswith("<"):
+        kwargs["client_kwargs"] = {"headers": {"Authorization": f"Bearer {api_key}"}}
+    return ChatOllama(**kwargs)

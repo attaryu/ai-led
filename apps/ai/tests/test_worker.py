@@ -50,3 +50,82 @@ def test_led_citation_label_falls_back_to_plain_led():
 
     chunk = {"metadata": {"page_start": -1, "para_start": -1}}
     assert _led_citation_label(chunk) == "LED"
+
+
+def test_evidence_citation_label_uses_real_filename():
+    from worker import _evidence_citation_label
+
+    chunk = {"bukti_dukung_id": "ev-1"}
+    assert _evidence_citation_label(chunk, {"ev-1": "SK Tim Akreditasi.pdf"}) == "SK Tim Akreditasi.pdf"
+
+
+def test_evidence_citation_label_falls_back_to_id_when_filename_missing():
+    from worker import _evidence_citation_label
+
+    chunk = {"bukti_dukung_id": "ev-2"}
+    assert _evidence_citation_label(chunk, {}) == "ev-2"
+
+
+def test_parse_llm_json_parses_clean_json():
+    from worker import _parse_llm_json
+
+    assert _parse_llm_json('{"document_query": ["a", "b"]}') == {"document_query": ["a", "b"]}
+
+
+def test_parse_llm_json_extracts_json_from_surrounding_text():
+    from worker import _parse_llm_json
+
+    raw = 'berikut hasilnya:\n{"requires_documents": true}\nselesai.'
+    assert _parse_llm_json(raw) == {"requires_documents": True}
+
+
+def test_parse_llm_json_reports_parse_error_when_no_json_found():
+    from worker import _parse_llm_json
+
+    result = _parse_llm_json("bukan json sama sekali")
+    assert result["parse_error"]
+
+
+def test_parse_checklist_extracts_dashed_bullets_dedups_and_caps_eight():
+    from worker import _parse_checklist
+
+    raw = "\n".join([f"- pertanyaan nomor {i} yang cukup panjang" for i in range(1, 11)] + [
+        "- pertanyaan nomor 1 yang cukup panjang",  # duplicate, should be dropped
+        "bukan bullet, harus diabaikan",
+        "- x",  # too short (<=5 chars), should be dropped
+    ])
+    result = _parse_checklist(raw)
+    assert len(result) == 8
+    assert result[0] == "pertanyaan nomor 1 yang cukup panjang"
+
+
+def test_parse_checklist_strips_think_block_before_parsing():
+    from worker import _parse_checklist
+
+    raw = "<think>mikir dulu\n- item palsu</think>\n- pertanyaan asli yang valid"
+    result = _parse_checklist(raw)
+    assert result == ["pertanyaan asli yang valid"]
+
+
+def test_parse_judge_json_parses_clean_json():
+    from worker import _parse_judge_json
+
+    raw = '{"faithfulness": 0.8, "answer_relevancy": 0.7, "context_precision": 0.6, "context_recall": 0.5}'
+    result = _parse_judge_json(raw)
+    assert result["faithfulness"] == 0.8
+
+
+def test_parse_judge_json_regex_fallback_on_truncated_json():
+    from worker import _parse_judge_json
+
+    raw = '{"faithfulness": 0.8, "answer_relevancy": 0.7, "context_preci'
+    result = _parse_judge_json(raw)
+    assert result["faithfulness"] == 0.8
+    assert result["answer_relevancy"] == 0.7
+    assert result["parse_warning"]
+
+
+def test_parse_judge_json_empty_response():
+    from worker import _parse_judge_json
+
+    assert _parse_judge_json("")["error"] == "empty response"

@@ -27,11 +27,13 @@ def get_user_nama(user_id: str) -> str:
 
 
 def get_bab_dokumen(bab_id: str) -> Optional[dict]:
-    """Return {id, document_id, chapter_order, chapter_title, working_content, tenant_id}, or None."""
+    """Return {id, document_id, chapter_order, chapter_title, working_content,
+    tenant_id, study_program_id}, or None."""
     with get_conn().cursor() as cur:
         cur.execute(
             """
-            SELECT bd.id, bd.document_id, bd.chapter_order, bd.chapter_title, bd.working_content, ps.tenant_id
+            SELECT bd.id, bd.document_id, bd.chapter_order, bd.chapter_title, bd.working_content,
+                   ps.tenant_id, ps.id AS study_program_id
             FROM writing_document_chapters bd
             JOIN writing_led_documents dl ON dl.id = bd.document_id
             JOIN org_study_programs ps ON ps.id = dl.study_program_id
@@ -302,3 +304,101 @@ def get_chat_history(bab_id: str, limit: int = 50) -> list[dict]:
             (bab_id, limit),
         )
         return [dict(r) for r in cur.fetchall()]
+
+
+def get_evidence_filenames(evidence_ids: list[str]) -> dict[str, str]:
+    """id -> documentName map for Bukti Dukung citation labels in the
+    GENERASI_BAB prompt — evidence chunks carry no filename of their own
+    (vectorstore/pgvector_evidence_store.py::search_evidence only returns
+    bukti_dukung_id)."""
+    if not evidence_ids:
+        return {}
+    with get_conn().cursor() as cur:
+        cur.execute(
+            "SELECT id, document_name FROM evidence_files WHERE id = ANY(%s)",
+            (evidence_ids,),
+        )
+        return {row["id"]: row["document_name"] for row in cur.fetchall()}
+
+
+def get_confirmed_recommendation(chapter_draft_id: str) -> Optional[dict]:
+    """The DIKONFIRMASI DocumentRecommendation row for this draft — evidence
+    scope for GENERASI_BAB (selectedEvidenceIds). None if this chapter was
+    generated without going through recommend-documents first (manual
+    generate, still supported — see worker.py::_handle_generasi_bab)."""
+    with get_conn().cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, document_query, lkps_needed, lkps_sufficient, lkps_evidence_query,
+                   candidate_folders, recommendation_text, selected_evidence_ids,
+                   pedoman_used, rubric_used, lkps_used, status, created_at
+            FROM writing_document_recommendations
+            WHERE chapter_draft_id = %s AND status = 'DIKONFIRMASI'
+            LIMIT 1
+            """,
+            (chapter_draft_id,),
+        )
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def create_document_recommendation(
+    chapter_draft_id: str,
+    document_query: list[str],
+    lkps_needed: bool,
+    lkps_sufficient: Optional[bool],
+    lkps_evidence_query: Optional[list[str]],
+    candidate_folders: list[dict],
+    recommendation_text: str,
+    pedoman_used: list[dict],
+    rubric_used: list[dict],
+    lkps_used: list[dict],
+    items: list[dict],
+) -> dict:
+    """Supersede any prior DIKONFIRMASI recommendation on this draft (Dimas's
+    reuse-draft-then-supersede semantics — a no-op UPDATE when there isn't
+    one), then insert the new DIREKOMENDASIKAN row + its RecommendationItem
+    cards. selectedEvidenceIds starts empty — filled in later by the
+    (separate) confirm step."""
+    rec_id = str(uuid.uuid4())
+    with get_conn().cursor() as cur:
+        cur.execute(
+            """UPDATE writing_document_recommendations SET status = 'DIGANTIKAN'
+               WHERE chapter_draft_id = %s AND status = 'DIKONFIRMASI'""",
+            (chapter_draft_id,),
+        )
+        cur.execute(
+            """
+            INSERT INTO writing_document_recommendations
+                (id, chapter_draft_id, document_query, lkps_needed, lkps_sufficient,
+                 lkps_evidence_query, candidate_folders, recommendation_text,
+                 selected_evidence_ids, pedoman_used, rubric_used, lkps_used, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'DIREKOMENDASIKAN')
+            RETURNING id, created_at
+            """,
+            (
+                rec_id,
+                chapter_draft_id,
+                json.dumps(document_query),
+                lkps_needed,
+                lkps_sufficient,
+                json.dumps(lkps_evidence_query) if lkps_evidence_query is not None else None,
+                json.dumps(candidate_folders),
+                recommendation_text,
+                json.dumps([]),
+                json.dumps(pedoman_used),
+                json.dumps(rubric_used),
+                json.dumps(lkps_used),
+            ),
+        )
+        row = dict(cur.fetchone())
+        for i, it in enumerate(items):
+            cur.execute(
+                """
+                INSERT INTO writing_recommendation_items
+                    (id, recommendation_id, label, reason, "order")
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (str(uuid.uuid4()), rec_id, it.get("label", ""), it.get("reason"), i),
+            )
+    return {"id": rec_id, "created_at": row["created_at"]}
