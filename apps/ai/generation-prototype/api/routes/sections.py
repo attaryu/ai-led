@@ -5,7 +5,7 @@ Response shape dipertahankan sama seperti versi single-dokumen lama supaya
 frontend tidak perlu berubah selain menambahkan dokumen_id di path."""
 import json
 import os
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -16,7 +16,8 @@ from lib.auth import require_led_access
 from lib.db import conn
 from lib.context import get_dokumen_led, get_urutan_bab, get_system_user_id
 from lib.outline import get_sections, get_section
-from lib.generator import generate_section, recommend_documents
+from lib.generator import generate_section, recommend_documents, SectionNotGeneratableError
+from lib.prose import doc_to_text, EMPTY_DOC
 
 router = APIRouter(prefix="/led-documents/{dokumen_id}/sections", tags=["sections"])
 
@@ -61,7 +62,7 @@ class ConfirmSelectionRequest(BaseModel):
 
 
 class UpdateDraftRequest(BaseModel):
-    draft_text: str
+    draft_text: Dict[str, Any]   # ProseMirror doc JSON, mis. {"type": "doc", "content": [...]}
     model: str
 
 
@@ -70,7 +71,7 @@ class ApproveRequest(BaseModel):
 
 
 def _draft_len(konten_kerja: dict) -> int:
-    return len((konten_kerja or {}).get("draft_text") or "")
+    return len(doc_to_text((konten_kerja or {}).get("draft_text")))
 
 
 @router.get("")
@@ -149,7 +150,7 @@ def get_section_detail(dokumen_id: str, section_id: str, model: Optional[str] = 
             "section_id":     section_id,
             "section_title":  r["judul_bab"],
             "model":          r["model"],
-            "draft_text":     kk.get("draft_text", ""),
+            "draft_text":     kk.get("draft_text") or EMPTY_DOC,
             "pedoman_used":   kk.get("pedoman_used"),
             "rubric_used":    kk.get("rubric_used"),
             "checklist":      kk.get("checklist"),
@@ -184,7 +185,7 @@ def list_draft_versions(dokumen_id: str, section_id: str, model: str,
             return {"drafts": [], "active_draft_id": None}
         rows = con.execute(
             """SELECT id, versi, sumber, dibuat_pada,
-                      konten_snapshot->>'draft_text' AS draft_text
+                      konten_snapshot->'draft_text' AS draft_text
                FROM bab_draft WHERE bab_id = %s ORDER BY versi DESC""",
             (bab_row["id"],),
         ).fetchall()
@@ -197,7 +198,7 @@ def list_draft_versions(dokumen_id: str, section_id: str, model: str,
             "versi":       r["versi"],
             "sumber":      r["sumber"],
             "dibuat_pada": r["dibuat_pada"],
-            "preview":     (r["draft_text"] or "")[:160],
+            "preview":     doc_to_text(r["draft_text"])[:160],
             "is_active":   r["id"] == bab_row["checkpoint_aktif_id"],
         } for r in rows],
     }
@@ -237,7 +238,7 @@ def get_draft_version(dokumen_id: str, section_id: str, draft_id: str,
         # walau draft_text sudah terisi).
         "status":         row["draft_status"],
         "bab_status":     row["bab_status"],
-        "draft_text":     kk.get("draft_text", ""),
+        "draft_text":     kk.get("draft_text") or EMPTY_DOC,
         "pedoman_used":   kk.get("pedoman_used"),
         "rubric_used":    kk.get("rubric_used"),
         "checklist":      kk.get("checklist"),
@@ -566,6 +567,8 @@ def recommend(dokumen_id: str, section_id: str, req: RecommendRequest,
     import traceback
     try:
         result = recommend_documents(dokumen_id, section_id, req.model, reuse_draft_id=req.draft_id)
+    except SectionNotGeneratableError as e:
+        raise HTTPException(400, str(e))
     except ValueError as e:
         raise HTTPException(404, str(e))
     except Exception as e:
@@ -642,6 +645,8 @@ def generate(dokumen_id: str, section_id: str, req: GenerateRequest,
                                    selected_bukti_dukung_ids=req.selected_bukti_dukung_ids,
                                    overwrite=req.overwrite,
                                    target_draft_id=req.draft_id)
+    except SectionNotGeneratableError as e:
+        raise HTTPException(400, str(e))
     except ValueError as e:
         raise HTTPException(404, str(e))
     except Exception as e:

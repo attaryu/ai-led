@@ -23,6 +23,8 @@ try:
 except Exception:
     pass
 
+from .gpu_lock import gpu_lock
+
 
 CHROMA_PATH     = os.environ.get("CHROMA_PATH", "/data/chroma_db")
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-m3")
@@ -56,12 +58,18 @@ def get_embeddings() -> HuggingFaceEmbeddings:
     # khusus (beda dgn bge-large-en yg butuh "Represent this sentence: ").
     # Note: bge-m3 di HF Hub hanya punya pytorch_model.bin, tidak ada
     # safetensors. torch 2.6+ aman load .bin (CVE-2025-32434 patched).
+    # batch_size kecil (bukan 32) -- GPU lokal (mis. RTX 3050 6GB) OOM kalau
+    # >1 chunk PANJANG (dokumen evidence, bisa >10rb karakter/~2-4rb token
+    # krn chunking upstream kadang gagal memecah dgn baik, lihat _batched_embed
+    # di bawah utk penanganan chunk ekstra panjang) diproses bersamaan dalam
+    # 1 forward pass. bge-m3 max_seq_length default 8192 token -- lebih
+    # panjang dari itu percuma (dipotong model sendiri), cuma makan memori.
     return HuggingFaceEmbeddings(
         model_name=EMBEDDING_MODEL,
         model_kwargs={"device": device},
         encode_kwargs={
             "normalize_embeddings": True,
-            "batch_size": 32,
+            "batch_size": 8,
         },
         show_progress=False,
     )
@@ -110,9 +118,46 @@ def get_or_create_collection(name: str):
 # Embedding helper (utk indexing script)
 # ──────────────────────────────────────────────────────────────────────
 
+# Chunk yg panjangnya (karakter) di atas ambang ini diembed SENDIRIAN
+# (batch size 1) -- chunking upstream (extraction/evidence_chunking.py)
+# kadang gagal memecah heading/tabel dgn baik, hasilnya 1 "chunk" bisa
+# >10rb karakter. Kalau chunk sepanjang itu ikut nimbrung dlm batch normal
+# bareng chunk lain, forward pass gabungannya bisa OOM di GPU kecil
+# (RTX 3050 6GB) -- lihat traceback nyata: 1 chunk 16rb karakter di file
+# "Renstra PENS" bikin CUDA OOM sekalipun sudah dikunci gpu_lock (bukan
+# soal rebutan GPU, tapi 1 batch itu sendiri kelebihan muatan).
+_LONG_CHUNK_CHAR_THRESHOLD = 4000
+
+
+def _batched_embed(embeddings, texts: List[str]) -> List[List[float]]:
+    """embed_documents() per kelompok kecil (bukan semua texts sekaligus) --
+    chunk panjang diisolasi ke batch-nya sendiri supaya tidak menumpuk
+    memori dgn chunk lain dlm 1 forward pass."""
+    out: List[List[float]] = []
+    i = 0
+    n = len(texts)
+    while i < n:
+        if len(texts[i]) > _LONG_CHUNK_CHAR_THRESHOLD:
+            group = [texts[i]]
+            i += 1
+        else:
+            group = []
+            while i < n and len(texts[i]) <= _LONG_CHUNK_CHAR_THRESHOLD and len(group) < 8:
+                group.append(texts[i])
+                i += 1
+        out.extend(embeddings.embed_documents(group))
+    return out
+
+
 def embed(texts: List[str]) -> List[List[float]]:
-    """Embed list of texts. Pakai LangChain embeddings instance."""
-    return get_embeddings().embed_documents(texts)
+    """Embed list of texts. Pakai LangChain embeddings instance.
+
+    Dibungkus gpu_lock() -- serialize lintas container api<->worker supaya
+    tidak rebutan GPU dgn MinerU (lihat lib/gpu_lock.py). Diproses per
+    kelompok kecil (_batched_embed) -- lihat _LONG_CHUNK_CHAR_THRESHOLD utk
+    alasan chunk panjang diisolasi sendirian."""
+    with gpu_lock():
+        return _batched_embed(get_embeddings(), texts)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -135,13 +180,20 @@ def _docs_to_dicts(docs: List[Document], distances: List[float] = None) -> List[
 def _search(collection_name: str, query: str, k: int,
             where: Optional[Dict] = None) -> List[Dict]:
     """Search via LangChain Chroma. Pakai similarity_search_with_score
-    supaya dapat distance/score juga."""
+    supaya dapat distance/score juga.
+
+    Dibungkus gpu_lock() -- similarity_search meng-embed `query` dulu (GPU),
+    serialize lintas container api<->worker supaya tidak rebutan GPU dgn
+    MinerU (lihat lib/gpu_lock.py). Titik masuk TUNGGAL semua search_*
+    (pedoman/rubric/lkps/evidence/document_registry), jadi cukup dikunci
+    di sini utk melindungi semuanya sekaligus."""
     vs = get_vectorstore(collection_name)
-    try:
-        results = vs.similarity_search_with_score(query, k=k, filter=where)
-    except Exception:
-        # Fallback tanpa filter kalau filter tidak valid
-        results = vs.similarity_search_with_score(query, k=k)
+    with gpu_lock():
+        try:
+            results = vs.similarity_search_with_score(query, k=k, filter=where)
+        except Exception:
+            # Fallback tanpa filter kalau filter tidak valid
+            results = vs.similarity_search_with_score(query, k=k)
     docs = [r[0] for r in results]
     scores = [float(r[1]) for r in results]
     return _docs_to_dicts(docs, scores)

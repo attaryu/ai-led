@@ -6,6 +6,7 @@ import LedToolbar from "../components/LedToolbar.jsx";
 import Outline from "../components/Outline.jsx";
 import DocumentPane from "../components/DocumentPane.jsx";
 import SectionInfoPane from "../components/SectionInfoPane.jsx";
+import ErrorBoundary from "../components/ErrorBoundary.jsx";
 
 /* Editor 1 dokumen LED (route /led/:dokumenId) -- sidebar navigasi utama
    disembunyikan selama di halaman ini (lihat App.jsx), digantikan tombol
@@ -21,6 +22,11 @@ export default function LedEditorPage() {
   const setActiveDokumenId = useStore((s) => s.setActiveDokumenId);
   const setActiveId       = useStore((s) => s.setActiveId);
   const pushToast         = useStore((s) => s.pushToast);
+  // openDraftVersion berubah tiap kali DocumentPane.jsx selesai
+  // refreshAfterChange() (termasuk saat draft dihapus, jadi null) --
+  // dipakai sbg resetKey ErrorBoundary supaya boundary otomatis pulih
+  // begitu data baru siap, TANPA perlu user klik "Coba Lagi"/reload manual.
+  const openVersionId     = useStore((s) => s.openDraftVersion?.id ?? null);
 
   // Simpan section aktif ke URL (?section=...) supaya refresh/reload tidak
   // kehilangan posisi -- Outline.jsx cuma manggil setActiveId(store), jadi
@@ -89,11 +95,15 @@ export default function LedEditorPage() {
         {/* Kiri: outline + dokumen (3/4) */}
         <div className="col-span-3 grid grid-cols-[320px_1fr] overflow-hidden">
           <Outline />
-          <DocumentPane />
+          <ErrorBoundary key={`doc-${activeId}`} resetKey={openVersionId}>
+            <DocumentPane />
+          </ErrorBoundary>
         </div>
         {/* Kanan: dokumen pendukung/pedoman/rubric/lkps/kualitas AI/chat (1/4) */}
         <div className="col-span-1 border-l border-slate-200 bg-white overflow-hidden shadow-inner">
-          <SectionInfoPane />
+          <ErrorBoundary key={`info-${activeId}`} resetKey={openVersionId}>
+            <SectionInfoPane />
+          </ErrorBoundary>
         </div>
       </div>
     </div>

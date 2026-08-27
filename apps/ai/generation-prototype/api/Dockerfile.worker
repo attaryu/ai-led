@@ -7,11 +7,26 @@ ENV PIP_DEFAULT_TIMEOUT=600 \
     PIP_RETRIES=20 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# Paksa APT pakai IPv4 -- build service ini pakai network:host (docker-compose.yml),
+# jadi mewarisi keterbatasan jaringan host apa adanya. Kalau host tidak
+# punya rute IPv6 keluar (umum di banyak setup ISP/VPS), APT tetap mencoba
+# SEMUA kandidat IPv6 deb.debian.org dulu (default preferensi resolver) sblm
+# jatuh ke IPv4 -- tiap kandidat nunggu timeout penuh, total bisa >45 menit
+# utk 1 `apt-get install`. Force-IPv4-nya bikin gagal cepat & langsung pakai
+# IPv4 yg memang reachable.
+RUN echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4
+
 # LibreOffice utk convert doc/docx/ppt/pptx -> pdf (lib/extraction/mineru.py::convert_to_pdf).
+# Pakai libreoffice-writer + libreoffice-impress SAJA (bukan paket meta
+# "libreoffice" yg narik SELURUH suite -- Calc/Base/Math/Draw, semua paket
+# bahasa/font tambahan, dst). extraction/pipeline.py CONVERTIBLE_EXTS cuma
+# {.doc,.docx,.ppt,.pptx} -- Writer+Impress cukup, ratusan MB lebih hemat
+# & jauh lebih cepat di-install drpd suite penuh.
 # libgl1/libglib2.0-0 dibutuhkan opencv-python (dependency mineru[core]) --
 # tanpa ini import cv2 gagal "libGL.so.1: cannot open shared object file".
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libreoffice \
+        libreoffice-writer \
+        libreoffice-impress \
         libgl1 \
         libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*

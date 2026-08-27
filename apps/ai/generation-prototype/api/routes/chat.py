@@ -16,6 +16,7 @@ from lib.outline import get_section
 from lib.retrieval import search_lkps, search_evidence
 from lib.prompts import build_revise_prompt
 from lib.ollama_client import get_llm_for_synthesis, disable_thinking_prompt
+from lib.prose import doc_to_text, text_to_doc
 
 router = APIRouter(prefix="/led-documents/{dokumen_id}/sections/{section_id}/chat", tags=["chat"])
 
@@ -82,7 +83,9 @@ def chat_stream(dokumen_id: str, section_id: str, msg: ChatMessage,
             raise HTTPException(404,
                 f"Draft belum ada utk section {section_id}, model {msg.model}")
         bab_id = bab["id"]
-        current_draft = (bab["konten_kerja"] or {}).get("draft_text", "")
+        # draft_text sekarang dict (ProseMirror doc) -- ekstrak plain text
+        # utk dikirim ke prompt revise (LLM tetap bekerja dgn teks biasa).
+        current_draft = doc_to_text((bab["konten_kerja"] or {}).get("draft_text"))
 
         hist_rows = con.execute(
             """SELECT role, message FROM bab_chat_message
@@ -135,7 +138,11 @@ def chat_stream(dokumen_id: str, section_id: str, msg: ChatMessage,
                         "SELECT konten_kerja FROM bab_dokumen WHERE id=%s", (bab_id,)
                     ).fetchone()
                     kk = row["konten_kerja"] or {}
-                    kk["draft_text"] = response_text
+                    # Konversi SEKALI, SETELAH stream token-by-token selesai
+                    # -- SSE ke frontend tetap kirim plain text token spt
+                    # biasa (tidak berubah), cuma hasil AKHIR yg disimpan
+                    # jadi ProseMirror doc JSON.
+                    kk["draft_text"] = text_to_doc(response_text)
                     con.execute(
                         """UPDATE bab_dokumen SET konten_kerja=%s, terakhir_disimpan=now()
                            WHERE id=%s""",

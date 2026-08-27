@@ -31,9 +31,36 @@ export default function RecommendationPanel({ dokumenId, sectionId, recommendati
   const [confirming, setConfirming] = useState(false);
   const [pendingWarning, setPendingWarning] = useState(null); // { pendingFiles, readyIds }
 
+  // Poll GET /documents tiap 4 detik SELAMA ada file yg masih pending/
+  // processing -- tanpa ini, status ekstraksi baru ter-update setelah user
+  // reload manual/pindah section (fetch sebelumnya cuma sekali saat mount).
+  // Berhenti otomatis begitu semua file di evidenceDocs sudah 'done'/'failed'
+  // (dicek tiap tick, bukan cuma sekali), supaya tidak polling selamanya.
   useEffect(() => {
-    api.listDocuments().then(setDocList).catch(() => {});
-  }, [setDocList]);
+    let cancelled = false;
+    let timer = null;
+
+    function tick() {
+      api.listDocuments()
+        .then((fresh) => {
+          if (cancelled) return;
+          setDocList(fresh);
+          const stillInFlight = fresh.some(
+            (d) => d.kind === "evidence" && (d.status === "pending" || d.status === "processing"),
+          );
+          if (stillInFlight) {
+            timer = setTimeout(tick, 4000);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) timer = setTimeout(tick, 4000);
+        });
+    }
+
+    tick();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Checklist file PERSISTEN: begitu rekomendasi (server) berubah -- baik
   // krn baru pertama dimuat, ganti section, refresh halaman, ATAU narasi

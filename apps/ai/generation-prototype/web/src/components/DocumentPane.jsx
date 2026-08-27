@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import ReactMarkdown from "react-markdown";
 import { useStore } from "../lib/store.js";
 import { api } from "../lib/api.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
+import ProseEditor from "./ProseEditor.jsx";
 
 /* ---------- shared button helper ---------- */
 
@@ -60,7 +60,7 @@ export default function DocumentPane() {
   const setOpenVersion = useStore((s) => s.setOpenDraftVersion);
 
   const [editing, setEditing] = useState(false);
-  const [editText, setEditText] = useState("");
+  const [editText, setEditText] = useState(null); // ProseMirror doc JSON, bukan string
   const [loading, setLoading]   = useState(false);
   const [confirmState, setConfirmState] = useState(null);
   const [recommending, setRecommending] = useState(false);
@@ -467,15 +467,16 @@ export default function DocumentPane() {
           di panel kanan (SectionInfoPane.jsx), bukan di sini. */}
       <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
         {editing ? (
-          <textarea
-            className="w-full min-h-[60vh] border border-slate-300 rounded-xl p-4 font-mono text-sm bg-white shadow-inner
-                       focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
-            value={editText}
-            onChange={(e) => setEditText(e.target.value)}
+          <ProseEditor
+            content={editText}
+            editable={true}
+            onChange={setEditText}
+            className="w-full min-h-[60vh] border border-slate-300 rounded-xl p-4 bg-white shadow-inner
+                       focus-within:ring-2 focus-within:ring-blue-400 focus-within:border-blue-400"
           />
         ) : openVersion && openVersion.status === "FILLED" ? (
-          <article className="prose-led max-w-4xl bg-white p-6 rounded-xl shadow-sm ring-1 ring-slate-200">
-            <ReactMarkdown>{openVersion.draft_text}</ReactMarkdown>
+          <article className="max-w-4xl bg-white p-6 rounded-xl shadow-sm ring-1 ring-slate-200">
+            <ProseEditor content={openVersion.draft_text} editable={false} />
           </article>
         ) : openVersion ? (
           <EmptyState

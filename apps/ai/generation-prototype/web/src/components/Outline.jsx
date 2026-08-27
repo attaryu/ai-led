@@ -111,8 +111,6 @@ export default function Outline() {
                   section={g.bab}
                   isOpen={isOpen}
                   onToggle={() => toggleBab(babKey)}
-                  isActive={g.bab.id === activeId}
-                  onClick={() => setActiveId(g.bab.id)}
                   model={model}
                   generating={generating[g.bab.id]}
                 />
@@ -147,30 +145,25 @@ export default function Outline() {
   );
 }
 
-/* ---------- BAB header (collapsible) ---------- */
+/* ---------- BAB header (collapsible SAJA -- Heading 1 tidak punya narasi,
+   tidak bisa jadi activeId/section aktif, lihat lib/generator.py
+   SectionNotGeneratableError) ---------- */
 
-function BabHeader({ section, isOpen, onToggle, isActive, onClick, model, generating }) {
+function BabHeader({ section, isOpen, onToggle, model, generating }) {
   const approved = (section.drafts || []).some((d) => d.model === model && d.status === "approved");
   const hasDraft = (section.drafts || []).some((d) => d.model === model);
 
   return (
-    <div
-      className={`flex items-stretch border-y border-gray-200 ${
-        isActive ? "bg-blue-50" : "bg-slate-50"
-      }`}
+    <button
+      onClick={onToggle}
+      className="w-full flex items-stretch text-left bg-slate-50 border-y border-gray-200 hover:bg-slate-100"
+      aria-label={isOpen ? "Sembunyikan" : "Tampilkan"}
+      title={isOpen ? "Sembunyikan" : "Tampilkan"}
     >
-      <button
-        onClick={onToggle}
-        className="px-2 text-slate-500 hover:text-slate-800 hover:bg-slate-200/60"
-        aria-label={isOpen ? "Sembunyikan" : "Tampilkan"}
-        title={isOpen ? "Sembunyikan" : "Tampilkan"}
-      >
+      <span className="px-2 py-2 text-slate-500">
         <Chevron open={isOpen} />
-      </button>
-      <button
-        onClick={onClick}
-        className="flex-1 text-left py-2 pr-3"
-      >
+      </span>
+      <span className="flex-1 py-2 pr-3">
         <div className="flex items-center gap-2">
           <span className={`text-[10px] font-bold tracking-wider px-1.5 py-0.5 rounded ${styleFor("bab").chip}`}>
             {section.marker}
@@ -183,8 +176,8 @@ function BabHeader({ section, isOpen, onToggle, isActive, onClick, model, genera
         <div className="text-sm font-semibold text-slate-800 mt-0.5">
           {section.title}
         </div>
-      </button>
-    </div>
+      </span>
+    </button>
   );
 }
 

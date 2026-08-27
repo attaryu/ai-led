@@ -145,18 +145,6 @@ export default function LedToolbar() {
           Hapus draft
         </Btn>
 
-        <a
-          href={api.exportDocxUrl(dokumenId, model, false)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg
-                     bg-emerald-600 text-white hover:bg-emerald-700
-                     focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
-          </svg>
-          Export .docx
-        </a>
-
         {/* Right-side status */}
         <div className="ml-auto flex items-center gap-3 min-w-0">
           {/* Progress bar */}

@@ -26,92 +26,147 @@ def _parse_llm_json(raw: str) -> Dict:
 # TAHAP 3 — Bangun checklist fakta yg dibutuhkan
 # ──────────────────────────────────────────────────────────────────────
 
+# SYSTEM_CHECKLIST = """
+# Anda adalah asesor akreditasi program studi di Indonesia.
+
+# Tugas Anda adalah membuat checklist kebutuhan informasi untuk MENULIS
+# SUBBAB yang sedang aktif berdasarkan Pedoman Penulisan dan Rubrik Penilaian.
+
+# Checklist ini akan digunakan sebagai query untuk mencari fakta pada LKPS
+# dan/atau dokumen Evidence.
+
+# PRINSIP UTAMA:
+
+# Checklist hanya berisi informasi yang benar-benar diperlukan untuk
+# menjelaskan subbab yang sedang ditulis.
+
+# Pedoman adalah sumber utama untuk menentukan ISI subbab.
+# Rubrik hanya digunakan untuk menentukan KEDALAMAN dan KUALITAS analisis.
+
+# Jangan mengubah setiap poin rubrik menjadi pertanyaan.
+
+# Jangan membuat pertanyaan hanya karena suatu indikator terdapat dalam
+# Rubrik tetapi tidak relevan dengan isi subbab.
+
+# Jangan membuat fakta, angka, nama, capaian, atau kebutuhan dokumen yang
+# tidak dapat diturunkan dari Pedoman/Rubrik.
+
+# ATURAN:
+
+# 1. Identifikasi terlebih dahulu tujuan dan ruang lingkup subbab dari Pedoman.
+
+# 2. Tentukan informasi apa yang diperlukan agar subbab tersebut dapat
+#    dijelaskan dan dianalisis.
+
+# 3. Buat checklist hanya untuk informasi yang:
+#    - diperlukan oleh isi subbab;
+#    - relevan dengan analisis;
+#    - dapat ditemukan pada LKPS atau Evidence.
+
+# 4. Jika Pedoman hanya membutuhkan penjelasan konseptual atau regulasi,
+#    jangan membuat pertanyaan statistik.
+
+# 5. Jika Pedoman membutuhkan struktur, mekanisme, kebijakan, atau proses,
+#    cari fakta yang menjelaskan hal tersebut.
+
+# 6. Jika Pedoman membutuhkan data kuantitatif, baru buat pertanyaan
+#    kuantitatif yang spesifik.
+
+# 7. Jika Pedoman merujuk LKPS, pertanyaan dapat diarahkan ke LKPS.
+
+# 8. Jika Pedoman membutuhkan bukti formal, pertanyaan diarahkan ke Evidence.
+
+# 9. Jangan meminta informasi yang hanya muncul karena Rubrik memberikan
+#    contoh karakteristik skor 4, jika informasi tersebut tidak diperlukan
+#    untuk isi subbab.
+
+# 10. Jangan membuat pertanyaan untuk setiap indikator Rubrik.
+
+# Jangan membuat pertanyaan statistik atau data dosen jika tidak diperlukan
+# untuk menjelaskan Rasional.
+
+# KOSAKATA:
+
+# Gunakan istilah yang lazim digunakan dalam dokumen institusi.
+# Boleh menggunakan sinonim atau istilah alternatif agar mudah dicari pada
+# dokumen.
+
+# Contoh:
+# "tim penyusun" → "tim akreditasi", "tim borang", "tim penyusun LED"
+# "keputusan direktur" → "SK Direktur", "Surat Keputusan Direktur"
+
+# OUTPUT:
+
+# Buat 3-8 item jika memang diperlukan.
+# Tidak ada jumlah minimum.
+
+# Jika hanya membutuhkan 2 informasi, buat 2 item.
+# Jika tidak ada informasi faktual yang perlu dicari, kembalikan daftar kosong.
+
+# Format:
+# - satu kebutuhan informasi per baris;
+# - berupa pertanyaan atau frasa pencarian singkat;
+# - Bahasa Indonesia;
+# - konkret dan dapat digunakan untuk RAG.
+
+# Jangan memberikan penjelasan tambahan.
+# """
+
 SYSTEM_CHECKLIST = """
 Anda adalah asesor akreditasi program studi di Indonesia.
 
-Tugas Anda adalah membuat checklist kebutuhan informasi untuk MENULIS
-SUBBAB yang sedang aktif berdasarkan Pedoman Penulisan dan Rubrik Penilaian.
+Tugas Anda membuat checklist kebutuhan informasi untuk bagian yang sedang
+dibahas berdasarkan Pedoman dan Rubrik. Checklist digunakan sebagai query
+untuk mencari fakta pada LKPS dan dokumen Evidence.
 
-Checklist ini akan digunakan sebagai query untuk mencari fakta pada LKPS
-dan/atau dokumen Evidence.
+Pedoman menentukan informasi yang perlu dibahas. Rubrik menentukan
+kedalaman analisis. Jangan menjadikan Rubrik sebagai sumber fakta dan
+jangan membuat query untuk setiap indikator Rubrik.
 
-PRINSIP UTAMA:
+Hanya cari informasi yang benar-benar diperlukan untuk menjelaskan,
+menganalisis, atau mengevaluasi bagian tersebut. Sesuaikan query dengan
+substansi bagian, bukan dengan nama dokumen target.
 
-Checklist BUKAN daftar semua indikator dalam Rubrik.
+Dokumen sumber dapat menggunakan istilah yang berbeda, seperti akreditasi,
+evaluasi, borang, laporan, kebijakan, pedoman, keputusan, rencana strategis,
+atau istilah institusi lainnya. Karena itu, jangan mengasumsikan dokumen
+harus menyebut istilah yang sama dengan bagian yang sedang ditulis.
 
-Checklist hanya berisi informasi yang benar-benar diperlukan untuk
-menjelaskan subbab yang sedang ditulis.
+Gunakan istilah lengkap pada penyebutan pertama, kemudian singkatan jika
+umum digunakan. Contoh: Visi, Misi, Tujuan, dan Strategi (VMTS);
+Rencana Strategis (Renstra); Laporan Kinerja Program Studi (LKPS).
 
-Pedoman adalah sumber utama untuk menentukan ISI subbab.
-Rubrik hanya digunakan untuk menentukan KEDALAMAN dan KUALITAS analisis.
+Checklist dapat mencari:
+- kebijakan atau dasar penetapan;
+- proses atau mekanisme;
+- pelaksanaan;
+- hasil atau capaian;
+- evaluasi;
+- tindak lanjut;
+sesuai kebutuhan bagian.
 
-Jangan mengubah setiap poin rubrik menjadi pertanyaan.
+Jangan membuat fakta, angka, nama, tanggal, dokumen, kegiatan, capaian,
+atau istilah spesifik yang tidak dapat diturunkan dari Pedoman/Rubrik.
 
-Jangan membuat pertanyaan hanya karena suatu indikator terdapat dalam
-Rubrik tetapi tidak relevan dengan isi subbab.
+Jangan membuat pertanyaan statistik jika tidak diperlukan. Jangan meminta
+data hanya karena tersedia dalam LKPS jika data tersebut tidak relevan
+dengan bagian yang dibahas.
 
-Jangan membuat fakta, angka, nama, capaian, atau kebutuhan dokumen yang
-tidak dapat diturunkan dari Pedoman/Rubrik.
+Query harus konkret, singkat, relevan, dan dapat digunakan untuk RAG.
+Gunakan sinonim atau variasi istilah yang mungkin muncul dalam dokumen,
+tetapi jangan membuat query terlalu luas.
 
-ATURAN:
+Buat 3-8 item jika memang diperlukan, tanpa jumlah minimum. Jika hanya
+membutuhkan 1-2 informasi, buat sesuai kebutuhan. Jika tidak ada informasi
+faktual yang perlu dicari, kembalikan daftar kosong.
 
-1. Identifikasi terlebih dahulu tujuan dan ruang lingkup subbab dari Pedoman.
-
-2. Tentukan informasi apa yang diperlukan agar subbab tersebut dapat
-   dijelaskan dan dianalisis.
-
-3. Buat checklist hanya untuk informasi yang:
-   - diperlukan oleh isi subbab;
-   - relevan dengan analisis;
-   - dapat ditemukan pada LKPS atau Evidence.
-
-4. Jika Pedoman hanya membutuhkan penjelasan konseptual atau regulasi,
-   jangan membuat pertanyaan statistik.
-
-5. Jika Pedoman membutuhkan struktur, mekanisme, kebijakan, atau proses,
-   cari fakta yang menjelaskan hal tersebut.
-
-6. Jika Pedoman membutuhkan data kuantitatif, baru buat pertanyaan
-   kuantitatif yang spesifik.
-
-7. Jika Pedoman merujuk LKPS, pertanyaan dapat diarahkan ke LKPS.
-
-8. Jika Pedoman membutuhkan bukti formal, pertanyaan diarahkan ke Evidence.
-
-9. Jangan meminta informasi yang hanya muncul karena Rubrik memberikan
-   contoh karakteristik skor 4, jika informasi tersebut tidak diperlukan
-   untuk isi subbab.
-
-10. Jangan membuat pertanyaan untuk setiap indikator Rubrik.
-
-Jangan membuat pertanyaan statistik atau data dosen jika tidak diperlukan
-untuk menjelaskan Rasional.
-
-KOSAKATA:
-
-Gunakan istilah yang lazim digunakan dalam dokumen institusi.
-Boleh menggunakan sinonim atau istilah alternatif agar mudah dicari pada
-dokumen.
-
-Contoh:
-"tim penyusun" → "tim akreditasi", "tim borang", "tim penyusun LED"
-"keputusan direktur" → "SK Direktur", "Surat Keputusan Direktur"
-
-OUTPUT:
-
-Buat 3-8 item jika memang diperlukan.
-Tidak ada jumlah minimum.
-
-Jika hanya membutuhkan 2 informasi, buat 2 item.
-Jika tidak ada informasi faktual yang perlu dicari, kembalikan daftar kosong.
-
-Format:
+Format output:
 - satu kebutuhan informasi per baris;
-- berupa pertanyaan atau frasa pencarian singkat;
+- berupa pertanyaan atau frasa pencarian;
 - Bahasa Indonesia;
-- konkret dan dapat digunakan untuk RAG.
+- tanpa penjelasan tambahan.
 
-Jangan memberikan penjelasan tambahan.
+OUTPUT HANYA CHECKLIST.
 """
 
 
@@ -159,166 +214,56 @@ def build_checklist_prompt(section_title: str,
 # TAHAP 5 — Sintesis narasi
 # ──────────────────────────────────────────────────────────────────────
 
-# SYSTEM_GENERATE = """Anda penulis Laporan Evaluasi Diri (LED) untuk
-# akreditasi program studi di Indonesia. Tulis narasi formal Bahasa
-# Indonesia yang baik, benar, dan mudah dipahami.
+SYSTEM_GENERATE = """Anda penulis Laporan Evaluasi Diri (LED) untuk
+akreditasi program studi di Indonesia. Tulis narasi formal Bahasa
+Indonesia yang baik, benar, dan mudah dipahami.
 
-# ⚠️ BAHASA OUTPUT: WAJIB Bahasa Indonesia 100%.
-#    Dilarang menulis paragraf dalam bahasa Inggris.
-#    Akronim teknis (LED, SK, SKS, IPK, dsb) boleh tetap kepanjangan
-#    aslinya, tapi narasi keseluruhan harus Indonesia.
+⚠️ BAHASA OUTPUT: WAJIB Bahasa Indonesia 100%.
+   Dilarang menulis paragraf dalam bahasa Inggris.
+   Akronim teknis (LED, SK, SKS, IPK, dsb) boleh tetap kepanjangan
+   aslinya, tapi narasi keseluruhan harus Indonesia.
 
-# ATURAN WAJIB:
-# 1. Setiap klaim faktual HARUS diikuti penanda sumber dalam tanda kurung:
-#    - Sumber Evidence (dokumen SK/notulensi/laporan): (sumber: NAMA_FILE)
-#    - Sumber LKPS (data tabel): (sumber: LKPS Sheet KODE_SHEET)
-# 2. Jika konteks tidak menyebut suatu fakta, JANGAN buat klaim tentang itu.
-# 3. Gunakan rubrik penilaian sebagai TARGET KUALITAS — bukan fakta yg dikutip.
-# 4. Format output: paragraf naratif (bullet boleh kalau memang perlu).
-# 5. Self-contained: ada pembuka, isi, penutup section.
-# 6. Tiap paragraf minimal 3 kalimat, kecuali memang tidak ada cukup fakta
-#    pendukung untuk section tsb (boleh kurang dari 3 kalimat kalau perlu).
-# 7. OUTPUT MURNI NARASI SAJA. Dilarang menambahkan catatan, disclaimer,
-#    atau ringkasan data yang belum tersedia di luar narasi (mis. jangan
-#    tulis "Catatan: data berikut belum tersedia..."). Kalau suatu fakta
-#    tidak ada di konteks, cukup lewati tanpa disebut sama sekali.
+ATURAN WAJIB:
+1. Setiap klaim faktual HARUS diikuti penanda sumber dalam tanda kurung:
+   - Sumber Evidence (dokumen SK/notulensi/laporan): (sumber: NAMA_FILE)
+   - Sumber LKPS (data tabel): (sumber: LKPS Sheet KODE_SHEET)
+2. Jika konteks tidak menyebut suatu fakta, JANGAN buat klaim tentang itu.
+3. Gunakan rubrik penilaian sebagai TARGET KUALITAS — bukan fakta yg dikutip.
+4. Format output: paragraf naratif (bullet boleh kalau memang perlu).
+5. Self-contained: ada pembuka, isi, penutup section.
+6. Tiap paragraf minimal 3 kalimat, kecuali memang tidak ada cukup fakta
+   pendukung untuk section tsb (boleh kurang dari 3 kalimat kalau perlu).
+7. OUTPUT MURNI NARASI SAJA. Dilarang menambahkan catatan, disclaimer,
+   atau ringkasan data yang belum tersedia di luar narasi (mis. jangan
+   tulis "Catatan: data berikut belum tersedia..."). Kalau suatu fakta
+   tidak ada di konteks, cukup lewati tanpa disebut sama sekali.
 
-# ⚠️ DILARANG KERAS MENGARANG SITASI/SUMBER:
-#    - Tanda "(sumber: ...)" HANYA boleh dipakai kalau chunk fakta dgn nama
-#      file/sheet PERSIS itu BENAR-BENAR ada di bagian "DATA KUANTITATIF
-#      (LKPS)" atau "BUKTI DOKUMEN (Evidence)" di bawah. DILARANG menebak
-#      atau mengarang nama file/sheet yg TIDAK muncul literal di konteks
-#      yg diberikan (mis. jangan tulis "(sumber: SK Tim Penyusun LEDPS)"
-#      kalau tidak ada chunk berjudul itu di konteks).
-#    - CHECKLIST FAKTA (di bawah, kalau ada) adalah PANDUAN CAKUPAN topik
-#      apa saja yg IDEALNYA dibahas -- BUKAN daftar yg wajib semuanya
-#      terjawab. Kalau tidak ada chunk fakta/evidence utk suatu item
-#      checklist, item itu BOLEH TIDAK DIBAHAS SAMA SEKALI. JANGAN
-#      mengarang jawaban+sitasi hanya supaya checklist "kelihatan
-#      terpenuhi" -- kejujuran ketiadaan data lebih penting drpd
-#      kelengkapan checklist.
-#    - Kalau HAMPIR SEMUA/SEMUA section tidak punya chunk fakta sama
-#      sekali (LKPS & Evidence kosong), tulis narasi SINGKAT & UMUM
-#      berdasarkan pedoman/rubrik saja (tanpa klaim faktual bersitasi),
-#      JANGAN dipaksakan panjang dgn fakta karangan.
-
-# GAYA BAHASA:
-# - Pakai istilah yang LAZIM dipahami pembaca (asesor akreditasi & dosen),
-#   bukan singkatan pedoman yang asing.
-# - Boleh sebut akronim PERTAMA KALI dgn kepanjangannya, mis. "Laporan
-#   Evaluasi Diri Program Studi (LEDPS)", lalu boleh pakai akronim saja.
-# - Hindari menulis ulang istilah pedoman yg tidak alami dalam narasi
-#   prodi (mis. "DTPS" → tulis "dosen tetap pengampu" atau "dosen tetap").
-# """
-
-SYSTEM_GENERATE = """Anda adalah penulis Laporan Evaluasi Diri (LED) untuk
-akreditasi program studi di Indonesia. Sistem ini digunakan untuk membantu
-mengolah, menganalisis, merangkum, dan menyusun informasi yang tersedia
-menjadi narasi LED yang formal, logis, dan mudah dipahami.
-
-PRINSIP UTAMA — KEJUJURAN INFORMASI:
-Sistem HANYA mengolah informasi yang tersedia dalam konteks yang diberikan.
-Sistem BUKAN pencipta fakta.
-
-DILARANG MENCIPTAKAN, MENGASUMSIKAN, ATAU MENGEMBANGKAN:
-- fakta yang tidak tersedia;
-- data atau angka yang tidak tersedia;
-- dokumen atau bukti yang tidak tersedia;
-- kegiatan atau proses yang tidak terbukti dilakukan;
-- kebijakan, keputusan, atau peraturan yang tidak tersedia;
-- capaian, prestasi, hasil, atau kondisi program studi yang tidak tersedia;
-- nama orang, jabatan, unit, tanggal, tahun, atau angka yang tidak tersedia;
-- hubungan sebab-akibat yang tidak didukung oleh data;
-- interpretasi yang mengubah fakta sumber.
-
-Tugas sistem adalah MENGOLAH informasi yang tersedia, yaitu:
-1. mengekstrak fakta;
-2. menghubungkan fakta yang relevan;
-3. menganalisis fakta berdasarkan Pedoman dan Rubrik;
-4. merangkum informasi;
-5. menyusun informasi menjadi narasi LED yang koheren.
-
-Jika informasi yang dibutuhkan tidak tersedia, JANGAN mengisinya dengan
-pengetahuan umum, asumsi, pola dokumen akreditasi, atau kemungkinan yang
-masuk akal. Lebih baik tidak membahas fakta tersebut daripada menciptakan
-fakta.
-
-⚠️ BAHASA OUTPUT:
-WAJIB Bahasa Indonesia 100%. Dilarang menulis paragraf dalam bahasa Inggris.
-Akronim teknis (LED, SK, SKS, IPK, dsb.) boleh tetap digunakan.
-
-ATURAN SUMBER:
-1. Setiap klaim faktual HARUS diikuti penanda sumber:
-   - Evidence: (sumber: NAMA_FILE)
-   - LKPS: (sumber: LKPS Sheet KODE_SHEET)
-
-2. "(sumber: ...)" HANYA boleh digunakan jika nama file atau sheet tersebut
-   BENAR-BENAR muncul secara literal pada bagian DATA KUANTITATIF (LKPS) atau
-   BUKTI DOKUMEN (Evidence).
-
-3. DILARANG menebak, membuat, atau mengubah nama file/sheet.
-   Jangan menulis "(sumber: SK Tim Penyusun LEDPS)" jika nama tersebut tidak
-   muncul di konteks.
-
-4. Jika suatu informasi berasal dari beberapa sumber, gunakan hanya sumber
-   yang benar-benar tersedia dan mendukung klaim tersebut.
-
-5. Pedoman dan Rubrik digunakan sebagai acuan penulisan dan TARGET KUALITAS,
-   bukan sebagai sumber fakta tentang kondisi program studi.
-
-6. Rubrik TIDAK boleh digunakan untuk menciptakan capaian. Jika rubrik
-   menyatakan karakteristik skor tertentu tetapi Evidence/LKPS tidak
-   menunjukkan bahwa program studi memenuhi karakteristik tersebut, jangan
-   menyatakan bahwa program studi telah memenuhi atau mencapai skor tersebut.
-
-ATURAN ANALISIS:
-1. Hubungkan fakta yang tersedia dengan tuntutan Pedoman dan Rubrik.
-2. Gunakan data untuk menghasilkan analisis, bukan untuk menambahkan fakta.
-3. Boleh membuat kesimpulan atau interpretasi jika kesimpulan tersebut dapat
-   diturunkan secara langsung dari fakta yang tersedia.
-4. Jangan mengubah ketidaktersediaan data menjadi klaim positif.
-5. Jangan menganggap keberadaan suatu dokumen sebagai bukti bahwa suatu
-   kegiatan benar-benar dilaksanakan. Isi dokumen harus mendukung klaimnya.
-6. Jangan menganggap adanya kebijakan/SK sebagai bukti bahwa kebijakan
-   tersebut telah berhasil dilaksanakan.
-7. Jangan menganggap adanya kegiatan sebagai bukti bahwa kegiatan tersebut
-   mencapai hasil tertentu.
-8. Bedakan dengan jelas antara:
-   - dokumen yang menyatakan suatu kebijakan;
-   - bukti pelaksanaan kebijakan;
-   - hasil/capaian dari pelaksanaan kebijakan.
-
-CHECKLIST FAKTA:
-Checklist hanya merupakan panduan cakupan topik yang idealnya dibahas.
-Checklist BUKAN fakta dan BUKAN sumber.
-
-Jika suatu item checklist tidak memiliki fakta dari LKPS atau Evidence,
-item tersebut BOLEH tidak dibahas. Jangan menciptakan fakta dan sitasi hanya
-untuk memenuhi checklist.
-
-Jika hampir semua atau semua section tidak memiliki fakta dari LKPS maupun
-Evidence, tulis narasi singkat dan umum berdasarkan Pedoman/Rubrik tanpa
-klaim faktual bersitasi. Jangan memperpanjang narasi dengan fakta buatan.
+⚠️ DILARANG KERAS MENGARANG SITASI/SUMBER:
+   - Tanda "(sumber: ...)" HANYA boleh dipakai kalau chunk fakta dgn nama
+     file/sheet PERSIS itu BENAR-BENAR ada di bagian "DATA KUANTITATIF
+     (LKPS)" atau "BUKTI DOKUMEN (Evidence)" di bawah. DILARANG menebak
+     atau mengarang nama file/sheet yg TIDAK muncul literal di konteks
+     yg diberikan (mis. jangan tulis "(sumber: SK Tim Penyusun LEDPS)"
+     kalau tidak ada chunk berjudul itu di konteks).
+   - CHECKLIST FAKTA (di bawah, kalau ada) adalah PANDUAN CAKUPAN topik
+     apa saja yg IDEALNYA dibahas -- BUKAN daftar yg wajib semuanya
+     terjawab. Kalau tidak ada chunk fakta/evidence utk suatu item
+     checklist, item itu BOLEH TIDAK DIBAHAS SAMA SEKALI. JANGAN
+     mengarang jawaban+sitasi hanya supaya checklist "kelihatan
+     terpenuhi" -- kejujuran ketiadaan data lebih penting drpd
+     kelengkapan checklist.
+   - Kalau HAMPIR SEMUA/SEMUA section tidak punya chunk fakta sama
+     sekali (LKPS & Evidence kosong), tulis narasi SINGKAT & UMUM
+     berdasarkan pedoman/rubrik saja (tanpa klaim faktual bersitasi),
+     JANGAN dipaksakan panjang dgn fakta karangan.
 
 GAYA BAHASA:
-- Gunakan Bahasa Indonesia formal dan natural untuk asesor akreditasi dan
-  dosen.
-- Hindari istilah atau singkatan yang tidak lazim.
-- Akronim boleh ditulis lengkap pada penyebutan pertama.
-- Hindari menyalin Pedoman secara mentah.
-- Gunakan Pedoman dan Rubrik untuk menentukan arah pembahasan, bukan untuk
-  menggantikan fakta program studi.
-
-FORMAT OUTPUT:
-- Paragraf naratif.
-- Bullet boleh digunakan jika memang diperlukan.
-- Self-contained: memiliki pembuka, isi, dan penutup section jika fakta yang
-  tersedia memungkinkan.
-- Setiap paragraf minimal 4 kalimat, kecuali fakta yang tersedia memang
-  terbatas.
-- OUTPUT MURNI NARASI SAJA.
-- Jangan menambahkan catatan, disclaimer, atau penjelasan proses di luar
-  narasi.
+- Pakai istilah yang LAZIM dipahami pembaca (asesor akreditasi & dosen),
+  bukan singkatan pedoman yang asing.
+- Boleh sebut akronim PERTAMA KALI dgn kepanjangannya, mis. "Laporan
+  Evaluasi Diri Program Studi (LEDPS)", lalu boleh pakai akronim saja.
+- Hindari menulis ulang istilah pedoman yg tidak alami dalam narasi
+  prodi (mis. "DTPS" → tulis "dosen tetap pengampu" atau "dosen tetap").
 """
 
 
@@ -335,13 +280,6 @@ def build_generate_prompt(section_title: str,
         parts.append("## STRUKTUR PEDOMAN (sub-bagian yg harus ada):")
         for p in pedoman_sub[:8]:
             t = (p.get("text") or "")[:300]
-            parts.append(f"- {t}")
-        parts.append("")
-
-    if rubric:
-        parts.append("## RUBRIK PENILAIAN (target skor 4):")
-        for r in rubric[:5]:
-            t = (r.get("text") or "")[:500]
             parts.append(f"- {t}")
         parts.append("")
 
@@ -403,10 +341,8 @@ def build_generate_prompt(section_title: str,
 
     parts.append("## TUGAS:")
     parts.append(
-        f"Tulis narasi LED untuk section '{section_title}' dalam 2-4 paragraf, "
-        "tiap paragraf minimal 3 kalimat (boleh kurang hanya kalau memang "
-        "tidak ada cukup fakta pendukung). "
-        "Penuhi rubrik penilaian sebisa mungkin BERDASARKAN konteks. "
+        f"Tulis narasi LED untuk section '{section_title}' dalam 3-5 paragraf, "
+        "tiap paragraf minimal 3 kalimat"
         "Wajib menyebut sumber setelah setiap klaim faktual: "
         "`(sumber: NAMA_FILE)` untuk Evidence, `(sumber: LKPS Sheet KODE_SHEET)` "
         "untuk data LKPS. "
@@ -701,19 +637,14 @@ def build_document_query_prompt(section_title: str,
 
 SYSTEM_ROUTE_AND_PLAN = """Anda adalah asesor akreditasi program studi di Indonesia.
 
-Berdasarkan PEDOMAN PENULISAN dan RUBRIK PENILAIAN suatu subbab LED, Anda
-harus membuat DUA keputusan SEKALIGUS:
+Berdasarkan PEDOMAN PENULISAN dan RUBRIK PENILAIAN suatu subbab LED, tentukan
+dokumen non-LKPS apa saja yang diperlukan sebagai bukti/sumber dalam
+penyusunan narasi (SK, notulensi, peraturan, RPS, dst).
 
-## KEPUTUSAN 1 — needs_lkps
-Tentukan apakah subbab ini butuh DATA LKPS (Laporan Kinerja Program Studi --
-data kuantitatif tabel resmi: jumlah dosen, rasio mahasiswa, IPK, dst) untuk
-ditulis dengan baik.
+Catatan: kebutuhan data LKPS TIDAK ditentukan oleh Anda -- itu sudah
+diputuskan lewat pengecekan otomatis terpisah, di luar tugas Anda di sini.
 
-## KEPUTUSAN 2 — requires_documents & document_query
-Tentukan dokumen non-LKPS apa saja yang diperlukan sebagai bukti/sumber
-dalam penyusunan narasi (SK, notulensi, peraturan, RPS, dst).
-
-ATURAN document_query (SAMA seperti sebelumnya):
+ATURAN document_query:
 1. Identifikasi klaim/informasi yang perlu didukung dokumen (fakta, data,
    regulasi, kebijakan, keputusan, kegiatan, mekanisme, kondisi program
    studi, hasil evaluasi, pernyataan faktual).
@@ -732,7 +663,6 @@ ATURAN document_query (SAMA seperti sebelumnya):
 
 OUTPUT HARUS JSON VALID SAJA (no explanation outside JSON):
 {
-  "needs_lkps": <true/false>,
   "requires_documents": <true/false>,
   "document_query": ["query 1", "query 2", ...]
 }"""

@@ -22,9 +22,6 @@ langsmith==0.1.142
 psycopg[binary]==3.2.3
 psycopg-pool==3.2.3
 
-# Export docx
-python-docx==1.1.2
-
 # Queue -- dipakai api (enqueue) & worker (consume, lihat Dockerfile.worker)
 rq==2.1.0
 

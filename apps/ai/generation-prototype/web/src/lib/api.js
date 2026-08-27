@@ -108,8 +108,6 @@ export const api = {
                                           }),
   getChatHistory: (dokumenId, id, model) =>
                                           req(`/led-documents/${encodeURIComponent(dokumenId)}/sections/${encodeURIComponent(id)}/chat${model ? `?model=${model}` : ""}`),
-  exportDocxUrl: (dokumenId, model, only_approved=false) =>
-                                          `${BASE}/led-documents/${encodeURIComponent(dokumenId)}/export?model=${encodeURIComponent(model)}&only_approved=${only_approved}`,
 
   /* ----- halaman Document ----- */
   listDocuments:   ()                 => req("/documents"),

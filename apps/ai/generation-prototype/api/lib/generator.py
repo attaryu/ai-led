@@ -35,8 +35,21 @@ from .ollama_client import (get_llm_for_synthesis, get_llm_for_checklist,
                               get_llm_for_judge, disable_thinking_prompt,
                               get_llm_for_route_and_plan,
                               get_llm_for_assess_and_recommend)
+from .prose import text_to_doc, doc_to_text, is_empty_doc, EMPTY_DOC
 
 JUDGE_MODEL = os.environ.get("JUDGE_MODEL", "gpt-oss:20b")
+# Set RUBRIK_WRITING=false di .env utk skip rubrik penilaian sepenuhnya --
+# _retrieve_rules tidak search_rubric sama sekali, jadi checklist, sintesis
+# narasi, judge, DAN tahap rekomendasi dokumen (recommend_chain reuse stage
+# yg sama) semuanya jalan tanpa rubric sbg acuan, murni dari pedoman+fakta.
+RUBRIK_WRITING = os.environ.get("RUBRIK_WRITING", "true").strip().lower() not in ("false", "0", "no")
+
+
+class SectionNotGeneratableError(ValueError):
+    """Section valid (ada di outline) tapi TIDAK BOLEH digenerate narasinya
+    -- beda dari ValueError biasa (section tidak ditemukan sama sekali,
+    dipetakan ke 404 di routes/sections.py). Dipetakan ke 400 Bad Request."""
+    pass
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -54,6 +67,16 @@ def _route_section(inp: Dict) -> Dict:
     sec = get_section(sid)
     if not sec:
         raise ValueError(f"Section {sid} tidak ditemukan")
+    # Level 'bab' (Heading 1 -- BAB I, BAB II, dst) murni container/judul,
+    # TIDAK PERNAH punya narasi sendiri -- yang bisa digenerate cuma
+    # sub_bab/sub_sub_bab/dst di bawahnya. Guard di tahap PALING AWAL ini
+    # (Tahap 1) otomatis menolak baik recommend_chain maupun generate_chain,
+    # krn keduanya reuse _route_section sbg stage pertama.
+    if sec.get("level") == "bab":
+        raise SectionNotGeneratableError(
+            f"Section {sid} adalah judul BAB (Heading 1) -- tidak bisa "
+            "digenerate narasinya, pilih sub-bab di bawahnya."
+        )
     # retrieval_query: multi-baris breadcrumb (untuk embedding)
     retrieval_query = sec.get("retrieval_query") or sec["title"]
     # title untuk prompt: sama dengan retrieval_query supaya LLM tahu
@@ -68,8 +91,18 @@ RUBRIC_MAX_DISTANCE = 0.40
 
 
 def _retrieve_rules(inp: Dict) -> Dict:
-    """Tahap 2: paralel ambil pedoman + rubric."""
+    """Tahap 2: paralel ambil pedoman + rubric.
+
+    RUBRIK_WRITING=false (.env) -> skip search_rubric sepenuhnya, rubric jadi
+    [] -- titik masuk TUNGGAL rubric utk seluruh pipeline (checklist, sintesis
+    narasi, judge, rekomendasi dokumen, bab_referensi_chunk semua reuse stage
+    ini), jadi cukup dimatikan di sini utk mempengaruhi semuanya sekaligus."""
     query = inp["retrieval_query"]
+    pedoman = search_pedoman(query, k=1)
+
+    if not RUBRIK_WRITING:
+        return {**inp, "pedoman": pedoman, "rubric": []}
+
     rubric_filter = (inp["section"].get("rubric_filter") or {})
     where = None
     if rubric_filter:
@@ -77,7 +110,6 @@ def _retrieve_rules(inp: Dict) -> Dict:
         if rubric_filter[k]:
             where = {k: rubric_filter[k]}
 
-    pedoman = search_pedoman(query, k=1)
     rubric = search_rubric(query, k=5, where=where) or search_rubric(query, k=5)
 
     # Section naratif (mis. BAB I Pendahuluan) tidak punya kriteria penilaian
@@ -216,13 +248,14 @@ def _synthesize(inp: Dict) -> Dict:
     try:
         raw = llm.invoke(prompt_text)
     except Exception as e:
-        return {**inp, "draft_text": "", "_synthesis_error": str(e),
+        return {**inp, "draft_text": EMPTY_DOC, "_synthesis_error": str(e),
                 "_synthesis_latency": round(time.time() - t0, 2)}
     latency = time.time() - t0
 
     cleaned = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+    plain = cleaned or raw
     return {**inp,
-            "draft_text":          cleaned or raw,
+            "draft_text":          text_to_doc(plain),
             "_synthesis_prompt":   prompt_text,
             "_synthesis_latency":  round(latency, 2)}
 
@@ -230,7 +263,7 @@ def _synthesize(inp: Dict) -> Dict:
 def _judge(inp: Dict) -> Dict:
     """Tahap 6: gpt-oss:20b evaluate 4 metrik RAGAS."""
     prompt_text = build_judge_prompt(
-        inp["title"], inp["draft_text"], inp["rubric"], inp["facts"],
+        inp["title"], doc_to_text(inp["draft_text"]), inp["rubric"], inp["facts"],
     )
     llm = get_llm_for_judge(JUDGE_MODEL)
 
@@ -538,10 +571,17 @@ def _route_and_plan(inp: Dict) -> Dict:
     digabung tanpa mengubah shape output yg dikonsumsi stage berikutnya
     (_retrieve_lkps, _search_document_registry_candidates).
 
-    Fast-path TETAP dipertahankan SEBELUM panggil LLM: kalau pedoman
-    menyebut eksplisit '(Tabel X.Y LKPS)', needs_lkps langsung True tanpa
-    perlu LLM memutuskan itu (LLM tetap dipanggil utk document_query)."""
-    fast_needs_lkps = _pedoman_mentions_lkps(inp["pedoman"])
+    needs_lkps: GATE KERAS via regex _pedoman_mentions_lkps, BUKAN sekadar
+    hint ke LLM. Pedoman LAM Teknik SELALU eksplisit menyebut '(Tabel X.Y
+    LKPS)' kalau subbab itu memang butuh data LKPS, dan TIDAK PERNAH
+    menyebutnya kalau tidak -- jadi regex ini definitif utk KEDUA arah:
+    ketemu -> needs_lkps=True PASTI, tidak ketemu -> needs_lkps=False PASTI.
+    LLM TIDAK dipanggil sama sekali utk keputusan ini (sebelumnya LLM bisa
+    override False jadi True krn menebak dari konteks umum "tim penyusun"/
+    "data institusi" dsb -- padahal pedoman tidak minta LKPS sama sekali,
+    jadi retrieval LKPS ikut jalan & tampil di referensi padahal tidak
+    relevan). LLM tetap dipanggil, tapi HANYA utk document_query."""
+    needs_lkps = _pedoman_mentions_lkps(inp["pedoman"])
 
     prompt_text = build_route_and_plan_prompt(inp["title"], inp["pedoman"], inp["rubric"])
     prompt_text = disable_thinking_prompt(prompt_text, inp["model"])
@@ -549,12 +589,11 @@ def _route_and_plan(inp: Dict) -> Dict:
     try:
         raw = llm.invoke(prompt_text)
     except Exception:
-        return {**inp, "needs_lkps": fast_needs_lkps, "document_query": [inp["title"]]}
+        return {**inp, "needs_lkps": needs_lkps, "document_query": [inp["title"]]}
 
     raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
     data = _parse_llm_json(raw)
 
-    needs_lkps = fast_needs_lkps or bool(data.get("needs_lkps", False))
     queries = data.get("document_query") or []
     return {**inp, "needs_lkps": needs_lkps, "document_query": queries or [inp["title"]]}
 
@@ -931,7 +970,7 @@ def generate_section(dokumen_id: str, section_id: str, model: str,
                 """SELECT konten_kerja FROM bab_dokumen
                    WHERE dokumen_id=%s AND urutan_bab=%s AND model=%s""",
                 (dokumen_id, urutan_bab, model)).fetchone()
-            if row and row["konten_kerja"].get("draft_text"):
+            if row and not is_empty_doc(row["konten_kerja"].get("draft_text")):
                 kk = row["konten_kerja"]
                 return {
                     "section_id":    section_id,

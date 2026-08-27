@@ -16,6 +16,7 @@ from pathlib import Path
 from lib.db import conn
 from lib.extraction import process_file, UnsupportedFileError
 from lib.retrieval import embed, get_or_create_collection
+from lib.gpu_lock import gpu_lock
 
 
 def _flatten_meta(meta: dict) -> dict:
@@ -50,7 +51,12 @@ def process_document(bukti_dukung_id: str) -> None:
         if not file_path.exists():
             raise FileNotFoundError(f"File fisik tidak ditemukan: {file_path}")
 
-        chunks = process_file(file_path, work_dir)
+        # gpu_lock: MinerU (layout detection PDF) jalan di GPU -- serialize
+        # thd embedding query yg jalan di container `api` (lihat lib/gpu_lock.py).
+        # embed() di bawah (baris ~84) SUDAH dikunci sendiri di dalam
+        # retrieval.py, jangan bungkus dobel di sini (lock non-reentrant).
+        with gpu_lock():
+            chunks = process_file(file_path, work_dir)
         if not chunks:
             print(f"[worker] {row['nama_dokumen']}: 0 chunk dihasilkan (dokumen kosong?).")
 

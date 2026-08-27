@@ -230,6 +230,18 @@ def get_document_chunks(document_id: str, kind: Optional[str] = None):
 
 @router.delete("/{document_id}")
 def delete_document(document_id: str):
+    """Hapus dokumen dari APLIKASI SAJA (record Postgres + embedding Chroma)
+    -- file fisik di DOCUMENT_EVIDENCE_ROOT SENGAJA TIDAK disentuh.
+
+    DOCUMENT_EVIDENCE_ROOT di-mount LANGSUNG dari folder lokal user
+    (docker-compose.yml: ../document/evidence:/app_document/evidence, BUKAN
+    salinan/volume terisolasi) -- versi lama fungsi ini memanggil
+    file_path.unlink() di sini, yg berarti klik "Delete" di UI aplikasi
+    ikut MENGHAPUS FILE ASLI di komputer user secara permanen tanpa
+    disadari (mis. dokumen resmi institusi yg sumbernya bukan cuma di
+    folder ini). File fisik dibiarkan tetap ada; kalau memang perlu
+    dibersihkan dari disk, itu tindakan terpisah yg dilakukan user sendiri
+    lewat file manager, bukan konsekuensi implisit dari "Delete" di UI."""
     with conn() as con:
         row = con.execute(
             "SELECT file_url FROM bukti_dukung WHERE id = %s", (document_id,)
@@ -250,9 +262,5 @@ def delete_document(document_id: str):
             get_or_create_collection("evidence").delete(ids=chunk_ids)
         except Exception:
             pass  # embedding orphan di Chroma bukan fatal, chunk Postgres sudah bersih
-
-    file_path = Path(row["file_url"])
-    if file_path.exists():
-        file_path.unlink()
 
     return {"status": "ok"}

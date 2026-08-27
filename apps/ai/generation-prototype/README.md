@@ -2,24 +2,27 @@
 
 Aplikasi web untuk menyusun **Laporan Evaluasi Diri (LED)** akreditasi
 program studi secara semi-otomatis. Sistem membaca outline LED resmi
-(210 section: BAB → sub-bab → poin), menjalankan **pipeline RAG 6-tahap**
-ke LLM lokal (Ollama), dan menampilkan draft + bukti (LKPS/Evidence) +
-evaluasi RAGAS dalam UI tiga panel.
+(~210 section: BAB → sub-bab → poin), menjalankan pipeline RAG berbasis
+LLM lokal (Ollama) melalui dua tahap — **rekomendasi dokumen bukti dukung**
+lalu **penulisan narasi** — dan menampilkan hasilnya di editor rich-text
+tiga panel.
+
+Multi-dokumen: satu program studi bisa mengelola beberapa `dokumen_led`
+sekaligus (mis. draft tahun berjalan + arsip tahun lalu).
 
 ```
-┌───────────────────────────────────────────────────────────────────────┐
-│ TopBar  │  Generate semua [35/210]   ●Ollama   ▓▓▓▓░░░░░ 35%          │
-├──────────────┬──────────────────────────────────────┬─────────────────┤
-│ Outline      │ Document Pane                        │ Chat Pane       │
-│              │                                      │                 │
-│ BAB I        │ Tabs: Draft │ Pedoman │ Rubric       │ Bubble chat utk │
-│  └ 1)        │        Checklist │ Evidence │ Judge  │ minta revisi    │
-│ BAB II       │                                      │ (streaming)     │
-│  ├ A. Tim…   │ Markdown draft + tombol Edit/        │                 │
-│  └ C. …      │ Approve/Regenerate/Hapus             │                 │
-│ BAB III      │                                      │                 │
-│ BAB IV       │                                      │                 │
-└──────────────┴──────────────────────────────────────┴─────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│ ← Kembali   │ Model: deepseek-r1:32b ▾   Hapus draft        ●Ollama      │
+├──────────────┬─────────────────────────────────────┬─────────────────────┤
+│ Outline      │ Document Pane                        │ Dokumen Pendukung │
+│ (~210 entri) │                                       │ Draft             │
+│              │ Rekomendasikan Dokumen /             │ Query             │
+│ BAB I        │ Konfirmasi & Tulis Narasi /           │ Pedoman           │
+│  └ 1) …      │ Regenerate / Edit / Approve           │ LKPS              │
+│ BAB II       │                                       │ Kualitas AI       │
+│  ├ A. Tim…   │ Editor TipTap (rich-text, bukan       │ Chat              │
+│  └ C. …      │ markdown mentah)                      │                   │
+└──────────────┴─────────────────────────────────────┴─────────────────────┘
 ```
 
 ---
@@ -28,10 +31,13 @@ evaluasi RAGAS dalam UI tiga panel.
 
 | Lapisan | Teknologi |
 |---|---|
-| **Backend** | FastAPI · Python 3.12 · container `led-api` (port 8000) |
+| **Backend API** | FastAPI · Python 3.12 · container `led-api` (port 8000) |
+| **Worker ekstraksi** | RQ (Redis Queue) · container `led-worker` — proses dokumen upload async (MinerU + LibreOffice + openpyxl), terpisah dari API supaya API tetap responsif |
 | **Frontend** | React 18 + Vite 5 + Tailwind 3 · container `led-web` (port 5173) |
-| **Vector DB** | ChromaDB (file-based di `data/chroma_db/`) — 4 koleksi: `pedoman`, `rubric`, `lkps`, `evidence` |
-| **State DB** | SQLite (`data/led.db`) — table `drafts`, `chat_messages` |
+| **Editor narasi** | TipTap (ProseMirror) — rich-text, bukan markdown string atau `<textarea>` mentah |
+| **State DB** | PostgreSQL 16 · container `led-postgres` (23 tabel) |
+| **Queue/broker** | Redis 7 · container `led-redis` |
+| **Vector DB** | ChromaDB (file-based di `data/chroma_db/`) — koleksi: `pedoman`, `rubric`, `lkps`, `evidence`, `document_registry` |
 | **Embedding** | `BAAI/bge-m3` (multilingual, 1024-dim) — di-cache di `data/hf_cache/` |
 | **LLM synthesis** | Ollama — `deepseek-r1:32b` atau `qwen3.5:35b` (remote/local) |
 | **LLM judge** | Ollama — `gpt-oss:20b` (deterministic, JSON output) |
@@ -43,33 +49,40 @@ evaluasi RAGAS dalam UI tiga panel.
 
 ```
 web/
-├── api/                  # FastAPI app
-│   ├── main.py
-│   ├── routes/           # /sections, /chat, /export
-│   ├── lib/              # outline, generator (6-stage LCEL), retrieval, prompts, ollama
-│   ├── Dockerfile
+├── api/
+│   ├── main.py                # registrasi router + /health
+│   ├── worker_tasks.py        # job RQ process_document (dijalankan container worker)
+│   ├── routes/                # led_documents, sections, chat, documents, me
+│   ├── lib/
+│   │   ├── generator.py       # recommend_chain + generate_chain (LCEL)
+│   │   ├── prompts.py         # semua template prompt LLM
+│   │   ├── prose.py           # konversi teks LLM <-> ProseMirror/TipTap JSON
+│   │   ├── retrieval.py       # wrapper search_* ke Chroma
+│   │   ├── outline.py         # bangun outline dari led_bab_tabel.json
+│   │   ├── context.py         # resolve system user/tenant/prodi, dokumen_led CRUD
+│   │   ├── auth.py            # guard akses berbasis role
+│   │   ├── ollama_client.py   # wrapper LLM Ollama per-tahap
+│   │   ├── db.py              # connection pool Postgres
+│   │   └── extraction/        # pipeline ekstraksi dokumen (MinerU/LibreOffice/Excel)
+│   ├── scripts/                # migrasi DB + import data notebook (lihat bawah)
+│   ├── db/schema.sql
+│   ├── Dockerfile              # image API (uvicorn)
+│   ├── Dockerfile.worker       # image worker (+ LibreOffice, MinerU)
 │   └── requirements.txt
-├── web/                  # React frontend
-│   ├── src/
-│   │   ├── App.jsx
-│   │   ├── components/   # Outline, DocumentPane, ChatPane, TopBar, Toaster, ConfirmDialog
-│   │   └── lib/          # api, store (zustand)
-│   ├── Dockerfile
-│   └── package.json
-├── scripts/              # CLI utilities
-│   ├── index_chunks.py       # populate Chroma dari chunks_all.json
-│   ├── generate_led.py       # batch generate dari CLI
-│   ├── parse_led_existing.py # baca LED existing utk ground-truth eval
-│   └── evaluate.py           # RAGAS eval
-├── data/                 # runtime (di-mount; di-gitignore)
-│   ├── led.db
+├── web/                        # React frontend
+│   └── src/
+│       ├── components/         # Outline, DocumentPane, ProseEditor, RecommendationPanel,
+│       │                       # SectionInfoPane, ChatPane, LedToolbar, Sidebar, ErrorBoundary, dst.
+│       ├── pages/               # LedListPage, LedEditorPage, DocumentsPage, DocumentDetailPage
+│       └── lib/                 # api.js (fetch client), store.js (zustand)
+├── data/                       # runtime (di-mount; di-gitignore)
 │   ├── chroma_db/
 │   ├── hf_cache/
-│   ├── led_existing/         # mounted ../document/result (read-only)
-│   └── instruction/          # mounted ../document/intruction (read-only)
+│   └── led.db                  # arsip SQLite lama, tidak dipakai lagi
+├── led_bab_tabel.json          # struktur outline LED (210 heading), sumber outline.py
 ├── docker-compose.yml
 ├── .env.example
-└── .gitignore
+└── rancangan.txt               # catatan kerja/rancangan fitur (scratch, bukan dokumentasi resmi)
 ```
 
 ---
@@ -77,14 +90,12 @@ web/
 ## Prasyarat
 
 - Docker + Docker Compose v2 (`docker compose version`)
-- Akses ke Ollama yang punya 3 model berikut:
+- Akses ke Ollama dengan model:
   - `deepseek-r1:32b` atau `qwen3.5:35b` (synthesis)
   - `gpt-oss:20b` (judge)
   - Cek: `curl http://<OLLAMA_HOST>/api/tags`
-- File data hasil pipeline notebook di `../code/output/`:
-  - `chunks_all.json` (1.882 chunks: pedoman + matrik + lkps + evidence)
-  - `led_bab_tabel.json` (210 heading struktur LED)
-- GPU NVIDIA (opsional, untuk embedding cepat — auto-detect, atau set `EMBEDDING_DEVICE=cpu`)
+- `led_bab_tabel.json` (struktur outline LED) di root `web/`
+- GPU NVIDIA (opsional untuk embedding & MinerU lebih cepat — auto-detect, atau set `EMBEDDING_DEVICE=cpu`)
 
 ---
 
@@ -95,19 +106,26 @@ cd /home/dimas/proyek-akhir/web
 
 # 1. Salin .env dan isi OLLAMA_HOST + OLLAMA_TOKEN
 cp .env.example .env
-vi .env       # set OLLAMA_HOST, OLLAMA_TOKEN, dll
+vi .env
 
-# 2. Build images (sekali, ~10–15 menit)
+# 2. Build images (api, worker, web)
 docker compose build
 
-# 3. Index chunks ke Chroma (sekali, ~5 menit dgn GPU)
-docker compose run --rm api python /scripts/index_chunks.py
-
-# 4. Jalan
+# 3. Jalankan stack (postgres+redis health-check dulu, baru api/worker/web)
 docker compose up -d
+
+# 4. Migrasi & seed data awal (sekali, di dalam container api)
+docker compose exec api python scripts/migrate_to_postgres.py
+docker compose exec api python scripts/import_chunks.py
+docker compose exec api python scripts/import_document_registry.py
 ```
 
 UI: <http://localhost:5173> · API: <http://localhost:8000> · health: <http://localhost:8000/health>
+
+> Schema (`api/db/schema.sql`) otomatis diterapkan **hanya** saat volume
+> `pgdata` masih kosong (first boot). Untuk DB yang sudah berjalan lama,
+> perubahan skema diterapkan manual lewat script `scripts/migrate_add_*.py`
+> (idempotent, aman dijalankan berulang) — lihat daftar di bawah.
 
 ---
 
@@ -117,60 +135,108 @@ UI: <http://localhost:5173> · API: <http://localhost:8000> · health: <http://l
 |---|---|---|
 | `OLLAMA_HOST` | `http://host.docker.internal:11434` | URL Ollama (lokal/remote) |
 | `OLLAMA_TOKEN` | — | Bearer token kalau Ollama remote (Vast.ai/RunPod) |
-| `JUDGE_MODEL` | `gpt-oss:20b` | Model untuk RAGAS judge |
-| `EMBEDDING_MODEL` | `BAAI/bge-m3` | HF model id, harus konsisten dgn `index_chunks.py` |
+| `JUDGE_MODEL` | `gpt-oss:20b` | Model untuk evaluasi RAGAS |
+| `RUBRIK_WRITING` | `true` | Set `false` untuk skip rubrik penilaian **sepenuhnya** — checklist, narasi, judge, dan rekomendasi dokumen semua jalan murni dari pedoman + fakta, tanpa acuan rubrik |
+| `EMBEDDING_MODEL` | `BAAI/bge-m3` | HF model id, harus konsisten dgn hasil index Chroma |
 | `EMBEDDING_DEVICE` | (auto) | `cpu` untuk paksa CPU |
+| `PEDOMAN_COLLECTION` | `pedoman` | Alternatif `pedoman_new` (chunking dinamis, embed heading saja) |
 | `LANGCHAIN_TRACING_V2` | `false` | `true` untuk kirim trace ke LangSmith |
 | `LANGCHAIN_API_KEY` | — | API key LangSmith |
+| `GROQ_API_KEY` | — | Dipakai `scripts/evaluate.py` (eval RAGAS) |
+
+`POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB` (default `led`/`led`/`led`) juga bisa dioverride.
 
 > ⚠️ `.env` di-gitignore — jangan commit token.
 
 ---
 
-## Pipeline generate (6 tahap LCEL)
+## Cara kerja sistem (2 tahap, per subbab)
 
-Tiap section di outline di-generate melalui chain di
-`api/lib/generator.py`:
+Tiap subbab LED disusun lewat **dua LCEL chain terpisah** di
+`api/lib/generator.py`, dengan jeda user di antaranya (pilih dokumen bukti
+dukung). Level **BAB** (Heading 1) murni container/judul — tidak pernah
+punya narasi sendiri, hanya sub-bab ke bawah yang bisa digenerate.
 
-```
-01_route          → ambil section dari outline (id, breadcrumb, retrieval_query)
-02_retrieve_rules → search_pedoman (RAG 1) + search_rubric (RAG 2) paralel
-03_build_checklist→ LLM bikin 4–8 pertanyaan faktual dari pedoman+rubric
-04_retrieve_facts → search_lkps (RAG 3) + search_evidence (RAG 4) per item checklist
-05_synthesize     → LLM tulis narasi LED (2500 token)
-06_judge          → gpt-oss:20b nilai 4 metrik RAGAS + missing_facts + hallucinated
-07_save_db        → simpan ke SQLite
-```
+### Tahap A — Rekomendasi Dokumen (`recommend_chain`)
 
-`retrieval_query` adalah **breadcrumb multi-baris** (BAB → sub-bab → … → poin),
-bukan judul pendek — ini penting agar embedding query kaya konteks dan
-retrieval mengembalikan chunk yang relevan.
+Dipicu tombol **"Rekomendasikan Dokumen"** pada subbab yang belum punya
+draft. Hasil akhirnya: draft **kosong** (status `EMPTY`) yang nanti diisi
+di Tahap B, plus kartu rekomendasi jenis dokumen di tab "Dokumen Pendukung".
+
+| # | Tahap | Yang terjadi |
+|---|---|---|
+| 1 | `r01_route` | Ambil judul + breadcrumb (BAB → sub-bab → poin) subbab dari outline sebagai konteks. |
+| 2 | `r02_retrieve_rules` | Cari cuplikan **pedoman** penulisan (+ **rubrik**, kalau `RUBRIK_WRITING=true`) paling relevan dari vector DB. |
+| 3 | `r03_route_and_plan` | LLM susun daftar kata kunci pencarian dokumen bukti (`document_query`) dari isi pedoman. Kebutuhan **LKPS** ditentukan lewat regex (bukan LLM) — pedoman LAM Teknik selalu eksplisit menyebut "(Tabel X.Y LKPS)" kalau memang butuh data itu, jadi ini gate keras dua arah, bukan sekadar hint ke LLM. |
+| 4 | `r04_retrieve_lkps` | Kalau memang butuh LKPS, cari data LKPS relevan dari vector DB. |
+| 5 | `r05_search_registry` | Cari folder dokumen kandidat di Document Registry pakai `document_query` (folder yang jaraknya terlalu jauh/tidak relevan otomatis dibuang). |
+| 6 | `r06_assess_and_recommend` | LLM nilai kecukupan data LKPS + susun kartu "Dokumen yang direkomendasikan" (jenis dokumen, bukan nama file mentah). |
+| 7 | `r06b_topup_registry` | Kalau LKPS ternyata kurang & ada query tambahan, cari lagi folder kandidat dari query itu. |
+| 8 | `r07_save` | Buat `bab_dokumen` + `bab_draft` **kosong**, kaitkan pedoman/rubrik/LKPS yang dipakai ke draft itu, simpan kartu rekomendasi. |
+
+User lalu memilih dokumen yang sudah ada dan/atau mengunggah dokumen baru,
+lalu klik **"Konfirmasi & Tulis Narasi"**.
+
+### Tahap B — Tulis Narasi (`generate_chain`)
+
+Mengisi draft kosong yang dibuat Tahap A.
+
+| # | Tahap | Yang terjadi |
+|---|---|---|
+| 1 | `01_route` | Sama seperti Tahap A langkah 1. |
+| 2 | `02_retrieve_rules` | Sama seperti Tahap A langkah 2 (retrieval independen, tidak berbagi hasil dengan Tahap A). |
+| 3 | `03_build_checklist` | LLM susun daftar pertanyaan faktual (maks 8) yang harus terjawab, berdasarkan pedoman+rubrik. |
+| 4 | `04_retrieve_facts` | Untuk tiap poin checklist: cari data LKPS (kalau dibutuhkan) dan isi dokumen Evidence — **hanya** dari dokumen yang sudah dikonfirmasi user di Tahap A, bukan blanket search. |
+| 5 | `05_synthesize` | LLM tulis narasi final dari pedoman + rubrik + checklist + seluruh fakta. Hasil teks dikonversi jadi dokumen ProseMirror (`lib/prose.py::text_to_doc`) sebelum disimpan. |
+| 6 | `06_judge` | Model evaluator terpisah (`JUDGE_MODEL`) menilai narasi dengan 4 metrik ala RAGAS: faithfulness, answer relevancy, context precision, context recall. |
+| 7 | `07_save_db` | Narasi + checklist + referensi chunk + hasil judge disimpan ke draft yang sama; status berubah jadi `FILLED`. |
+
+Sifat pipeline saat ini: **urutan tahap tetap** untuk semua subbab, tiap
+tahap jalan tepat sekali (kecuali top-up LKPS yang sudah kondisional), dan
+skor judge murni informatif — belum memicu retry otomatis.
+
+### Chat revisi
+
+Panel "Chat" mengirim draft aktif (di-flatten ke plain text) + pesan user
+ke LLM, streaming token demi token lewat SSE persis seperti proses normal.
+Setelah stream selesai, hasilnya dikonversi sekali ke ProseMirror JSON dan
+menimpa draft aktif.
 
 ---
 
-## Fitur UI
+## Model akses (role)
 
-- **Outline tree** (210 entri) dengan indentasi per kedalaman, chip
-  marker berwarna per level (BAB / sub-bab / C.x / a) / i. / …), garis
-  panduan vertikal, BAB collapsible, search filter.
-- **Tombol Generate pintar** di TopBar:
-  - Ada section kosong → "Generate semua \[done/total]" (biru).
-  - Semua sudah ada draft → "Regenerate semua" (merah, konfirmasi modal).
-  - Sedang berjalan → "Stop generate" — hentikan loop + abort fetch in-flight.
-- **Progress live**: badge tombol naik tiap section selesai;
-  progress bar header global update; toast progress dengan bar dan
-  pesan section yang sedang diproses.
-- **DocumentPane** 6 tab:
-  - **Draft** — narasi LED (Markdown), bisa diedit/approve/hapus.
-  - **Pedoman / Rubric / Checklist** — bukti RAG 1/2 + pertanyaan turunan.
-  - **Evidence** — LKPS + Evidence terpisah dengan badge `LKPS`/`EV`,
-    query item checklist yang memunculkannya, file source.
-  - **Judge** — 4 metrik RAGAS (Faithfulness / Answer Relevancy /
-    Context Precision / Context Recall) sebagai kartu dengan bar
-    berwarna; daftar missing_facts dan hallucinated.
-- **Toaster** + **ConfirmDialog** menggantikan `alert()`/`confirm()`.
-- **Chat revisi** (panel kanan) — streaming Server-Sent Events ke Ollama,
-  bubble user/assistant, typing dots indicator.
+Belum ada login sungguhan — semua request dianggap berasal dari satu
+**system user** statis. Akses ke LED diatur oleh role user itu di database:
+
+| Role | Akses LED |
+|---|---|
+| `ADMIN` | Tidak ada akses sama sekali (403 di semua method) |
+| `PIMPINAN` | Read-only (GET saja, method lain 403) |
+| `PENJAMIN_MUTU` | Akses penuh |
+| `PENYUSUN` | Akses penuh |
+
+Endpoint `/documents` (upload/kelola dokumen bukti dukung) **tidak**
+dibatasi role.
+
+---
+
+## Struktur database (ringkas)
+
+23 tabel di `api/db/schema.sql`, dikelompokkan:
+
+- **Organisasi/User**: `tenant`, `program_studi`, `app_user`
+- **Dokumen LED**: `dokumen_led`, `bab_dokumen` (checkpoint aktif per section+model), `bab_draft` (versi snapshot, status `EMPTY`/`FILLED`), `bab_chat_message`, `bab_referensi_chunk`
+- **Evidence**: `bukti_dukung`, `bukti_dukung_bab`, `bukti_dukung_draft`, `chunk_bukti_dukung`, `document_registry`, `bab_document_recommendation`, `bab_recommendation_item`
+- **Scoring**: `rubrik_kriteria`, `rubrik_kriteria_bab`, `hasil_skor_kriteria`
+- **Referensi**: `panduan_referensi`, `panduan_detail`, `panduan_detail_bab`
+- **LKPS**: `lkps`, `lkps_detail`
+
+Poin penting: `bab_document_recommendation` **dimiliki oleh draft**
+(`bab_draft_id`, `ON DELETE CASCADE`) — bukan oleh section. Klik
+"Rekomendasikan Dokumen" pada section kosong langsung membuat draft
+kosong; hapus draft otomatis membersihkan rekomendasinya juga, sehingga
+section bisa minta rekomendasi baru dari nol tanpa mempengaruhi draft lain.
 
 ---
 
@@ -178,83 +244,68 @@ retrieval mengembalikan chunk yang relevan.
 
 | Method | Path | Keterangan |
 |---|---|---|
-| GET  | `/sections?model=…` | Outline + status draft per section |
-| GET  | `/sections/{id}?model=…` | Detail section (drafts, pedoman, rubric, dst) |
-| POST | `/sections/{id}/generate` | Trigger pipeline 6-tahap |
-| PUT  | `/sections/{id}/draft` | Edit manual draft |
-| POST | `/sections/{id}/approve` | Tandai approved |
-| DELETE | `/sections/{id}` | Hapus draft 1 section |
-| DELETE | `/sections` | Hapus SEMUA draft untuk model |
-| POST | `/sections/{id}/chat` | Stream chat revisi (SSE) |
-| GET  | `/sections/{id}/chat` | Riwayat chat |
-| GET  | `/export?model=…` | Export gabungan `.docx` |
-| GET  | `/health` | API + Ollama status |
+| GET | `/health` | Status API + Postgres + Ollama |
+| GET/POST | `/led-documents` | List / buat dokumen LED |
+| GET | `/led-documents/{id}` | Detail 1 dokumen LED |
+| GET | `/me` | Profil + role user aktif |
+| GET | `/led-documents/{id}/sections?model=…` | Outline + status draft per section |
+| GET | `/led-documents/{id}/sections/{sid}` | Detail draft section |
+| GET | `/led-documents/{id}/sections/{sid}/draft-versions` | Histori versi draft |
+| POST | `/led-documents/{id}/sections/{sid}/draft-versions/empty` | Buat versi draft kosong manual |
+| POST | `/led-documents/{id}/sections/{sid}/draft-versions/{vid}/duplicate` | Simpan sebagai draft baru |
+| POST | `/led-documents/{id}/sections/{sid}/draft-versions/{vid}/activate` | Jadikan draft aktif |
+| DELETE | `/led-documents/{id}/sections/{sid}/draft-versions/{vid}` | Hapus 1 versi draft |
+| GET/POST | `/led-documents/{id}/sections/{sid}/recommend` | Ambil / trigger rekomendasi dokumen (Tahap A) |
+| POST | `/led-documents/{id}/sections/{sid}/recommend/confirm` | Konfirmasi dokumen bukti dukung |
+| POST | `/led-documents/{id}/sections/{sid}/generate` | Trigger penulisan narasi (Tahap B) |
+| PUT | `/led-documents/{id}/sections/{sid}/draft` | Edit manual draft |
+| POST | `/led-documents/{id}/sections/{sid}/approve` | Tandai approved |
+| DELETE | `/led-documents/{id}/sections/{sid}` \| `/sections` | Hapus draft 1 section / semua |
+| GET/POST | `/led-documents/{id}/sections/{sid}/chat` | Riwayat / stream chat revisi (SSE) |
+| GET | `/documents` | List semua dokumen (evidence + pedoman + LKPS) |
+| GET | `/documents/registry` | List folder Document Registry |
+| POST | `/documents/upload` | Upload file/folder (async, via worker) |
+| GET | `/documents/{id}` \| `/{id}/chunks` | Detail dokumen / chunk hasil ekstraksi |
+| DELETE | `/documents/{id}` | Hapus dokumen |
 
 ---
 
-## CLI scripts
+## Scripts
+
+### Migrasi & seed (`api/scripts/`)
 
 ```bash
-# Indexing ke Chroma (idempotent kalau pakai --reset)
-docker compose run --rm api python /scripts/index_chunks.py
+# Seed awal: user/tenant/prodi + outline 210 section (sekali, DB baru)
+docker compose exec api python scripts/migrate_to_postgres.py
 
-# Batch generate dari CLI (tanpa UI)
-docker compose run --rm api python /scripts/generate_led.py --model deepseek-r1:32b
-docker compose run --rm api python /scripts/generate_led.py --model deepseek-r1:32b --section C.3.3
-docker compose run --rm api python /scripts/generate_led.py --model deepseek-r1:32b --force
+# Import pedoman/rubrik/LKPS hasil notebook ekstraksi
+docker compose exec api python scripts/import_chunks.py
 
-# Parse LED existing untuk ground-truth
-docker compose run --rm api python /scripts/parse_led_existing.py
+# Import Document Registry (folder-level evidence index)
+docker compose exec api python scripts/import_document_registry.py
 
-# Evaluasi RAGAS lengkap (butuh requirements-eval.txt sekali)
-docker compose run --rm api pip install -r /app/requirements-eval.txt
-docker compose run --rm api python /scripts/evaluate.py
+# Migrasi skema tambahan (idempotent, hanya perlu di DB lama yg sudah berjalan
+# sebelum fitur terkait ditambahkan — DB baru dapat semuanya dari schema.sql)
+docker compose exec api python scripts/migrate_add_document_registry.py
+docker compose exec api python scripts/migrate_add_draft_owned_recommendation.py
+docker compose exec api python scripts/migrate_add_recommendation_chunks.py
+docker compose exec api python scripts/migrate_add_recommendation_items.py
+docker compose exec api python scripts/migrate_add_selected_bukti_dukung.py
+
+# Migrasi data narasi lama (string markdown) -> ProseMirror JSON
+docker compose exec api python scripts/migrate_prose_to_tiptap.py
+
+# Perbaikan data (kasus khusus, lihat komentar di masing-masing file)
+docker compose exec api python scripts/fix_konten_field.py
+docker compose exec api python scripts/purge_evidence.py --dry-run
+docker compose exec api python scripts/reimport_rubrik.py
 ```
 
----
-
-## Troubleshooting
-
-### Qwen3.5 menghasilkan draft kosong meski RAG jalan
-
-Sudah dipatch. Qwen3+ menaruh output di field `thinking` (bukan `response`)
-selama thinking belum selesai, dan `langchain-ollama 0.2` cuma membaca
-`response`. Solusi: `api/lib/ollama_client.py` punya `_RawOllamaLLM` yang
-panggil HTTP langsung dengan `think=false` untuk model `qwen3*`.
-
-### "0/210" walaupun ada draft
-
-Endpoint `/sections?model=…` harus mengembalikan field `model` di tiap
-draft. Sudah dipatch di `api/routes/sections.py`. Kalau masih `0`, restart
-container API: `docker compose restart api`.
-
-### RAG mengembalikan chunk tidak relevan
-
-`outline.py` mem-build `retrieval_query` multi-baris (breadcrumb
-penuh) untuk tiap section. Kalau retrieval terlihat tipis/aneh, pastikan
-field ini tidak hilang setelah edit `outline.py`.
-
-### Build lambat / pip timeout
-
-Dockerfile sudah pakai `PIP_DEFAULT_TIMEOUT=600`, `PIP_RETRIES=20`, dan
-BuildKit cache mount. Linux: tambah `build.network: host` di
-`docker-compose.yml` kalau bridge network tidak bisa keluar saat build.
-
-### Ollama tidak reachable dari container
-
-- Lokal: pakai `OLLAMA_HOST=http://host.docker.internal:11434`.
-  `extra_hosts: host.docker.internal:host-gateway` sudah di compose untuk Linux.
-- Remote (Vast.ai/RunPod): set `OLLAMA_HOST=http://<ip>:<port>` dan
-  `OLLAMA_TOKEN=<bearer>`.
-
-### Re-index setelah ganti embedding model
-
-Dimensi embedding harus konsisten antara index time dan query time.
-Kalau ganti `EMBEDDING_MODEL`:
+### Evaluasi RAGAS
 
 ```bash
-rm -rf data/chroma_db
-docker compose run --rm api python /scripts/index_chunks.py
+docker compose exec api pip install -r requirements-eval.txt
+docker compose exec api python scripts/evaluate.py
 ```
 
 ---
@@ -267,11 +318,29 @@ docker compose up
 
 # Lihat log
 docker compose logs -f api
+docker compose logs -f worker
 docker compose logs -f web
 
 # Restart 1 service tanpa rebuild
 docker compose restart api
+
+# Rebuild (perlu setelah ubah requirements.txt/package.json/Dockerfile)
+docker compose build api
+docker compose up -d api
 ```
 
-Lihat juga `../code/extract_bab_tabel.ipynb` untuk pipeline ekstraksi
-`led_bab_tabel.json` (struktur BAB + tabel dari PDF LED).
+### Troubleshooting singkat
+
+- **`nvidia-cudnn-cu12` gagal saat build** — index NVIDIA kadang tidak lagi
+  menghost versi lama; `Dockerfile`/`Dockerfile.worker` sudah pakai
+  `--extra-index-url https://pypi.org/simple` sebagai fallback ke PyPI resmi.
+- **Akses dari IP LAN kena CORS** — `api/main.py` pakai `allow_origin_regex`
+  yang menerima `http://<localhost|127.0.0.1|IP apapun>:5173`.
+- **Ganti `EMBEDDING_MODEL`** — dimensi embedding harus konsisten index-time
+  vs query-time; hapus `data/chroma_db` dan import ulang chunk kalau ganti model.
+- **Ollama tidak reachable dari container** — lokal pakai
+  `OLLAMA_HOST=http://host.docker.internal:11434` (sudah ada `extra_hosts`
+  di compose untuk Linux); remote set `OLLAMA_HOST`+`OLLAMA_TOKEN`.
+
+Lihat `rancangan.txt` untuk catatan kerja/rancangan fitur yang sedang berjalan
+(bukan dokumentasi resmi — isinya berubah-ubah seiring diskusi).

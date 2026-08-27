@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from lib.db import init_db
 from lib.context import get_system_user_id, get_active_program_studi_id
-from routes import sections, chat, export, documents, me, led_documents
+from routes import sections, chat, documents, me, led_documents
 
 app = FastAPI(title="LED Generator API", version="0.1.0")
 
@@ -49,7 +49,6 @@ def _startup():
 app.include_router(led_documents.router)
 app.include_router(sections.router)
 app.include_router(chat.router)
-app.include_router(export.router)
 app.include_router(documents.router)
 app.include_router(me.router)
 

@@ -5,7 +5,9 @@ import RecommendationPanel from "./RecommendationPanel.jsx";
 import ChatPane from "./ChatPane.jsx";
 
 /* Panel kanan editor (menggantikan ChatPane sbg satu2nya isi) -- tab bar
- * "Dokumen Pendukung | Draft | Query | Pedoman | Rubric | LKPS | Kualitas AI | Chat".
+ * "Dokumen Pendukung | Draft | Query | Pedoman | LKPS | Kualitas AI | Chat".
+ * Tab Rubric dihapus -- LED sekarang disusun tanpa acuan rubrik penilaian
+ * (lihat RUBRIK_WRITING di generator.py).
  * TIDAK ada tombol aksi generate/regenerate di sini -- itu tetap di panel
  * TENGAH (DocumentPane.jsx). Tab "Draft" di sini murni daftar CARD versi
  * (bukan isi teks) -- klik card pilih versi mana yg tampil di panel TENGAH
@@ -26,8 +28,7 @@ const TABS = [
   { id: "draft",          label: "Draft",             hint: "Histori versi draft (klik utk pilih)" },
   { id: "query",          label: "Query",             hint: "Checklist query yg dipakai RAG saat generate" },
   { id: "pedoman",        label: "Pedoman",            hint: "RAG 1 — aturan penulisan" },
-  { id: "rubric",         label: "Rubric",             hint: "RAG 2 — kriteria skor 4" },
-  { id: "lkps",           label: "Referensi",          hint: "RAG 3 — LKPS (kuantitatif) + Evidence (bukti dukung)" },
+  { id: "lkps",           label: "Referensi",          hint: "RAG 2 — LKPS (kuantitatif) + Evidence (bukti dukung)" },
   { id: "judge",          label: "Kualitas AI",        hint: "Evaluasi RAGAS" },
   { id: "chat",           label: "Chat",               hint: "Revisi draft via chat" },
 ];
@@ -44,7 +45,7 @@ export default function SectionInfoPane() {
   const selectedDraftId         = useStore((s) => s.selectedDraftId);
   const setSelectedDraftId      = useStore((s) => s.setSelectedDraftId);
   // Isi versi yg SEDANG DIBUKA di panel tengah (DocumentPane.jsx) -- dipakai
-  // sbg sumber referensi RAG (Pedoman/Rubric/LKPS/Query) supaya konsisten
+  // sbg sumber referensi RAG (Pedoman/LKPS/Query) supaya konsisten
   // 1-ke-1 dgn narasi yg sedang dibaca, BUKAN selalu draft aktif.
   const openVersion             = useStore((s) => s.openDraftVersion);
 
@@ -119,7 +120,7 @@ export default function SectionInfoPane() {
     );
   }
 
-  // Alias: referensi RAG (Pedoman/Rubric/LKPS/Query/Judge) ikut VERSI YANG
+  // Alias: referensi RAG (Pedoman/LKPS/Query/Judge) ikut VERSI YANG
   // SEDANG DIBUKA di panel tengah (openVersion dari store), bukan selalu
   // draft aktif -- lihat komentar deklarasi openVersion di atas.
   const draft = openVersion;
@@ -130,7 +131,6 @@ export default function SectionInfoPane() {
   // (recommendation.pedoman_used dst) -- supaya user bisa lihat referensi
   // SEBELUM narasi ditulis.
   const pedomanItems = draft?.pedoman_used || recommendation?.pedoman_used || [];
-  const rubricItems  = draft?.rubric_used  || recommendation?.rubric_used  || [];
   const lkpsItems    = draft
     ? (draft.chunks_used || []).filter((c) => c.kind === "lkps")
     : (recommendation?.lkps_used || []);
@@ -251,21 +251,6 @@ export default function SectionInfoPane() {
                 </Card>
               )}
               emptyMessage="Belum ada pedoman."
-            />
-          </div>
-        )}
-
-        {tab === "rubric" && (
-          <div className="p-6">
-            <CardList
-              hint="RAG 2 — Rubrik penilaian skor 4 dari matrik penilaian."
-              items={rubricItems}
-              renderItem={(r, i) => (
-                <Card key={i} accent="amber" badge={`[${i + 1}]`} title={r.id}>
-                  {r.text}
-                </Card>
-              )}
-              emptyMessage="Belum ada rubric."
             />
           </div>
         )}
