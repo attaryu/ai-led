@@ -130,7 +130,7 @@ def _assessment_context():
     reset it after — tests must not leak context into each other."""
     from agent.context import AssessmentContext, current_assessment_context
 
-    token = current_assessment_context.set(AssessmentContext("tenant-x", "doc-1"))
+    token = current_assessment_context.set(AssessmentContext("tenant-x", "doc-1", 1))
     yield
     current_assessment_context.reset(token)
 
@@ -198,7 +198,7 @@ def test_lkps_tool_scoped_per_tenant_document(monkeypatch):
     result_x = lkps_tool.get_lkps_table.invoke({"table_reference": "Tabel 1"})
     assert "tenant-x-data" in result_x
 
-    token = current_assessment_context.set(AssessmentContext("tenant-y", "doc-9"))
+    token = current_assessment_context.set(AssessmentContext("tenant-y", "doc-9", 1))
     try:
         result_y = lkps_tool.get_lkps_table.invoke({"table_reference": "Tabel 1"})
     finally:
@@ -266,8 +266,9 @@ def test_led_tool_no_context_raises():
 def test_search_evidence_documents_returns_json_list(monkeypatch):
     from agent.tools import evidence_tool
 
-    def fake_ids(tenant_id, study_program_id):
+    def fake_ids(tenant_id, indicator_no):
         assert tenant_id == "tenant-x"
+        assert indicator_no == 1
         return ["ev1"]
 
     def fake_search(query, tenant_id, bukti_dukung_ids, n_results):
@@ -300,6 +301,30 @@ def test_search_evidence_documents_empty_when_no_evidence_available(monkeypatch)
     from agent.tools import evidence_tool
 
     monkeypatch.setattr(evidence_tool, "list_available_evidence_ids", lambda *a: [])
+    monkeypatch.setattr(
+        evidence_tool,
+        "search_evidence",
+        lambda **kw: pytest.fail("search_evidence should not be called"),
+    )
+
+    result = json.loads(
+        evidence_tool.search_evidence_documents.invoke({"query": "apapun"})
+    )
+    assert result == []
+
+
+def test_search_evidence_documents_scoped_to_current_indicator_only(monkeypatch):
+    """Regression for the blanket-scope bug: tenant has evidence tagged to
+    indicator 2, but the context (fixture above) is indicator_no=1 — must
+    come back empty, not fall back to any-evidence-in-the-tenant."""
+    from agent.tools import evidence_tool
+
+    tags_by_indicator = {2: ["ev-for-indicator-2"]}
+
+    def fake_ids(tenant_id, indicator_no):
+        return tags_by_indicator.get(indicator_no, [])
+
+    monkeypatch.setattr(evidence_tool, "list_available_evidence_ids", fake_ids)
     monkeypatch.setattr(
         evidence_tool,
         "search_evidence",

@@ -135,9 +135,6 @@ def main():
     log.info("Indicators to evaluate: %s", [i.indicator_no for i in indicators])
     log.info("Models to benchmark: %s", models)
 
-    from agent.context import AssessmentContext, current_assessment_context
-    current_assessment_context.set(AssessmentContext(_LOCAL_TENANT_ID, _LOCAL_DOKUMEN_ID))
-
     _ensure_lkps_loaded()
 
     fieldnames = ["model", "indicator_no", "score", "justification", "confidence", "error", "runtime_sec"]
@@ -189,6 +186,10 @@ def main():
                 continue
 
             log.info("[%d/%d] %s — Indikator %d", done, total_pairs, model, indicator.indicator_no)
+            from agent.context import AssessmentContext, current_assessment_context
+            current_assessment_context.set(
+                AssessmentContext(_LOCAL_TENANT_ID, _LOCAL_DOKUMEN_ID, indicator.indicator_no)
+            )
             res = _run_one(graph, indicator)
 
             with open(args.output, "a", newline="", encoding="utf-8") as fh:

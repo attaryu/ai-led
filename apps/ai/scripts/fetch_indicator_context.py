@@ -19,8 +19,10 @@ from vectorstore.pgvector_store import search_led
 # Single-machine dev/eval script, operating on whatever was last uploaded
 # locally — not a real tenant/document, just a fixed identity so it keeps
 # working now that pgvector_store/lkps_tool are scoped per (tenant_id,
-# dokumen_id). See agent/context.py.
-_LOCAL_CONTEXT = AssessmentContext(tenant_id="local", dokumen_id="local")
+# dokumen_id). indicator_no is set per-indicator in main()'s loop below,
+# since search_evidence_documents now scopes strictly to it.
+_LOCAL_TENANT_ID = "local"
+_LOCAL_DOKUMEN_ID = "local"
 
 
 def _load_rubrics():
@@ -31,15 +33,15 @@ def _load_rubrics():
 def _ensure_lkps():
     """Side-effect: load LKPS registry into the lkps_tool module."""
     registry = load_lkps("/app/data/uploads/lkps.xlsx")
-    set_lkps_registry(_LOCAL_CONTEXT.tenant_id, _LOCAL_CONTEXT.dokumen_id, registry)
+    set_lkps_registry(_LOCAL_TENANT_ID, _LOCAL_DOKUMEN_ID, registry)
     return registry
 
 
 def _search_led(query: str, n: int = 5) -> list[dict]:
     results = search_led(
         query=query,
-        tenant_id=_LOCAL_CONTEXT.tenant_id,
-        dokumen_id=_LOCAL_CONTEXT.dokumen_id,
+        tenant_id=_LOCAL_TENANT_ID,
+        dokumen_id=_LOCAL_DOKUMEN_ID,
         n_results=n,
     )
     return [
@@ -110,11 +112,13 @@ def main():
         sys.exit(1)
 
     indicator_nos = [int(x) for x in sys.argv[1:]]
-    current_assessment_context.set(_LOCAL_CONTEXT)
     rubrics = _load_rubrics()
     _ensure_lkps()
 
     for no in indicator_nos:
+        current_assessment_context.set(
+            AssessmentContext(tenant_id=_LOCAL_TENANT_ID, dokumen_id=_LOCAL_DOKUMEN_ID, indicator_no=no)
+        )
         dump_indicator(no, rubrics)
 
 

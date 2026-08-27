@@ -16,18 +16,21 @@ from vectorstore.pgvector_evidence_store import list_available_evidence_ids, sea
 @tool
 def search_evidence_documents(query: str, n_results: int = 5) -> str:
     """Cari dokumen Bukti Dukung (SK, sertifikat, MoU, dll) yang sudah
-    diunggah untuk program studi/tenant ini, pakai semantic search.
+    ditag ke indikator yang SEDANG dinilai saat ini, pakai semantic search.
 
     Beda dengan search_led_evidence: tool ini mencari dokumen bukti
     FISIK/independen (bukan narasi LED), untuk verifikasi klaim LED
     terhadap sumber aslinya. Query harus KAYA KONTEKS (nomor indikator +
     kata kunci konkret dari kriteria rubrik), sama seperti search_led_evidence.
-    Kalau hasilnya list kosong, berarti belum ada Bukti Dukung yang relevan
-    untuk prodi ini — itu BUKAN error, lanjutkan penilaian dengan LED+LKPS
-    seperti biasa.
+    Scope: tenant-isolated, dan HANYA evidence yang sudah ditag eksplisit ke
+    indikator ini (evidence_indicator_tags) — evidence tenant/prodi lain yang
+    tidak ditag ke indikator ini TIDAK ikut, tidak ada fallback ke pencarian
+    tenant/prodi secara umum. Kalau hasilnya list kosong, berarti belum ada
+    Bukti Dukung yang ditag untuk indikator ini — itu BUKAN error, lanjutkan
+    penilaian dengan LED+LKPS seperti biasa.
     """
     ctx = require_current_context()
-    evidence_ids = list_available_evidence_ids(ctx.tenant_id, ctx.study_program_id)
+    evidence_ids = list_available_evidence_ids(ctx.tenant_id, ctx.indicator_no)
     if not evidence_ids:
         return json.dumps([], ensure_ascii=False)
 

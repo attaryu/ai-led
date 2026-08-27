@@ -10,14 +10,16 @@ import json
 
 from langchain_core.tools import tool
 
-from agent.context import AssessmentContext, require_current_context
+from agent.context import require_current_context
 
-_registries: dict[AssessmentContext, object] = {}
+# Keyed by plain (tenant_id, dokumen_id) tuple, not AssessmentContext — LKPS
+# is per-document, not per-indicator, so it must not vary with indicator_no.
+_registries: dict[tuple[str, str], object] = {}
 
 
 def set_lkps_registry(tenant_id: str, dokumen_id: str, registry) -> None:
     """Inject a loaded LKPSRegistry for one (tenant_id, dokumen_id) pair."""
-    _registries[AssessmentContext(tenant_id, dokumen_id)] = registry
+    _registries[(tenant_id, dokumen_id)] = registry
 
 
 @tool
@@ -30,7 +32,7 @@ def get_lkps_table(table_reference: str, max_rows: int = 30) -> str:
     """
     # tenant/dokumen dari context, bukan argumen tool.
     ctx = require_current_context()
-    registry = _registries.get(ctx)
+    registry = _registries.get((ctx.tenant_id, ctx.dokumen_id))
     if registry is None:
         return json.dumps({"error": "LKPS registry belum diinisialisasi untuk dokumen ini"})
 

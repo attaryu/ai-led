@@ -16,8 +16,10 @@ from dataclasses import dataclass
 class AssessmentContext:
     tenant_id: str
     dokumen_id: str
-    # None when the caller doesn't know/care (e.g. scripts/run_benchmark.py) —
-    # search_evidence_documents then falls back to the whole tenant.
+    # Indicator currently being assessed — search_evidence_documents scopes
+    # STRICTLY to evidence tagged to this indicator (evidence_indicator_tags),
+    # no fallback to a blanket tenant/prodi search.
+    indicator_no: int
     study_program_id: str | None = None
 
 

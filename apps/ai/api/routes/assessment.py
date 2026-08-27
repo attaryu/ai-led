@@ -464,7 +464,7 @@ async def _process_single_indicator(
             # run_in_executor doesn't inherit context by default — copy it
             # explicitly so search_led_evidence/get_lkps_table see this.
             current_assessment_context.set(
-                AssessmentContext(tenant_id, dokumen_id, study_program_id)
+                AssessmentContext(tenant_id, dokumen_id, indicator.indicator_no, study_program_id)
             )
             ctx = contextvars.copy_context()
             result = await asyncio.get_event_loop().run_in_executor(

@@ -436,7 +436,7 @@ def test_judge_runs_after_parse_output_and_lowers_confidence_when_ungrounded():
     # see agent/context.py. This is the only test in this module that reaches
     # that tool, so the context is set locally rather than via a module-wide
     # autouse fixture (test_tools.py's pattern for the tools that all need it).
-    token = current_assessment_context.set(AssessmentContext("tenant-x", "doc-1"))
+    token = current_assessment_context.set(AssessmentContext("tenant-x", "doc-1", 1))
 
     rubric_tool_call = AIMessage(
         content="",
