@@ -7,6 +7,7 @@ import {
 } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
+import { ScrollArea } from '~/core/components/ui/scroll-area';
 import { type DocumentRecommendationEntity } from '../../domain/entities/document-recommendation.entity';
 import { type StatusRekomendasi } from '../hooks/use-chapter-recommendation';
 
@@ -126,21 +127,30 @@ export function ChapterDocumentRecommendation({
 			)}
 
 			{rekomendasi.items.length > 0 && (
-				<ul className="mt-2 space-y-1.5">
-					{rekomendasi.items.map((item) => (
-						<li
-							key={item.id}
-							className="rounded-md border border-border bg-background p-2"
-						>
-							<p className="text-sm leading-tight font-medium">{item.label}</p>
-							{item.reason && (
-								<p className="mt-0.5 text-xs text-muted-foreground">
-									{item.reason}
-								</p>
-							)}
-						</li>
-					))}
-				</ul>
+				/*
+				 * Dibatasi tinggi + ScrollArea sendiri (pola sama dengan daftar bukti
+				 * dukung di chapter-generation-panel.tsx): tanpa batas, kartu 5-7 item
+				 * ini bisa lebih tinggi dari sisa layar dan mendorong tombol Konfirmasi
+				 * serta Generate di bawahnya keluar dari pandangan, di panel yang
+				 * footernya sengaja tidak ikut bergulir bersama sisanya.
+				 */
+				<ScrollArea className="mt-2 max-h-56">
+					<ul className="space-y-1.5 pr-2.5">
+						{rekomendasi.items.map((item) => (
+							<li
+								key={item.id}
+								className="rounded-md border border-border bg-background p-2"
+							>
+								<p className="text-sm leading-tight font-medium">{item.label}</p>
+								{item.reason && (
+									<p className="mt-0.5 text-xs text-muted-foreground">
+										{item.reason}
+									</p>
+								)}
+							</li>
+						))}
+					</ul>
+				</ScrollArea>
 			)}
 
 			{sudahDikonfirmasi ? (
