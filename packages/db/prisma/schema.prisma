@@ -252,10 +252,11 @@ model ChapterDraft {
   createdBy          User              @relation("BabDraftDibuatOleh", fields: [createdByUserId], references: [id])
   activeCheckpointOf DocumentChapter[] @relation("ActiveCheckpoint")
 
-  buktiDukungDraft  EvidenceDraftLink[]
-  hasilSkorKriteria CriterionScoreResult[]
-  ragasScores       RagasScore[]
-  generationRun     GenerationRun?
+  buktiDukungDraft        EvidenceDraftLink[]
+  hasilSkorKriteria       CriterionScoreResult[]
+  ragasScores             RagasScore[]
+  generationRun           GenerationRun?
+  documentRecommendations DocumentRecommendation[]
 
   @@unique([chapterId, version])
   @@index([chapterId])
@@ -293,6 +294,7 @@ model Evidence {
   draftLinks         EvidenceDraftLink[]
   assessmentSessions AssessmentSession[]
   chunkEmbeddings    EvidenceChunkEmbedding[]
+  indicatorTags      EvidenceIndicatorTag[]
 
   @@index([tenantId])
   @@index([studyProgramId])
@@ -318,16 +320,104 @@ model EvidenceFolder {
   createdByName   String    @map("created_by_name")
   createdAt       DateTime  @default(now()) @map("created_at")
 
-  tenant       Tenant?          @relation(fields: [tenantId], references: [id])
-  studyProgram StudyProgram?    @relation(fields: [studyProgramId], references: [id])
-  parent       EvidenceFolder?  @relation("EvidenceFolderChildren", fields: [parentId], references: [id], onDelete: SetNull)
-  children     EvidenceFolder[] @relation("EvidenceFolderChildren")
-  evidences    Evidence[]
+  tenant           Tenant?           @relation(fields: [tenantId], references: [id])
+  studyProgram     StudyProgram?     @relation(fields: [studyProgramId], references: [id])
+  parent           EvidenceFolder?   @relation("EvidenceFolderChildren", fields: [parentId], references: [id], onDelete: SetNull)
+  children         EvidenceFolder[]  @relation("EvidenceFolderChildren")
+  evidences        Evidence[]
+  documentRegistry DocumentRegistry?
 
   @@index([tenantId])
   @@index([studyProgramId])
   @@index([parentId])
   @@map("evidence_folders")
+}
+
+/// Tag indikator AMI untuk 1 Bukti Dukung (row 63/70 tracker) — evidence
+/// hanya terlihat ke agen asesmen untuk indikator yang eksplisit ditag di
+/// sini, meniru skema tagging origin/ariel. Tidak ada fallback ke seluruh
+/// evidence tenant/prodi kalau kosong.
+model EvidenceIndicatorTag {
+  id          String @id @default(cuid())
+  evidenceId  String @map("evidence_id")
+  indicatorNo Int    @map("indicator_no")
+
+  evidence Evidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+
+  @@unique([evidenceId, indicatorNo])
+  @@index([indicatorNo])
+  @@map("evidence_indicator_tags")
+}
+
+enum StatusRekomendasi {
+  DIREKOMENDASIKAN
+  DIKONFIRMASI
+  DIGANTIKAN
+}
+
+/// Rekomendasi dokumen AI (alur "Rekomendasikan Dokumen" -> "Tulis Narasi",
+/// port dari origin/led-wiriting(dimas)) — 1:1 dengan draft EMPTY yang dibuat
+/// saat rekomendasi pertama kali dijalankan. Hanya 1 baris berstatus
+/// DIKONFIRMASI per chapterDraftId (partial unique index, lihat migration.sql
+/// — Prisma tidak mendukung partial unique index langsung di schema).
+model DocumentRecommendation {
+  id                  String            @id @default(cuid())
+  chapterDraftId      String            @map("chapter_draft_id")
+  documentQuery       Json              @map("document_query")
+  lkpsNeeded          Boolean           @map("lkps_needed")
+  lkpsSufficient      Boolean?          @map("lkps_sufficient")
+  lkpsEvidenceQuery   Json?             @map("lkps_evidence_query")
+  candidateFolders    Json              @map("candidate_folders")
+  recommendationText  String?           @map("recommendation_text") @db.Text
+  selectedEvidenceIds Json              @map("selected_evidence_ids")
+  pedomanUsed         Json              @map("pedoman_used")
+  rubricUsed          Json              @map("rubric_used")
+  lkpsUsed            Json              @map("lkps_used")
+  status              StatusRekomendasi
+  createdAt           DateTime          @default(now()) @map("created_at")
+
+  chapterDraft ChapterDraft         @relation(fields: [chapterDraftId], references: [id], onDelete: Cascade)
+  items        RecommendationItem[]
+
+  @@index([chapterDraftId])
+  @@map("writing_document_recommendations")
+}
+
+/// Kartu tampilan 1 rekomendasi (label + alasan) — dev-v1 tidak
+/// mendenormalisasi ini ke JSON di DocumentRecommendation supaya urutan
+/// tampil bisa di-query/di-reorder tanpa rewrite seluruh baris.
+model RecommendationItem {
+  id               String  @id @default(cuid())
+  recommendationId String  @map("recommendation_id")
+  label            String
+  reason           String? @db.Text
+  order            Int
+
+  recommendation DocumentRecommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+
+  @@map("writing_recommendation_items")
+}
+
+/// Index semantik level-folder (bge-m3, beda model & dimensi dari
+/// evidence_chunk_embeddings/led_chunk_embeddings yang MiniLM/384) dipakai
+/// tahap "cari kandidat dokumen" alur rekomendasi — 1 baris per folder,
+/// bukan per chunk (folder bukti kecil & isinya cuma nama, lihat
+/// worker.py-nya dimas soal REGISTRY_MAX_DISTANCE).
+model DocumentRegistry {
+  id             String                      @id @default(cuid())
+  ownerType      OwnerTipe                   @map("owner_type")
+  tenantId       String?                     @map("tenant_id")
+  studyProgramId String?                     @map("study_program_id")
+  folderId       String                      @unique @map("folder_id")
+  label          String
+  embedding      Unsupported("vector(1024)")
+  createdAt      DateTime                    @default(now()) @map("created_at")
+
+  folder EvidenceFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([studyProgramId])
+  @@map("document_registry")
 }
 
 /// docs/database.md §8 — kondisi aktif, ditimpa tiap generate ulang
