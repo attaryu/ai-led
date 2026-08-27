@@ -14,7 +14,6 @@ import {
 import { studyProgramRepository } from '~/features/study-program/data/repositories/study-program.repository';
 import { chapterRepository } from '../../data/repositories/chapter.repository';
 import { chapterRemoteSource } from '../../data/sources/remote/chapter.remote-source';
-import { cariRekomendasiBelumAda } from '../../domain/entities/evidence-recommendation.entity';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import { type ChapterPermission } from './use-chapter-permission';
 
@@ -316,29 +315,6 @@ export function useChapterGeneration({
 		return peta;
 	}, [pustaka, folderPustaka]);
 
-	/**
-	 * Bukti dukung yang dituntut kriteria bab ini tapi belum ada padanannya di
-	 * pustaka (docs/application_flow.md §12.1b).
-	 *
-	 * Dihitung dari `pustaka` utuh, **bukan** dari `daftar` yang sudah tersaring
-	 * kata kunci: yang dijawabnya pertanyaan "berkas ini sudah diunggah atau
-	 * belum", bukan "sedang terlihat atau tidak". Membacanya dari `daftar` akan
-	 * membuat mengetik `lkps` seolah melenyapkan enam dokumen sekaligus.
-	 *
-	 * Statusnya juga tidak disaring; alasannya di JSDoc
-	 * `evidence-recommendation.entity.ts`. Karena ia menggantung pada `pustaka`,
-	 * ia ikut `storage-update` yang sama dengan daftarnya — begitu unggahan
-	 * mendarat, barisnya lenyap tanpa muat ulang dan tanpa spinner.
-	 */
-	const saranBukti = React.useMemo(
-		() =>
-			cariRekomendasiBelumAda({
-				urutanBab: chapter.urutanBab,
-				namaDokumen: pustaka.map((bukti) => bukti.namaDokumen),
-			}),
-		[chapter.urutanBab, pustaka],
-	);
-
 	/** Penjagaan kedua di luar atribut `disabled` pada checkbox-nya. */
 	const toggle = React.useCallback(
 		(bukti: EvidenceEntity) => {
@@ -466,7 +442,6 @@ export function useChapterGeneration({
 		punyaDasar: dasar.size > 0,
 		jumlahGugur,
 		/** Bukti dukung yang biasanya jadi tumpuan bab ini tapi belum ada (§12.1b). */
-		saranBukti,
 		namaProdi,
 		tandaiUnggahanBaru,
 		/** Unggahan dari panel ini yang masih menunggu ekstraksinya selesai. */
