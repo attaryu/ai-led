@@ -26,6 +26,7 @@ export class JobsService {
     switch (type) {
       case JobType.GENERASI_BAB:
       case JobType.SIMULASI_SKOR:
+      case JobType.REKOMENDASI_DOKUMEN:
         return this.generationQueue;
       case JobType.ASSESSMENT_AMI:
         return this.assessmentQueue;
