@@ -29,6 +29,8 @@ import {
 	useChapterGeneration,
 	type HasilGenerate,
 } from '../hooks/use-chapter-generation';
+import { useChapterRecommendation } from '../hooks/use-chapter-recommendation';
+import { ChapterDocumentRecommendation } from './chapter-document-recommendation';
 import { ChapterEvidenceSuggestion } from './chapter-evidence-suggestion';
 
 /**
@@ -60,6 +62,7 @@ export function ChapterGenerationPanel({
 	onGenerated: (hasil: HasilGenerate) => void;
 }) {
 	const generasi = useChapterGeneration({ chapter, studyProgramId, izin });
+	const rekomendasiDokumen = useChapterRecommendation({ chapter, izin });
 
 	const {
 		daftar,
@@ -121,8 +124,21 @@ export function ChapterGenerationPanel({
 	 */
 	const tampilkanSaran = saranBukti.length > 0 && kataKunci.trim() === '';
 
+	/**
+	 * Gerbang konfirmasi (§ port origin/led-wiriting(dimas)): begitu ada
+	 * `DocumentRecommendation` untuk checkpoint aktif bab ini, Generate menunggu
+	 * sampai statusnya `DIKONFIRMASI`. Bab yang tidak pernah memicu
+	 * "Rekomendasikan Dokumen" — `rekomendasi === null` — sama sekali tidak
+	 * melewati gerbang ini; Generate berjalan seperti sebelum fitur ini ada.
+	 */
+	const { rekomendasi } = rekomendasiDokumen;
+	const menungguKonfirmasi =
+		rekomendasi !== null && rekomendasi.status !== 'DIKONFIRMASI';
+
 	async function handleGenerate() {
-		const hasil = await jalankanGenerate();
+		const hasil = await jalankanGenerate(
+			rekomendasi?.status === 'DIKONFIRMASI' ? rekomendasi.chapterDraftId : undefined,
+		);
 		if (hasil) onGenerated(hasil);
 	}
 
@@ -295,6 +311,23 @@ export function ChapterGenerationPanel({
 				 */}
 				{izin.canEdit ? (
 					<>
+						{/*
+						 * Blok gerbang konfirmasi, di kaki panel dekat tombol yang
+						 * digerbanginya — bukan di atas dekat daftar bukti dukung seperti
+						 * `ChapterEvidenceSuggestion`. Yang itu nasihat berdiri sendiri;
+						 * yang ini keputusan yang langsung menentukan apakah tombol di
+						 * bawahnya bisa ditekan, jadi keduanya harus terlihat sekaligus.
+						 */}
+						<ChapterDocumentRecommendation
+							rekomendasi={rekomendasi}
+							status={rekomendasiDokumen.status}
+							pesanGagal={rekomendasiDokumen.pesanGagal}
+							jumlahDipilih={terpilih.size}
+							dimatikan={sedangBerjalan}
+							onTrigger={rekomendasiDokumen.trigger}
+							onKonfirmasi={() => rekomendasiDokumen.konfirmasi([...terpilih])}
+						/>
+
 						<div className="flex items-center justify-between gap-2">
 							<button
 								type="button"
@@ -325,7 +358,7 @@ export function ChapterGenerationPanel({
 								type="button"
 								size="sm"
 								onClick={handleGenerate}
-								disabled={sedangBerjalan || terpilih.size === 0}
+								disabled={sedangBerjalan || terpilih.size === 0 || menungguKonfirmasi}
 								className="shrink-0"
 							>
 								{sedangBerjalan ? (
@@ -341,6 +374,12 @@ export function ChapterGenerationPanel({
 								)}
 							</Button>
 						</div>
+
+						{menungguKonfirmasi && (
+							<p className="text-xs leading-relaxed text-muted-foreground">
+								Konfirmasi rekomendasi dokumen di atas dulu sebelum generate.
+							</p>
+						)}
 
 						{/*
 						 * Tetap terpasang saat dilipat, bukan dilepas dari pohon: tombol di

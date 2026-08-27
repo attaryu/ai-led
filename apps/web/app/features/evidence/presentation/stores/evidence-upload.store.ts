@@ -31,6 +31,8 @@ export type EvidenceUploadItem = {
 	folderId: string | null;
 	/** Nama folder tujuan untuk dibaca manusia; `null` = akar. */
 	namaFolder: string | null;
+	/** Nomor indikator AMI yang ditandai, berlaku untuk seluruh batch — sama seperti `target`. */
+	indicatorNos?: number[];
 	progress: number;
 	phase: UploadPhase;
 	/** Baris `BUKTI_DUKUNG` yang tercipta; baru terisi sesudah `phase = 'selesai'`. */
@@ -59,6 +61,8 @@ type EvidenceUploadState = {
 		}>;
 		target: UploadEvidenceTargetDto;
 		studyProgramName: string | null;
+		/** Nomor indikator AMI yang ditandai, berlaku untuk seluruh batch — sama seperti `target`. */
+		indicatorNos?: number[];
 		uploader: UploaderIdentity;
 		/** Dipanggil per berkas yang barisnya berhasil tercatat; lihat catatan di bawah. */
 		onUploaded?: (evidence: EvidenceEntity) => void;
@@ -100,6 +104,7 @@ export const useEvidenceUploadStore = create<EvidenceUploadState>(
 					uploadedByName: uploader.name,
 					studyProgramName: item.studyProgramName,
 					folderId: item.folderId,
+					indicatorNos: item.indicatorNos,
 					onProgress: (percent) =>
 						patch(item.id, { phase: 'uploading', progress: percent }),
 				});
@@ -143,6 +148,7 @@ export const useEvidenceUploadStore = create<EvidenceUploadState>(
 				files,
 				target,
 				studyProgramName,
+				indicatorNos,
 				uploader,
 				onUploaded,
 			}) => {
@@ -157,6 +163,7 @@ export const useEvidenceUploadStore = create<EvidenceUploadState>(
 					studyProgramName,
 					folderId: entri.folderId,
 					namaFolder: entri.namaFolder,
+					indicatorNos,
 					progress: 0,
 					phase: 'antre',
 				}));

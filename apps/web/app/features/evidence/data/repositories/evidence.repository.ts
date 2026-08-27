@@ -341,6 +341,7 @@ export const evidenceRepository = {
 		file,
 		target,
 		folderId,
+		indicatorNos,
 		onProgress,
 	}: {
 		file: File;
@@ -357,6 +358,8 @@ export const evidenceRepository = {
 		 * `evidenceFolderRepository.ensureFolderPaths` sebelum batch dimulai.
 		 */
 		folderId: string | null;
+		/** Nomor indikator AMI yang ditandai untuk berkas ini; berlaku satu batch — lihat `evidence-upload-dialog.tsx`. */
+		indicatorNos?: number[];
 		onProgress: (percent: number) => void;
 	}): Promise<EvidenceEntity> {
 		const { uploadUrl, objectKey } = await requestPresignedUrl(file);
@@ -366,6 +369,7 @@ export const evidenceRepository = {
 			namaDokumen: file.name,
 			target,
 			folderId,
+			indicatorNos,
 		});
 
 		notify();

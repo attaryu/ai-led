@@ -134,6 +134,40 @@ export type GenerasiBabResult = {
 	error?: string;
 };
 
+/** Hasil job REKOMENDASI_DOKUMEN — lihat `worker.py::_handle_rekomendasi_dokumen`. */
+export type RekomendasiDokumenResult = {
+	status: 'completed' | 'error';
+	recommendationId?: string;
+	babDraftId?: string;
+	lkpsNeeded?: boolean;
+	itemCount?: number;
+	error?: string;
+};
+
+/** Baris Prisma `RecommendationItem`. */
+export type BackendRecommendationItem = {
+	id: string;
+	recommendationId: string;
+	label: string;
+	reason: string | null;
+	order: number;
+};
+
+/**
+ * Baris Prisma `DocumentRecommendation`. Hanya field yang dipakai frontend yang
+ * dideklarasikan — lihat catatan yang sama di `document-recommendation.entity.ts`.
+ */
+export type BackendDocumentRecommendation = {
+	id: string;
+	chapterDraftId: string;
+	recommendationText: string | null;
+	/** `Json` di Prisma — larik id string. */
+	selectedEvidenceIds: unknown;
+	status: 'DIREKOMENDASIKAN' | 'DIKONFIRMASI' | 'DIGANTIKAN';
+	/** Hanya di-`include` oleh `findRecommendation`, bukan hasil `confirmRecommendation`. */
+	items?: BackendRecommendationItem[];
+};
+
 export const chapterRemoteSource = {
 	findAllForDokumen(dokumenId: string): Promise<BackendBabDokumen[]> {
 		return apiFetch<BackendBabDokumen[]>(`/dokumen/${dokumenId}/bab`);
@@ -156,12 +190,55 @@ export const chapterRemoteSource = {
 		});
 	},
 
-	/** Memicu GENERASI_BAB (Producer NestJS -> Worker FastAPI). */
-	generate(id: string, prompt?: string): Promise<BackendJob> {
+	/**
+	 * Memicu GENERASI_BAB (Producer NestJS -> Worker FastAPI). `draftId` menamai
+	 * checkpoint kosong dari alur rekomendasi yang sudah dikonfirmasi — worker
+	 * lalu membatasi pencarian bukti dukungnya ke `selectedEvidenceIds` milik
+	 * rekomendasi itu. Tanpa `draftId`, generate berjalan seperti biasa.
+	 */
+	generate(id: string, prompt?: string, draftId?: string): Promise<BackendJob> {
 		return apiFetch<BackendJob>(`/bab/${id}/generate`, {
 			method: 'POST',
-			body: prompt ? { prompt } : {},
+			body: {
+				...(prompt ? { prompt } : {}),
+				...(draftId ? { draftId } : {}),
+			},
 		});
+	},
+
+	/** Memicu REKOMENDASI_DOKUMEN. `draftId` = "Rekomendasikan Ulang", memakai ulang draft kosong yang sama. */
+	recommendDocuments(id: string, draftId?: string): Promise<BackendJob> {
+		return apiFetch<BackendJob>(`/bab/${id}/recommend-documents`, {
+			method: 'POST',
+			body: draftId ? { draftId } : {},
+		});
+	},
+
+	/**
+	 * `draftId` diisi -> rekomendasi terbaru untuk checkpoint itu, apa pun
+	 * statusnya (dipakai segera sesudah job REKOMENDASI_DOKUMEN selesai).
+	 * Dikosongkan -> rekomendasi yang sudah DIKONFIRMASI untuk checkpoint aktif
+	 * bab, atau `null` bila tidak ada.
+	 */
+	findRecommendation(
+		id: string,
+		draftId?: string,
+	): Promise<BackendDocumentRecommendation | null> {
+		const query = draftId ? `?draftId=${encodeURIComponent(draftId)}` : '';
+		return apiFetch<BackendDocumentRecommendation | null>(
+			`/bab/${id}/recommendation${query}`,
+		);
+	},
+
+	/** Mengunci pilihan bukti dukung rekomendasi (status -> DIKONFIRMASI). */
+	confirmRecommendation(
+		id: string,
+		payload: { recommendationId: string; selectedEvidenceIds: string[] },
+	): Promise<BackendDocumentRecommendation> {
+		return apiFetch<BackendDocumentRecommendation>(
+			`/bab/${id}/recommend-documents/confirm`,
+			{ method: 'POST', body: payload },
+		);
 	},
 
 	/** Riwayat checkpoint bab ini, terbaru dulu — tab Draft/Rujukan/Kualitas AI/Rubrik. */

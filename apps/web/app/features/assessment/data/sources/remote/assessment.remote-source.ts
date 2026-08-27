@@ -76,7 +76,18 @@ export type UpsertVerdictPayload = {
 	note?: string;
 };
 
+/** Baris `IndicatorListItem` (apps/ai) — matriks rubrik AMI, bukan tabel Postgres. */
+export type AssessmentIndicator = {
+	no: number;
+	kriteria: string;
+};
+
 export const assessmentRemoteSource = {
+	/** 78 indikator AMI, dipakai pemilih tag indikator di unggah bukti dukung. */
+	findIndicators(): Promise<AssessmentIndicator[]> {
+		return apiFetch<AssessmentIndicator[]>('/assessment/indicators');
+	},
+
 	findSessions(dokumenId: string): Promise<BackendAssessmentSession[]> {
 		return apiFetch<BackendAssessmentSession[]>(
 			`/dokumen/${dokumenId}/assessment-sessions`,

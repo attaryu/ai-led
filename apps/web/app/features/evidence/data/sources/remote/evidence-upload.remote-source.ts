@@ -87,12 +87,15 @@ export async function reportUploadComplete({
 	namaDokumen,
 	target,
 	folderId,
+	indicatorNos,
 }: {
 	objectKey: string;
 	namaDokumen: string;
 	target: UploadEvidenceTargetDto;
 	/** Folder tujuan; `null` = akar cakupannya. Ditulis langsung ke baris baru — tidak ada lagi susulan `assignMany`. */
 	folderId: string | null;
+	/** Nomor indikator AMI yang ditandai untuk berkas ini (§ pemilih indikator modal unggah). Kosong = berlaku untuk semua indikator. */
+	indicatorNos?: number[];
 }): Promise<EvidenceEntity> {
 	try {
 		const row = await apiFetch<BuktiDukungApiRow>('/bukti-dukung', {
@@ -103,6 +106,7 @@ export async function reportUploadComplete({
 				documentName: namaDokumen,
 				fileKey: objectKey,
 				folderId: folderId ?? undefined,
+				indicatorNos: indicatorNos && indicatorNos.length > 0 ? indicatorNos : undefined,
 			},
 		});
 		return mapBuktiDukungToEvidence(row);

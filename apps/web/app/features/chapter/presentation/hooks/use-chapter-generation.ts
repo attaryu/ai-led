@@ -383,9 +383,15 @@ export function useChapterGeneration({
 	 * pgvector, bukan menyaring dari `terpilih`. Daftarnya tetap ditampilkan
 	 * sebagai konteks yang relevan buat penyusun, bukan kontrol yang benar-benar
 	 * mengarahkan generate — celah ini dicatat di tracker, bukan ditutupi diam-diam.
+	 *
+	 * `draftId`, bila diisi pemanggil (`chapter-generation-panel.tsx`, gerbang
+	 * konfirmasi rekomendasi dokumen), justru **membatasi** pencarian itu ke
+	 * `selectedEvidenceIds` milik rekomendasi yang sudah `DIKONFIRMASI` — lihat
+	 * `worker.py::_handle_generasi_bab`. Bab yang tidak pernah memicu alur
+	 * rekomendasi memanggil ini tanpa argumen, tidak berubah dari sebelumnya.
 	 */
 	const jalankanGenerate =
-		React.useCallback(async (): Promise<HasilGenerate | null> => {
+		React.useCallback(async (draftId?: string): Promise<HasilGenerate | null> => {
 			if (!enabled || status === 'berjalan' || terpilih.size === 0) return null;
 
 			setStatus('berjalan');
@@ -395,6 +401,7 @@ export function useChapterGeneration({
 				const job = await chapterRemoteSource.generate(
 					chapter.id,
 					prompt.trim() || undefined,
+					draftId,
 				);
 
 				let hasilJob: JobEvent | null = null;

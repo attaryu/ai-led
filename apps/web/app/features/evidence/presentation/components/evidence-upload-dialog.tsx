@@ -6,11 +6,13 @@ import {
 	FolderIcon,
 	FolderPlusIcon,
 	FilePlusIcon,
+	TagIcon,
 	WarningCircleIcon,
 	XIcon,
 } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
+import { Checkbox } from '~/core/components/ui/checkbox';
 import {
 	Dialog,
 	DialogContent,
@@ -19,9 +21,14 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from '~/core/components/ui/dialog';
+import { Input } from '~/core/components/ui/input';
 import { Select } from '~/core/components/ui/select';
 import { Field, FieldLabel } from '~/core/components/ui/field';
 import { cn } from '~/core/lib/utils';
+import {
+	assessmentRemoteSource,
+	type AssessmentIndicator,
+} from '~/features/assessment/data/sources/remote/assessment.remote-source';
 import { studyProgramRepository } from '~/features/study-program/data/repositories/study-program.repository';
 import { type StudyProgramEntity } from '~/features/study-program/domain/entities/study-program.entity';
 import { evidenceFolderRepository } from '../../data/repositories/evidence-folder.repository';
@@ -154,6 +161,12 @@ export function EvidenceUploadDialog({
 	const [tolakanTerbuka, setTolakanTerbuka] = React.useState(false);
 	const [dilewati, setDilewati] = React.useState(0);
 	const [folders, setFolders] = React.useState<EvidenceFolderEntity[]>([]);
+	const [indikatorList, setIndikatorList] = React.useState<AssessmentIndicator[]>([]);
+	const [indikatorTerpilih, setIndikatorTerpilih] = React.useState<Set<number>>(
+		() => new Set(),
+	);
+	const [indikatorTerbuka, setIndikatorTerbuka] = React.useState(false);
+	const [cariIndikator, setCariIndikator] = React.useState('');
 	const inputRef = React.useRef<HTMLInputElement>(null);
 	const folderInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -175,8 +188,29 @@ export function EvidenceUploadDialog({
 		setPemilihTerbuka(false);
 		setTolakanTerbuka(false);
 		setDilewati(0);
+		setIndikatorTerpilih(new Set());
+		setIndikatorTerbuka(false);
+		setCariIndikator('');
 		evidenceFolderRepository.findByScope(cakupan).then(setFolders);
+		assessmentRemoteSource.findIndicators().then(setIndikatorList);
 	}, [open, targetBawaan, folderAktif, cakupan]);
+
+	const indikatorTersaring = React.useMemo(() => {
+		const kunci = cariIndikator.trim().toLowerCase();
+		if (!kunci) return indikatorList;
+		return indikatorList.filter(
+			(indikator) =>
+				String(indikator.no).includes(kunci) ||
+				indikator.kriteria.toLowerCase().includes(kunci),
+		);
+	}, [indikatorList, cariIndikator]);
+
+	const toggleIndikator = (no: number) =>
+		setIndikatorTerpilih((sebelumnya) => {
+			const berikutnya = new Set(sebelumnya);
+			if (!berikutnya.delete(no)) berikutnya.add(no);
+			return berikutnya;
+		});
 
 	const addFiles = React.useCallback((files: FileList | null) => {
 		if (!files) return;
@@ -331,6 +365,7 @@ export function EvidenceUploadDialog({
 			})),
 			target: parsed.data,
 			studyProgramName: targetProgramName,
+			indicatorNos: indikatorTerpilih.size > 0 ? [...indikatorTerpilih] : undefined,
 			uploader,
 			onUploaded,
 		});
@@ -456,6 +491,86 @@ export function EvidenceUploadDialog({
 							yang ikut diunggah tetap terbawa.
 						</p>
 					)}
+
+					{/*
+					 * Tag indikator berlaku untuk **seluruh batch**, sama seperti target di
+					 * atas — mencerminkan cara pemilih folder tujuan bekerja, dan alasan yang
+					 * sama: satu batch nyaris selalu berisi bukti untuk kebutuhan yang sama.
+					 * Kosong BUKAN berarti berlaku ke semua indikator — sebaliknya, evidence
+					 * tanpa tag sama sekali TIDAK PERNAH muncul di pencarian bukti agen
+					 * penilaian AMI untuk indikator manapun (list_available_evidence_ids
+					 * di pgvector_evidence_store.py meng-INNER JOIN ke evidence_indicator_tags,
+					 * tanpa fallback — port skema origin/ariel). Mengosongkan tag berarti
+					 * berkas ini murni referensi Bukti Dukung, tidak dipakai asesmen AMI.
+					 */}
+					<Field>
+						<FieldLabel htmlFor="evidence-indicator-tujuan">
+							Tag indikator AMI (opsional)
+						</FieldLabel>
+						<button
+							id="evidence-indicator-tujuan"
+							type="button"
+							onClick={() => setIndikatorTerbuka((buka) => !buka)}
+							aria-expanded={indikatorTerbuka}
+							className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-accent/40"
+						>
+							<TagIcon
+								weight="fill"
+								className="size-4 shrink-0 text-muted-foreground"
+							/>
+							<span className="min-w-0 flex-1 truncate">
+								{indikatorTerpilih.size > 0
+									? `${indikatorTerpilih.size} indikator dipilih`
+									: 'Belum ditandai (tidak dipakai asesmen AMI)'}
+							</span>
+							{indikatorTerbuka ? (
+								<CaretDownIcon className="size-4 shrink-0 text-muted-foreground" />
+							) : (
+								<CaretRightIcon className="size-4 shrink-0 text-muted-foreground" />
+							)}
+						</button>
+
+						{indikatorTerbuka && (
+							<div className="flex flex-col gap-2 rounded-md border border-border p-2">
+								<Input
+									value={cariIndikator}
+									onChange={(event) => setCariIndikator(event.target.value)}
+									placeholder="Cari nomor atau kriteria..."
+									aria-label="Cari indikator AMI"
+									className="h-8 text-sm"
+								/>
+								<div className="flex max-h-48 flex-col gap-0.5 overflow-y-auto">
+									{indikatorTersaring.map((indikator) => (
+										<label
+											key={indikator.no}
+											className="flex cursor-pointer items-start gap-2 rounded-sm px-1.5 py-1 hover:bg-accent/40"
+										>
+											<Checkbox
+												checked={indikatorTerpilih.has(indikator.no)}
+												onCheckedChange={() => toggleIndikator(indikator.no)}
+												className="mt-0.5"
+											/>
+											<span className="text-xs leading-snug">
+												<span className="font-medium">{indikator.no}.</span>{' '}
+												{indikator.kriteria}
+											</span>
+										</label>
+									))}
+									{indikatorTersaring.length === 0 && (
+										<p className="py-3 text-center text-xs text-muted-foreground">
+											Tidak ada indikator yang cocok.
+										</p>
+									)}
+								</div>
+							</div>
+						)}
+
+						<p className="text-xs text-muted-foreground">
+							Berlaku untuk seluruh berkas dalam unggahan ini. Agen penilaian AMI
+							hanya mencari bukti yang ditandai indikator yang sedang dinilainya —
+							berkas tanpa tag tidak akan muncul di penilaian AMI manapun.
+						</p>
+					</Field>
 
 					<div
 						onDragOver={(event) => {

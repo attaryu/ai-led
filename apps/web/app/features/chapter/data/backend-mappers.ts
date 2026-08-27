@@ -1,9 +1,11 @@
 import { type BuktiDukungRef } from '../domain/entities/bukti-dukung-ref.entity';
 import { type ChapterScoreEntity } from '../domain/entities/chapter-score.entity';
+import { type DocumentRecommendationEntity } from '../domain/entities/document-recommendation.entity';
 import { type RagasMetrik, type RagasScore } from '../domain/entities/ragas-score.entity';
 import {
 	type BackendBuktiDukungBab,
 	type BackendBuktiDukungDraft,
+	type BackendDocumentRecommendation,
 	type BackendHasilSkorKriteria,
 	type BackendRagasScore,
 } from './sources/remote/chapter.remote-source';
@@ -66,6 +68,34 @@ export function mapRagas(row: BackendRagasScore | undefined): RagasScore | null 
 		metrik,
 		jumlahChunk: row.chunkCount,
 		dihitungPada: row.computedAt,
+	};
+}
+
+/**
+ * `selectedEvidenceIds` adalah `Json` bebas bentuk di Prisma — baris yang
+ * belum pernah dikonfirmasi menyimpan larik kosong lewat `create_document_recommendation`
+ * (apps/ai), tapi tidak ada yang menjamin bentuknya di level tipe. Larik non-string
+ * jatuh ke kosong alih-alih melempar, mengikuti kebiasaan `mapKontenBody` di atas.
+ */
+export function mapDocumentRecommendation(
+	row: BackendDocumentRecommendation,
+): DocumentRecommendationEntity {
+	return {
+		id: row.id,
+		chapterDraftId: row.chapterDraftId,
+		recommendationText: row.recommendationText,
+		selectedEvidenceIds: Array.isArray(row.selectedEvidenceIds)
+			? row.selectedEvidenceIds.filter((id): id is string => typeof id === 'string')
+			: [],
+		status: row.status,
+		items: (row.items ?? [])
+			.map((item) => ({
+				id: item.id,
+				label: item.label,
+				reason: item.reason,
+				order: item.order,
+			}))
+			.sort((a, b) => a.order - b.order),
 	};
 }
 

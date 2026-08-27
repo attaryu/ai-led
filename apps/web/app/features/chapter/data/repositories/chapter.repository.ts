@@ -1,7 +1,9 @@
 import { ApiError } from '~/core/lib/api-client';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
+import { type DocumentRecommendationEntity } from '../../domain/entities/document-recommendation.entity';
 import {
 	mapBuktiDukungRef,
+	mapDocumentRecommendation,
 	mapHasilSkor,
 	mapKontenBody,
 	mapRagas,
@@ -182,5 +184,33 @@ export const chapterRepository = {
 	): Promise<ChapterEntity> {
 		const row = await chapterRemoteSource.submitForReview(chapterId, diajukan);
 		return toEntityFromBackend(row);
+	},
+
+	/** Memicu REKOMENDASI_DOKUMEN — lihat `useChapterRecommendation`. */
+	async triggerRecommendDocuments(chapterId: string, draftId?: string) {
+		return chapterRemoteSource.recommendDocuments(chapterId, draftId);
+	},
+
+	/** `GET bab/:id/recommendation` — `null` bila belum ada rekomendasi untuk `draftId`/checkpoint aktif. */
+	async findRecommendation(
+		chapterId: string,
+		draftId?: string,
+	): Promise<DocumentRecommendationEntity | null> {
+		const row = await chapterRemoteSource.findRecommendation(chapterId, draftId);
+		return row ? mapDocumentRecommendation(row) : null;
+	},
+
+	/**
+	 * Mengunci pilihan bukti dukung rekomendasi. Baris balikannya tidak
+	 * menyertakan `items` (`bab-pipeline.service.ts::confirmRecommendation` tidak
+	 * meng-`include`-nya) — pemanggil (`useChapterRecommendation`) menuliskan
+	 * status/`selectedEvidenceIds` baru ke entity yang sudah dipegangnya sendiri
+	 * alih-alih memetakan balikan yang tidak lengkap ini.
+	 */
+	async confirmRecommendation(
+		chapterId: string,
+		payload: { recommendationId: string; selectedEvidenceIds: string[] },
+	): Promise<void> {
+		await chapterRemoteSource.confirmRecommendation(chapterId, payload);
 	},
 };
