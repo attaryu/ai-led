@@ -1,16 +1,24 @@
 import * as React from 'react';
-import { ClipboardTextIcon } from '@phosphor-icons/react';
+import {
+	ClipboardTextIcon,
+	ListChecksIcon,
+	WarningCircleIcon,
+} from '@phosphor-icons/react';
 
+import { Button } from '~/core/components/ui/button';
 import { Card, CardContent } from '~/core/components/ui/card';
+import { Checkbox } from '~/core/components/ui/checkbox';
 import {
 	CollectionToolbar,
 	type CollectionSortOption,
 } from '~/core/components/ui/collection-toolbar';
+import { Input } from '~/core/components/ui/input';
 import { cn } from '~/core/lib/utils';
 import {
 	type PenilaianFinalRow,
 	type RingkasanPenilaian,
 } from '../../domain/entities/assessment-session.entity';
+import { type useAssessmentIndicatorSelection } from '../hooks/use-assessment-indicator-selection';
 import { AssessmentResultRow } from './assessment-result-row';
 
 /**
@@ -80,6 +88,8 @@ export function AssessmentResultList({
 	barisTerpilihNo,
 	onBuka,
 	onDaftarTampilBerubah,
+	pemilihan,
+	bolehMemilih,
 }: {
 	baris: PenilaianFinalRow[];
 	ringkasan: RingkasanPenilaian;
@@ -87,6 +97,12 @@ export function AssessmentResultList({
 	onBuka: (row: PenilaianFinalRow) => void;
 	/** Dipakai halaman untuk menavigasi ‹ › mengikuti urutan yang terlihat. */
 	onDaftarTampilBerubah: (rows: PenilaianFinalRow[]) => void;
+	/** Indikator mana yang mau dinilai — dipakai selama dokumen belum pernah
+	 * dinilai (`baris` kosong, lihat `useAssessmentResults`). Sesudah ada
+	 * sesi, daftar ini berubah jadi daftar hasil dan pemilihan tidak lagi
+	 * ditampilkan — dua daftar indikator yang sama tidak perlu dua tempat. */
+	pemilihan: ReturnType<typeof useAssessmentIndicatorSelection>;
+	bolehMemilih: boolean;
 }) {
 	const [cari, setCari] = React.useState('');
 	const [saringan, setSaringan] = React.useState<SaringanId>('semua');
@@ -156,17 +172,116 @@ export function AssessmentResultList({
 
 	/*
 	 * Dokumen yang belum pernah dinilai: `baris` kosong (lihat catatan di
-	 * `useAssessmentResults`), belum ada apa pun untuk ditampilkan di sini —
-	 * `AssessmentRunPanel` di atas kartu ini sudah bilang "belum pernah
-	 * dinilai" dan menyediakan tombol jalan. Dulu slot ini dipakai untuk
-	 * kartu pemilih indikator ("Indikator yang Dinilai") sebelum run
-	 * pertama, tapi itu cuma mengulang 64 indikator yang sama yang muncul
-	 * lagi persis di sini begitu sesi selesai — langkah tambahan yang
-	 * membingungkan tanpa menambah kegunaan, karena run tanpa pemilihan pun
-	 * defaultnya sudah menilai semua indikator.
+	 * `useAssessmentResults`), jadi daftar ini belum punya hasil apa pun untuk
+	 * ditampilkan. Daripada kartu kosong plus kartu pemilih indikator terpisah
+	 * di tempat lain — dua daftar 78 indikator yang sama pada satu halaman —
+	 * slot yang sama ini dipakai untuk memilih indikator mana yang mau
+	 * dinilai. Begitu ada sesi, kartu ini kembali jadi daftar hasil seperti
+	 * biasa; pemilihannya sendiri tetap dipegang `pemilihan` untuk dipakai
+	 * "Nilai Ulang" berikutnya.
 	 */
 	if (baris.length === 0) {
-		return null;
+		const { daftar, tersaring, terpilih, cari: cariIndikator, setCari: setCariIndikator, toggle, pilihSemua, kosongkan } =
+			pemilihan;
+		const semuaTerpilih = daftar.length > 0 && terpilih.size === daftar.length;
+		// Matriks resmi ada puluhan indikator (~78); jauh di bawah itu berarti
+		// matriks di sisi AI service belum lengkap — bukan soal dokumen/berkas
+		// yang dipilih pengguna, jadi ditandai di sini alih-alih dibiarkan diam.
+		const matriksBelumLengkap = daftar.length > 0 && daftar.length < 30;
+
+		return (
+			<Card>
+				<CardContent className="flex flex-col gap-3">
+					<div className="flex flex-col gap-1">
+						<p className="text-sm font-medium">Indikator yang Dinilai</p>
+						<p className="text-xs text-muted-foreground">
+							{daftar.length === 0
+								? 'Memuat daftar indikator…'
+								: semuaTerpilih
+									? `Menilai seluruh ${daftar.length} indikator.`
+									: `${terpilih.size} dari ${daftar.length} indikator dipilih.`}
+						</p>
+					</div>
+
+					{matriksBelumLengkap && (
+						<div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2.5">
+							<WarningCircleIcon className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+							<p className="text-xs leading-relaxed text-amber-700 dark:text-amber-400">
+								Matriks penilaian sepertinya belum lengkap — cuma{' '}
+								{daftar.length} indikator yang termuat, padahal biasanya
+								puluhan. Penilaian tetap bisa dijalankan, tapi cakupannya
+								belum tentu mewakili seluruh matriks LAM.
+							</p>
+						</div>
+					)}
+
+					{bolehMemilih && (
+						<>
+							<div className="flex flex-wrap items-center gap-2">
+								<Input
+									value={cariIndikator}
+									onChange={(event) => setCariIndikator(event.target.value)}
+									placeholder="Cari nomor atau kriteria..."
+									aria-label="Cari indikator AMI"
+									className="h-8 flex-1 text-sm"
+								/>
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									onClick={pilihSemua}
+									disabled={semuaTerpilih}
+									className="cursor-pointer"
+								>
+									Pilih Semua
+								</Button>
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									onClick={kosongkan}
+									disabled={terpilih.size === 0}
+									className="cursor-pointer"
+								>
+									Kosongkan
+								</Button>
+							</div>
+
+							<div className="flex max-h-96 flex-col gap-0.5 overflow-y-auto rounded-md border border-border p-1.5">
+								{tersaring.map((indikator) => (
+									<label
+										key={indikator.no}
+										className="flex cursor-pointer items-start gap-2 rounded-sm px-1.5 py-1 hover:bg-accent/40"
+									>
+										<Checkbox
+											checked={terpilih.has(indikator.no)}
+											onCheckedChange={() => toggle(indikator.no)}
+											className="mt-0.5"
+										/>
+										<span className="text-xs leading-snug">
+											<span className="font-medium">{indikator.no}.</span>{' '}
+											{indikator.kriteria}
+										</span>
+									</label>
+								))}
+								{tersaring.length === 0 && (
+									<p className="py-3 text-center text-xs text-muted-foreground">
+										Tidak ada indikator yang cocok.
+									</p>
+								)}
+							</div>
+
+							{terpilih.size === 0 && (
+								<p className="flex items-center gap-1.5 text-xs leading-relaxed text-destructive">
+									<ListChecksIcon className="size-3.5 shrink-0" />
+									Pilih minimal satu indikator sebelum menjalankan penilaian.
+								</p>
+							)}
+						</>
+					)}
+				</CardContent>
+			</Card>
+		);
 	}
 
 	return (
