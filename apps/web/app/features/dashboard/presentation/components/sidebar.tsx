@@ -1,4 +1,4 @@
-import { UsersIcon, GraduationCapIcon, HouseIcon, FileIcon, ArchiveIcon } from "@phosphor-icons/react"
+import { UsersIcon, GraduationCapIcon, HouseIcon, FileIcon, ArchiveIcon, CertificateIcon } from "@phosphor-icons/react"
 
 import type { AppShellSidebar, AppShellNavItem } from "~/core/components/app-shell"
 import { useSession } from "~/features/auth/presentation/hooks/use-session"
@@ -38,6 +38,17 @@ const menuItems: (AppShellNavItem & { roles: UserRole[] })[] = [
     icon: ArchiveIcon,
     end: false,
     // Admin tidak punya akses ke bukti dukung sama sekali (§4.4).
+    roles: ["Pimpinan", "Penjamin Mutu"],
+  },
+  {
+    name: "Set Akreditasi",
+    path: "/dashboard/accreditation-sets",
+    icon: CertificateIcon,
+    end: false,
+    // Acuan penilaian adalah konten akreditasi, bukan urusan back office, jadi
+    // Admin tidak melihatnya — sama seperti Proyek LED dan Bukti Dukung.
+    // Pimpinan melihat acuan yang berlaku; hanya Penjamin Mutu yang mengelola,
+    // dan pembatasan itu ada di dalam halamannya.
     roles: ["Pimpinan", "Penjamin Mutu"],
   },
   {
