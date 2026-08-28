@@ -49,3 +49,39 @@ def test_process_file_text(tmp_path):
     assert len(chunks) == 1
     assert "revisi kurikulum" in chunks[0]["text"]
     assert chunks[0]["chunk_id"] == "evidence__catatan__0000"
+
+
+# ── 5 ────────────────────────────────────────────────────────────────────────
+def test_process_excel_loads_workbook_once_per_file(tmp_path, monkeypatch):
+    """Regression: extract_tables() used to take a filepath and reload+reparse
+    the whole workbook per sheet — a 3-sheet file did 3 full loads. Multi-sheet
+    LKPS uploads (tens of sheets) made this crawl (see evidence_excel.py)."""
+    import openpyxl as openpyxl_module
+
+    from ingestion.evidence_pipeline import _process_excel
+
+    wb = openpyxl_module.Workbook()
+    wb.active.title = "Sheet1"
+    wb.active["A1"] = 1
+    wb.active["B1"] = "x"
+    for name in ("Sheet2", "Sheet3"):
+        ws = wb.create_sheet(name)
+        ws["A1"] = 1
+        ws["B1"] = "y"
+    p = tmp_path / "multi.xlsx"
+    wb.save(p)
+
+    calls = []
+    original = openpyxl_module.load_workbook
+
+    def counting_load_workbook(*args, **kwargs):
+        calls.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(openpyxl_module, "load_workbook", counting_load_workbook)
+
+    _process_excel(p, "multi")
+
+    assert len(calls) == 1, (
+        f"Expected exactly 1 load_workbook() call for a 3-sheet file, got {len(calls)}"
+    )

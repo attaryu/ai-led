@@ -3,7 +3,6 @@ import {
 	type RubricScoreType,
 } from '../../../domain/entities/rubric-criterion.entity';
 import {
-	findPanduanForBab,
 	type ButirRubrikDipakai,
 	type PoinPanduan,
 } from '../../../domain/entities/guidance-point.entity';
@@ -85,13 +84,16 @@ const CATATAN_TIPE: Record<RubricScoreType, string> = {
  * belas indikator untuk Kriteria 4) di laci, bukan di kolom 320 px.
  */
 export function kutipanUntukPedoman({
-	urutanBab,
+	daftarPedoman,
 	poin,
 }: {
-	urutanBab: number;
+	/** Seluruh poin pedoman bab ini, sudah dimuat pemanggil — dipakai cuma
+	 * untuk menemukan posisi `poin` di antaranya, bukan dimuat ulang di sini
+	 * (fungsi ini sengaja tetap sinkron; `findPanduanForBab` sendiri jaringan). */
+	daftarPedoman: PoinPanduan[];
 	poin: PoinPanduan;
 }): PanduanChunk[] {
-	const urutanPoin = findPanduanForBab(urutanBab).findIndex(
+	const urutanPoin = daftarPedoman.findIndex(
 		(kandidat) => kandidat.id === poin.id,
 	);
 	const halamanDasar =

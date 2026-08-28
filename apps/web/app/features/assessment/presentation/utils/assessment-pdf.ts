@@ -199,7 +199,11 @@ export async function buatPdfPenilaian(
 		],
 		body: input.baris.map((row) => [
 			String(row.kriteria.no),
-			amanUntukPdf(`${row.kriteria.kodeKriteria}\n${row.kriteria.deskripsi}`),
+			amanUntukPdf(
+				row.kriteria.kodeKriteria
+					? `${row.kriteria.kodeKriteria}\n${row.kriteria.deskripsi}`
+					: row.kriteria.deskripsi,
+			),
 			skorSel(row),
 			justifikasiSel(row),
 			atauStrip(row.hasil?.rekomendasi),

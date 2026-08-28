@@ -53,6 +53,10 @@ services:
       - "8000:8000"
     volumes:
       - ./apps/ai/data:/app/data
+      # Without this, every container recreation loses bge-m3/MiniLM (~2.3GB
+      # combined) and the next embedding call re-downloads from HuggingFace
+      # instead of loading from disk — minutes of "stuck" instead of seconds.
+      - hf_cache:/root/.cache/huggingface
     env_file: apps/ai/.env
     environment:
       DATA_DIR: /app/data
@@ -74,6 +78,9 @@ services:
     restart: unless-stopped
     volumes:
       - ./apps/ai/data:/app/data
+      # Shared with `ai` — same cache dir, so whichever service downloads a
+      # model first, the other reuses it instead of downloading its own copy.
+      - hf_cache:/root/.cache/huggingface
     env_file: apps/ai/.env
     environment:
       DATA_DIR: /app/data
@@ -106,3 +113,4 @@ secrets:
 volumes:
   postgres_data:
   redis_data:
+  hf_cache:

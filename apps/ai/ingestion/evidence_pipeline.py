@@ -69,11 +69,14 @@ def _process_pdf(pdf_path: Path, filename: str, mineru_out_dir: Path) -> list[di
 def _process_excel(xlsx_path: Path, filename: str) -> list[dict]:
     from openpyxl import load_workbook
 
-    sheets = load_workbook(xlsx_path, read_only=True, data_only=True).sheetnames
+    # Loaded once and reused across sheets — extract_tables() used to take a
+    # filepath and reload+reparse the whole workbook per sheet, which made
+    # multi-sheet LKPS uploads (tens of sheets) crawl.
+    wb = load_workbook(xlsx_path, data_only=True)
     out: list[dict] = []
-    for sheet in sheets:
+    for sheet in wb.sheetnames:
         try:
-            result = extract_tables(str(xlsx_path), sheet_name=sheet)
+            result = extract_tables(wb, sheet_name=sheet)
         except Exception:
             continue
         result["tables"] = drop_first_col_only_rows(result["tables"])

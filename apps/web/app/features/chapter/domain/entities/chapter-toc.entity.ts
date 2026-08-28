@@ -3,37 +3,21 @@ import { z } from 'zod';
 import { type ChapterEntity } from './chapter.entity';
 
 /**
- * Daftar Isi Editor Bab (docs/application_flow.md §7.1) — **MOCK STATIS**.
+ * Daftar Isi Editor Bab (docs/application_flow.md §7.1).
  *
- * Ini bukan keputusan, ini penahan sementara. Pertanyaan Terbuka #2 (§16) belum
- * terjawab: belum jelas apakah struktur berjenjang ini master data baku
- * (sekelas `RUBRIK_KRITERIA_BAB`), dihasilkan otomatis dari heading yang ditulis
- * user di dalam `konten_kerja` seperti outline Google Docs, atau justru
- * menandakan unit "satu ruang kerja" sebenarnya ada di granularitas sub-bab.
+ * **Sekarang 1:1 dengan `CHAPTER_TEMPLATE`.** Sebelum matriks penilaian asli
+ * diunggah, `CHAPTER_TEMPLATE` punya 14 bab (satu per "Kriteria N") dan pohon
+ * ini terpaksa menebak-nebak pemetaannya. Sesudah struktur LED asli
+ * diverifikasi dari `led_bab_tabel.json`, `CHAPTER_TEMPLATE` diperkecil jadi 4
+ * bab yang cocok persis dokumen aslinya — dan seluruh kriteria akreditasi
+ * (C.1–C.7) ternyata anak BAB II, bukan bab tersendiri. Itu menjawab
+ * Pertanyaan Terbuka #2 (§16) dengan sendirinya: **satu `BAB_DOKUMEN` = satu
+ * `konten_kerja`, C.1–C.7 di bawahnya murni visual** (§7.2) — bukan lagi
+ * tebakan, karena sekarang cuma ada 4 `BAB_DOKUMEN` sungguhan.
  *
- * Yang dipilih sementara, beserta alasannya:
- *
- * - **Hanya simpul ber-`urutanBab` yang navigasional.** Cabang di bawahnya
- *   visual belaka, karena §7.2 menyatakan satu `BAB_DOKUMEN` = satu
- *   `konten_kerja` utuh yang TIDAK dipecah jadi entitas terpisah per section.
- *   Ini satu-satunya cabang #2 yang konsisten dengan model data yang ada.
- * - **Label di sini menang atas `judulBab` dari data.** Konsekuensinya bab yang
- *   sama bisa bernama beda di sidebar editor dan di tabel Progres Dokumen —
- *   misal `urutanBab` 4 yang di `CHAPTER_TEMPLATE` bernama "Kriteria 1 — Visi,
- *   Misi, Tujuan, dan Strategi" muncul di sini sebagai "C.1. Diferensiasi Misi".
- *   Diterima demi kesetiaan pada rancangan; mendamaikan keduanya bagian dari #2.
- * - **Pohonnya melebihi rancangan dengan sengaja.** Rancangan hanya menjabarkan
- *   cabang C.1. Kalau konstanta ini cuma memuat itu, 11 dari 14 bab jadi tak
- *   terjangkau dari sidebar — melanggar §7.1 dan membuat tautan dari tabel
- *   Progres Dokumen jadi yatim. Jadi cabang dalam C.1 disalin persis, lalu
- *   C.2…C.9 ditambahkan sebagai saudaranya.
- *
- * Kalau #2 jatuh ke cabang sebaliknya (satu daun Daftar Isi = satu ruang kerja),
- * yang berubah cuma konstanta ini: simpul dalam tinggal diberi `urutanBab`
- * sendiri. Tidak ada komponen yang perlu disentuh.
- *
- * Lihat juga catatan `urutanBab` di chapter.entity.ts dan `CHAPTER_TEMPLATE` di
- * data/repositories/chapter.repository.ts — ketiganya menunjuk #2 yang sama.
+ * **Hanya simpul ber-`urutanBab` yang navigasional** (empat simpul BAB
+ * teratas). Cabang di bawahnya (`A`/`B`/`C.1`…`C.7`) `urutanBab`-nya `null`:
+ * kliknya tidak boleh keluar dari bab yang sedang dibuka.
  */
 const tocNodeBase = z.object({
 	/** Stabil; dipakai sebagai key React dan — nanti — sebagai id anchor. */
@@ -68,15 +52,16 @@ function simpul(
 }
 
 /**
- * Cabang dalam milik C.1, disalin persis dari rancangan. Seluruhnya visual:
- * semuanya bagian dari satu `konten_kerja` bab Kriteria 1 (§7.2).
+ * Cabang dalam milik C.1, cocok dengan tiga indikator asli (matrix.json no.
+ * 1–3 — lihat `guidance-point.entity.ts`). Seluruhnya visual: semuanya bagian
+ * dari satu `konten_kerja` BAB II (§7.2).
  */
 const RINCIAN_C1: ChapterTocNode[] = [
 	simpul('c1-1-1', '1.1 Latar Belakang', null),
 	simpul('c1-1-2', '1.2 Kebijakan', null),
 	simpul('c1-1-3', '1.3 Indikator Kinerja Utama (IKU)', null, [
 		simpul('c1-1-3-a', 'a) Kekhasan VMTS', null),
-		simpul('c1-1-3-b', 'b) Mekanisme Penyusunan VMTS', null),
+		simpul('c1-1-3-b', 'b) Mekanisme penyusunan VMTS', null),
 		simpul('c1-1-3-c', 'c) Tingkat pemahaman dan pencapaian VMTS', null),
 	]),
 	simpul(
@@ -92,45 +77,50 @@ const RINCIAN_C1: ChapterTocNode[] = [
 ];
 
 /**
- * Sembilan kriteria akreditasi LAM Teknik. Yang pertama membawa rincian dari
- * rancangan; sisanya sengaja belum dijabarkan — rinciannya bagian dari #2 yang
- * sama, dan menebak-nebak isinya hanya akan menambah yang harus dibongkar nanti.
+ * Tujuh kelompok kriteria akreditasi C.1–C.7, judulnya sama persis dengan
+ * `KELOMPOK_KRITERIA` di `guidance-point.entity.ts` (satu penurunan yang sama
+ * dari `led_bab_tabel.json`, sengaja tidak disalin dua kali sebagai konstanta
+ * terpisah — lihat catatan di sana kalau berubah). C.2–C.7 sengaja belum
+ * dijabarkan serinci C.1: rincian lima-poinnya identik untuk semua kelompok
+ * (lihat `POIN_PEDOMAN`), jadi mengulangnya di sini cuma menyalin nama yang
+ * sudah benar di panel Panduan.
  */
 const KRITERIA: ChapterTocNode[] = [
 	simpul(
 		'c-1',
 		'C.1. Diferensiasi Misi (Visi, Misi, Tujuan, dan Strategi)',
-		4,
+		null,
 		RINCIAN_C1,
 	),
-	simpul('c-2', 'C.2. Tata Pamong, Tata Kelola, dan Kerja Sama', 5),
-	simpul('c-3', 'C.3. Mahasiswa', 6),
-	simpul('c-4', 'C.4. Sumber Daya Manusia', 7),
-	simpul('c-5', 'C.5. Keuangan, Sarana, dan Prasarana', 8),
-	simpul('c-6', 'C.6. Pendidikan', 9),
-	simpul('c-7', 'C.7. Penelitian', 10),
-	simpul('c-8', 'C.8. Pengabdian kepada Masyarakat', 11),
-	simpul('c-9', 'C.9. Luaran dan Capaian Tridharma', 12),
+	simpul('c-2', 'C.2. Akuntabilitas', null),
+	simpul('c-3', 'C.3. Relevansi Pendidikan, Penelitian, dan PkM', null),
+	simpul('c-4', 'C.4. Sumber Daya Manusia', null),
+	simpul(
+		'c-5',
+		'C.5. Sarana, Prasarana, dan Keselamatan Kesehatan Kerja dan Lingkungan (K3L)',
+		null,
+	),
+	simpul('c-6', 'C.6. Mahasiswa dan Luaran Mahasiswa', null),
+	simpul('c-7', 'C.7. Sistem Penjaminan Mutu', null),
 ];
 
 export const CHAPTER_TOC: ChapterTocNode[] = [
-	simpul('bab-1', 'BAB I. PENDAHULUAN', 1, [
-		// provisional: pemetaan ke `urutanBab` 3 ditebak dari kemiripan judul.
-		simpul('bab-1-profil', 'Profil Unit Pengelola Program Studi', 3),
-	]),
-	simpul('bab-2', 'BAB II. STRUKTUR LAPORAN EVALUASI DIRI', null, [
-		// provisional: tidak ada bab di CHAPTER_TEMPLATE yang jelas pasangannya.
+	simpul('bab-1', 'BAB I. PENDAHULUAN', 1),
+	simpul('bab-2', 'BAB II. STRUKTUR LAPORAN EVALUASI DIRI', 2, [
 		simpul('bab-2-a', 'A. Struktur Tim Penyusun dan Mekanisme Kerja', null),
-		// provisional: dipetakan ke "Kondisi Eksternal" atas kemiripan judul.
 		simpul(
 			'bab-2-b',
 			'B. Analisis Lingkungan Eksternal dalam Pengembangan UPPS dan Prodi',
-			2,
+			null,
+			[
+				simpul('bab-2-b-1', 'B.1 Lingkungan Makro', null),
+				simpul('bab-2-b-2', 'B.2 Lingkungan Mikro', null),
+			],
 		),
 		simpul('bab-2-c', 'C. Kriteria Akreditasi', null, KRITERIA),
-		simpul('bab-2-d', 'D. Analisis dan Penetapan Program Pengembangan', 13),
 	]),
-	simpul('bab-3', 'BAB III. PENUTUP', 14),
+	simpul('bab-3', 'BAB III. PROGRAM PENGEMBANGAN BERKELANJUTAN', 3),
+	simpul('bab-4', 'BAB IV. PENUTUP', 4),
 ];
 
 /**

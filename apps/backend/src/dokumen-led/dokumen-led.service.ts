@@ -99,26 +99,62 @@ export class DokumenLedService {
     return this.prisma.ledDocument.update({ where: { id }, data: dto });
   }
 
-  /** Bab tetap wajib dihapus manual dulu; sesi AMI/verdict/chunk LED tidak punya endpoint hapus sendiri jadi dibereskan di sini. */
+  /**
+   * Hapus dokumen beserta seluruh isinya dalam satu transaksi — bab, draft,
+   * chat, skor, tautan bukti dukung, sesi/verdict AMI, dan chunk embedding.
+   * Urutan mengikuti FK anak-ke-induk; `activeCheckpointId` diputus lebih
+   * dulu karena bab <-> draft saling menunjuk (draft aktifnya).
+   */
   async remove(id: string) {
     await this.findOne(id);
 
-    const chapterCount = await this.prisma.documentChapter.count({
-      where: { documentId: id },
-    });
-    if (chapterCount > 0) {
-      throw new ConflictException(
-        'Dokumen LED ini masih punya bab — hapus seluruh babnya terlebih dahulu',
-      );
-    }
-
     try {
-      await this.prisma.$transaction([
-        this.prisma.assessmentVerdict.deleteMany({ where: { documentId: id } }),
-        this.prisma.assessmentSession.deleteMany({ where: { documentId: id } }),
-        this.prisma.ledChunkEmbedding.deleteMany({ where: { documentId: id } }),
-        this.prisma.ledDocument.delete({ where: { id } }),
-      ]);
+      await this.prisma.$transaction(async (tx) => {
+        const chapterIds = (
+          await tx.documentChapter.findMany({
+            where: { documentId: id },
+            select: { id: true },
+          })
+        ).map((c) => c.id);
+
+        const draftIds = (
+          await tx.chapterDraft.findMany({
+            where: { chapterId: { in: chapterIds } },
+            select: { id: true },
+          })
+        ).map((d) => d.id);
+
+        await tx.documentChapter.updateMany({
+          where: { id: { in: chapterIds } },
+          data: { activeCheckpointId: null },
+        });
+
+        await tx.evalResult.deleteMany({
+          where: { generationRun: { chapterDraftId: { in: draftIds } } },
+        });
+        await tx.generationRun.deleteMany({ where: { chapterDraftId: { in: draftIds } } });
+        await tx.evidenceDraftLink.deleteMany({ where: { draftId: { in: draftIds } } });
+        await tx.criterionScoreResult.deleteMany({
+          where: { OR: [{ chapterId: { in: chapterIds } }, { draftId: { in: draftIds } }] },
+        });
+        await tx.ragasScore.deleteMany({
+          where: {
+            OR: [{ chapterId: { in: chapterIds } }, { chapterDraftId: { in: draftIds } }],
+          },
+        });
+        await tx.chatMessage.deleteMany({ where: { chapterId: { in: chapterIds } } });
+        await tx.evidenceChapterLink.deleteMany({ where: { chapterId: { in: chapterIds } } });
+
+        // writing_document_recommendations + writing_recommendation_items ikut
+        // lewat ON DELETE CASCADE di DB saat draft-nya dihapus di bawah ini.
+        await tx.chapterDraft.deleteMany({ where: { id: { in: draftIds } } });
+        await tx.documentChapter.deleteMany({ where: { documentId: id } });
+
+        await tx.assessmentVerdict.deleteMany({ where: { documentId: id } });
+        await tx.assessmentSession.deleteMany({ where: { documentId: id } });
+        await tx.ledChunkEmbedding.deleteMany({ where: { documentId: id } });
+        await tx.ledDocument.delete({ where: { id } });
+      });
     } catch (err) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&

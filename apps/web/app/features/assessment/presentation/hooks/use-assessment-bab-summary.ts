@@ -1,8 +1,8 @@
 import * as React from 'react';
 
-import { findKriteriaForBab } from '~/features/chapter/domain/entities/rubric-criterion.entity';
 import { assessmentSessionRepository } from '../../data/repositories/assessment-session.repository';
 import { assessmentVerdictRepository } from '../../data/repositories/assessment-verdict.repository';
+import { rubricCriterionAmiRepository } from '../../data/repositories/rubric-criterion-ami.repository';
 import {
 	gabungPenilaian,
 	ringkasPenilaian,
@@ -43,7 +43,11 @@ export function useAssessmentBabSummary(
 		let dibatalkan = false;
 
 		async function muat() {
-			const kriteria = findKriteriaForBab(urutanBab);
+			const semuaKriteria = await rubricCriterionAmiRepository.findAll();
+			const kriteria = semuaKriteria.filter((k) =>
+				k.urutanBab.includes(urutanBab),
+			);
+			if (dibatalkan) return;
 			if (kriteria.length === 0) {
 				if (!dibatalkan) setRingkas(null);
 				return;

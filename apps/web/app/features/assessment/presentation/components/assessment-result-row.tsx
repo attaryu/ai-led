@@ -56,9 +56,11 @@ export function AssessmentResultRow({
 					<span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
 						{kriteria.no}
 					</span>
-					<span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-						{kriteria.kodeKriteria}
-					</span>
+					{kriteria.kodeKriteria && (
+						<span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+							{kriteria.kodeKriteria}
+						</span>
+					)}
 
 					<AssessmentStatusBadge status={row.statusTinjau} />
 

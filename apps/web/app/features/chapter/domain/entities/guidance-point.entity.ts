@@ -1,5 +1,5 @@
+import { rubricCriterionAmiRepository } from '~/features/assessment/data/repositories/rubric-criterion-ami.repository';
 import {
-	findKriteriaForBab,
 	type RubricCriterion,
 	type RubricLevel,
 	type RubricScoreType,
@@ -8,11 +8,6 @@ import {
 /**
  * Poin panduan yang dirujuk AI saat menyusun sebuah bab
  * (docs/application_flow.md §11.1b, docs/database.md §13–§15).
- *
- * **Master data global.** Sama untuk semua tenant, di-seed sekali, tidak pernah
- * disunting lewat UI — karena itu ia konstanta modul di berkas ini, bukan
- * repository localStorage, sejajar dengan `RUBRIK_KRITERIA` dan
- * `CHAPTER_TEMPLATE` yang sudah lebih dulu mengambil keputusan yang sama.
  *
  * **Dua kelompok, karena pipeline-nya memang dua.** `generation_runs` menyimpan
  * `pedoman_used` dan `rubric_used` di dua kolom terpisah: yang pertama aturan
@@ -24,41 +19,28 @@ import {
  *
  * ## Apa yang nyata dan apa yang tiruan
  *
- * Ini bagian yang paling perlu dibaca sebelum menyunting berkas ini. §11.1 dua
- * kali menolak membangun bagian panduan dengan alasan "menyeed panduan lebih
- * dulu berarti mengarang keterkaitan yang belum ada", dan alasan itu tidak
- * sepenuhnya gugur: **poin panduan bersifat normatif**. Kutipan bukti dukung
- * yang meleset masih bisa diperiksa penggunanya dengan membuka berkasnya
- * sendiri; poin panduan yang dikarang mengaku menyampaikan tuntutan LAM, dan
- * penyusun yang memercayainya tidak punya cara mendeteksi kekeliruannya.
+ * Ini bagian yang paling perlu dibaca sebelum menyunting berkas ini.
  *
- * Karena itu yang dipakai di sini sebisa mungkin bahan yang benar-benar ada:
- *
- * - **NYATA — kerangka LED-PS.** `CHAPTER_TOC` memuat struktur aslinya: BAB I–III,
- *   `C.1.`…`C.9.`, dan `D. Analisis dan Penetapan Program Pengembangan`. Sub-poin
- *   C.1 terurai penuh di sana: `1.1 Latar Belakang`, `1.2 Kebijakan`,
- *   `1.3 Indikator Kinerja Utama (IKU)`, `1.4 Analisis Faktor…`,
- *   `1.5 Strategi perbaikan…`.
- * - **NYATA — nama indikator.** Diambil apa adanya dari
- *   `apps/ai/data/reference_scores_claude.csv`, 60 indikator LAM Teknik beserta
- *   tipe skornya. Bukti silang bahwa nama-nama itu memang LAM: sub-poin
- *   `1.3 a/b/c` di `CHAPTER_TOC` cocok persis dengan indikator 1/2/3 di CSV —
- *   dua berkas yang tidak saling tahu menyebut hal yang sama.
- * - **NYATA — rincian aspek S4** untuk indikator 1, 4, dan 8, dari
- *   `apps/ai/data/penilaian_10_rubrik_sarjana_terapan.csv`.
- * - **INFERENSI — pengulangan kerangka lima poin ke C.2–C.9.** Hanya C.1 yang
- *   terurai di `CHAPTER_TOC`; sisanya disimpulkan dari format LED-PS yang memang
- *   berulang. `chapter-toc.entity.ts` sendiri memilih **tidak** menebak isi
- *   C.2–C.9, jadi keputusan berbeda di sini disebutkan terang-terangan, bukan
- *   diam-diam: yang diulang cuma judul bagiannya, bukan isinya.
- * - **INFERENSI — pemetaan bab → indikator** di {@link INDIKATOR_PER_BAB}. CSV-nya
- *   tidak membawa pengelompokan kriteria sama sekali; pemetaan ini diturunkan
- *   dari nama indikator dan struktur LED. Itu penilaian, bukan data.
- * - **TIRUAN — seluruh kalimat `isiTeks`.** Tidak ada satu kalimat pedoman LAM
- *   pun di repo ini. Aturan penulisannya di {@link POIN_PEDOMAN}.
+ * - **NYATA — kerangka LED-PS.** `CHAPTER_TEMPLATE` (4 bab) dan pengelompokan
+ *   kriteria akreditasi C.1–C.7 diverifikasi dari `led_bab_tabel.json` (struktur
+ *   asli LED PJJ Teknik Telekomunikasi, diekstrak dari dokumen contoh) —
+ *   lewat field `bab` tiap heading, bukan sekadar urutan tampil.
+ * - **NYATA — 64 indikator matriks penilaian.** Diambil langsung dari
+ *   `rubricCriterionAmiRepository` (`apps/ai/data/rubric_cache/matrix.json`,
+ *   hasil `POST /upload/matrix` atas PDF matriks LAM Teknik asli). Bukan
+ *   kutipan tersalin di sini — diminta langsung tiap dipanggil, supaya tidak
+ *   ada dua salinan yang bisa berbeda isi.
+ * - **INFERENSI — batas nomor indikator per kelompok C.1–C.7** di
+ *   {@link KELOMPOK_KRITERIA}. Matriksnya sendiri tidak membawa pengelompokan
+ *   eksplisit per indikator, jadi batasnya diturunkan dari kecocokan nama
+ *   indikator dengan judul tiap kelompok (mis. indikator 1–3 semuanya
+ *   menyebut VMTS, cocok dengan C.1 "Diferensiasi Misi"). Itu penilaian,
+ *   bukan data — beda dari nomor indikatornya sendiri yang nyata.
+ * - **TIRUAN — seluruh kalimat kerangka `isiTeks`** di {@link POIN_PEDOMAN}.
+ *   Tidak ada satu kalimat pedoman LAM pun di repo ini.
  *
  * Konsekuensinya dinyatakan di layar, bukan didiamkan: kaki panel dan kaki laci
- * sama-sama menyebut bahwa rumusannya contoh dan bukan kutipan resmi.
+ * sama-sama menyebut bahwa rumusan kalimatnya contoh dan bukan kutipan resmi.
  */
 export type TipeSumberPanduan =
 	| 'PANDUAN_LAM'
@@ -81,12 +63,12 @@ export type ButirIku = { nama: string; tipeSkor: RubricScoreType };
  * digabung dengan dokumen induknya dan dengan `PANDUAN_DETAIL_BAB` (§15).
  *
  * `urutanBab` tidak ikut di sini karena poin yang sampai ke pemanggil memang
- * sudah tersaring untuk satu bab — pola yang sama dipakai `findKriteriaForBab`.
+ * sudah tersaring untuk satu bab — pola yang sama dipakai `findRubrikDipakaiForBab`.
  */
 export type PoinPanduan = {
 	id: string;
 	sumber: SumberPanduan;
-	/** Penomoran asli dokumen, mis. `4.3` atau `D.2`. */
+	/** Penomoran struktur LED-PS, mis. `3.2` untuk C.3 poin ke-2. */
 	kodePoin: string;
 	judulPoin: string;
 	isiTeks: string;
@@ -119,150 +101,38 @@ const MATRIKS_PENILAIAN: SumberPanduan = {
 };
 
 /**
- * Nomor kriteria LAM untuk tiap bab yang memang berupa bab kriteria.
- *
- * Bab 4 adalah "Kriteria 1", bab 12 adalah "Kriteria 9" — lihat
- * `CHAPTER_TEMPLATE`. Bab 13 bukan bab kriteria tapi tetap punya poin panduan
- * sendiri (`D. Analisis dan Penetapan Program Pengembangan` di `CHAPTER_TOC`),
- * jadi ia ditangani terpisah.
+ * Kelompok kriteria akreditasi (C.1–C.7), seluruhnya anak BAB II "Struktur
+ * Laporan Evaluasi Diri" — lihat catatan `urutanBab` di
+ * `rubric-criterion-ami.repository.ts` untuk cara batasnya diverifikasi.
+ * `dariNo`/`sampaiNo` inklusif, mengacu ke `RubricCriterion.no`.
  */
-const NOMOR_KRITERIA: Record<number, number> = {
-	4: 1,
-	5: 2,
-	6: 3,
-	7: 4,
-	8: 5,
-	9: 6,
-	10: 7,
-	11: 8,
-	12: 9,
-};
-
-/**
- * Nama indikator LAM Teknik per bab — **dikutip apa adanya** dari
- * `apps/ai/data/reference_scores_claude.csv`, tanpa diperhalus dan tanpa
- * diterjemahkan ulang.
- *
- * **Pemetaannya inferensi, bukan data.** CSV itu hanya membawa `indicator_no`
- * dan `kriteria`; pengelompokannya ke kriteria C.1–C.9 disimpulkan dari nama
- * indikatornya sendiri. Yang paling tidak pasti: indikator 31–37 (kinerja dan
- * luaran DTPS) ditaruh di bab 7 bersama SDM, padahal bisa juga dibaca sebagai
- * luaran di bab 12; dan 53/55 (SPMI, AMI) ditaruh di bab 5 bersama tata pamong.
- */
-const INDIKATOR_PER_BAB: Record<number, ButirIku[]> = {
-	4: [
-		{ nama: 'Kekhasan VMTS', tipeSkor: 'kualitatif' },
-		{ nama: 'Mekanisme penyusunan VMTS', tipeSkor: 'kualitatif' },
-		{ nama: 'Tingkat pemahaman dan pencapaian VMTS', tipeSkor: 'kualitatif' },
-	],
-	5: [
-		{ nama: 'Sistem tata pamong', tipeSkor: 'komposit' },
-		{
-			nama: 'Komitmen pimpinan dan kemampuan manajerial',
-			tipeSkor: 'komposit',
-		},
-		{ nama: 'Relevansi dan tingkat kerja sama', tipeSkor: 'komposit' },
-		{ nama: 'Pelaksanaan kerja sama', tipeSkor: 'kualitatif' },
-		{ nama: 'Unit SPMI dan pengakuan mutu', tipeSkor: 'komposit' },
-		{ nama: 'Keterlaksanaan SPMI dan AMI', tipeSkor: 'kualitatif' },
-	],
-	// Sengaja tipis, dan **tidak ditambal**. Yang tersisa untuk Kriteria 3 cuma
-	// dua nama, dan keduanya tidak menyentuh keketatan seleksi maupun layanan
-	// kemahasiswaan yang justru ditanya `RUBRIK_KRITERIA` untuk bab yang sama.
-	// Menambahkan nama karangan supaya kelompoknya terlihat seimbang persis
-	// jenis karangan yang dihindari seluruh berkas ini — dan selisihnya sendiri
-	// adalah keterangan yang jujur tentang seberapa sebagian data yang terparsing.
-	6: [
-		{ nama: 'Rasio mahasiswa terhadap dosen', tipeSkor: 'kuantitatif' },
-		{ nama: 'Mahasiswa asing', tipeSkor: 'kuantitatif' },
-	],
-	7: [
-		{ nama: 'Profil dosen (NDTPS, PDTT)', tipeSkor: 'kuantitatif' },
-		{ nama: 'DTPS bergelar doktor', tipeSkor: 'kuantitatif' },
-		{
-			nama: 'DTPS berjabatan guru besar, lektor kepala, dan lektor',
-			tipeSkor: 'kuantitatif',
-		},
-		{ nama: 'Tenaga kependidikan', tipeSkor: 'kualitatif' },
-		{ nama: 'Beban kerja DTPS', tipeSkor: 'kuantitatif' },
-		{ nama: 'Kinerja penelitian DTPS', tipeSkor: 'kuantitatif' },
-		{ nama: 'Kinerja PkM DTPS', tipeSkor: 'kuantitatif' },
-		{ nama: 'Publikasi DTPS', tipeSkor: 'kuantitatif' },
-		{ nama: 'Luaran HKI dan paten DTPS', tipeSkor: 'kuantitatif' },
-		{
-			nama: 'Publikasi internasional bereputasi DTPS',
-			tipeSkor: 'kuantitatif',
-		},
-		{ nama: 'Karya ilmiah DTPS yang disitasi', tipeSkor: 'kuantitatif' },
-		{ nama: 'Rekognisi DTPS', tipeSkor: 'kuantitatif' },
-	],
-	8: [
-		{ nama: 'Pengelolaan keuangan', tipeSkor: 'kualitatif' },
-		{
-			nama: 'Biaya operasional pendidikan per mahasiswa per tahun',
-			tipeSkor: 'kuantitatif',
-		},
-		{ nama: 'Dana penelitian DTPS', tipeSkor: 'kuantitatif' },
-		{ nama: 'Dana PkM DTPS', tipeSkor: 'kuantitatif' },
-		{ nama: 'Sarana dan prasarana', tipeSkor: 'komposit' },
-		{
-			nama: 'Keselamatan, kesehatan kerja, dan lingkungan (K3L)',
-			tipeSkor: 'kualitatif',
-		},
-	],
-	9: [
-		{ nama: 'Pemutakhiran kurikulum', tipeSkor: 'kualitatif' },
-		{ nama: 'Profil lulusan dan CPL', tipeSkor: 'komposit' },
-		{ nama: 'Kesesuaian dan tinjauan CPL', tipeSkor: 'komposit' },
-		{ nama: 'Rencana pembelajaran semester (RPS)', tipeSkor: 'komposit' },
-		{ nama: 'Proses pembelajaran', tipeSkor: 'komposit' },
-		{
-			nama: 'Integrasi penelitian dan PkM dalam pembelajaran',
-			tipeSkor: 'kualitatif',
-		},
-		{ nama: 'Persentase jam praktikum', tipeSkor: 'kuantitatif' },
-		{ nama: 'Basic sciences dan matematika', tipeSkor: 'kualitatif' },
-		{ nama: 'Capstone design', tipeSkor: 'kualitatif' },
-		{ nama: 'Suasana akademik', tipeSkor: 'komposit' },
-	],
-	10: [
-		{ nama: 'Penelitian: peta jalan dan relevansi', tipeSkor: 'kualitatif' },
-		{
-			nama: 'Penelitian DTPS yang melibatkan mahasiswa',
-			tipeSkor: 'kuantitatif',
-		},
-	],
-	11: [
-		{
-			nama: 'PkM: kesesuaian peta jalan dan visi keilmuan',
-			tipeSkor: 'kualitatif',
-		},
-		{ nama: 'PkM yang melibatkan mahasiswa', tipeSkor: 'kuantitatif' },
-	],
-	12: [
-		{ nama: 'IPK lulusan', tipeSkor: 'kuantitatif' },
-		{
-			nama: 'Prestasi akademik dan nonakademik mahasiswa',
-			tipeSkor: 'komposit',
-		},
-		{ nama: 'Masa studi', tipeSkor: 'kuantitatif' },
-		{ nama: 'Persentase lulusan tepat waktu', tipeSkor: 'kuantitatif' },
-		{ nama: 'Publikasi ilmiah mahasiswa', tipeSkor: 'kuantitatif' },
-		{ nama: 'Luaran HKI dan paten mahasiswa', tipeSkor: 'kuantitatif' },
-		{ nama: 'Tracer study', tipeSkor: 'kualitatif' },
-		{ nama: 'Waktu tunggu lulusan', tipeSkor: 'kuantitatif' },
-		{ nama: 'Kesesuaian bidang kerja lulusan', tipeSkor: 'kuantitatif' },
-		{ nama: 'Tingkat dan ukuran tempat kerja lulusan', tipeSkor: 'kuantitatif' },
-		{ nama: 'Tingkat kepuasan pengguna lulusan', tipeSkor: 'kuantitatif' },
-	],
-};
+const KELOMPOK_KRITERIA: {
+	nomor: number;
+	judul: string;
+	dariNo: number;
+	sampaiNo: number;
+}[] = [
+	{ nomor: 1, judul: 'Diferensiasi Misi (Visi, Misi, Tujuan, dan Strategi)', dariNo: 1, sampaiNo: 3 },
+	{ nomor: 2, judul: 'Akuntabilitas', dariNo: 4, sampaiNo: 11 },
+	{ nomor: 3, judul: 'Relevansi Pendidikan, Penelitian, dan PkM', dariNo: 12, sampaiNo: 27 },
+	{ nomor: 4, judul: 'Sumber Daya Manusia', dariNo: 28, sampaiNo: 42 },
+	{
+		nomor: 5,
+		judul: 'Sarana, Prasarana, dan Keselamatan Kesehatan Kerja dan Lingkungan (K3L)',
+		dariNo: 43,
+		sampaiNo: 44,
+	},
+	{ nomor: 6, judul: 'Mahasiswa dan Luaran Mahasiswa', dariNo: 45, sampaiNo: 56 },
+	{ nomor: 7, judul: 'Sistem Penjaminan Mutu', dariNo: 57, sampaiNo: 61 },
+];
 
 /**
  * Rincian aspek penilaian tingkat tertinggi yang **nyata**, dikutip dari
  * `apps/ai/data/penilaian_10_rubrik_sarjana_terapan.csv`.
  *
- * Hanya tiga indikator yang punya rincian ini di sumbernya, dan tidak ada yang
- * ditambahkan sendiri — indikator lain sekadar tidak menyebut aspeknya.
+ * Cocok lewat `startsWith` karena nama indikator asli kadang membawa ekor
+ * rumus PDF (mis. "Sistem tata pamong Skor = ((I x 2)+ (II)) / 3") — lihat
+ * {@link bersihkanNamaIndikator}.
  */
 const ASPEK_NYATA: Record<string, string> = {
 	'Kekhasan VMTS':
@@ -272,6 +142,17 @@ const ASPEK_NYATA: Record<string, string> = {
 	'Pengelolaan keuangan':
 		'transparansi, kepatuhan regulasi, efisiensi dan efektivitas, pengelolaan risiko, serta audit internal dan eksternal',
 };
+
+/**
+ * Nama indikator dari `matrix.json` kadang membawa ekor rumus penilaian
+ * (parser matriks membaca kolom "Kriteria" dan rumus skalanya sebagai satu
+ * baris — lihat `apps/ai/ingestion/matrix_parser.py`). Ekornya berguna di
+ * tabel hasil Penilaian AMI (menyatakan cara hitungnya), tapi mengotori
+ * kalimat panduan penulisan di sini, jadi dipotong sebelum dipakai.
+ */
+function bersihkanNamaIndikator(nama: string): string {
+	return nama.replace(/\s*Skor\s*=.*/i, '').trim();
+}
 
 /**
  * Kerangka lima poin LED-PS beserta kalimat penjelasnya.
@@ -285,7 +166,8 @@ const ASPEK_NYATA: Record<string, string> = {
  *    keduanya membuat kalimat karangan terbaca sebagai tuntutan resmi.
  * 2. **Tanpa nomor pasal atau kutipan resmi.** `kodePoin` hanya penomoran
  *    struktur LED-PS; tidak ada rujukan ke peraturan.
- * 3. **Nama indikator dikutip apa adanya**, tidak diparafrase.
+ * 3. **Nama indikator dikutip apa adanya** (sesudah {@link bersihkanNamaIndikator}),
+ *    tidak diparafrase.
  */
 const POIN_PEDOMAN: {
 	akhiran: string;
@@ -340,134 +222,76 @@ function huruf(urutan: number): string {
 	return String.fromCharCode(97 + (urutan % 26));
 }
 
-/**
- * Judul kriteria tanpa awalan "Kriteria N — ", untuk disisipkan ke dalam
- * kalimat. `CHAPTER_TEMPLATE` menulis bab 4 sebagai
- * "Kriteria 1 — Visi, Misi, Tujuan, dan Strategi"; yang dibutuhkan kalimatnya
- * cuma bagian sesudah tanda pisah.
- */
-const JUDUL_KRITERIA: Record<number, string> = {
-	4: 'Visi, Misi, Tujuan, dan Strategi',
-	5: 'Tata Pamong, Tata Kelola, dan Kerja Sama',
-	6: 'Mahasiswa',
-	7: 'Sumber Daya Manusia',
-	8: 'Keuangan, Sarana, dan Prasarana',
-	9: 'Pendidikan',
-	10: 'Penelitian',
-	11: 'Pengabdian kepada Masyarakat',
-	12: 'Luaran dan Capaian Tridharma',
-	13: 'Analisis dan Penetapan Program Pengembangan',
-};
-
-/**
- * Poin di luar sembilan bab kriteria.
- *
- * Sengaja **tidak** memakai kerangka lima bagian — kerangka itu milik bab
- * kriteria, dan memaksakannya ke bab lain berarti mengarang struktur yang tidak
- * ada.
- *
- * `D.2` sengaja dipetakan ke **dua bab sekaligus**, dan itu satu-satunya hal di
- * fitur ini yang membuktikan `PANDUAN_DETAIL_BAB` memang many-to-many, bukan
- * larik hiasan: bab 2 bernama "Kondisi Eksternal" di `CHAPTER_TEMPLATE`, dan
- * simpul Daftar Isi yang menunjuknya berbunyi "B. Analisis Lingkungan Eksternal
- * dalam Pengembangan UPPS dan Prodi" — poin yang sama persis dengan yang dibaca
- * bab 13, dari sudut yang berbeda.
- */
-const POIN_LUAR_KRITERIA: {
-	akhiran: string;
-	judulPoin: string;
-	isiTeks: string;
-	iku: ButirIku[];
-	urutanBab: number[];
-}[] = [
-	{
-		akhiran: '1',
-		judulPoin: 'Analisis Capaian Kinerja',
-		isiTeks:
-			'Bagian ini merangkum capaian seluruh kriteria jadi satu bacaan utuh, bukan menyalin ulang bab per bab. Yang dicari pola lintas kriteria dan konsistensi antara satu capaian dengan capaian lainnya.',
-		iku: [
-			{ nama: 'Indikator kinerja tambahan (IKT)', tipeSkor: 'kualitatif' },
-			{ nama: 'Evaluasi capaian kinerja', tipeSkor: 'kualitatif' },
-			{ nama: 'Kepuasan pemangku kepentingan', tipeSkor: 'kualitatif' },
-		],
-		urutanBab: [13],
-	},
-	{
-		akhiran: '2',
-		judulPoin: 'Analisis Lingkungan dan SWOT',
-		isiTeks:
-			'Bagian ini membaca lingkungan tempat program studi bekerja — kebijakan, pasar kerja, pesaing, dan mitra — lalu memetakannya jadi kekuatan, kelemahan, peluang, dan ancaman yang bisa ditindaklanjuti.',
-		iku: [{ nama: 'Analisis lingkungan dan SWOT', tipeSkor: 'komposit' }],
-		urutanBab: [2, 13],
-	},
-	{
-		akhiran: '3',
-		judulPoin: 'Program Pengembangan',
-		isiTeks:
-			'Bagian ini menurunkan hasil analisis jadi program yang punya sasaran, penanggung jawab, dan tenggat — bukan daftar keinginan.',
-		iku: [
-			{ nama: 'Tujuan strategis pengembangan', tipeSkor: 'kualitatif' },
-			{ nama: 'Program pengembangan berkelanjutan', tipeSkor: 'kualitatif' },
-		],
-		urutanBab: [13],
-	},
-];
+function keButirIku(kriteria: RubricCriterion): ButirIku {
+	return { nama: bersihkanNamaIndikator(kriteria.kriteria), tipeSkor: kriteria.tipeSkor };
+}
 
 /**
  * Poin pedoman penulisan yang mencocoki satu nomor bab.
  *
- * Larik kosong berarti panduan LAM memang tidak mengatur bab itu — bukan
- * kegagalan pemuatan, dan tampilannya harus menyatakan itu. Bunyi yang sama
- * sudah dipakai {@link findKriteriaForBab}.
+ * Async karena sumbernya (`rubricCriterionAmiRepository`) jaringan, bukan
+ * konstanta modul lagi — beda dari versi sebelumnya, yang bisa sinkron karena
+ * datanya memang tiruan. Larik kosong berarti LAM tidak mengatur bab itu (BAB
+ * I Pendahuluan, BAB IV Penutup) — bukan kegagalan pemuatan.
  */
-export function findPanduanForBab(urutanBab: number): PoinPanduan[] {
-	const nomor = NOMOR_KRITERIA[urutanBab];
-	if (nomor) {
-		const judulKriteria = JUDUL_KRITERIA[urutanBab];
-		const indikator = INDIKATOR_PER_BAB[urutanBab] ?? [];
+export async function findPanduanForBab(urutanBab: number): Promise<PoinPanduan[]> {
+	if (urutanBab !== 2 && urutanBab !== 3) return [];
 
+	const semua = await rubricCriterionAmiRepository.findAll();
+
+	if (urutanBab === 3) {
+		// BAB III "Program Pengembangan Berkelanjutan" — penutup 3 indikator
+		// (Analisis SWOT, Tujuan Strategi Pengembangan, Program Pengembangan
+		// Berkelanjutan) yang namanya cocok persis judul babnya sendiri.
+		const indikator = semua
+			.filter((k) => k.urutanBab.includes(3))
+			.map(keButirIku);
 		return POIN_PEDOMAN.map((poin) => ({
-			id: `poin-pedoman-${urutanBab}-${poin.akhiran}`,
+			id: `poin-pedoman-3-${poin.akhiran}`,
 			sumber: PANDUAN_LED,
-			kodePoin: `${nomor}.${poin.akhiran}`,
+			kodePoin: `3.${poin.akhiran}`,
 			judulPoin: poin.judulPoin,
-			isiTeks: poin.isiTeks({ judulKriteria, indikator }),
+			isiTeks: poin.isiTeks({
+				judulKriteria: 'Program Pengembangan Berkelanjutan',
+				indikator,
+			}),
 			iku: poin.akhiran === '3' ? indikator : [],
 		}));
 	}
 
-	return POIN_LUAR_KRITERIA.filter((poin) =>
-		poin.urutanBab.includes(urutanBab),
-	).map((poin) => ({
-		id: `poin-pedoman-d-${poin.akhiran}`,
-		sumber: PANDUAN_LED,
-		kodePoin: `D.${poin.akhiran}`,
-		judulPoin: poin.judulPoin,
-		isiTeks: poin.isiTeks,
-		iku: poin.iku,
-	}));
+	// BAB II: kerangka lima poin diulang sekali per kelompok C.1–C.7.
+	return KELOMPOK_KRITERIA.flatMap((kelompok) => {
+		const indikator = semua
+			.filter((k) => k.no >= kelompok.dariNo && k.no <= kelompok.sampaiNo)
+			.map(keButirIku);
+
+		return POIN_PEDOMAN.map((poin) => ({
+			id: `poin-pedoman-2-${kelompok.nomor}-${poin.akhiran}`,
+			sumber: PANDUAN_LED,
+			kodePoin: `${kelompok.nomor}.${poin.akhiran}`,
+			judulPoin: poin.judulPoin,
+			isiTeks: poin.isiTeks({ judulKriteria: kelompok.judul, indikator }),
+			iku: poin.akhiran === '3' ? indikator : [],
+		}));
+	});
 }
 
 /**
- * Rubrik yang jadi sasaran tulisan satu bab.
+ * Rubrik yang jadi sasaran tulisan satu bab — indikator matriks penilaian AMI
+ * yang `urutanBab`-nya mencakup bab ini (`rubricCriterionAmiRepository`).
  *
- * **Bukan katalog baru**: seluruhnya turunan `RUBRIK_KRITERIA`, karena dua
- * daftar indikator yang berdiri sendiri-sendiri pasti akan berbeda isinya suatu
- * saat — alasan yang sudah ditulis `rubric-criterion.entity.ts` untuk dirinya
- * sendiri. Menambah master data kedua di sini hanya akan mengulangi kesalahan
- * yang berkas itu sengaja hindari.
- *
- * `reduce` tanpa nilai awal, bukan `levelUntukSkor(k, skorMaksimal(k))!`:
- * skemanya sudah menjamin `levelSkor` tidak pernah kosong, jadi bentuk ini tidak
- * butuh tanda seru yang justru menutupi satu-satunya kemungkinan gagalnya.
+ * Async untuk alasan yang sama seperti {@link findPanduanForBab}.
  */
-export function findRubrikDipakaiForBab(
+export async function findRubrikDipakaiForBab(
 	urutanBab: number,
-): ButirRubrikDipakai[] {
-	return findKriteriaForBab(urutanBab).map((kriteria) => ({
-		kriteria,
-		target: kriteria.levelSkor.reduce((a, b) => (b.skor > a.skor ? b : a)),
-	}));
+): Promise<ButirRubrikDipakai[]> {
+	const semua = await rubricCriterionAmiRepository.findAll();
+	return semua
+		.filter((kriteria) => kriteria.urutanBab.includes(urutanBab))
+		.map((kriteria) => ({
+			kriteria,
+			target: kriteria.levelSkor.reduce((a, b) => (b.skor > a.skor ? b : a)),
+		}));
 }
 
 /** Dokumen matriks penilaian; dipakai kelompok rubrik di panel. */

@@ -1,7 +1,6 @@
 import { ApiError } from '~/core/lib/api-client';
-import { CHAPTER_TEMPLATE, chapterRepository } from '~/features/chapter/data/repositories/chapter.repository';
+import { CHAPTER_TEMPLATE } from '~/features/chapter/data/repositories/chapter.repository';
 import { chapterRemoteSource } from '~/features/chapter/data/sources/remote/chapter.remote-source';
-import { kontenBab } from '~/features/chapter/data/sources/remote/chapter-content.mock';
 import { studyProgramRepository } from '~/features/study-program/data/repositories/study-program.repository';
 import {
 	type LedProjectPage,
@@ -91,8 +90,8 @@ export const ledProjectRepository = {
 
 	/**
 	 * Satu-satunya jalan membuat Dokumen LED — backend tidak membuat 14 bab
-	 * standar otomatis, jadi dipateraikan di sini, tiap bab langsung terisi
-	 * contoh prosa LED lewat {@link kontenBab} (dulu jalan di localStorage).
+	 * standar otomatis, jadi dipateraikan di sini. Tiap bab dibuat kosong
+	 * (cuma struktur judul + urutan); isinya diisi Penyusun lewat editor.
 	 */
 	async create(data: {
 		studyProgramId: string;
@@ -108,17 +107,9 @@ export const ledProjectRepository = {
 
 		const program = await studyProgramRepository.findById(data.studyProgramId);
 		const prodi = program?.studyProgramName ?? '(Prodi tidak diketahui)';
-		const tahunAkhir = /^\d{4}\/(\d{4})$/.exec(data.tahunAkademik)?.[1] ?? data.tahunAkademik;
-		const konteks = { prodi, lkps: `LKPS_${prodi.replace(/\s+/g, '_')}_${tahunAkhir}.xlsx` };
 
 		await Promise.all(
-			CHAPTER_TEMPLATE.map(async (bab) => {
-				const dibuat = await chapterRemoteSource.create(dokumen.id, bab);
-				await chapterRepository.updateKonten(
-					dibuat.id,
-					kontenBab(bab.chapterOrder, bab.chapterTitle, konteks),
-				);
-			}),
+			CHAPTER_TEMPLATE.map((bab) => chapterRemoteSource.create(dokumen.id, bab)),
 		);
 
 		window.dispatchEvent(new Event('storage-update'));
@@ -126,10 +117,8 @@ export const ledProjectRepository = {
 	},
 
 	async delete(id: string): Promise<void> {
-		// Sesi penilaian AMI & keputusan Penjamin Mutu sekarang baris Postgres
-		// sungguhan (AssessmentSession/AssessmentVerdict, FK ke dokumen_led) --
-		// dokumen yang masih punya riwayat penilaian akan ditolak server (FK
-		// constraint), sama seperti dokumen yang masih punya bab.
+		// Backend menghapus seluruh isi dokumen (bab, draft, chat, skor, sesi/verdict
+		// AMI, chunk embedding) dalam satu transaksi — tidak perlu dibereskan manual.
 		await ledProjectRemoteSource.remove(id);
 		window.dispatchEvent(new Event('storage-update'));
 	},

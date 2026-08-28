@@ -5,7 +5,6 @@ xlsx/xls yang diupload lewat halaman Document)."""
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
-from openpyxl import load_workbook
 
 
 def _empty(val) -> bool:
@@ -257,8 +256,10 @@ def _find_info_table(grid, occupied_rows: set, occupied_cols: set):
     return df
 
 
-def extract_tables(filepath: str, sheet_name: str, header_sep: str = " | ") -> Dict:
-    wb = load_workbook(filepath, data_only=True)
+def extract_tables(wb, sheet_name: str, header_sep: str = " | ") -> Dict:
+    """`wb` is an already-loaded Workbook (`load_workbook(path, data_only=True)`)
+    — reloading + reparsing the whole file per sheet is what made multi-sheet
+    LKPS uploads (tens of sheets) crawl; the caller now loads it once."""
     ws = wb[sheet_name]
     mmap, merge_cols = _build_merge_map(ws)
     grid = _read_grid(ws, mmap)

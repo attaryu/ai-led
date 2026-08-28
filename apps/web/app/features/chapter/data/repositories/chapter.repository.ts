@@ -48,8 +48,15 @@ function toEntityFromBackend(row: BackendBabDokumen): ChapterEntity {
 }
 
 /**
- * Struktur bab standar LED LAM-Teknik, dipakai sebagai cetakan setiap kali
- * Dokumen LED baru dibuat (docs/application_flow.md §7.3).
+ * Struktur bab LED Sarjana Terapan PJJ (LAM Teknik), dipakai sebagai cetakan
+ * setiap kali Dokumen LED baru dibuat (docs/application_flow.md §7.3).
+ *
+ * Empat bab, bukan satu-bab-per-kriteria — cocok dengan template LED asli
+ * (diekstrak dari contoh LED PJJ Teknik Telekomunikasi, lihat
+ * `led_bab_tabel.json`): BAB I Pendahuluan, BAB II Struktur LED, BAB III
+ * Program Pengembangan Berkelanjutan (memuat seluruh 64 indikator matriks
+ * penilaian sebagai sub-bagian C.1–C.7 di dalam SATU bab, bukan bab
+ * terpisah per kriteria), BAB IV Penutup.
  *
  * Sengaja satu level mengikuti `BAB_DOKUMEN.urutan_bab`; penjenjangan Daftar Isi
  * masih Pertanyaan Terbuka #2 (§16). Kalau daftar resminya ternyata berbeda,
@@ -57,25 +64,9 @@ function toEntityFromBackend(row: BackendBabDokumen): ChapterEntity {
  */
 export const CHAPTER_TEMPLATE: { chapterOrder: number; chapterTitle: string }[] = [
 	{ chapterOrder: 1, chapterTitle: 'Pendahuluan' },
-	{ chapterOrder: 2, chapterTitle: 'Kondisi Eksternal' },
-	{ chapterOrder: 3, chapterTitle: 'Profil Unit Pengelola Program Studi' },
-	{ chapterOrder: 4, chapterTitle: 'Kriteria 1 — Visi, Misi, Tujuan, dan Strategi' },
-	{
-		chapterOrder: 5,
-		chapterTitle: 'Kriteria 2 — Tata Pamong, Tata Kelola, dan Kerja Sama',
-	},
-	{ chapterOrder: 6, chapterTitle: 'Kriteria 3 — Mahasiswa' },
-	{ chapterOrder: 7, chapterTitle: 'Kriteria 4 — Sumber Daya Manusia' },
-	{ chapterOrder: 8, chapterTitle: 'Kriteria 5 — Keuangan, Sarana, dan Prasarana' },
-	{ chapterOrder: 9, chapterTitle: 'Kriteria 6 — Pendidikan' },
-	{ chapterOrder: 10, chapterTitle: 'Kriteria 7 — Penelitian' },
-	{ chapterOrder: 11, chapterTitle: 'Kriteria 8 — Pengabdian kepada Masyarakat' },
-	{ chapterOrder: 12, chapterTitle: 'Kriteria 9 — Luaran dan Capaian Tridharma' },
-	{
-		chapterOrder: 13,
-		chapterTitle: 'Analisis dan Penetapan Program Pengembangan',
-	},
-	{ chapterOrder: 14, chapterTitle: 'Penutup' },
+	{ chapterOrder: 2, chapterTitle: 'Struktur Laporan Evaluasi Diri' },
+	{ chapterOrder: 3, chapterTitle: 'Program Pengembangan Berkelanjutan' },
+	{ chapterOrder: 4, chapterTitle: 'Penutup' },
 ];
 
 export const chapterRepository = {

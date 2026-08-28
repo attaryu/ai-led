@@ -108,6 +108,14 @@ class AvailableModelsResponse(BaseModel):
 class IndicatorListItem(BaseModel):
     no: int
     kriteria: str
+    # Everything below is additive — existing callers that only read
+    # no/kriteria (the indicator picker) are unaffected. Added so the
+    # frontend can render real rubric text/levels instead of its own
+    # placeholder sample data (see RUBRIK_KRITERIA in rubric-criterion.entity.ts).
+    indikator: str
+    score_type: str
+    score_criteria: dict[int, str]
+    lkps_table_ref: list[str]
 
 
 class SessionStatusResponse(BaseModel):
@@ -222,8 +230,18 @@ def get_assessment_models() -> AvailableModelsResponse:
 
 @router.get("/indicators", response_model=list[IndicatorListItem])
 def get_indicators() -> list[IndicatorListItem]:
-    """Return the 78 AMI indicators (no, kriteria) from the cached rubric matrix — backend has no Postgres-side master table for these."""
-    return [IndicatorListItem(no=r.no, kriteria=r.kriteria) for r in _get_rubrics()]
+    """Return the AMI indicators from the cached rubric matrix — backend has no Postgres-side master table for these."""
+    return [
+        IndicatorListItem(
+            no=r.no,
+            kriteria=r.kriteria,
+            indikator=r.indikator,
+            score_type=r.score_type,
+            score_criteria=r.score_criteria,
+            lkps_table_ref=r.lkps_table_ref,
+        )
+        for r in _get_rubrics()
+    ]
 
 
 @router.post("/start", response_model=StartAssessmentResponse)

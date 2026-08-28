@@ -79,7 +79,14 @@ export type UpsertVerdictPayload = {
 /** Baris `IndicatorListItem` (apps/ai) — matriks rubrik AMI, bukan tabel Postgres. */
 export type AssessmentIndicator = {
 	no: number;
+	/** Nama kelompok kriteria yang memayungi indikator ini, mis. "Sistem tata pamong". */
 	kriteria: string;
+	/** Bunyi pertanyaan penilaiannya. */
+	indikator: string;
+	score_type: 'qualitative' | 'quantitative' | 'composite';
+	/** Kunci string di JSON ("4".."0"), bukan number — datang lewat proxy JSON polos. */
+	score_criteria: Record<string, string>;
+	lkps_table_ref: string[];
 };
 
 export const assessmentRemoteSource = {

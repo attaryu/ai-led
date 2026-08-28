@@ -149,7 +149,8 @@ export function AssessmentDetailSheet({
 						/>
 						<div className="min-w-0">
 							<h3 className="font-heading text-sm font-semibold">
-								Indikator {kriteria.no} · {kriteria.kodeKriteria}
+								Indikator {kriteria.no}
+								{kriteria.kodeKriteria && ` · ${kriteria.kodeKriteria}`}
 							</h3>
 							<p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
 								{kriteria.deskripsi}

@@ -1,7 +1,8 @@
 import * as React from 'react';
 
-import { findAllKriteria } from '~/features/chapter/domain/entities/rubric-criterion.entity';
+import { type RubricCriterion } from '~/features/chapter/domain/entities/rubric-criterion.entity';
 import { assessmentSessionRepository } from '../../data/repositories/assessment-session.repository';
+import { rubricCriterionAmiRepository } from '../../data/repositories/rubric-criterion-ami.repository';
 import { assessmentVerdictRepository } from '../../data/repositories/assessment-verdict.repository';
 import {
 	gabungPenilaian,
@@ -36,6 +37,7 @@ export function useAssessmentResults({
 	const [keputusan, setKeputusan] = React.useState<AssessmentVerdictEntity[]>(
 		[],
 	);
+	const [kriteria, setKriteria] = React.useState<RubricCriterion[]>([]);
 
 	const sesiId = sesi?.id;
 
@@ -54,6 +56,10 @@ export function useAssessmentResults({
 		void muat();
 	}, [muat]);
 
+	React.useEffect(() => {
+		rubricCriterionAmiRepository.findAll().then(setKriteria);
+	}, []);
+
 	/**
 	 * Tanpa sesi, tabelnya kosong — bukan berisi seluruh indikator tanpa skor.
 	 *
@@ -64,10 +70,8 @@ export function useAssessmentResults({
 	 */
 	const baris = React.useMemo(
 		() =>
-			sesiId
-				? gabungPenilaian({ kriteria: findAllKriteria(), hasil, keputusan })
-				: [],
-		[sesiId, hasil, keputusan],
+			sesiId ? gabungPenilaian({ kriteria, hasil, keputusan }) : [],
+		[sesiId, kriteria, hasil, keputusan],
 	);
 
 	const ringkasan = React.useMemo(() => ringkasPenilaian(baris), [baris]);

@@ -2,8 +2,8 @@ import * as React from 'react';
 
 import { chapterRepository } from '~/features/chapter/data/repositories/chapter.repository';
 import { hasKonten } from '~/features/chapter/domain/entities/chapter.entity';
-import { findAllKriteria } from '~/features/chapter/domain/entities/rubric-criterion.entity';
 import { evidenceRepository } from '~/features/evidence/data/repositories/evidence.repository';
+import { rubricCriterionAmiRepository } from '../../data/repositories/rubric-criterion-ami.repository';
 import { type EvidenceEntity } from '~/features/evidence/domain/entities/evidence.entity';
 import {
 	hitungKesiapan,
@@ -49,6 +49,7 @@ export function useAssessmentReadiness({
 	const [berkas, setBerkas] = React.useState<EvidenceEntity[]>([]);
 	const [babTerisi, setBabTerisi] = React.useState(0);
 	const [totalBab, setTotalBab] = React.useState(0);
+	const [jumlahIndikator, setJumlahIndikator] = React.useState(0);
 
 	const muat = React.useCallback(async () => {
 		const chapters = await chapterRepository.findByProjectId(projectId);
@@ -60,6 +61,12 @@ export function useAssessmentReadiness({
 		// kebetulan berupa Excel.
 		setBerkas(await evidenceRepository.findOwnedByStudyProgram(studyProgramId));
 	}, [projectId, studyProgramId]);
+
+	React.useEffect(() => {
+		rubricCriterionAmiRepository.findAll().then((kriteria) => {
+			setJumlahIndikator(kriteria.length);
+		});
+	}, []);
 
 	React.useEffect(() => {
 		muat();
@@ -98,7 +105,7 @@ export function useAssessmentReadiness({
 		() =>
 			hitungKesiapan({
 				sumber,
-				jumlahIndikator: findAllKriteria().length,
+				jumlahIndikator,
 				babTerisi,
 				totalBab,
 				namaLkps: cariNama(sumber.lkpsBuktiDukungId),
@@ -106,7 +113,7 @@ export function useAssessmentReadiness({
 				projectId,
 				studyProgramId,
 			}),
-		[sumber, babTerisi, totalBab, cariNama, projectId, studyProgramId],
+		[sumber, jumlahIndikator, babTerisi, totalBab, cariNama, projectId, studyProgramId],
 	);
 
 	return {

@@ -458,6 +458,43 @@ def test_resume_all_done_marks_completed_without_running_pipeline(fake_indicator
     assert mock_update.call_args.kwargs["status"] == "completed"
 
 
+# ── GET /assessment/indicators ──────────────────────────────────────────────────
+
+
+def test_get_indicators_returns_full_rubric_fields():
+    """Regression: the frontend maps this response into RubricCriterion (real
+    text/score levels instead of its own placeholder data) — no/kriteria alone
+    isn't enough, indikator/score_type/score_criteria/lkps_table_ref must all
+    round-trip through the response model."""
+    from ingestion.matrix_parser import IndicatorRubric
+    from main import app
+
+    rubric = IndicatorRubric(
+        no=1,
+        kriteria="Visi, Misi, Tujuan, dan Strategi",
+        indikator="Kejelasan visi, misi, tujuan, dan strategi unit pengelola program studi.",
+        score_type="qualitative",
+        score_criteria={4: "Lengkap.", 3: "Cukup.", 2: "Umum.", 1: "Menyebut saja.", 0: "Tidak ada."},
+        formula=None,
+        lkps_table_ref=["Tabel 1 LKPS"],
+        sub_score_formula=None,
+    )
+
+    with patch("api.routes.assessment._get_rubrics", return_value=[rubric]):
+        with TestClient(app) as c:
+            resp = c.get("/assessment/indicators")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["no"] == 1
+    assert data[0]["kriteria"] == "Visi, Misi, Tujuan, dan Strategi"
+    assert data[0]["indikator"] == rubric.indikator
+    assert data[0]["score_type"] == "qualitative"
+    assert data[0]["score_criteria"] == {"4": "Lengkap.", "3": "Cukup.", "2": "Umum.", "1": "Menyebut saja.", "0": "Tidak ada."}
+    assert data[0]["lkps_table_ref"] == ["Tabel 1 LKPS"]
+
+
 # ── GET /assessment/list ───────────────────────────────────────────────────────
 
 

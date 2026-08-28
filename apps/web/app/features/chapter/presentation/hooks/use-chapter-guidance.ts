@@ -44,68 +44,85 @@ export type KelompokPanduan = {
  * per generate benar-benar tersimpan.
  *
  * **Tanpa langganan `storage-update`.** Tidak ada satu pun sumbernya yang bisa
- * berubah dari tab lain; ini fungsi murni atas satu angka.
+ * berubah dari tab lain — cuma jaringan, ditangani `useEffect` biasa.
  */
 export function useChapterGuidance({ urutanBab }: { urutanBab: number }) {
-	return React.useMemo(() => {
-		const pedoman = findPanduanForBab(urutanBab).map<BarisPanduan>((poin) => {
-			const kutipan = kutipanUntukPedoman({ urutanBab, poin });
-			const halamanAwal = kutipan[0]?.asal ?? '';
-			const halamanAkhir = kutipan.at(-1)?.asal ?? '';
+	const [kelompok, setKelompok] = React.useState<KelompokPanduan[]>([]);
 
-			return {
-				id: poin.id,
-				judul: `${poin.kodePoin} ${poin.judulPoin}`,
-				// Hanya halamannya. Nama dokumen sumbernya sudah dipikul judul
-				// kelompok di atas daftar; mengulanginya di tiap baris menyewa satu
-				// baris penuh untuk mengabarkan hal yang sama berkali-kali.
-				jejak:
-					halamanAwal === halamanAkhir
-						? halamanAwal
-						: `${halamanAwal}–${halamanAkhir.replace('hlm. ', '')}`,
-				pengantar: `${kutipan.length} bagian panduan ini dirujuk saat menyusun bab tersebut.`,
-				kutipan,
-			};
-		});
+	React.useEffect(() => {
+		let dibatalkan = false;
 
-		const rubrik = findRubrikDipakaiForBab(urutanBab).map<BarisPanduan>(
-			(butir) => ({
+		async function muat() {
+			const [daftarPedoman, daftarRubrik] = await Promise.all([
+				findPanduanForBab(urutanBab),
+				findRubrikDipakaiForBab(urutanBab),
+			]);
+			if (dibatalkan) return;
+
+			const pedoman = daftarPedoman.map<BarisPanduan>((poin) => {
+				const kutipan = kutipanUntukPedoman({ daftarPedoman, poin });
+				const halamanAwal = kutipan[0]?.asal ?? '';
+				const halamanAkhir = kutipan.at(-1)?.asal ?? '';
+
+				return {
+					id: poin.id,
+					judul: `${poin.kodePoin} ${poin.judulPoin}`,
+					// Hanya halamannya. Nama dokumen sumbernya sudah dipikul judul
+					// kelompok di atas daftar; mengulanginya di tiap baris menyewa satu
+					// baris penuh untuk mengabarkan hal yang sama berkali-kali.
+					jejak:
+						halamanAwal === halamanAkhir
+							? halamanAwal
+							: `${halamanAwal}–${halamanAkhir.replace('hlm. ', '')}`,
+					pengantar: `${kutipan.length} bagian panduan ini dirujuk saat menyusun bab tersebut.`,
+					kutipan,
+				};
+			});
+
+			const rubrik = daftarRubrik.map<BarisPanduan>((butir) => ({
 				id: butir.kriteria.id,
 				judul: butir.kriteria.deskripsi,
 				jejak: `${butir.kriteria.kodeKriteria} · ${rubricScoreTypeLabels[butir.kriteria.tipeSkor]}`,
 				pengantar:
 					'Yang dikejar tulisan bab tersebut level tertinggi indikator ini.',
 				kutipan: kutipanUntukRubrik(butir),
-			}),
-		);
+			}));
 
-		const kelompok = ([
-			{
-				kunci: 'pedoman',
-				label: 'Pedoman penulisan',
-				sumber: 'Panduan Penyusunan LED LAM Teknik',
-				baris: pedoman,
-			},
-			{
-				kunci: 'rubrik',
-				label: 'Rubrik penilaian',
-				sumber: sumberRubrik().judul,
-				baris: rubrik,
-			},
-			// Kelompok kosong disaring di sini, bukan di komponennya: kelompok yang
-			// tetap dirender akan menyewa dua baris untuk mengabarkan ketiadaan,
-			// sementara panel sudah punya satu keadaan kosong yang mengabarkan hal
-			// yang sama dengan lebih jelas.
-		] satisfies KelompokPanduan[]).filter((grup) => grup.baris.length > 0);
+			setKelompok(
+				([
+					{
+						kunci: 'pedoman',
+						label: 'Pedoman penulisan',
+						sumber: 'Panduan Penyusunan LED LAM Teknik',
+						baris: pedoman,
+					},
+					{
+						kunci: 'rubrik',
+						label: 'Rubrik penilaian',
+						sumber: sumberRubrik().judul,
+						baris: rubrik,
+					},
+					// Kelompok kosong disaring di sini, bukan di komponennya: kelompok
+					// yang tetap dirender akan menyewa dua baris untuk mengabarkan
+					// ketiadaan, sementara panel sudah punya satu keadaan kosong yang
+					// mengabarkan hal yang sama dengan lebih jelas.
+				] satisfies KelompokPanduan[]).filter((grup) => grup.baris.length > 0),
+			);
+		}
 
-		return {
-			kelompok,
-			/**
-			 * Semua baris berurutan lintas kelompok. Navigasi ‹ › di laci memakai
-			 * ini, bukan satu penghitung per kelompok: `{posisi}/{total}` yang
-			 * berganti penyebut di tengah daftar tidak bisa dibaca sebagai apa pun.
-			 */
-			semuaBaris: kelompok.flatMap((grup) => grup.baris),
+		void muat();
+		return () => {
+			dibatalkan = true;
 		};
 	}, [urutanBab]);
+
+	return {
+		kelompok,
+		/**
+		 * Semua baris berurutan lintas kelompok. Navigasi ‹ › di laci memakai
+		 * ini, bukan satu penghitung per kelompok: `{posisi}/{total}` yang
+		 * berganti penyebut di tengah daftar tidak bisa dibaca sebagai apa pun.
+		 */
+		semuaBaris: kelompok.flatMap((grup) => grup.baris),
+	};
 }
