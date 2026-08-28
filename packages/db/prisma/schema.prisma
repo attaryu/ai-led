@@ -522,8 +522,8 @@ model ReferenceGuide {
   type      TipePanduan
   title     String
   fileUrl   String      @map("file_url")
-  fileType  String      @map("tipe_file")
-  createdAt DateTime    @default(now()) @map("dibuat_pada")
+  fileType  String      @map("file_type")
+  createdAt DateTime    @default(now()) @map("created_at")
 
   details GuideDetail[]
 
