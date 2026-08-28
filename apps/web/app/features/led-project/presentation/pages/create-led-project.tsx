@@ -69,7 +69,10 @@ export function CreateLedProject() {
 		defaultValues: {
 			studyProgramId: '',
 			judul: '',
-			tahunMulai: '',
+			// Dokumen LED nyaris selalu disusun untuk tahun akademik yang sedang
+			// berjalan, jadi tahun sekarang adalah tebakan yang hampir selalu benar
+			// — dan kolomnya langsung memperlihatkan tahun akhirnya tanpa diketik.
+			tahunMulai: String(new Date().getFullYear()),
 			tenggat: '',
 		},
 	});
