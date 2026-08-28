@@ -148,6 +148,10 @@ export function useAssessmentSession({
 	return {
 		daftarSesi,
 		sesiAktif,
+		/** Progres mentah dari SSE — dipakai `AssessmentRunPanel` saat run
+		 * PERTAMA untuk dokumen ini, ketika belum ada `sesiAktif` sama sekali
+		 * untuk ditumpangi (lihat komentar di atas `sesiAktif`). */
+		progresLive,
 		melihatSesiTerbaru,
 		status,
 		pesanGagal,

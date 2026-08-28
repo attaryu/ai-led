@@ -28,7 +28,6 @@ import { AssessmentQualityPanel } from '../components/assessment-quality-panel';
 import { AssessmentResultList } from '../components/assessment-result-list';
 import { AssessmentRunPanel } from '../components/assessment-run-panel';
 import { AssessmentSourceCard } from '../components/assessment-source-card';
-import { useAssessmentIndicatorSelection } from '../hooks/use-assessment-indicator-selection';
 import { useAssessmentPermission } from '../hooks/use-assessment-permission';
 import { useAssessmentQuality } from '../hooks/use-assessment-quality';
 import { useAssessmentReadiness } from '../hooks/use-assessment-readiness';
@@ -109,6 +108,7 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 	const {
 		daftarSesi,
 		sesiAktif,
+		progresLive,
 		melihatSesiTerbaru,
 		status,
 		pesanGagal,
@@ -124,8 +124,6 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 		studyProgramId: ledProject.studyProgramId,
 		sumberTerakhir: daftarSesi[0]?.sumber,
 	});
-
-	const pemilihanIndikator = useAssessmentIndicatorSelection();
 
 	const { baris, ringkasan, simpanKeputusan, cabutKeputusan } =
 		useAssessmentResults({ projectId: ledProject.id, sesi: sesiAktif, izin });
@@ -297,8 +295,9 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 					<AssessmentRunPanel
 						sesi={sesiAktif}
 						status={status}
+						progresLive={progresLive}
 						pesanGagal={pesanGagal}
-						siap={kesiapan.siap && pemilihanIndikator.terpilih.size > 0}
+						siap={kesiapan.siap}
 						bolehMenjalankan={izin.canRun}
 						melihatSesiTerbaru={melihatSesiTerbaru}
 						onJalankan={() => {
@@ -306,7 +305,10 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 							// URL harus dilepas — kalau tidak, halaman akan tetap
 							// memperlihatkan hasil lama sementara yang baru berjalan.
 							gantiParam({ sesi: null });
-							void jalankan(sumber, pemilihanIndikator.indikatorList);
+							// Tanpa indikatorList = nilai semua indikator (default backend,
+							// lihat use-assessment-session.ts) — tidak ada lagi langkah
+							// pilih-indikator terpisah sebelum run pertama.
+							void jalankan(sumber);
 						}}
 					/>
 
@@ -316,8 +318,6 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 						barisTerpilihNo={indikatorDibuka}
 						onBuka={(row) => setIndikatorDibuka(row.kriteria.no)}
 						onDaftarTampilBerubah={setUrutanTampil}
-						pemilihan={pemilihanIndikator}
-						bolehMemilih={izin.canRun}
 					/>
 				</TabsContent>
 

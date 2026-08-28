@@ -25,6 +25,7 @@ import { type StatusPenilaian } from '../hooks/use-assessment-session';
 export function AssessmentRunPanel({
 	sesi,
 	status,
+	progresLive,
 	pesanGagal,
 	siap,
 	bolehMenjalankan,
@@ -33,6 +34,12 @@ export function AssessmentRunPanel({
 }: {
 	sesi: AssessmentSessionEntity | undefined;
 	status: StatusPenilaian;
+	/** Progres mentah dari SSE, dari `useAssessmentSession` — satu-satunya
+	 * sumber progres yang ada pada RUN PERTAMA untuk dokumen ini, sebelum
+	 * baris `AssessmentSession` manapun ada untuk ditumpangi `sesi`. Tanpa
+	 * ini, klik "Mulai Penilaian Otomatis" terasa tidak berbuat apa-apa
+	 * sampai halaman di-refresh (baru saat itu `sesi` terisi dari server). */
+	progresLive: { completed: number; total: number } | null;
 	pesanGagal: string | null;
 	siap: boolean;
 	bolehMenjalankan: boolean;
@@ -40,24 +47,32 @@ export function AssessmentRunPanel({
 	onJalankan: () => void;
 }) {
 	const berjalan = status === 'berjalan' || sesi?.status === 'RUNNING';
-	const persen = sesi ? persenProgres(sesi) : 0;
+	const progres = sesi
+		? { completed: sesi.completedIndicators, total: sesi.totalIndicators }
+		: progresLive;
+	const persen = progres && progres.total > 0 ? sesi ? persenProgres(sesi) : Math.round((progres.completed / progres.total) * 100) : 0;
 
 	return (
 		<Card size="sm">
 			<CardContent className="flex flex-col gap-3">
-				{berjalan && sesi ? (
+				{berjalan ? (
 					<>
 						<div className="flex items-baseline justify-between gap-2">
 							<p className="flex items-center gap-2 text-sm font-medium">
 								<SpinnerGapIcon className="size-4 animate-spin" />
 								Menilai indikator…
 							</p>
-							<p className="text-sm font-semibold tabular-nums">
-								{sesi.completedIndicators}
-								<span className="font-normal text-muted-foreground">
-									/{sesi.totalIndicators}
-								</span>
-							</p>
+							{/* Belum ada angka sama sekali di detik-detik pertama (job
+							 * BullMQ belum sempat kirim event `progress` pertama) —
+							 * spinner+label saja, tanpa "0/0" yang menyesatkan. */}
+							{progres && (
+								<p className="text-sm font-semibold tabular-nums">
+									{progres.completed}
+									<span className="font-normal text-muted-foreground">
+										/{progres.total}
+									</span>
+								</p>
+							)}
 						</div>
 
 						<div
@@ -69,8 +84,12 @@ export function AssessmentRunPanel({
 							className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
 						>
 							<div
-								className="h-full rounded-full bg-primary transition-[width]"
-								style={{ width: `${persen}%` }}
+								className={
+									progres
+										? 'h-full rounded-full bg-primary transition-[width]'
+										: 'h-full w-1/3 animate-pulse rounded-full bg-primary'
+								}
+								style={progres ? { width: `${persen}%` } : undefined}
 							/>
 						</div>
 					</>
