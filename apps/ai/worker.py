@@ -114,12 +114,13 @@ def _led_citation_label(chunk: dict) -> str:
     return "LED"
 
 
-def _evidence_citation_label(chunk: dict, filenames: dict[str, str]) -> str:
+def _evidence_citation_label(chunk: dict, labels: dict[str, str]) -> str:
     """Nama sumber literal untuk chunk Bukti Dukung — beda dari LED, di sini
-    labelnya memang nama berkas asli yang diunggah (evidence_files.document_name),
-    karena satu bab bisa mengutip banyak berkas Evidence berbeda sekaligus."""
+    labelnya nama folder terdekat (kalau file diunggah ke dalam folder) atau
+    nama berkas asli (get_evidence_citation_labels), karena satu bab bisa
+    mengutip banyak berkas Evidence berbeda sekaligus."""
     bukti_dukung_id = chunk.get("bukti_dukung_id")
-    return filenames.get(bukti_dukung_id) or bukti_dukung_id or "Evidence"
+    return labels.get(bukti_dukung_id) or bukti_dukung_id or "Evidence"
 
 
 # Multi-strategy JSON parser -- dipakai semua tahap REKOMENDASI_DOKUMEN yang
@@ -236,8 +237,37 @@ OUTPUT HANYA CHECKLIST.
 """
 
 
-def _build_checklist_prompt(judul_bab: str, pedoman: list[dict], rubric: list[dict]) -> str:
+def _institution_context_block(institution_context: dict | None, usage_note: str) -> list[str]:
+    """Shared '## INSTITUSI' block for the checklist/generate prompts (port
+    of Dimas's 766de26) — omitted entirely when neither name is known."""
+    institution_context = institution_context or {}
+    university_name = institution_context.get("university_name")
+    study_program_name = institution_context.get("study_program_name")
+    if not university_name and not study_program_name:
+        return []
+    parts = ["## INSTITUSI:"]
+    if university_name:
+        parts.append(f"Institusi: {university_name}")
+    if study_program_name:
+        parts.append(f"Program Studi: {study_program_name}")
+    parts.append(usage_note)
+    parts.append("")
+    return parts
+
+
+def _build_checklist_prompt(
+    judul_bab: str,
+    pedoman: list[dict],
+    rubric: list[dict],
+    institution_context: dict | None = None,
+) -> str:
     parts = [_SYSTEM_CHECKLIST, "", f"## SECTION: {judul_bab}", ""]
+    parts += _institution_context_block(
+        institution_context,
+        "(Konteks saja — pakai HANYA kalau membantu pertanyaan lebih spesifik "
+        "ke institusi ini. JANGAN sisipkan nama institusi/prodi ke setiap item "
+        "checklist secara literal.)",
+    )
     if pedoman:
         parts.append("## PEDOMAN PENULISAN (apa yang harus ada):")
         for p in pedoman[:6]:
@@ -561,11 +591,12 @@ def _build_generasi_prompt(
     chunks: list[dict],
     lkps_tables: list[str],
     evidence_chunks: list[dict] | None = None,
-    evidence_filenames: dict[str, str] | None = None,
+    evidence_labels: dict[str, str] | None = None,
     user_prompt: str | None = None,
+    institution_context: dict | None = None,
 ) -> str:
     evidence_chunks = evidence_chunks or []
-    evidence_filenames = evidence_filenames or {}
+    evidence_labels = evidence_labels or {}
     pedoman_text = "\n".join(f"- {p['point_title']}: {p['content_text'][:500]}" for p in pedoman) or "(tidak ada pedoman spesifik tersedia)"
     rubric_text = "\n".join(f"- {r['criterion_code']}: {r['description'][:300]}" for r in rubric) or "(tidak ada rubrik spesifik tersedia)"
     checklist_text = "\n".join(f"- {c}" for c in checklist)
@@ -574,13 +605,21 @@ def _build_generasi_prompt(
         for i, c in enumerate(chunks)
     ) or "(tidak ada bukti dari dokumen LED yang ditemukan)"
     evidence_text = "\n\n".join(
-        f"[Evidence {i+1}] (sumber: {_evidence_citation_label(c, evidence_filenames)}) {c['text'][:800]}"
+        f"[Evidence {i+1}] (sumber: {_evidence_citation_label(c, evidence_labels)}) {c['text'][:800]}"
         for i, c in enumerate(evidence_chunks)
     ) or "(tidak ada bukti dokumen Evidence yang dipilih untuk bab ini)"
     lkps_text = "\n\n".join(lkps_tables) or "(tidak ada data LKPS relevan)"
     arahan_text = f"\n\nARAHAN TAMBAHAN DARI PENGGUNA:\n{user_prompt}" if user_prompt else ""
+    institution_block = "\n".join(_institution_context_block(
+        institution_context,
+        "(Sebut nama institusi PERSIS seperti di atas apa adanya — JANGAN "
+        "tambahkan kata 'Universitas' di depannya kalau nama institusi itu "
+        "sendiri sudah berupa Politeknik/Institut/Sekolah Tinggi/bentuk lain.)",
+    ))
+    institution_block = f"{institution_block}\n" if institution_block else ""
 
     return f"""Anda menulis draf Bab "{judul_bab}" untuk Laporan Evaluasi Diri (LED) akreditasi program studi di Indonesia.
+{institution_block}
 
 PEDOMAN:
 {pedoman_text}
@@ -602,7 +641,7 @@ BUKTI DOKUMEN (Evidence SPMI — SK, notulensi, laporan; hanya dokumen yang suda
 
 ATURAN WAJIB:
 1. WAJIB Bahasa Indonesia 100% — dilarang menulis paragraf berbahasa Inggris (akronim teknis seperti LED/SK/SKS/IPK boleh tetap dipakai).
-2. Setiap klaim faktual harus diikuti penanda sumber: "(sumber: NAMA_FILE)" untuk BUKTI (LED atau Evidence), atau "(sumber: LKPS <referensi tabel>)" untuk DATA KUANTITATIF. Penanda HANYA boleh dipakai kalau nama/referensi itu BENAR-BENAR muncul literal di bagian BUKTI/DATA KUANTITATIF di atas — dilarang menebak atau mengarang nama sumber.
+2. Setiap klaim faktual harus diikuti penanda sumber: "(sumber: LABEL)" untuk BUKTI (LED atau Evidence) — LABEL adalah teks PERSIS di dalam tanda kurung "(sumber: ...)" pada bukti yang dikutip, bisa berupa nama file ATAU nama folder, ikuti apa adanya, JANGAN diubah/disingkat — atau "(sumber: LKPS <referensi tabel>)" untuk DATA KUANTITATIF. Penanda HANYA boleh dipakai kalau nama/referensi itu BENAR-BENAR muncul literal di bagian BUKTI/DATA KUANTITATIF di atas — dilarang menebak atau mengarang nama sumber.
 3. Jika BUKTI dan DATA KUANTITATIF sama-sama kosong/minim, tulis narasi singkat dan umum berdasarkan PEDOMAN/RUBRIK saja tanpa klaim faktual bersitasi — jangan dipaksakan panjang dengan fakta karangan.
 4. OUTPUT MURNI NARASI SAJA dalam format Markdown (heading/paragraf/daftar poin sesuai kebutuhan) — dilarang menambahkan catatan, disclaimer, atau ringkasan proses di luar narasi."""
 
@@ -629,7 +668,7 @@ async def _handle_generasi_bab(job) -> dict:
         create_ragas_score,
         get_bab_dokumen,
         get_confirmed_recommendation,
-        get_evidence_filenames,
+        get_evidence_citation_labels,
         get_pedoman_for_bab,
         get_rubrik_for_bab,
         get_user_nama,
@@ -650,6 +689,14 @@ async def _handle_generasi_bab(job) -> dict:
     if bab is None:
         return {"status": "error", "error": f"BabDokumen {bab_id} tidak ditemukan"}
 
+    # Port of Dimas's 766de26 institution context — lets the checklist and
+    # generate prompts know which prodi/university this LED is for, instead
+    # of writing fully generic narration.
+    institution_context = {
+        "study_program_name": bab.get("study_program_name"),
+        "university_name": bab.get("university_name"),
+    }
+
     t0 = time.time()
 
     # 1. Pedoman & rubrik — relational lookup by chapter number, not vector
@@ -661,7 +708,7 @@ async def _handle_generasi_bab(job) -> dict:
 
     # 2. Checklist — real LLM call (port of SYSTEM_CHECKLIST), same fallback
     # safety net as the old pedoman-titles stub for empty pedoman/LLM failure.
-    checklist_prompt = _build_checklist_prompt(bab["chapter_title"], pedoman, rubric)
+    checklist_prompt = _build_checklist_prompt(bab["chapter_title"], pedoman, rubric, institution_context)
     try:
         checklist_raw = await llm.ainvoke(checklist_prompt)
         checklist = _parse_checklist(checklist_raw.content)
@@ -688,9 +735,9 @@ async def _handle_generasi_bab(job) -> dict:
     confirmed = get_confirmed_recommendation(draft_id) if draft_id else None
     selected_ids: list[str] = (confirmed or {}).get("selected_evidence_ids") or []
     evidence_chunks: list[dict] = []
-    evidence_filenames: dict[str, str] = {}
+    evidence_labels: dict[str, str] = {}
     if selected_ids:
-        evidence_filenames = get_evidence_filenames(selected_ids)
+        evidence_labels = get_evidence_citation_labels(selected_ids)
         seen_chunks: set[str] = set()
         for item in checklist:
             hits = await asyncio.to_thread(search_evidence, item, bab["tenant_id"], selected_ids, 2)
@@ -703,7 +750,7 @@ async def _handle_generasi_bab(job) -> dict:
     # 3. LLM call, then Markdown -> HTML.
     prompt = _build_generasi_prompt(
         bab["chapter_title"], pedoman, rubric, checklist, chunks, lkps_tables,
-        evidence_chunks, evidence_filenames, payload.get("prompt"),
+        evidence_chunks, evidence_labels, payload.get("prompt"), institution_context,
     )
     response = await llm.ainvoke(prompt)
     markdown_text = response.content
@@ -726,7 +773,7 @@ async def _handle_generasi_bab(job) -> dict:
     # than crashing the job, same style as the RAGAS try/except above.
     judge_facts = (
         [{"text": c["text"], "filename": _led_citation_label(c)} for c in chunks]
-        + [{"text": c["text"], "filename": _evidence_citation_label(c, evidence_filenames)} for c in evidence_chunks]
+        + [{"text": c["text"], "filename": _evidence_citation_label(c, evidence_labels)} for c in evidence_chunks]
         + [{"text": t, "filename": "LKPS"} for t in lkps_tables]
     )
     try:

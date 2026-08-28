@@ -28,15 +28,22 @@ def get_user_nama(user_id: str) -> str:
 
 def get_bab_dokumen(bab_id: str) -> Optional[dict]:
     """Return {id, document_id, chapter_order, chapter_title, working_content,
-    tenant_id, study_program_id}, or None."""
+    tenant_id, study_program_id, study_program_name, university_name}, or None.
+
+    study_program_name/university_name (port of Dimas's 766de26 institution
+    context) let the checklist/generate prompts know which prodi/university
+    this LED is for instead of writing fully generic narration.
+    """
     with get_conn().cursor() as cur:
         cur.execute(
             """
             SELECT bd.id, bd.document_id, bd.chapter_order, bd.chapter_title, bd.working_content,
-                   ps.tenant_id, ps.id AS study_program_id
+                   ps.tenant_id, ps.id AS study_program_id, ps.name AS study_program_name,
+                   t.university_name
             FROM writing_document_chapters bd
             JOIN writing_led_documents dl ON dl.id = bd.document_id
             JOIN org_study_programs ps ON ps.id = dl.study_program_id
+            JOIN org_tenants t ON t.id = ps.tenant_id
             WHERE bd.id = %s
             """,
             (bab_id,),
@@ -366,19 +373,34 @@ def get_chat_history(bab_id: str, limit: int = 50) -> list[dict]:
         return [dict(r) for r in cur.fetchall()]
 
 
-def get_evidence_filenames(evidence_ids: list[str]) -> dict[str, str]:
-    """id -> documentName map for Bukti Dukung citation labels in the
+def get_evidence_citation_labels(evidence_ids: list[str]) -> dict[str, str]:
+    """id -> citation label map for Bukti Dukung citation labels in the
     GENERASI_BAB prompt — evidence chunks carry no filename of their own
     (vectorstore/pgvector_evidence_store.py::search_evidence only returns
-    bukti_dukung_id)."""
+    bukti_dukung_id).
+
+    Prefers the file's containing folder name over its filename (port of
+    Dimas's 766de26 "document query": reviewers organize Bukti Dukung into
+    folders like "SK Penetapan", so citing that grouping reads better than
+    an arbitrary uploaded filename) — falls back to document_name for files
+    uploaded outside any folder.
+    """
     if not evidence_ids:
         return {}
     with get_conn().cursor() as cur:
         cur.execute(
-            "SELECT id, document_name FROM evidence_files WHERE id = ANY(%s)",
+            """
+            SELECT ef.id, ef.document_name, f.name AS folder_name
+            FROM evidence_files ef
+            LEFT JOIN evidence_folders f ON f.id = ef.folder_id
+            WHERE ef.id = ANY(%s)
+            """,
             (evidence_ids,),
         )
-        return {row["id"]: row["document_name"] for row in cur.fetchall()}
+        return {
+            row["id"]: row["folder_name"] or row["document_name"]
+            for row in cur.fetchall()
+        }
 
 
 def get_confirmed_recommendation(chapter_draft_id: str) -> Optional[dict]:
