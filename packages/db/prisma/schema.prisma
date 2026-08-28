@@ -113,6 +113,7 @@ enum AssessmentStatus {
   RUNNING
   COMPLETED
   FAILED
+  CANCELLED
 }
 
 // ─────────────────── Kelompok: Organisasi & Pengguna ───────────────────

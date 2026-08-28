@@ -1,6 +1,7 @@
 import {
 	PlayIcon,
 	SpinnerGapIcon,
+	StopIcon,
 	WarningCircleIcon,
 } from '@phosphor-icons/react';
 
@@ -9,7 +10,6 @@ import { Card, CardContent } from '~/core/components/ui/card';
 import { formatRelativeTimeLong } from '~/core/lib/format-time';
 import {
 	assessmentStatusLabels,
-	persenProgres,
 	type AssessmentSessionEntity,
 } from '../../domain/entities/assessment-session.entity';
 import { type StatusPenilaian } from '../hooks/use-assessment-session';
@@ -31,6 +31,8 @@ export function AssessmentRunPanel({
 	bolehMenjalankan,
 	melihatSesiTerbaru,
 	onJalankan,
+	onBatalkan,
+	membatalkan,
 }: {
 	sesi: AssessmentSessionEntity | undefined;
 	status: StatusPenilaian;
@@ -45,12 +47,39 @@ export function AssessmentRunPanel({
 	bolehMenjalankan: boolean;
 	melihatSesiTerbaru: boolean;
 	onJalankan: () => void;
+	/** AI-nya berat (satu indikator = satu pemanggilan LLM, puluhan detik) —
+	 * kalau kepilih terlalu banyak atau salah pilih, pengguna perlu bisa
+	 * berhenti tanpa menunggu semuanya selesai. */
+	onBatalkan: () => void;
+	/** Batalkan sudah diklik, menunggu worker benar-benar berhenti. */
+	membatalkan: boolean;
 }) {
-	const berjalan = status === 'berjalan' || sesi?.status === 'RUNNING';
-	const progres = sesi
-		? { completed: sesi.completedIndicators, total: sesi.totalIndicators }
-		: progresLive;
-	const persen = progres && progres.total > 0 ? sesi ? persenProgres(sesi) : Math.round((progres.completed / progres.total) * 100) : 0;
+	const lokalBerjalan = status === 'berjalan';
+	const berjalan = lokalBerjalan || sesi?.status === 'RUNNING';
+	/**
+	 * Selagi HOOK INI sendiri yang mengemudikan run (baru dipicu, atau
+	 * disambung ulang lewat sessionStorage — lihat use-assessment-session.ts),
+	 * progresnya HARUS dari `progresLive` saja, tidak pernah `sesi`. `sesi`
+	 * berasal dari `daftarSesi[0]` (polling biasa) yang baru ikut memuat sesi
+	 * BARU ini setelah `muat()` berikutnya — sebelum itu ia masih menunjuk
+	 * sesi LAMA yang sudah selesai, dan menumpanginya bikin bar sempat
+	 * menampilkan angka sesi yang sama sekali tidak terkait dengan run yang
+	 * baru saja diklik. Baru begitu run ini sendiri usai (`lokalBerjalan`
+	 * jadi false), `sesi` boleh dipakai lagi (kini sudah pasti sinkron).
+	 *
+	 * Di luar itu (`sesi?.status === 'RUNNING'` tapi hook ini TIDAK sedang
+	 * mengemudikannya — run dari tab/pengguna lain) angka `sesi` yang terakhir
+	 * diketahui tetap lebih baik daripada tidak menampilkan apa-apa.
+	 */
+	const progres = lokalBerjalan
+		? progresLive
+		: sesi
+			? { completed: sesi.completedIndicators, total: sesi.totalIndicators }
+			: progresLive;
+	const persen =
+		progres && progres.total > 0
+			? Math.round((progres.completed / progres.total) * 100)
+			: 0;
 
 	return (
 		<Card size="sm">
@@ -62,17 +91,32 @@ export function AssessmentRunPanel({
 								<SpinnerGapIcon className="size-4 animate-spin" />
 								Menilai indikator…
 							</p>
-							{/* Belum ada angka sama sekali di detik-detik pertama (job
-							 * BullMQ belum sempat kirim event `progress` pertama) —
-							 * spinner+label saja, tanpa "0/0" yang menyesatkan. */}
-							{progres && (
-								<p className="text-sm font-semibold tabular-nums">
-									{progres.completed}
-									<span className="font-normal text-muted-foreground">
-										/{progres.total}
-									</span>
-								</p>
-							)}
+							<div className="flex items-center gap-3">
+								{/* Belum ada angka sama sekali di detik-detik pertama (job
+								 * BullMQ belum sempat kirim event `progress` pertama) —
+								 * spinner+label saja, tanpa "0/0" yang menyesatkan. */}
+								{progres && (
+									<p className="text-sm font-semibold tabular-nums">
+										{progres.completed}
+										<span className="font-normal text-muted-foreground">
+											/{progres.total}
+										</span>
+									</p>
+								)}
+								{bolehMenjalankan && (
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										onClick={onBatalkan}
+										disabled={membatalkan}
+										className="cursor-pointer"
+									>
+										<StopIcon />
+										{membatalkan ? 'Membatalkan…' : 'Batalkan'}
+									</Button>
+								)}
+							</div>
 						</div>
 
 						<div

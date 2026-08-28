@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Protected } from '../tenant/protected.decorator';
 import { CreateJobDto } from './dto/create-job.dto';
@@ -17,5 +17,13 @@ export class JobsController {
   async create(@Body() dto: CreateJobDto) {
     const job = await this.jobsService.enqueue(dto.type, dto.payload);
     return { jobId: job.id, bullJobId: job.bullJobId, status: job.status };
+  }
+
+  @Post(':id/cancel')
+  @Protected()
+  @HttpCode(202)
+  async cancel(@Param('id') id: string) {
+    await this.jobsService.cancel(id);
+    return { status: 'cancel_requested' };
   }
 }

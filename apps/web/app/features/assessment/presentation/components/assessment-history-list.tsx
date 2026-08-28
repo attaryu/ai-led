@@ -24,6 +24,8 @@ const statusVisual: Record<AssessmentStatus, string> = {
 		'bg-amber-100 text-amber-800 border-amber-200/50 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800/30',
 	FAILED:
 		'bg-red-100 text-red-800 border-red-200/50 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800/30',
+	CANCELLED:
+		'bg-muted text-muted-foreground border-border',
 };
 
 /**

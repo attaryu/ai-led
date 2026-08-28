@@ -12,7 +12,7 @@ export type BackendAssessmentSession = {
 	lkpsEvidenceId: string | null;
 	totalIndicators: number;
 	completedIndicators: number;
-	status: 'RUNNING' | 'COMPLETED' | 'FAILED';
+	status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 	error: string | null;
 	createdAt: string;
 	updatedAt: string;
@@ -145,5 +145,14 @@ export const assessmentRemoteSource = {
 			method: 'POST',
 			body: payload,
 		});
+	},
+
+	/** Tombol Batalkan di progress bar — job id BullMQ (Postgres `Job.id`,
+	 * yang sama dipakai SSE `/jobs/:id/events`), bukan session id (worker
+	 * baru membuat sesinya setelah job mulai jalan). Lihat JobsService.cancel
+	 * (apps/backend) untuk kenapa ini generik "jobs", bukan endpoint khusus
+	 * asesmen. */
+	cancel(jobId: string): Promise<void> {
+		return apiFetch<void>(`/jobs/${jobId}/cancel`, { method: 'POST' });
 	},
 };

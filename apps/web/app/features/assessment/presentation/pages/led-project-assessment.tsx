@@ -28,7 +28,7 @@ import { AssessmentQualityPanel } from '../components/assessment-quality-panel';
 import { AssessmentResultList } from '../components/assessment-result-list';
 import { AssessmentRunPanel } from '../components/assessment-run-panel';
 import { AssessmentSourceCard } from '../components/assessment-source-card';
-import { useAssessmentIndicatorSelection } from '../hooks/use-assessment-indicator-selection';
+import { useAssessmentIndicatorPicks } from '../hooks/use-assessment-indicator-picks';
 import { useAssessmentPermission } from '../hooks/use-assessment-permission';
 import { useAssessmentQuality } from '../hooks/use-assessment-quality';
 import { useAssessmentReadiness } from '../hooks/use-assessment-readiness';
@@ -114,6 +114,8 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 		status,
 		pesanGagal,
 		jalankan,
+		batalkan,
+		membatalkan,
 	} = useAssessmentSession({
 		projectId: ledProject.id,
 		sesiIdTerpilih,
@@ -126,10 +128,10 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 		sumberTerakhir: daftarSesi[0]?.sumber,
 	});
 
-	const pemilihanIndikator = useAssessmentIndicatorSelection();
-
 	const { baris, ringkasan, simpanKeputusan, cabutKeputusan } =
 		useAssessmentResults({ projectId: ledProject.id, sesi: sesiAktif, izin });
+
+	const pemilihanIndikator = useAssessmentIndicatorPicks(baris);
 
 	const kualitas = useAssessmentQuality({ sesi: sesiAktif, izin });
 
@@ -310,6 +312,8 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 							gantiParam({ sesi: null });
 							void jalankan(sumber, pemilihanIndikator.indikatorList);
 						}}
+						onBatalkan={() => void batalkan()}
+						membatalkan={membatalkan}
 					/>
 
 					<AssessmentResultList

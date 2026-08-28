@@ -52,6 +52,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/assessment", tags=["assessment"])
 
 MAX_PARALLEL: int = int(os.environ.get("ASSESSMENT_MAX_PARALLEL", "5"))
+# Module-level (not a local) so tests can shrink it — how often is_cancelled()
+# gets polled while nothing is completing, e.g. every indicator stuck on a
+# slow/congested LLM endpoint.
+CANCEL_POLL_SECONDS: float = 3
 
 
 # ---------------------------------------------------------------------------
@@ -558,6 +562,7 @@ async def _run_assessment_pipeline(
     initial_completed: int = 0,
     on_progress: Optional[Callable[[int, int], Awaitable[None]]] = None,
     model: Optional[str] = None,
+    is_cancelled: Optional[Callable[[], Awaitable[bool]]] = None,
 ) -> None:
     """Background task: score all `indicators` and update session status when
     done. `indicators` may be a subset (resume) — `initial_completed` seeds
@@ -571,36 +576,74 @@ async def _run_assessment_pipeline(
     job.updateProgress() for the SSE gateway (job-events.service.ts) to
     forward live, without this module knowing BullMQ exists at all.
 
+    `is_cancelled()` — optional, polled every `CANCEL_POLL_SECONDS` REGARDLESS
+    of whether any indicator has finished yet — not just after completions.
+    A slow/stuck LLM endpoint can mean nothing finishes for minutes; checking
+    only on completion would leave a cancel request sitting unseen for that
+    whole time. Once true, remaining not-yet-done tasks are cancelled outright
+    and the session is marked `cancelled` rather than `completed` — indicators
+    that finished before the check stay scored, nothing already written is
+    undone.
+
     `model` overrides the configured default (see get_available_models()).
     """
     try:
         semaphore = asyncio.Semaphore(max_parallel)
 
-        tasks = [
-            _process_single_indicator(
-                indicator=indicator,
-                session_id=session_id,
-                semaphore=semaphore,
-                tenant_id=tenant_id,
-                dokumen_id=dokumen_id,
-                study_program_id=study_program_id,
-                model=model,
+        pending = {
+            asyncio.ensure_future(
+                _process_single_indicator(
+                    indicator=indicator,
+                    session_id=session_id,
+                    semaphore=semaphore,
+                    tenant_id=tenant_id,
+                    dokumen_id=dokumen_id,
+                    study_program_id=study_program_id,
+                    model=model,
+                )
             )
             for indicator in indicators
-        ]
+        }
 
         total = initial_completed + len(indicators)
         completed = initial_completed
-        for coro in asyncio.as_completed(tasks):
-            await coro
-            completed += 1
+        cancelled = False
+        while pending:
+            # timeout, not just "wait for one" — this is what makes the
+            # is_cancelled() check below fire even while every task is still
+            # in flight, instead of only after something finishes.
+            done, pending = await asyncio.wait(
+                pending, timeout=CANCEL_POLL_SECONDS, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in done:
+                await task
+                completed += 1
+                update_session_status(
+                    session_id=session_id,
+                    status="running",
+                    completed_indicators=completed,
+                )
+                if on_progress is not None:
+                    await on_progress(completed, total)
+
+            if is_cancelled is not None and await is_cancelled():
+                cancelled = True
+                break
+
+        if cancelled:
+            for task in pending:
+                if not task.done():
+                    task.cancel()
             update_session_status(
                 session_id=session_id,
-                status="running",
+                status="cancelled",
                 completed_indicators=completed,
             )
-            if on_progress is not None:
-                await on_progress(completed, total)
+            logger.info(
+                "Assessment session %s cancelled (%d/%d indicators completed)",
+                session_id, completed, total,
+            )
+            return
 
         update_session_status(
             session_id=session_id,

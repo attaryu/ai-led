@@ -61,17 +61,17 @@ export function useAssessmentResults({
 	}, []);
 
 	/**
-	 * Tanpa sesi, tabelnya kosong — bukan berisi seluruh indikator tanpa skor.
-	 *
-	 * Bedanya penting: baris tanpa hasil dihitung "perlu diperiksa" karena
-	 * indikator yang gagal dinilai memang temuan. Kalau dokumen yang belum pernah
-	 * dinilai sama sekali ikut memakai aturan itu, kartu ringkasannya akan
-	 * mengumumkan delapan belas temuan sebelum satu pun penilaian dijalankan.
+	 * Seluruh 64 indikator matriks selalu tampil, sesi ada atau belum —
+	 * dokumen yang belum pernah dinilai bukan berarti tidak ada apa pun untuk
+	 * dilihat, cuma belum ada hasil AI-nya (`gabungPenilaian` menandai baris
+	 * begini `skorFinal: null`, BUKAN "perlu diperiksa" — lihat catatan
+	 * `gagal` di sana). Ini yang membuat daftar indikator bisa dipilih dan
+	 * dinilai sebagian (bukan wajib nilai 64 sekaligus) tanpa perlu kartu
+	 * pemilih indikator yang terpisah dari daftar hasil.
 	 */
 	const baris = React.useMemo(
-		() =>
-			sesiId ? gabungPenilaian({ kriteria, hasil, keputusan }) : [],
-		[sesiId, kriteria, hasil, keputusan],
+		() => gabungPenilaian({ kriteria, hasil, keputusan }),
+		[kriteria, hasil, keputusan],
 	);
 
 	const ringkasan = React.useMemo(() => ringkasPenilaian(baris), [baris]);

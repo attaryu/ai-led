@@ -1164,18 +1164,46 @@ async def _handle_assessment_ami(job) -> dict:
         except Exception:
             logger.exception("Gagal mengirim progress job %s", job.id)
 
+    # Tombol Batalkan di progress bar (JobsService.cancel, apps/backend) --
+    # NestJS tidak bisa menjangkau loop async di proses worker ini langsung,
+    # jadi ia titip lewat Redis dengan key yang sama-sama tahu: job.id (bull
+    # job id numerik, bukan session_id -- NestJS belum tahu session_id yang
+    # baru dibuat di atas saat request Batalkan datang).
+    import redis.asyncio as aioredis
+
+    redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
+    redis_client = aioredis.from_url(redis_url)
+
+    async def _is_cancelled() -> bool:
+        try:
+            return bool(await redis_client.get(f"job:cancel:{job.id}"))
+        except Exception:
+            logger.exception("Gagal cek status batal job %s, lanjut seperti biasa", job.id)
+            return False
+
     max_parallel = int(os.environ.get("ASSESSMENT_MAX_PARALLEL", "5"))
-    await _run_assessment_pipeline(
-        session_id=session_id,
-        indicators=indicators,
-        max_parallel=max_parallel,
-        tenant_id=tenant_id,
-        dokumen_id=dokumen_id,
-        study_program_id=study_program_id,
-        on_progress=_report_progress,
-    )
+    try:
+        await _run_assessment_pipeline(
+            session_id=session_id,
+            indicators=indicators,
+            max_parallel=max_parallel,
+            tenant_id=tenant_id,
+            dokumen_id=dokumen_id,
+            study_program_id=study_program_id,
+            on_progress=_report_progress,
+            is_cancelled=_is_cancelled,
+        )
+    finally:
+        await redis_client.aclose()
 
     sess = get_session(session_id)
+    if sess is not None and sess["status"] == "cancelled":
+        return {
+            "status": "cancelled",
+            "sessionId": session_id,
+            "totalIndicators": sess["total_indicators"],
+            "completedIndicators": sess["completed_indicators"],
+        }
     if sess is None or sess["status"] != "completed":
         return {
             "status": "error",

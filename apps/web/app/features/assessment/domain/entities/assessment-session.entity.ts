@@ -27,13 +27,19 @@ import {
  * foreign key ke `DokumenLed`. Karena itu permukaannya hidup di Lapis 3
  * (Dashboard Dokumen LED), bukan di Dashboard Prodi maupun di dalam Editor Bab.
  */
-export const assessmentStatusEnum = z.enum(['RUNNING', 'COMPLETED', 'FAILED']);
+export const assessmentStatusEnum = z.enum([
+	'RUNNING',
+	'COMPLETED',
+	'FAILED',
+	'CANCELLED',
+]);
 export type AssessmentStatus = z.infer<typeof assessmentStatusEnum>;
 
 export const assessmentStatusLabels: Record<AssessmentStatus, string> = {
 	RUNNING: 'Berjalan',
 	COMPLETED: 'Selesai',
 	FAILED: 'Gagal',
+	CANCELLED: 'Dibatalkan',
 };
 
 export const assessmentSessionSchema = z.object({
@@ -163,7 +169,12 @@ export function gabungPenilaian(input: {
 				hasil?.confidence != null &&
 				tingkatConfidence(hasil.confidence) === 'RENDAH';
 			const skorRendah = skorFinal !== null && skorFinal <= SKOR_PERLU_DIPERIKSA;
-			const gagal = hasil === undefined || hasil.error !== null;
+			// `hasil === undefined` sendirian BUKAN temuan — itu cuma berarti
+			// indikator ini belum pernah dinilai AI sama sekali (baik karena belum
+			// pernah ada sesi, atau sengaja tidak dipilih di run terakhir), bukan
+			// sebuah kegagalan untuk diperiksa. Cuma percobaan yang benar-benar
+			// menghasilkan error (`hasil.error !== null`) yang layak jadi temuan.
+			const gagal = hasil !== undefined && hasil.error !== null;
 			const adaTemuan = confidenceRendah || skorRendah || gagal;
 
 			return {

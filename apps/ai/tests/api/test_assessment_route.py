@@ -848,3 +848,97 @@ async def test_run_assessment_pipeline_completes_even_when_every_indicator_fails
     # Session still reaches a terminal state — not left stuck "running".
     final_call = mock_update.call_args_list[-1]
     assert final_call.kwargs["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_run_assessment_pipeline_stops_early_when_cancelled(fake_indicators):
+    """Cancel button (JobsService.cancel -> Redis flag -> worker's is_cancelled())
+    -- once it reports True, the pipeline must stop waiting on remaining
+    indicators and mark the session 'cancelled' rather than 'completed',
+    without losing the indicator that already finished before cancellation
+    was noticed."""
+    from api.routes.assessment import _run_assessment_pipeline
+
+    second_started = asyncio.Event()
+    release_second = asyncio.Event()
+
+    async def fake_process(indicator, **kwargs):
+        if indicator.indicator_no == fake_indicators[0].indicator_no:
+            return True
+        # Second indicator hangs until explicitly released -- this test never
+        # releases it, so it's still in flight when cancellation kicks in.
+        second_started.set()
+        await release_second.wait()
+        return True
+
+    with (
+        patch("api.routes.assessment.create_ollama_client_from_env"),
+        patch("api.routes.assessment.build_graph_auto"),
+        patch("api.routes.assessment._process_single_indicator", side_effect=fake_process),
+        patch("api.routes.assessment.update_session_status") as mock_update,
+    ):
+        await _run_assessment_pipeline(
+            session_id="sess-1",
+            indicators=fake_indicators,  # 2 indicators
+            max_parallel=5,
+            tenant_id=TENANT_ID,
+            dokumen_id=DOKUMEN_ID,
+            is_cancelled=AsyncMock(return_value=True),
+        )
+
+    running_calls = [
+        c.kwargs["completed_indicators"] for c in mock_update.call_args_list
+        if c.kwargs.get("status") == "running"
+    ]
+    # Only the first indicator's progress update ever landed -- the second
+    # was still hanging when the cancel check fired right after it.
+    assert running_calls == [1]
+
+    final_call = mock_update.call_args_list[-1]
+    assert final_call.kwargs["status"] == "cancelled"
+    assert final_call.kwargs["completed_indicators"] == 1
+
+
+@pytest.mark.asyncio
+async def test_run_assessment_pipeline_detects_cancel_even_when_nothing_completes(
+    fake_indicators,
+):
+    """Real bug hit live: every indicator can be stuck on a congested LLM
+    endpoint for minutes with NONE completing. is_cancelled() used to only be
+    checked right after a completion, so a cancel request sat unseen the
+    entire time. It must now be polled on a timer (CANCEL_POLL_SECONDS)
+    independent of whether anything has finished."""
+    from api.routes.assessment import _run_assessment_pipeline
+
+    never_release = asyncio.Event()
+
+    async def fake_process(indicator, **kwargs):
+        await never_release.wait()  # never happens in this test
+        return True
+
+    with (
+        patch("api.routes.assessment.create_ollama_client_from_env"),
+        patch("api.routes.assessment.build_graph_auto"),
+        patch("api.routes.assessment._process_single_indicator", side_effect=fake_process),
+        patch("api.routes.assessment.update_session_status") as mock_update,
+        patch("api.routes.assessment.CANCEL_POLL_SECONDS", 0.05),
+    ):
+        await _run_assessment_pipeline(
+            session_id="sess-1",
+            indicators=fake_indicators,  # 2 indicators, both hang forever
+            max_parallel=5,
+            tenant_id=TENANT_ID,
+            dokumen_id=DOKUMEN_ID,
+            is_cancelled=AsyncMock(return_value=True),
+        )
+
+    # No indicator ever finished -- zero "running" progress updates -- but the
+    # pipeline still reached a terminal 'cancelled' state instead of hanging.
+    running_calls = [
+        c for c in mock_update.call_args_list if c.kwargs.get("status") == "running"
+    ]
+    assert running_calls == []
+
+    final_call = mock_update.call_args_list[-1]
+    assert final_call.kwargs["status"] == "cancelled"
+    assert final_call.kwargs["completed_indicators"] == 0

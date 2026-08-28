@@ -31,4 +31,9 @@ export const assessmentSessionRepository = {
 	trigger(dokumenId: string, payload: TriggerAssessmentPayload) {
 		return assessmentRemoteSource.trigger(dokumenId, payload);
 	},
+
+	/** Minta job yang sedang berjalan berhenti — lihat catatan di remote-source. */
+	cancel(jobId: string) {
+		return assessmentRemoteSource.cancel(jobId);
+	},
 };
