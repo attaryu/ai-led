@@ -91,7 +91,24 @@ export function useChapterRecommendation({
 		chapterRepository
 			.findRecommendation(chapter.id)
 			.then((rec) => {
-				if (!dibatalkan) setRekomendasi(rec);
+				if (dibatalkan) return;
+				setRekomendasi((sebelumnya) => {
+					/*
+					 * Query di atas cuma menjawab "yang DIKONFIRMASI" (lihat JSDoc
+					 * `findRecommendation` di `bab-pipeline.service.ts`) — `null` di
+					 * sini bukan berarti "tidak ada rekomendasi sama sekali", bisa
+					 * juga berarti "ada, tapi masih DIREKOMENDASIKAN, menunggu
+					 * ditinjau". Menimpanya begitu saja membuat rekomendasi yang baru
+					 * saja selesai (`trigger`/`tunggu` di bawah) lenyap tanpa jejak
+					 * kalau checkpoint bab kebetulan berubah di saat yang hampir
+					 * sama (mis. pengguna menekan Generate sebelum sempat meninjau) —
+					 * persis race yang membuat rekomendasi "menghilang" dari layar.
+					 */
+					if (rec === null && sebelumnya?.status === 'DIREKOMENDASIKAN') {
+						return sebelumnya;
+					}
+					return rec;
+				});
 			})
 			.catch(() => {
 				if (!dibatalkan) setRekomendasi(null);
