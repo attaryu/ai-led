@@ -123,6 +123,10 @@ export function CreateLedProject() {
 			tahunAkademik,
 			statusKeseluruhan: 'DRAFT',
 			tenggat: fromDateInputValue(data.tenggat),
+			// Acuan penilaian dipilih belakangan dari halaman proyeknya, bukan di
+			// sini: formulir ini dipakai untuk membuka penyusunan, sedangkan memilih
+			// set adalah keputusan tata kelola yang hanya boleh diambil Penjamin Mutu.
+			accreditationSetId: null,
 			createdAt: new Date().toISOString(),
 		};
 

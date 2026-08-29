@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { rubricCriterionSchema } from '~/features/chapter/domain/entities/rubric-criterion.entity';
+
 /**
  * Tiga jenis berkas acuan dalam satu set, mengikuti `TipePanduan` di
  * docs/database.md → PANDUAN_REFERENSI. Ketiganya menjawab pertanyaan yang
@@ -17,12 +19,6 @@ export const SET_DOCUMENT_TYPE_LABEL: Record<SetDocumentType, string> = {
 	DOKUMEN_RUBRIK: 'Dokumen Rubrik',
 	PANDUAN_LAM: 'Panduan LAM',
 	TEMPLATE_LKPS: 'Template LKPS',
-};
-
-export const SET_DOCUMENT_TYPE_HINT: Record<SetDocumentType, string> = {
-	DOKUMEN_RUBRIK: 'Kriteria penilaian beserta level skornya',
-	PANDUAN_LAM: 'Poin panduan penyusunan dari lembaga penilai',
-	TEMPLATE_LKPS: 'Format tabel data kuantitatif',
 };
 
 /**
@@ -89,6 +85,22 @@ export const accreditationSetSchema = z.object({
 		.max(2100, 'Tahun siklus maksimal 2100'),
 	status: setStatusEnum,
 	dokumen: z.array(accreditationSetDocumentSchema),
+	/**
+	 * Isi rubrik yang berlaku untuk set ini — hasil pembacaan berkas
+	 * `DOKUMEN_RUBRIK`, sementara ini dimasukkan manual lewat layar tinjau.
+	 *
+	 * **Disimpan di dalam set, bukan sebagai daftar tersendiri.** Kriteria tidak
+	 * punya arti di luar set yang memayunginya: mengunci set berarti mengunci
+	 * kriterianya, dan menduplikasi set jadi versi baru berarti menyalin satu
+	 * objek utuh. Penyimpanan terpisah hanya menambah satu daftar yang bisa
+	 * yatim saat setnya hilang.
+	 *
+	 * Bentuk tiap barisnya dipinjam dari `rubric-criterion.entity.ts` — sengaja
+	 * bukan salinan. Berkas itu masih memegang katalog global `RUBRIK_KRITERIA`
+	 * yang dibaca Penilaian AMI dan Editor Bab; yang berpindah ke sini nanti
+	 * adalah sumber datanya, bukan bentuknya.
+	 */
+	kriteria: z.array(rubricCriterionSchema),
 	createdAt: z.string(),
 });
 
@@ -124,4 +136,149 @@ export function findSetDocument(
 	tipe: SetDocumentType,
 ): AccreditationSetDocument | null {
 	return set.dokumen.find((d) => d.tipe === tipe) ?? null;
+}
+
+/**
+ * Jumlah kriteria minimum sebelum sebuah set boleh ditandai siap.
+ *
+ * Satu, bukan angka yang terdengar meyakinkan seperti sepuluh: rubrik pendek
+ * yang sah memang ada, dan menolaknya hanya akan memaksa orang mengarang baris
+ * kosong supaya lolos. Yang perlu dicegah cuma set kosong yang dipilih proyek
+ * lalu menghasilkan penilaian tanpa satu pun indikator.
+ */
+export const MIN_KRITERIA_SIAP = 1;
+
+/**
+ * Apa saja yang masih boleh dilakukan terhadap sebuah set.
+ *
+ * **Satu kunci, satu pemicu: pemakaian.** Selama belum ada Dokumen LED yang
+ * memilih set ini, seluruhnya terbuka — identitas, berkas, maupun isi rubrik.
+ * Begitu satu dokumen memakainya, seluruhnya terkunci sekaligus, dan revisi
+ * ditempuh dengan menduplikasi jadi versi baru.
+ *
+ * Sempat ada kunci kedua di status `SIAP`, dan itu keliru. Alasan mengunci
+ * kriteria adalah hasil penilaian yang menunjuk kepadanya — padahal skor baru
+ * ada sesudah sebuah dokumen memilih set ini dan dinilai. Set siap yang belum
+ * dipakai siapa pun tidak punya satu pun skor untuk dilindungi, jadi kunci di
+ * sana menjaga sesuatu yang belum ada. Karena kunci itu tidak punya alasan,
+ * tidak ada pula dasar memutuskan apa saja yang ikut terkena — dan slot berkas
+ * yang masih kosong ikut terkunci, membuat set siap yang berkasnya kurang tidak
+ * bisa dilengkapi lagi. Status kini menjadi gerbang, bukan kunci: lihat
+ * {@link deriveSetReadiness}.
+ */
+export type SetLock = {
+	/** Identitas, berkas, dan isi rubrik — ketiganya ikut nilai yang sama. */
+	terbuka: boolean;
+	bolehHapus: boolean;
+	/** Alasan penguncian untuk ditampilkan apa adanya; `null` bila tidak terkunci. */
+	alasan: string | null;
+};
+
+/**
+ * `dipakaiProyek` diterima sebagai angka, bukan boolean, karena tampilan perlu
+ * menyebut berapa dokumen yang terdampak — "dipakai 3 dokumen" menjelaskan
+ * kenapa tombolnya mati, sedangkan "sedang dipakai" hanya menyatakan bahwa ia
+ * mati.
+ */
+export function deriveSetLock(dipakaiProyek: number): SetLock {
+	if (dipakaiProyek > 0) {
+		return {
+			terbuka: false,
+			bolehHapus: false,
+			alasan: `Set ini sudah dipakai ${dipakaiProyek} Dokumen LED, jadi tidak bisa diubah lagi. Duplikasi set ini bila acuannya perlu direvisi.`,
+		};
+	}
+
+	return { terbuka: true, bolehHapus: true, alasan: null };
+}
+
+/**
+ * Syarat sebuah set boleh berstatus `SIAP`; `null` bila sudah terpenuhi.
+ *
+ * Dipakai dua arah, dan itu disengaja: sebagai penjaga saat menandai siap, dan
+ * sebagai penjaga saat menghapus berkas atau kriteria dari set yang **sudah**
+ * siap. Tanpa arah kedua, set siap bisa dikosongkan isinya sesudahnya lalu
+ * tetap ditawarkan ke proyek dalam keadaan kosong — gerbang yang bisa dilangkahi
+ * dari belakang tidak menjaga apa pun.
+ */
+export function cekSyaratSiap(set: AccreditationSetEntity): string | null {
+	const { kosong } = deriveSetCompleteness(set);
+
+	if (kosong.length > 0) {
+		const nama = kosong.map((tipe) => SET_DOCUMENT_TYPE_LABEL[tipe]).join(' dan ');
+		return `Set siap harus punya ketiga berkas acuan — ${nama} belum ada.`;
+	}
+
+	if (set.kriteria.length < MIN_KRITERIA_SIAP) {
+		return 'Set siap harus punya isi rubrik — kriteria penilaiannya belum terbaca dari Dokumen Rubrik.';
+	}
+
+	return null;
+}
+
+export type SetReadiness = {
+	boleh: boolean;
+	/** Apa yang masih kurang; `null` bila sudah boleh atau sudah berstatus siap. */
+	halangan: string | null;
+};
+
+/**
+ * Apakah set ini boleh ditandai siap, dan kalau belum, apa yang kurang.
+ *
+ * `SIAP` adalah **gerbang, bukan kunci**: artinya "boleh dipilih Dokumen LED",
+ * bukan "tidak boleh diubah". Syaratnya ketiga berkas lengkap dan isi rubriknya
+ * sudah terbaca, supaya set yang ditawarkan ke proyek selalu set yang utuh —
+ * proyek yang memilih set setengah jadi akan mendapati penilaiannya berjalan
+ * tanpa acuan lengkap.
+ */
+export function deriveSetReadiness(set: AccreditationSetEntity): SetReadiness {
+	if (set.status === 'SIAP') return { boleh: false, halangan: null };
+
+	const halangan = cekSyaratSiap(set);
+	return { boleh: halangan === null, halangan };
+}
+
+/**
+ * Rentang skor satu set, dari level terendah sampai tertinggi di seluruh
+ * kriterianya. `null` bila setnya belum punya kriteria sama sekali.
+ *
+ * Diturunkan dengan alasan yang sama seperti `skorMaksimal` per kriteria:
+ * skalanya sudah tertulis di level tiap kriteria, dan menyimpannya lagi di
+ * tingkat set hanya menyediakan satu angka yang bisa berbohong.
+ */
+export function deriveSetSkorRange(
+	set: AccreditationSetEntity,
+): { min: number; max: number } | null {
+	const semuaSkor = set.kriteria.flatMap((k) => k.levelSkor.map((l) => l.skor));
+	if (semuaSkor.length === 0) return null;
+
+	return { min: Math.min(...semuaSkor), max: Math.max(...semuaSkor) };
+}
+
+/**
+ * Nomor bab yang tidak dinilai satu kriteria pun. Bukan kesalahan — bab
+ * pendahuluan dan penutup memang tidak dinilai rubrik (docs/database.md §10) —
+ * tapi penyusun berhak tahu bab mana yang tidak akan pernah muncul skornya
+ * sebelum setnya dinyatakan siap.
+ */
+export function findBabTanpaKriteria(
+	set: AccreditationSetEntity,
+	urutanBabTersedia: number[],
+): number[] {
+	return urutanBabTersedia.filter(
+		(urutan) => !set.kriteria.some((k) => k.urutanBab.includes(urutan)),
+	);
+}
+
+/** Nama untuk hasil duplikasi, dengan penomoran bila salinannya lebih dari satu. */
+export function namaSalinan(
+	nama: string,
+	namaTerpakai: readonly string[],
+): string {
+	const dasar = `${nama} (salinan)`;
+	if (!namaTerpakai.includes(dasar)) return dasar;
+
+	let urutan = 2;
+	while (namaTerpakai.includes(`${dasar} ${urutan}`)) urutan += 1;
+	return `${dasar} ${urutan}`;
 }

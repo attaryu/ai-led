@@ -31,6 +31,19 @@ export const ledProjectSchema = z.object({
 	 * sehari-hari adalah target penyelesaian dokumen yang sedang disusun.
 	 */
 	tenggat: z.string().nullable(),
+	/**
+	 * Set akreditasi yang jadi acuan penilaian dokumen ini.
+	 *
+	 * `null` berarti belum dipilih — dokumen masih bisa ditulis, tapi belum bisa
+	 * dinilai, karena tidak ada rubrik yang menyatakan apa yang dinilai.
+	 *
+	 * Ditaruh di dokumen, bukan di prodi maupun tenant: satu universitas bisa
+	 * punya prodi di bawah lembaga penilai berbeda, dan dokumen dari siklus
+	 * berbeda dinilai dengan rubrik berbeda. Ini juga yang membuat skor lama
+	 * tetap bermakna — dokumen selamanya memegang set yang dipakainya, walau
+	 * tenant sudah beralih ke set yang lebih baru.
+	 */
+	accreditationSetId: z.string().nullable(),
 	createdAt: z.string(),
 });
 

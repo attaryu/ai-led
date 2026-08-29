@@ -20,7 +20,24 @@ export function formatDate(iso: string): string {
 	});
 }
 
-/** Tanggal beserta jam: "12 Agustus 2027 14.30". */
+/**
+ * Tanggal dan jam dipisah koma: "12 Agustus 2027, 14.30".
+ *
+ * Berdampingan dengan {@link formatDateTime}, bukan menggantikannya: yang itu
+ * dipakai di kalimat berjalan sehingga "pukul" bawaan `id-ID` terbaca wajar,
+ * sedangkan bentuk ini untuk keterangan padat berlencana ikon, tempat satu kata
+ * sambung tidak menambah apa pun selain panjang.
+ */
+export function formatDateTimeCompact(iso: string): string {
+	const waktu = new Date(iso).toLocaleTimeString('id-ID', {
+		hour: '2-digit',
+		minute: '2-digit',
+	});
+
+	return `${formatDate(iso)}, ${waktu}`;
+}
+
+/** Tanggal beserta jam: "12 Agustus 2027 pukul 14.30". */
 export function formatDateTime(iso: string): string {
 	return new Date(iso).toLocaleString('id-ID', {
 		day: 'numeric',

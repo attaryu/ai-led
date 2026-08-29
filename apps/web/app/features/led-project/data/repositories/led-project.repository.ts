@@ -56,6 +56,9 @@ const initialLedProjects: LedProjectEntity[] = [
 		statusKeseluruhan: 'DRAFT',
 		// Di bawah 30 hari: keadaan "tenggat dekat" punya wujud tanpa perlu diedit.
 		tenggat: inDays(23),
+		// Menunjuk set 'LAM-Teknik 2026', supaya keadaan 'set sudah dipakai dokumen'
+		// — yang mengunci set dari perubahan — punya wujud tanpa perlu disiapkan.
+		accreditationSetId: '1',
 		createdAt: '2026-07-30T10:00:00.000Z',
 	},
 	{
@@ -66,6 +69,7 @@ const initialLedProjects: LedProjectEntity[] = [
 		tahunAkademik: '2025/2026',
 		statusKeseluruhan: 'REVIEW',
 		tenggat: inDays(-6),
+		accreditationSetId: '1',
 		createdAt: '2026-07-30T10:15:00.000Z',
 	},
 	{
@@ -76,6 +80,9 @@ const initialLedProjects: LedProjectEntity[] = [
 		tahunAkademik: '2026/2027',
 		statusKeseluruhan: 'SELESAI',
 		tenggat: null,
+		// Sengaja belum memilih set: peringatan 'dokumen belum bisa dinilai' perlu
+		// ada yang memicunya.
+		accreditationSetId: null,
 		createdAt: '2026-07-30T10:30:00.000Z',
 	},
 	{
@@ -88,18 +95,23 @@ const initialLedProjects: LedProjectEntity[] = [
 		tahunAkademik: '2021/2022',
 		statusKeseluruhan: 'SELESAI',
 		tenggat: null,
+		accreditationSetId: null,
 		createdAt: '2022-08-01T10:00:00.000Z',
 	},
 ];
 
 /**
- * Mengisi `tenggat` untuk baris lama di localStorage. `findAll` mem-parse JSON
- * tanpa memvalidasinya ke skema, jadi tanpa ini dokumen yang tersimpan sebelum
- * kolomnya ada akan bernilai `undefined` — yang tidak sama dengan `null` bagi
- * `deriveDeadline`.
+ * Mengisi `tenggat` dan `accreditationSetId` untuk baris lama di localStorage.
+ * `findAll` mem-parse JSON tanpa memvalidasinya ke skema, jadi tanpa ini dokumen
+ * yang tersimpan sebelum kolomnya ada akan bernilai `undefined` — yang tidak
+ * sama dengan `null` bagi `deriveDeadline` maupun bagi pemeriksaan set terpakai.
  */
 function normalize(project: Partial<LedProjectEntity>): LedProjectEntity {
-	return { ...(project as LedProjectEntity), tenggat: project.tenggat ?? null };
+	return {
+		...(project as LedProjectEntity),
+		tenggat: project.tenggat ?? null,
+		accreditationSetId: project.accreditationSetId ?? null,
+	};
 }
 
 export const ledProjectRepository = {

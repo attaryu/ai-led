@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router';
 import { PlusIcon } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
+import { useConfirmDialog } from '~/core/components/ui/confirm-dialog';
 import { DataTable } from '~/core/components/ui/data-table';
 import { useDataTableState } from '~/core/hooks/use-data-table-state';
+import { applyAccreditationSetQuery } from '../../domain/dtos/accreditation-set-query.dto';
 import { accreditationSetRepository } from '../../data/repositories/accreditation-set.repository';
 import { getAccreditationSetColumns } from '../components/accreditation-set-columns';
 import { useAccreditationSetPermission } from '../hooks/use-accreditation-set-permission';
@@ -14,6 +16,8 @@ export function AccreditationSetManagement() {
 	const navigate = useNavigate();
 	const { canView, canManage } = useAccreditationSetPermission();
 	const [sets, setSets] = React.useState<AccreditationSetEntity[]>([]);
+	const [aksiError, setAksiError] = React.useState<string | null>(null);
+	const { konfirmasi, confirmDialog } = useConfirmDialog();
 
 	const loadData = React.useCallback(() => {
 		accreditationSetRepository.findAll().then(setSets);
@@ -28,16 +32,29 @@ export function AccreditationSetManagement() {
 	}, [loadData]);
 
 	const handleDelete = React.useCallback(
-		(id: string) => {
-			if (
-				confirm(
-					'Hapus set akreditasi ini beserta seluruh berkas acuannya?',
-				)
-			) {
-				accreditationSetRepository.delete(id).then(loadData);
+		async (id: string) => {
+			const lanjut = await konfirmasi({
+				judul: 'Hapus set akreditasi ini?',
+				deskripsi:
+					'Berkas acuan dan isi rubriknya ikut terhapus. Set yang sudah dipakai Dokumen LED tidak bisa dihapus.',
+				labelAksi: 'Hapus Set',
+				merusak: true,
+			});
+			if (!lanjut) return;
+
+			setAksiError(null);
+
+			// Penolakan datang dari repository, bukan dari tombol yang dimatikan:
+			// set bisa saja baru dipilih sebuah dokumen sesudah daftar ini termuat,
+			// dan pesannya harus tetap muncul alih-alih baris yang diam-diam hilang.
+			try {
+				await accreditationSetRepository.delete(id);
+				loadData();
+			} catch (e) {
+				setAksiError(e instanceof Error ? e.message : 'Gagal menghapus set.');
 			}
 		},
-		[loadData],
+		[loadData, konfirmasi],
 	);
 
 	const tableMeta = React.useMemo(
@@ -60,6 +77,20 @@ export function AccreditationSetManagement() {
 	const columns = React.useMemo(
 		() => getAccreditationSetColumns({ withActions: canManage }),
 		[canManage],
+	);
+
+	// Sama seperti tabel kriteria: `DataTable` tidak menyaring apa pun sendiri,
+	// jadi kotak pencarian di atasnya baru bekerja setelah dikerjakan di sini.
+	const halaman = React.useMemo(
+		() =>
+			applyAccreditationSetQuery(sets, {
+				q: globalFilter,
+				sort: sorting[0]?.id,
+				dir: sorting[0]?.desc ? 'desc' : 'asc',
+				page: pagination.pageIndex,
+				pageSize: pagination.pageSize,
+			}),
+		[sets, globalFilter, sorting, pagination],
 	);
 
 	// Menyembunyikan menu di sidebar saja tidak cukup: lapis tenant tetap
@@ -97,10 +128,18 @@ export function AccreditationSetManagement() {
 				)}
 			</div>
 
+			{aksiError && (
+				<p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+					{aksiError}
+				</p>
+			)}
+
 			<DataTable
 				columns={columns}
-				data={sets}
+				data={halaman.rows}
+				rowCount={halaman.rowCount}
 				meta={tableMeta}
+				searchPlaceholder="Cari nama set, lembaga, atau siklus..."
 				sorting={sorting}
 				onSortingChange={setSorting}
 				globalFilter={globalFilter}
@@ -111,6 +150,8 @@ export function AccreditationSetManagement() {
 				onPaginationChange={setPagination}
 				onClearAll={clearAll}
 			/>
+
+			{confirmDialog}
 		</div>
 	);
 }

@@ -63,6 +63,23 @@ export const getAccreditationSetColumns = ({
 		header: 'Kelengkapan Berkas',
 		cell: (info) => <SetCompletenessCell set={info.row.original} />,
 	}),
+	// Berkas lengkap tidak sama dengan isi terbaca: rubrik yang sudah diunggah
+	// tapi belum dimasukkan kriterianya menghasilkan penilaian tanpa indikator.
+	// Karena itu jumlahnya berdiri sebagai kolom sendiri, bukan menumpang kolom
+	// kelengkapan berkas di sebelahnya.
+	columnHelper.display({
+		id: 'isiRubrik',
+		header: 'Isi Rubrik',
+		cell: (info) => {
+			const jumlah = info.row.original.kriteria.length;
+
+			return jumlah === 0 ? (
+				<span className="text-sm text-muted-foreground">Belum diisi</span>
+			) : (
+				<span className="text-sm tabular-nums">{jumlah} kriteria</span>
+			);
+		},
+	}),
 	...(withActions
 		? [
 				columnHelper.display({
