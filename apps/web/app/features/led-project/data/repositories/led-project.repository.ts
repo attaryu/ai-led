@@ -160,6 +160,25 @@ export const ledProjectRepository = {
 		assessmentVerdictRepository.deleteByDokumenId(id);
 	},
 
+	/**
+	 * Menetapkan acuan penilaian dokumen ini.
+	 *
+	 * Berdiri sendiri, tidak menumpang pembaruan dokumen pada umumnya: yang
+	 * berhak melakukannya hanya Penjamin Mutu, syaratnya berbeda dari kolom lain
+	 * (dokumen yang sudah pernah dinilai tidak boleh berpindah acuan), dan
+	 * memisahkannya membuat aturan itu tidak perlu dititipkan ke formulir edit
+	 * dokumen yang dipakai role lain.
+	 */
+	setAccreditationSet(id: string, accreditationSetId: string): void {
+		const projects = this.findAll();
+		this.save(
+			projects.map((project) =>
+				project.id === id ? { ...project, accreditationSetId } : project,
+			),
+		);
+		window.dispatchEvent(new Event('storage-update'));
+	},
+
 	findById(id: string): LedProjectEntity | undefined {
 		return this.findAll().find((p) => p.id === id);
 	},

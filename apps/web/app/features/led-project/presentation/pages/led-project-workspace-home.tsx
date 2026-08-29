@@ -7,6 +7,8 @@ import {
 import { useParams } from 'react-router';
 
 import { PlaceholderPage } from '~/core/components/placeholder-page';
+import { ProjectAccreditationSetBadge } from '~/features/accreditation-set/presentation/components/project-accreditation-set-badge';
+import { ProjectAccreditationSetCard } from '~/features/accreditation-set/presentation/components/project-accreditation-set-card';
 import { StatCard } from '~/core/components/ui/stat-card';
 import { formatRelativeTime } from '~/core/lib/format-time';
 import { ledProjectRepository } from '../../data/repositories/led-project.repository';
@@ -18,10 +20,12 @@ import { type LedProjectEntity } from '../../domain/entities/led-project.entity'
 /**
  * Dashboard Project LED — Progres Dokumen (docs/application_flow.md §6.1).
  *
- * Halaman ini murni baca: tidak ada aksi ubah data di sini, jadi tidak ada yang
- * perlu disembunyikan per role (§1) — penjagaannya sudah selesai di layout
- * lapis ini. Judul bab di tabel menautkan ke Editor Bab (§7), yang berdiri
- * sebagai root URL sendiri di `/editor/:projectId/:chapterId`.
+ * Hampir seluruhnya baca. Satu-satunya aksi ubah data di sini adalah memilih
+ * acuan penilaian dokumen, dan penjagaan per role (§1) untuk aksi itu hidup di
+ * dalam panelnya sendiri, bukan di halaman ini — sisanya tetap tanpa penjagaan
+ * karena penjagaan lapisnya sudah selesai di layout. Judul bab di tabel
+ * menautkan ke Editor Bab (§7), yang berdiri sebagai root URL sendiri di
+ * `/editor/:projectId/:chapterId`.
  */
 export function LedProjectWorkspaceHome() {
 	const { projectId } = useParams<{ projectId: string }>();
@@ -57,9 +61,16 @@ function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
 	return (
 		<div className="flex flex-col gap-6">
 			<div>
-				<h2 className="font-heading text-2xl font-bold tracking-tight">
-					Progres Dokumen
-				</h2>
+				{/* Acuan penilaian menentukan arti seluruh angka di halaman ini, jadi
+				    ia harus terbaca tanpa menggulung — tapi cukup sebagai lencana
+				    sebaris judul. Rincian dan tempat menggantinya ada di kartu pada
+				    kolom kanan, karena keduanya jarang dibutuhkan. */}
+				<div className="flex flex-wrap items-center gap-3">
+					<h2 className="font-heading text-2xl font-bold tracking-tight">
+						Progres Dokumen
+					</h2>
+					<ProjectAccreditationSetBadge project={ledProject} />
+				</div>
 				<p className="text-sm text-muted-foreground">
 					Ringkasan penyusunan {ledProject.judul}.
 				</p>
@@ -124,7 +135,10 @@ function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
 					<h3 className="font-heading text-base font-medium">Progres per Bab</h3>
 					<ChapterProgressTable projectId={ledProject.id} chapters={chapters} />
 				</section>
-				<ProjectAttentionPanel project={ledProject} attention={attention} />
+				<div className="flex min-w-0 flex-col gap-4">
+					<ProjectAttentionPanel project={ledProject} attention={attention} />
+					<ProjectAccreditationSetCard project={ledProject} />
+				</div>
 			</div>
 		</div>
 	);

@@ -35,11 +35,16 @@ import { TahunAkademikField } from '../components/tahun-akademik-field';
 import { ledProjectRepository } from '../../data/repositories/led-project.repository';
 import { type StudyProgramEntity } from '../../../study-program/domain/entities/study-program.entity';
 import { studyProgramRepository } from '../../../study-program/data/repositories/study-program.repository';
+import { accreditationSetRepository } from '~/features/accreditation-set/data/repositories/accreditation-set.repository';
+import { type AccreditationSetEntity } from '~/features/accreditation-set/domain/entities/accreditation-set.entity';
 
 export function CreateLedProject() {
 	const navigate = useNavigate();
 	const [searchParams] = useSearchParams();
 	const [studyPrograms, setStudyPrograms] = React.useState<StudyProgramEntity[]>([]);
+	const [acuanTersedia, setAcuanTersedia] = React.useState<
+		AccreditationSetEntity[]
+	>([]);
 
 	/*
 	 * Formulir ini bisa dibuka dari dua tempat: daftar lintas prodi di lapis
@@ -55,6 +60,7 @@ export function CreateLedProject() {
 
 	React.useEffect(() => {
 		setStudyPrograms(studyProgramRepository.findAll());
+		accreditationSetRepository.findSelectable().then(setAcuanTersedia);
 	}, []);
 
 	const {
@@ -74,6 +80,7 @@ export function CreateLedProject() {
 			// — dan kolomnya langsung memperlihatkan tahun akhirnya tanpa diketik.
 			tahunMulai: String(new Date().getFullYear()),
 			tenggat: '',
+			accreditationSetId: '',
 		},
 	});
 
@@ -88,6 +95,14 @@ export function CreateLedProject() {
 			adaDiDaftar ? prodiTerpilih! : studyPrograms[0].id,
 		);
 	}, [studyPrograms, prodiTerpilih, setValue]);
+
+	// Satu siklus umumnya hanya punya satu acuan yang berlaku, jadi pilihan
+	// pertama nyaris selalu jawaban yang benar dan kolomnya tinggal dilewati.
+	React.useEffect(() => {
+		if (acuanTersedia.length > 0) {
+			setValue('accreditationSetId', acuanTersedia[0].id);
+		}
+	}, [acuanTersedia, setValue]);
 
 	const onSubmit = (data: CreateLedProjectDto) => {
 		const prodi = studyPrograms.find((p) => p.id === data.studyProgramId);
@@ -123,10 +138,7 @@ export function CreateLedProject() {
 			tahunAkademik,
 			statusKeseluruhan: 'DRAFT',
 			tenggat: fromDateInputValue(data.tenggat),
-			// Acuan penilaian dipilih belakangan dari halaman proyeknya, bukan di
-			// sini: formulir ini dipakai untuk membuka penyusunan, sedangkan memilih
-			// set adalah keputusan tata kelola yang hanya boleh diambil Penjamin Mutu.
-			accreditationSetId: null,
+			accreditationSetId: data.accreditationSetId,
 			createdAt: new Date().toISOString(),
 		};
 
@@ -190,6 +202,38 @@ export function CreateLedProject() {
 								)}
 								{errors.studyProgramId && (
 									<FieldError>{errors.studyProgramId.message}</FieldError>
+								)}
+							</Field>
+
+							<Field data-invalid={!!errors.accreditationSetId}>
+								<FieldLabel htmlFor="accreditationSetId">
+									Acuan Penilaian
+								</FieldLabel>
+								{acuanTersedia.length === 0 ? (
+									// Menolak dengan alasan, bukan kolom kosong yang diam.
+									// Lembaga penilai menerbitkan panduan, template, dan rubrik
+									// sekaligus, jadi acuannya memang mestinya sudah ada sebelum
+									// penyusunan dibuka — kalau belum ada, yang kurang bukan
+									// isian formulir ini, melainkan setnya sendiri.
+									<div className="text-sm text-destructive border border-destructive/20 bg-destructive/10 rounded-md p-3">
+										Belum ada set akreditasi yang siap dipakai. Lengkapi berkas
+										dan isi rubriknya lebih dulu di menu Set Akreditasi.
+									</div>
+								) : (
+									<Select
+										id="accreditationSetId"
+										disabled={isSubmitting}
+										{...register('accreditationSetId')}
+									>
+										{acuanTersedia.map((set) => (
+											<option key={set.id} value={set.id}>
+												{set.nama} — {set.lembaga} · siklus {set.tahunSiklus}
+											</option>
+										))}
+									</Select>
+								)}
+								{errors.accreditationSetId && (
+									<FieldError>{errors.accreditationSetId.message}</FieldError>
 								)}
 							</Field>
 
