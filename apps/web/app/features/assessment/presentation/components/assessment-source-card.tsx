@@ -221,7 +221,7 @@ export function AssessmentSourceCard({
 				studyProgramId={studyProgramId}
 				studyProgramName={studyProgramName}
 				/*
-				 * Cakupannya prodi ini, tujuannya akar: halaman Penilaian AMI tidak
+				 * Cakupannya program studi ini, tujuannya akar: halaman Penilaian AMI tidak
 				 * menjelajahi perpustakaan, jadi tidak ada folder yang sedang dibuka.
 				 * Pemilih folder di modal tetap tersedia (§4.6a).
 				 */
@@ -229,7 +229,7 @@ export function AssessmentSourceCard({
 					ownerTipe: 'PROGRAM_STUDI',
 					studyProgramId,
 				})}
-				labelAkar={`Bukti Dukung Prodi ${studyProgramName}`}
+				labelAkar={`Bukti Dukung ${studyProgramName}`}
 				uploader={uploader}
 				onUploaded={pakaiHasilUnggah}
 			/>

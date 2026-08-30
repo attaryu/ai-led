@@ -174,8 +174,8 @@ export function ProjectAccreditationSetCard({
 						{sudahDinilai && (
 							<p className="flex items-start gap-1.5 text-xs text-muted-foreground">
 								<LockSimpleIcon className="mt-0.5 size-3.5 shrink-0" />
-								Sudah dipakai menilai dokumen ini, jadi acuannya tidak bisa
-								diganti lagi.
+								Acuan tidak bisa diganti lagi. Ia sudah dipakai menilai
+								dokumen ini.
 							</p>
 						)}
 					</>

@@ -260,10 +260,10 @@ export function AccreditationSetDetail() {
 			{/* Kebalikan dari pemberitahuan kunci, dan sama pentingnya: set draf
 			    tidak terkunci, tapi juga belum berlaku. Tanpa kalimat ini, set yang
 			    berkasnya sudah lengkap terlihat sudah siap dipakai padahal ia tidak
-			    akan muncul di daftar pilihan proyek mana pun. */}
+			    akan muncul di daftar pilihan Dokumen LED mana pun. */}
 			{set.status === 'DRAF' && (
 				<div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
-					Masih draf, jadi belum muncul sebagai pilihan acuan di proyek mana pun.{' '}
+					Masih draf, jadi belum muncul sebagai pilihan acuan di Dokumen LED mana pun.{' '}
 					{readiness.halangan ??
 						'Tinjau isi rubriknya lalu tandai siap supaya bisa dipakai.'}
 				</div>

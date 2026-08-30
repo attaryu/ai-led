@@ -20,7 +20,7 @@ import { ProgramTeamPanel } from '../components/program-team-panel';
 import { useProgramReadiness } from '../hooks/use-program-readiness';
 
 /**
- * Dashboard Prodi (docs/application_flow.md §5.1).
+ * Dashboard Program Studi (docs/application_flow.md §5.1).
  *
  * Subjek halaman ini adalah prodinya, bukan daftar dokumennya: akreditasi LAM
  * Teknik berjalan per prodi, satu dokumen pada satu waktu.
@@ -37,7 +37,7 @@ import { useProgramReadiness } from '../hooks/use-program-readiness';
  * hanya membuat halaman ini jadi salinan lapis di bawahnya. Yang tersisa cuma
  * satu bar: cukup untuk tahu dokumennya bergerak atau tidak.
  *
- * Aturan "prodi ini tersendat di mana" yang dulu menggerakkan panel itu sudah
+ * Aturan "program studi ini tersendat di mana" yang dulu menggerakkan panel itu sudah
  * dihapus seluruhnya: sejak §4.0c dipecah jadi dua tabel, pemicunya berubah jadi
  * bentuk halaman — tabel Perlu Segera Disusun, kolom tenggat yang merah — bukan
  * lagi angka yang perlu dijumlahkan.
@@ -57,8 +57,8 @@ export function StudyProgramWorkspaceHome() {
 	if (!studyProgram) {
 		return (
 			<PlaceholderPage
-				title="Prodi tidak ditemukan"
-				description="Prodi yang diminta tidak ada di daftar."
+				title="Program studi tidak ditemukan"
+				description="Program studi yang diminta tidak ada di daftar."
 				links={[
 					{ label: 'Daftar Program Studi', to: '/dashboard/study-programs' },
 				]}
@@ -121,11 +121,8 @@ function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 		<div className="flex flex-col gap-8">
 			<div>
 				<h2 className="font-heading text-2xl font-bold tracking-tight">
-					Dashboard Prodi
+					Dashboard Program Studi
 				</h2>
-				<p className="text-sm text-muted-foreground">
-					Kesiapan akreditasi {program.studyProgramName}.
-				</p>
 			</div>
 
 			<div className="grid items-start gap-4 lg:grid-cols-2">
@@ -151,8 +148,8 @@ function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 							</CardTitle>
 							<CardDescription>
 								{arsip.length === 0
-									? 'Prodi ini belum punya Dokumen LED. Dokumen baru dibuat oleh Penjamin Mutu lewat Dashboard Utama.'
-									: 'Seluruh Dokumen LED prodi ini sudah berstatus SELESAI. Penyusunan berikutnya dimulai dengan membuat Dokumen LED baru.'}
+									? 'Program studi ini belum punya Dokumen LED. Dokumen baru dibuat oleh Penjamin Mutu lewat Dashboard Utama.'
+									: 'Seluruh Dokumen LED program studi ini sudah berstatus SELESAI. Penyusunan berikutnya dimulai dengan membuat Dokumen LED baru.'}
 							</CardDescription>
 						</CardHeader>
 					</Card>

@@ -14,7 +14,7 @@ export function StudyProgramManagement() {
 	const navigate = useNavigate();
 	const session = useSession();
 	// Penjamin Mutu tidak mengelola prodi (§4.1) — halaman ini baginya hanya
-	// daftar navigasi ke Dashboard Prodi (§4.3).
+	// daftar navigasi ke Dashboard Program Studi (§4.3).
 	const canManage = session?.role === 'Admin' || session?.role === 'Pimpinan';
 	const [studyPrograms, setStudyPrograms] = React.useState<
 		StudyProgramEntity[]
@@ -33,7 +33,7 @@ export function StudyProgramManagement() {
 	}, [loadData]);
 
 	const handleDelete = React.useCallback((id: string) => {
-		if (confirm('Apakah Anda yakin ingin menghapus Prodi ini?')) {
+		if (confirm('Apakah Anda yakin ingin menghapus program studi ini?')) {
 			studyProgramRepository.delete(id);
 			loadData();
 		}
@@ -69,12 +69,14 @@ export function StudyProgramManagement() {
 		<div className="flex flex-col gap-8">
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<div>
+					{/*
+					 * Satu judul untuk kedua hak akses. Sebelumnya "Manajemen …" dan
+					 * "Daftar …" bergantian menurut `canManage`, sehingga halaman yang
+					 * sama berganti nama tanpa pembaca punya cara tahu kenapa.
+					 */}
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						{canManage ? 'Manajemen Program Studi (Prodi)' : 'Daftar Program Studi'}
+						Program Studi
 					</h2>
-					<p className="text-sm text-muted-foreground">
-						Klik nama prodi untuk membuka Dashboard Prodi-nya
-					</p>
 				</div>
 				{canManage && (
 					<Button
@@ -82,7 +84,7 @@ export function StudyProgramManagement() {
 						className="gap-2 cursor-pointer"
 					>
 						<PlusIcon className="size-4" />
-						Tambah Prodi
+						Tambah program studi
 					</Button>
 				)}
 			</div>

@@ -34,8 +34,8 @@ export const getLedProjectColumns = ({
 	withTenggat?: boolean;
 } = {}): ColumnDef<LedProjectEntity, any>[] => [
 	columnHelper.accessor('judul', {
-		header: 'Judul Proyek',
-		// Pintasan langsung ke Lapis 3, tanpa lewat Dashboard Prodi.
+		header: 'Judul dokumen',
+		// Pintasan langsung ke Lapis 3, tanpa lewat Dashboard Program Studi.
 		cell: (info) => (
 			<Link
 				to={`/led-projects/${info.row.original.id}`}

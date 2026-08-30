@@ -14,12 +14,12 @@ import { type LedProjectPage } from '../../domain/dtos/led-project-query.dto';
 /**
  * Daftar Dokumen LED milik satu prodi (docs/application_flow.md §5.3).
  *
- * Kembaran dari daftar lintas prodi di lapis tenant, dipersempit ke
+ * Kembaran dari daftar lintas program studi di lapis tenant, dipersempit ke
  * `:programId` di URL. Dua kolomnya berbeda karena konteksnya berbeda: nama
  * prodi dibuang (seluruh baris memuat nilai yang sama), tenggat ditambahkan
  * supaya dokumen yang tersendat terbaca tanpa dibuka satu per satu.
  *
- * Dashboard Prodi (§5.1c) memang sudah memuat riwayat, tapi ringkas: lima baris
+ * Dashboard Program Studi (§5.1c) memang sudah memuat riwayat, tapi ringkas: lima baris
  * teratas, empat kolom, tanpa perkakas. Halaman inilah daftar penuhnya, dan
  * tautan "Lihat semua" di dashboard bermuara ke sini.
  */
@@ -135,11 +135,6 @@ export function ProgramLedProjectList() {
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
 						Dokumen LED
 					</h2>
-					<p className="text-sm text-muted-foreground">
-						Seluruh penyusunan Dokumen LED
-						{studyProgram ? ` ${studyProgram.studyProgramName}` : ' prodi ini'}.
-						Klik judul untuk membuka dokumennya.
-					</p>
 				</div>
 				{canManage && (
 					<Button

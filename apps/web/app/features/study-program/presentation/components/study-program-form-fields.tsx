@@ -60,7 +60,7 @@ export function StudyProgramFormFields({
 				</Field>
 
 				<Field data-invalid={!!errors.kode}>
-					<FieldLabel htmlFor="kode">Kode Prodi</FieldLabel>
+					<FieldLabel htmlFor="kode">Kode program studi</FieldLabel>
 					<Input
 						id="kode"
 						placeholder="Contoh: 55201"

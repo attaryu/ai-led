@@ -15,19 +15,21 @@ import {
 const spandukBlokir: Record<AlasanBlokir, { icon: Icon; lanjutan: string }> = {
 	// §12.2: kunci memblokir aksi ubah, bukan membaca — semua tab di kanan tetap
 	// bisa dibuka.
+	// Kalimat lanjutan hanya diisi kalau ia menambah sesuatu yang belum
+	// tersirat. "Dikunci" sudah berarti "tidak bisa diubah", jadi mengejanya
+	// lagi cuma memanjangkan spanduk tanpa memberi tahu apa pun; yang berguna
+	// justru jalan keluarnya, dan itu hanya ada pada `diajukan`.
 	terkunci: {
 		icon: LockIcon,
-		lanjutan: 'Isinya masih bisa dibaca, tapi tidak bisa diubah.',
+		lanjutan: '',
 	},
 	diajukan: {
 		icon: ClockIcon,
-		lanjutan:
-			'Batalkan pengajuan di tab Review kalau isinya masih mau diubah.',
+		lanjutan: 'Batalkan pengajuannya di tab Review kalau masih mau diubah.',
 	},
 	'hanya-baca': {
 		icon: EyeIcon,
-		lanjutan:
-			'Perubahan konten hanya bisa dilakukan Penyusun dan Penjamin Mutu.',
+		lanjutan: 'Yang bisa mengubah isinya Penyusun dan Penjamin Mutu.',
 	},
 };
 
@@ -85,8 +87,10 @@ function SpandukBlokir({ alasan }: { alasan: AlasanBlokir }) {
 	return (
 		<div className="flex items-center gap-2 rounded-md border border-border bg-card px-4 py-2.5 text-sm text-muted-foreground">
 			<Ikon className="size-4 shrink-0" />
+			{/* `lanjutan` boleh kosong; tanpa penjaga ini spanduknya berakhir
+			    dengan titik lalu satu spasi menggantung. */}
 			<span>
-				{frasaBlokir[alasan]}. {lanjutan}
+				{frasaBlokir[alasan]}.{lanjutan && ` ${lanjutan}`}
 			</span>
 		</div>
 	);

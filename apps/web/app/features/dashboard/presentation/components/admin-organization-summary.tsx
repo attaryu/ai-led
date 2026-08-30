@@ -41,7 +41,7 @@ export function AdminOrganizationSummary() {
 					label="Program Studi"
 					icon={BuildingsIcon}
 					value={String(totalProdi)}
-					hint="Prodi terdaftar di universitas ini"
+					hint="Program studi terdaftar di universitas ini"
 				/>
 				<StatCard
 					label="Akun Pengguna"
@@ -59,8 +59,8 @@ export function AdminOrganizationSummary() {
 						<CardTitle>Penugasan Penyusun</CardTitle>
 						<CardDescription>
 							{prodiTanpaPenyusun === 0
-								? 'Seluruh prodi sudah punya Penyusun.'
-								: `${prodiTanpaPenyusun} dari ${totalProdi} prodi belum punya Penyusun.`}
+								? 'Seluruh program studi sudah punya Penyusun.'
+								: `${prodiTanpaPenyusun} dari ${totalProdi} program studi belum punya Penyusun.`}
 						</CardDescription>
 					</CardHeader>
 					<CardContent className="flex flex-col gap-3">
@@ -70,7 +70,7 @@ export function AdminOrganizationSummary() {
 									className="mt-0.5 size-4 shrink-0"
 									weight="fill"
 								/>
-								Akunnya dibuat di sini, penempatannya ke prodi dilakukan Pimpinan.
+								Akunnya dibuat di sini, penempatannya ke program studi dilakukan Pimpinan.
 							</p>
 						)}
 						<div>
@@ -78,7 +78,7 @@ export function AdminOrganizationSummary() {
 								to="/dashboard/users"
 								className={buttonVariants({ variant: 'outline', size: 'sm' })}
 							>
-								Manajemen User
+								Pengguna
 								<ArrowRightIcon className="size-4" />
 							</Link>
 						</div>
@@ -87,9 +87,9 @@ export function AdminOrganizationSummary() {
 
 				<Card size="sm">
 					<CardHeader>
-						<CardTitle>Manajemen Program Studi</CardTitle>
+						<CardTitle>Program Studi</CardTitle>
 						<CardDescription>
-							Tambah dan ubah data prodi beserta identitas akreditasinya.
+							Tambah dan ubah data program studi beserta identitas akreditasinya.
 						</CardDescription>
 					</CardHeader>
 					<CardContent>
@@ -97,7 +97,7 @@ export function AdminOrganizationSummary() {
 							to="/dashboard/study-programs"
 							className={buttonVariants({ variant: 'outline', size: 'sm' })}
 						>
-							Kelola prodi
+							Kelola program studi
 							<ArrowRightIcon className="size-4" />
 						</Link>
 					</CardContent>

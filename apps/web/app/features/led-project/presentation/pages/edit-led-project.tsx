@@ -13,13 +13,7 @@ import {
 	FieldGroup,
 	FieldLabel,
 } from '~/core/components/ui/field';
-import {
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
-	CardDescription,
-} from '~/core/components/ui/card';
+import { Card, CardContent } from '~/core/components/ui/card';
 import { fromDateInputValue, toDateInputValue } from '~/core/lib/format-time';
 import { safeReturnTo } from '~/core/lib/utils';
 import {
@@ -44,7 +38,7 @@ export function EditLedProject() {
 	const [project, setProject] = React.useState<LedProjectEntity | null>(null);
 
 	/*
-	 * Formulir ini bisa dibuka dari daftar lintas prodi maupun dari daftar milik
+	 * Formulir ini bisa dibuka dari daftar lintas program studi maupun dari daftar milik
 	 * satu prodi (§5.3); yang kedua menitipkan tujuan pulangnya lewat query
 	 * string supaya Penjamin Mutu tidak terlempar ke lapis tenant.
 	 */
@@ -61,7 +55,7 @@ export function EditLedProject() {
 			if (found) {
 				setProject(found);
 			} else {
-				alert('Proyek LED tidak ditemukan!');
+				alert('Dokumen LED tidak ditemukan!');
 				navigate(returnTo);
 			}
 		}
@@ -102,7 +96,7 @@ export function EditLedProject() {
 
 		const prodi = studyPrograms.find((p) => p.id === data.studyProgramId);
 		if (!prodi) {
-			alert('Program Studi tidak valid!');
+			alert('Program studi tidak valid.');
 			return;
 		}
 
@@ -139,7 +133,7 @@ export function EditLedProject() {
 	};
 
 	if (!project) {
-		return <div className="p-8 text-center text-muted-foreground">Memuat data Proyek LED...</div>;
+		return <div className="p-8 text-center text-muted-foreground">Memuat data Dokumen LED...</div>;
 	}
 
 	return (
@@ -155,21 +149,13 @@ export function EditLedProject() {
 				</Button>
 				<div>
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						Edit Proyek LED
+						Edit Dokumen LED
 					</h2>
-					<p className="text-sm text-muted-foreground">
-						Ubah detail Proyek LED di bawah ini.
-					</p>
 				</div>
 			</div>
 
+			{/* Lihat catatan di create-led-project.tsx soal CardHeader yang dibuang. */}
 			<Card>
-				<CardHeader>
-					<CardTitle>Formulir Proyek LED</CardTitle>
-					<CardDescription>
-						Ubah detail Proyek LED. Tekan simpan jika sudah selesai.
-					</CardDescription>
-				</CardHeader>
 				<CardContent>
 					<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 						<FieldGroup>
@@ -195,7 +181,7 @@ export function EditLedProject() {
 
 							<Field data-invalid={!!errors.judul}>
 								<FieldLabel htmlFor="judul">
-									Judul Proyek LED
+									Judul Dokumen LED
 								</FieldLabel>
 								<Input
 									id="judul"
@@ -217,7 +203,7 @@ export function EditLedProject() {
 
 							<Field data-invalid={!!errors.statusKeseluruhan}>
 								<FieldLabel htmlFor="statusKeseluruhan">
-									Status Proyek
+									Status dokumen
 								</FieldLabel>
 								<Select
 									id="statusKeseluruhan"

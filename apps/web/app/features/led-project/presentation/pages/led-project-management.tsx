@@ -31,7 +31,7 @@ export function LedProjectManagement() {
 	}, [loadData]);
 
 	const handleDelete = React.useCallback((id: string) => {
-		if (confirm('Apakah Anda yakin ingin menghapus Proyek LED ini?')) {
+		if (confirm('Apakah Anda yakin ingin menghapus Dokumen LED ini?')) {
 			ledProjectRepository.delete(id);
 			loadData();
 			// Dispatch custom event to notify other tables/UI that storage updated
@@ -70,12 +70,8 @@ export function LedProjectManagement() {
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<div>
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						Manajemen Proyek/Dokumen LED Lintas Prodi
+						Dokumen LED lintas program studi
 					</h2>
-					<p className="text-sm text-muted-foreground">
-						Klik judul untuk membuka dokumennya, atau nama prodi untuk membuka
-						Dashboard Prodi
-					</p>
 				</div>
 				{canManage && (
 					<Button
@@ -83,7 +79,7 @@ export function LedProjectManagement() {
 						className="gap-2 cursor-pointer"
 					>
 						<PlusIcon className="size-4" />
-						Tambah Proyek LED
+						Tambah Dokumen LED
 					</Button>
 				)}
 			</div>

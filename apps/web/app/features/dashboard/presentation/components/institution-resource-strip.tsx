@@ -71,7 +71,7 @@ export function InstitutionResourceStrip({
 						{/*
 						 * Cakupannya hanya `owner_tipe = TENANT` supaya angkanya cocok
 						 * dengan daftar di halaman yang dituju tombolnya (§4.4) — aturan
-						 * yang sama dengan panel Bukti Dukung Prodi di §5.1c.
+						 * yang sama dengan panel Bukti Dukung di §5.1c.
 						 */}
 						{evidenceTenant.total > 0 && (
 							<div
@@ -136,8 +136,8 @@ export function InstitutionResourceStrip({
 						<CardTitle>Tim Penyusun</CardTitle>
 						<CardDescription>
 							{prodiTanpaPenyusun === 0
-								? `Seluruh ${totalProdi} prodi sudah punya Penyusun.`
-								: `${prodiTanpaPenyusun} dari ${totalProdi} prodi belum punya Penyusun (${persenTanpaPenyusun}%).`}
+								? `Seluruh ${totalProdi} program studi sudah punya Penyusun.`
+								: `${prodiTanpaPenyusun} dari ${totalProdi} program studi belum punya Penyusun (${persenTanpaPenyusun}%).`}
 						</CardDescription>
 					</CardHeader>
 					<CardContent className="flex flex-col gap-3">
@@ -147,7 +147,7 @@ export function InstitutionResourceStrip({
 									className="mt-0.5 size-4 shrink-0"
 									weight="fill"
 								/>
-								Dokumen prodi tersebut tidak akan bergerak sampai ada user yang
+								Dokumen program studi itu tidak akan bergerak sampai ada pengguna yang
 								ditugaskan menulisnya.
 							</p>
 						) : (
@@ -156,7 +156,7 @@ export function InstitutionResourceStrip({
 									className="mt-0.5 size-4 shrink-0"
 									weight="duotone"
 								/>
-								Tiap prodi punya setidaknya satu user yang bertugas menulis
+								Tiap program studi punya setidaknya satu pengguna yang bertugas menulis
 								dokumennya.
 							</p>
 						)}

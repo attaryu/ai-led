@@ -112,7 +112,7 @@ export function EvidenceLibrary({
 	const labelAkar =
 		level === 'TENANT'
 			? 'Bukti Dukung Universitas'
-			: `Bukti Dukung Prodi ${studyProgramName ?? ''}`.trim();
+			: `Bukti Dukung ${studyProgramName ?? ''}`.trim();
 
 	// Dibaca ulang dari daftar supaya panel detail ikut memperbarui statusnya
 	// saat ingestion selesai selagi panel terbuka.
@@ -301,7 +301,7 @@ export function EvidenceLibrary({
 				<p className="text-sm text-muted-foreground">
 					{level === 'TENANT'
 						? 'Berkas milik universitas yang bisa dipakai seluruh prodi. Unggahan di sini juga bisa diarahkan ke prodi tertentu.'
-						: 'Tidak terikat ke satu Dokumen LED, jadi otomatis tersedia untuk semua dokumen milik prodi ini.'}
+						: 'Tidak terikat ke satu Dokumen LED, jadi otomatis tersedia untuk semua dokumen milik program studi ini.'}
 				</p>
 			</div>
 

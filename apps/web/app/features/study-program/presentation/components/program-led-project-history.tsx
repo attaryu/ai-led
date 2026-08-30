@@ -29,7 +29,7 @@ import { LedProjectStatusBadge } from '~/features/led-project/presentation/compo
 export const MAX_PROGRAM_HISTORY_SHOWN = 5;
 
 /**
- * Riwayat penyusunan Dokumen LED prodi ini (docs/application_flow.md §5.1c).
+ * Riwayat penyusunan Dokumen LED program studi ini (docs/application_flow.md §5.1c).
  *
  * Yang sedang disusun **ikut terdaftar** di sini, bukan dikecualikan: akreditasi
  * berjalan per prodi lintas tahun, dan penyusunan sekarang hanya bermakna kalau
@@ -64,7 +64,7 @@ export function ProgramLedProjectHistory({
 						Riwayat Penyusunan LED
 					</h3>
 					<p className="text-sm text-muted-foreground">
-						Seluruh Dokumen LED prodi ini, termasuk yang sedang disusun.
+						Seluruh Dokumen LED program studi ini, termasuk yang sedang disusun.
 					</p>
 				</div>
 				<Link
@@ -77,7 +77,7 @@ export function ProgramLedProjectHistory({
 
 			{projects.length === 0 ? (
 				<p className="rounded-md border border-border p-4 text-sm text-muted-foreground">
-					Prodi ini belum punya Dokumen LED. Dokumen baru dibuat oleh Penjamin
+					Program studi ini belum punya Dokumen LED. Dokumen baru dibuat oleh Penjamin
 					Mutu lewat Dashboard Utama.
 				</p>
 			) : (

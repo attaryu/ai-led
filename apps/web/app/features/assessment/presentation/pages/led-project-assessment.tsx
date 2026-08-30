@@ -43,7 +43,7 @@ type TabValue = (typeof TAB_VALID)[number];
  *
  * **Kenapa di sini dan bukan di tempat lain.** `AssessmentSession.dokumenId`
  * adalah foreign key ke `DokumenLed`, jadi lingkupnya sudah tertulis di bentuk
- * datanya: bukan per prodi (Dashboard Prodi), bukan pula per bab (Editor Bab).
+ * datanya: bukan per prodi (Dashboard Program Studi), bukan pula per bab (Editor Bab).
  *
  * Tiga tab, bukan tiga menu sidebar seperti prototipe. Ketiganya menjawab
  * pertanyaan tentang **dokumen yang sama**, dan menaikkannya jadi menu sederajat
@@ -65,7 +65,7 @@ export function LedProjectAssessment() {
 				title="Dokumen LED tidak ditemukan"
 				description="Dokumen yang diminta tidak ada di daftar."
 				links={[
-					{ label: 'Dokumen LED lintas prodi', to: '/dashboard/led-projects' },
+					{ label: 'Dokumen LED lintas program studi', to: '/dashboard/led-projects' },
 				]}
 			/>
 		);
@@ -172,9 +172,6 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
 						Penilaian AMI
 					</h2>
-					<p className="text-sm text-muted-foreground">
-						Penilaian akreditasi otomatis untuk {ledProject.judul}.
-					</p>
 				</div>
 
 				{/*

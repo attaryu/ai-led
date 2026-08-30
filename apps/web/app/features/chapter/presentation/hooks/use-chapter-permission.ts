@@ -65,7 +65,10 @@ export type ChapterPermission = {
 export const frasaBlokir: Record<AlasanBlokir, string> = {
 	terkunci: 'Bab ini dikunci Penjamin Mutu',
 	diajukan: 'Bab ini sedang menunggu review',
-	'hanya-baca': 'Anda membuka bab ini dalam mode baca',
+	// "Anda" dipertahankan di sini, tidak seperti di teks lain: yang dibatasi
+	// adalah hak pembaca ini sendiri, bukan keadaan babnya. Menghilangkan kata
+	// gantinya akan membuatnya terbaca seolah bab ini terkunci bagi semua orang.
+	'hanya-baca': 'Anda hanya bisa membaca bab ini',
 };
 
 export function useChapterPermission(

@@ -17,18 +17,18 @@ const menuItems: (AppShellNavItem & { roles: UserRole[] })[] = [
     path: "/dashboard",
     icon: HouseIcon,
     end: true,
-    // Penyusun mendarat langsung di Dashboard Prodi dan tidak pernah melihat
+    // Penyusun mendarat langsung di Dashboard Program Studi dan tidak pernah melihat
     // Dashboard Utama (§4).
     roles: ["Admin", "Pimpinan", "Penjamin Mutu"],
   },
   {
-    name: "Proyek LED",
+    name: "Dokumen LED",
     path: "/dashboard/led-projects",
     icon: FileIcon,
     end: false,
     // Admin murni back office — tidak punya akses ke dashboard progres LED,
     // editor bab, maupun bukti dukung (database.md → USER, tabel role).
-    // Penyusun tidak pernah masuk lapis tenant; ia mendarat di Dashboard Prodi
+    // Penyusun tidak pernah masuk lapis tenant; ia mendarat di Dashboard Program Studi
     // miliknya (§2), jadi menu ini bukan miliknya.
     roles: ["Pimpinan", "Penjamin Mutu"],
   },
@@ -46,7 +46,7 @@ const menuItems: (AppShellNavItem & { roles: UserRole[] })[] = [
     icon: CertificateIcon,
     end: false,
     // Acuan penilaian adalah konten akreditasi, bukan urusan back office, jadi
-    // Admin tidak melihatnya — sama seperti Proyek LED dan Bukti Dukung.
+    // Admin tidak melihatnya — sama seperti Dokumen LED dan Bukti Dukung.
     // Pimpinan melihat acuan yang berlaku; hanya Penjamin Mutu yang mengelola,
     // dan pembatasan itu ada di dalam halamannya.
     roles: ["Pimpinan", "Penjamin Mutu"],
@@ -59,11 +59,11 @@ const menuItems: (AppShellNavItem & { roles: UserRole[] })[] = [
     // §4.1 memisahkan menu manajemen prodi (Admin, Pimpinan) dari daftar prodi
     // untuk navigasi (§4.3, termasuk Penjamin Mutu). Keduanya digabung ke satu
     // halaman: Penjamin Mutu ikut melihat daftarnya sebagai jalan masuk ke
-    // Dashboard Prodi, tapi tombol tambah dan kolom aksi disembunyikan untuknya.
+    // Dashboard Program Studi, tapi tombol tambah dan kolom aksi disembunyikan untuknya.
     roles: ["Admin", "Pimpinan", "Penjamin Mutu"],
   },
   {
-    name: "User",
+    name: "Pengguna",
     path: "/dashboard/users",
     icon: UsersIcon,
     end: false,

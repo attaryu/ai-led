@@ -4,7 +4,6 @@ import { useNavigate, Link } from 'react-router';
 import {
 	Card,
 	CardContent,
-	CardDescription,
 	CardFooter,
 	CardHeader,
 	CardTitle,
@@ -54,9 +53,6 @@ export function Register() {
 			<Card className="w-full max-w-md">
 				<CardHeader>
 					<CardTitle>Registrasi</CardTitle>
-					<CardDescription>
-						Buat akun baru dan organisasi baru Anda
-					</CardDescription>
 				</CardHeader>
 
 				<CardContent>

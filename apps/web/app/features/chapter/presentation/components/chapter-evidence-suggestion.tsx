@@ -144,7 +144,7 @@ export function ChapterEvidenceSuggestion({
 				 * penulisnya — yang hilang cuma tombolnya.
 				 */
 				<p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-					Berkas ini perlu diunggah oleh yang berhak di prodi ini.
+					Berkas ini perlu diunggah oleh yang berhak di program studi ini.
 				</p>
 			)}
 		</div>

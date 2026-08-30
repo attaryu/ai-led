@@ -39,7 +39,7 @@ export function ActiveDraftingTable({ rows }: { rows: ProgramReadinessRow[] }) {
 		return (
 			<div className="rounded-md border border-dashed border-border p-8 text-center">
 				<p className="text-sm font-medium">
-					Belum ada prodi yang sedang menyusun
+					Belum ada program studi yang sedang menyusun
 				</p>
 				<p className="mt-1 text-sm text-muted-foreground">
 					Dokumen LED baru dibuat Penjamin Mutu, dan akan muncul di sini begitu

@@ -113,7 +113,7 @@ export function EvidenceUploadDialog({
 	/**
 	 * Membuka opsi "Universitas" pada konteks yang cakupannya terkunci ke satu
 	 * prodi (`level === 'PROGRAM_STUDI'`), untuk pengunggah yang memang berwenang
-	 * lintas prodi. Prodi lain tetap tidak pernah dirender — hanya prodi yang
+	 * lintas program studi. Prodi lain tetap tidak pernah dirender — hanya prodi yang
 	 * sedang dibuka dan universitas.
 	 */
 	allowTenantTarget?: boolean;
@@ -349,11 +349,11 @@ export function EvidenceUploadDialog({
 								}}
 							>
 								<option value={TENANT_OPTION}>
-									Universitas (berlaku lintas prodi)
+									Universitas (berlaku lintas program studi)
 								</option>
 								{studyPrograms.map((program) => (
 									<option key={program.id} value={program.id}>
-										Prodi {program.studyProgramName}
+										Program studi {program.studyProgramName}
 									</option>
 								))}
 							</Select>
@@ -365,7 +365,7 @@ export function EvidenceUploadDialog({
 						/*
 						 * Tepat dua pilihan. Prodi lain sengaja tidak ikut walau
 						 * pengunggahnya berwenang atas semuanya: cakupan yang sedang dibuka
-						 * adalah prodi ini, dan mengunggah ke prodi tetangga dari sini
+						 * adalah program studi ini, dan mengunggah ke prodi tetangga dari sini
 						 * hampir selalu salah pencet, bukan niat. Untuk itu ada perpustakaan
 						 * tenant (§4.4.1).
 						 */
@@ -380,10 +380,10 @@ export function EvidenceUploadDialog({
 								}}
 							>
 								<option value={studyProgramId ?? ''}>
-									Prodi {studyProgramName}
+									Program studi {studyProgramName}
 								</option>
 								<option value={TENANT_OPTION}>
-									Universitas (berlaku lintas prodi)
+									Universitas (berlaku lintas program studi)
 								</option>
 							</Select>
 							{targetError && (
@@ -394,9 +394,9 @@ export function EvidenceUploadDialog({
 						<p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
 							Disimpan di{' '}
 							<span className="font-medium text-foreground">
-								Prodi {studyProgramName}
+								Program studi {studyProgramName}
 							</span>{' '}
-							dan otomatis tersedia untuk semua Dokumen LED prodi ini.
+							dan otomatis tersedia untuk semua Dokumen LED program studi ini.
 						</p>
 					)}
 

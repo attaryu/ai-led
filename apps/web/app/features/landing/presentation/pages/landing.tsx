@@ -37,7 +37,7 @@ const features: { title: string; description: string; icon: Icon }[] = [
 	{
 		title: 'Perpustakaan Bukti Dukung',
 		description:
-			'Unggah bukti sekali di level universitas atau prodi, lalu pakai ulang di bab mana pun yang membutuhkannya.',
+			'Unggah bukti sekali di level universitas atau program studi, lalu pakai ulang di bab mana pun yang membutuhkannya.',
 		icon: ArchiveIcon,
 	},
 	{

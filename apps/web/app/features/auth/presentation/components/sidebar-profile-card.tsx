@@ -6,7 +6,7 @@ import { ProfileMenu } from './profile-menu';
  * Card identitas di dasar sidebar, dirender `AppShell` untuk ketiga lapis.
  *
  * Sebelumnya tombol keluar dititipkan lewat `AppShellSidebar.footer` dan hanya
- * diisi lapis tenant, sehingga dari Dashboard Prodi maupun Dokumen LED tidak ada
+ * diisi lapis tenant, sehingga dari Dashboard Program Studi maupun Dokumen LED tidak ada
  * satu pun jalan keluar. Menaruhnya di chrome bersama membuat celah itu tidak
  * bisa terulang: tidak ada lapis yang perlu mengingat untuk memasangnya.
  */

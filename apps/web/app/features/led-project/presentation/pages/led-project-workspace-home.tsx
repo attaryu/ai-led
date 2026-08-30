@@ -41,7 +41,7 @@ export function LedProjectWorkspaceHome() {
 				title="Dokumen LED tidak ditemukan"
 				description="Dokumen yang diminta tidak ada di daftar."
 				links={[
-					{ label: 'Dokumen LED lintas prodi', to: '/dashboard/led-projects' },
+					{ label: 'Dokumen LED lintas program studi', to: '/dashboard/led-projects' },
 				]}
 			/>
 		);
@@ -71,9 +71,6 @@ function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
 					</h2>
 					<ProjectAccreditationSetBadge project={ledProject} />
 				</div>
-				<p className="text-sm text-muted-foreground">
-					Ringkasan penyusunan {ledProject.judul}.
-				</p>
 			</div>
 
 			<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -102,7 +99,7 @@ function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
 					label="Bukti Dukung Dipakai"
 					icon={PaperclipIcon}
 					value={String(summary.buktiDukungTerpakai)}
-					hint={`Dari ${buktiDukungTersedia} berkas tersedia untuk prodi ini`}
+					hint={`Dari ${buktiDukungTersedia} berkas tersedia untuk program studi ini`}
 				/>
 				<StatCard
 					label="Aktivitas Terakhir"

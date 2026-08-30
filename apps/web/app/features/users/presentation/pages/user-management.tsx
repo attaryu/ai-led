@@ -26,7 +26,7 @@ export function UserManagement() {
 	}, [loadData]);
 
 	const handleDelete = React.useCallback((id: string) => {
-		if (confirm('Apakah Anda yakin ingin menghapus User ini?')) {
+		if (confirm('Apakah Anda yakin ingin menghapus pengguna ini?')) {
 			userRepository.delete(id);
 			loadData();
 		}
@@ -60,18 +60,15 @@ export function UserManagement() {
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<div>
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						Manajemen Pengguna (User)
+						Pengguna
 					</h2>
-					<p className="text-sm text-muted-foreground">
-						Kelola akses, data diri, dan peran pengguna di dalam sistem
-					</p>
 				</div>
 				<Button
 					onClick={() => navigate('/dashboard/users/create')}
 					className="gap-2 cursor-pointer"
 				>
 					<PlusIcon className="size-4" />
-					Tambah User
+					Tambah pengguna
 				</Button>
 			</div>
 

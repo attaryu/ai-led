@@ -20,7 +20,7 @@ const columnHelper = createColumnHelper<StudyProgramEntity>();
 /**
  * `withActions` mengikuti prinsip §1: kontrol yang tidak boleh dipakai suatu
  * role disembunyikan sepenuhnya, bukan dinonaktifkan. Penjamin Mutu memakai
- * tabel ini murni sebagai jalan masuk ke Dashboard Prodi (§4.3), bukan untuk
+ * tabel ini murni sebagai jalan masuk ke Dashboard Program Studi (§4.3), bukan untuk
  * mengelola prodi (§4.1).
  */
 export const getStudyProgramColumns = ({
@@ -35,7 +35,7 @@ export const getStudyProgramColumns = ({
 	}),
 	columnHelper.accessor('studyProgramName', {
 		header: 'Nama Program Studi',
-		// Jalan masuk ke Lapis 2 (Dashboard Prodi).
+		// Jalan masuk ke Lapis 2 (Dashboard Program Studi).
 		cell: (info) => (
 			<Link
 				to={`/study-programs/${info.row.original.id}`}
@@ -54,7 +54,7 @@ export const getStudyProgramColumns = ({
 		enableSorting: true,
 	}),
 	// Cukup peringkatnya; sisa identitas akreditasi (SK, masa berlaku, ketua
-	// prodi) ada di Dashboard Prodi masing-masing, bukan di daftar lintas prodi.
+	// prodi) ada di Dashboard Program Studi masing-masing, bukan di daftar lintas program studi.
 	columnHelper.accessor('peringkatAkreditasi', {
 		header: 'Akreditasi',
 		cell: (info) => <AccreditationRankBadge peringkat={info.getValue()} />,

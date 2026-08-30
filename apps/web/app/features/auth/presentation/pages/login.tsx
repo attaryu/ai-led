@@ -4,7 +4,6 @@ import { useNavigate, Link } from 'react-router';
 import {
 	Card,
 	CardContent,
-	CardDescription,
 	CardFooter,
 	CardHeader,
 	CardTitle,
@@ -49,9 +48,6 @@ export function Login() {
 			<Card className="w-full max-w-md">
 				<CardHeader>
 					<CardTitle>Login</CardTitle>
-					<CardDescription>
-						Masuk ke akun Anda menggunakan email dan password
-					</CardDescription>
 				</CardHeader>
 				<CardContent>
 					<form id={formId} onSubmit={handleSubmit(onSubmit)}>

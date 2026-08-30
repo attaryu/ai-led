@@ -13,13 +13,7 @@ import {
 	FieldGroup,
 	FieldLabel,
 } from '~/core/components/ui/field';
-import {
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
-	CardDescription,
-} from '~/core/components/ui/card';
+import { Card, CardContent } from '~/core/components/ui/card';
 import {
 	createUserSchema,
 	type CreateUserDto,
@@ -122,21 +116,16 @@ export function CreateUser() {
 				</Button>
 				<div>
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						Tambah Pengguna Baru
+						Tambah pengguna
 					</h2>
-					<p className="text-sm text-muted-foreground">
-						Isi data lengkap pengguna baru di bawah ini.
-					</p>
 				</div>
 			</div>
 
+			{/*
+			 * Tanpa CardHeader: judul halaman di atasnya sudah menyebut apa yang
+			 * sedang dikerjakan, dan kolom wajib sudah ditandai formulirnya sendiri.
+			 */}
 			<Card>
-				<CardHeader>
-					<CardTitle>Formulir Pengguna</CardTitle>
-					<CardDescription>
-						Seluruh kolom wajib diisi sesuai dengan data pengguna.
-					</CardDescription>
-				</CardHeader>
 				<CardContent>
 					<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 						<FieldGroup>
@@ -201,8 +190,8 @@ export function CreateUser() {
 									</FieldLabel>
 									{studyPrograms.length === 0 ? (
 										<div className="text-sm text-destructive py-1.5 px-3 bg-destructive/10 border border-destructive/20 rounded-md">
-											Belum ada data Prodi. Silakan buat Prodi terlebih dahulu
-											di menu Manajemen Prodi.
+											Belum ada program studi. Buat satu dulu lewat menu
+											Program Studi.
 										</div>
 									) : (
 										<Select

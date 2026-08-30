@@ -104,20 +104,17 @@ export function EditStudyProgram() {
 				</Button>
 				<div>
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						Edit Program Studi
+						Edit program studi
 					</h2>
-					<p className="text-sm text-muted-foreground">
-						Ubah identitas dan akreditasi Program Studi di bawah ini.
-					</p>
 				</div>
 			</div>
 
+			{/* Lihat catatan di create-study-program.tsx soal CardHeader yang ini. */}
 			<Card>
 				<CardHeader>
-					<CardTitle>Formulir Program Studi</CardTitle>
 					<CardDescription>
-						Nomor SK dan masa berlaku boleh dikosongkan bila prodi belum
-						terakreditasi. Tekan simpan jika sudah selesai.
+						Nomor SK dan masa berlaku boleh kosong kalau program studi ini
+						belum terakreditasi.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>

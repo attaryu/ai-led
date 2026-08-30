@@ -118,8 +118,8 @@ export function EvidenceDetailPanel({
 						label="Level"
 						value={
 							evidence.ownerTipe === 'TENANT'
-								? 'Universitas (lintas prodi)'
-								: `Prodi ${evidence.studyProgramName ?? '-'}`
+								? 'Universitas (lintas program studi)'
+								: `Program studi ${evidence.studyProgramName ?? '-'}`
 						}
 					/>
 					<DetailRow

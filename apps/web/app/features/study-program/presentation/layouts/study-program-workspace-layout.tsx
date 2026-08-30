@@ -19,7 +19,7 @@ import { useActiveTenant } from '~/features/tenant/presentation/hooks/use-active
 import { studyProgramRepository } from '../../data/repositories/study-program.repository';
 
 /**
- * Lapis 2 — Dashboard Prodi (docs/application_flow.md §5).
+ * Lapis 2 — Dashboard Program Studi (docs/application_flow.md §5).
  *
  * `programId` di URL adalah satu-satunya sumber kebenaran konteks prodi.
  * Pimpinan/Penjamin Mutu memilih prodi lewat navigasi sehingga konteksnya tidak
@@ -55,16 +55,16 @@ export function StudyProgramWorkspaceLayout() {
 				sidebar={{
 					universityName: tenant.universityName,
 					backTo: showTenantLink ? '/dashboard' : null,
-					eyebrow: 'Dashboard Prodi',
+					eyebrow: 'Dashboard Program Studi',
 					contextTitle: 'Tidak ditemukan',
 					items: [],
 				}}
-				breadcrumbs={[...tenantCrumb, { label: 'Prodi tidak ditemukan' }]}
+				breadcrumbs={[...tenantCrumb, { label: 'Program studi tidak ditemukan' }]}
 				headerAction={<RoleSwitcher />}
 			>
 				<PlaceholderPage
-					title="Prodi tidak ditemukan"
-					description={`Tidak ada Program Studi dengan ID "${programId}". Mungkin sudah dihapus.`}
+					title="Program studi tidak ditemukan"
+					description={`Tidak ada program studi dengan ID "${programId}". Mungkin sudah dihapus.`}
 					// Penyusun tidak berhak atas daftar prodi, dan bila prodinya sendiri
 					// yang terhapus ia memang tidak punya tujuan lain — hubungi Pimpinan.
 					links={
@@ -87,14 +87,14 @@ export function StudyProgramWorkspaceLayout() {
 			sidebar={{
 				universityName: tenant.universityName,
 				backTo: showTenantLink ? '/dashboard' : null,
-				eyebrow: 'Dashboard Prodi',
+				eyebrow: 'Dashboard Program Studi',
 				contextTitle: studyProgram.studyProgramName,
 				items: [
 					{
 						// Halamannya bukan daftar dokumen melainkan keadaan prodi itu
 						// sendiri — akreditasi berjalan, dokumen yang disusun, dan timnya
 						// (§5.1), jadi namanya menyebut subjeknya.
-						name: 'Profil Prodi',
+						name: 'Profil program studi',
 						path: `/study-programs/${programId}`,
 						icon: IdentificationCardIcon,
 						end: true,

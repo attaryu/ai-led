@@ -30,7 +30,7 @@ export type AppShellSidebar = {
 	universityName: string;
 	/** `null` → tombol kembali tidak dirender (role tanpa lapis di atasnya, §2). */
 	backTo?: string | null;
-	/** Label kecil di atas nama konteks, mis. "Dashboard Prodi". */
+	/** Label kecil di atas nama konteks, mis. "Dashboard Program Studi". */
 	eyebrow?: string;
 	/**
 	 * Nama prodi/dokumen yang sedang dibuka. Lapis 1 tidak mengisinya — ia memang

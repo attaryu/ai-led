@@ -114,7 +114,7 @@ export function AccreditationSetManagement() {
 					</h2>
 					<p className="text-sm text-muted-foreground">
 						Rubrik, panduan, dan template dari satu lembaga penilai untuk satu
-						siklus. Tiap proyek Dokumen LED memilih set mana yang dipakainya.
+						siklus. Tiap Dokumen LED memilih set mana yang dipakainya.
 					</p>
 				</div>
 				{canManage && (

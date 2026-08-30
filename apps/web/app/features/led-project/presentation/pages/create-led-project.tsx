@@ -13,13 +13,7 @@ import {
 	FieldGroup,
 	FieldLabel,
 } from '~/core/components/ui/field';
-import {
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
-	CardDescription,
-} from '~/core/components/ui/card';
+import { Card, CardContent } from '~/core/components/ui/card';
 import { fromDateInputValue } from '~/core/lib/format-time';
 import { safeReturnTo } from '~/core/lib/utils';
 import {
@@ -47,7 +41,7 @@ export function CreateLedProject() {
 	>([]);
 
 	/*
-	 * Formulir ini bisa dibuka dari dua tempat: daftar lintas prodi di lapis
+	 * Formulir ini bisa dibuka dari dua tempat: daftar lintas program studi di lapis
 	 * tenant, dan daftar milik satu prodi di lapis prodi (§5.3). Yang kedua sudah
 	 * tahu prodinya dan berhak kembali ke tempatnya semula, jadi keduanya
 	 * dititipkan lewat query string alih-alih membuat rute pembuatan kedua.
@@ -107,7 +101,7 @@ export function CreateLedProject() {
 	const onSubmit = (data: CreateLedProjectDto) => {
 		const prodi = studyPrograms.find((p) => p.id === data.studyProgramId);
 		if (!prodi) {
-			alert('Program Studi tidak valid!');
+			alert('Program studi tidak valid.');
 			return;
 		}
 
@@ -161,21 +155,17 @@ export function CreateLedProject() {
 				</Button>
 				<div>
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						Tambah Proyek LED Baru
+						Tambah Dokumen LED
 					</h2>
-					<p className="text-sm text-muted-foreground">
-						Buat proyek penyusunan Laporan Evaluasi Diri (LED) baru.
-					</p>
 				</div>
 			</div>
 
+			{/*
+			 * Tanpa CardHeader: judul halaman di atasnya sudah menyebut apa yang
+			 * sedang dikerjakan, dan "Formulir Dokumen LED" cuma mengulanginya satu
+			 * baris di bawahnya.
+			 */}
 			<Card>
-				<CardHeader>
-					<CardTitle>Formulir Proyek LED</CardTitle>
-					<CardDescription>
-						Masukkan detail Proyek LED baru. Tekan simpan jika sudah selesai.
-					</CardDescription>
-				</CardHeader>
 				<CardContent>
 					<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 						<FieldGroup>
@@ -239,7 +229,7 @@ export function CreateLedProject() {
 
 							<Field data-invalid={!!errors.judul}>
 								<FieldLabel htmlFor="judul">
-									Judul Proyek LED
+									Judul Dokumen LED
 								</FieldLabel>
 								<Input
 									id="judul"

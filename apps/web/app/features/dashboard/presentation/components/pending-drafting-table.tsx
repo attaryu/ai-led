@@ -49,10 +49,10 @@ export function PendingDraftingTable({
 			<div className="rounded-md border border-dashed border-border p-8 text-center">
 				<p className="flex items-center justify-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-400">
 					<CheckCircleIcon className="size-4 shrink-0" weight="fill" />
-					Tidak ada prodi yang tertinggal
+					Tidak ada program studi yang tertinggal
 				</p>
 				<p className="mt-1 text-sm text-muted-foreground">
-					Semua prodi yang masa berlakunya menipis sudah mulai menyusun Dokumen
+					Semua program studi yang masa berlakunya menipis sudah mulai menyusun Dokumen
 					LED.
 				</p>
 			</div>
@@ -142,7 +142,7 @@ function PendingRow({
 						)}
 					>
 						<PlusIcon className="size-4" />
-						Buat Proyek LED
+						Buat Dokumen LED
 					</Link>
 				</TableCell>
 			)}

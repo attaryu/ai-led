@@ -13,13 +13,7 @@ import {
 	FieldGroup,
 	FieldLabel,
 } from '~/core/components/ui/field';
-import {
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
-	CardDescription,
-} from '~/core/components/ui/card';
+import { Card, CardContent } from '~/core/components/ui/card';
 import {
 	updateUserSchema,
 	type UpdateUserDto,
@@ -45,7 +39,7 @@ export function EditUser() {
 			if (found) {
 				setUser(found);
 			} else {
-				alert('User tidak ditemukan!');
+				alert('Pengguna tidak ditemukan.');
 				navigate('/dashboard/users');
 			}
 		}
@@ -125,7 +119,7 @@ export function EditUser() {
 	};
 
 	if (!user) {
-		return <div className="p-8 text-center text-muted-foreground">Memuat data user...</div>;
+		return <div className="p-8 text-center text-muted-foreground">Memuat data pengguna...</div>;
 	}
 
 	return (
@@ -141,21 +135,13 @@ export function EditUser() {
 				</Button>
 				<div>
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						Edit Pengguna
+						Edit pengguna
 					</h2>
-					<p className="text-sm text-muted-foreground">
-						Ubah data lengkap pengguna di bawah ini.
-					</p>
 				</div>
 			</div>
 
+			{/* Lihat catatan di create-user.tsx soal CardHeader yang dibuang. */}
 			<Card>
-				<CardHeader>
-					<CardTitle>Formulir Pengguna</CardTitle>
-					<CardDescription>
-						Seluruh kolom wajib diisi sesuai dengan data pengguna.
-					</CardDescription>
-				</CardHeader>
 				<CardContent>
 					<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 						<FieldGroup>
@@ -234,8 +220,8 @@ export function EditUser() {
 									</FieldLabel>
 									{studyPrograms.length === 0 ? (
 										<div className="text-sm text-destructive py-1.5 px-3 bg-destructive/10 border border-destructive/20 rounded-md">
-											Belum ada data Prodi. Silakan buat Prodi terlebih dahulu
-											di menu Manajemen Prodi.
+											Belum ada program studi. Buat satu dulu lewat menu
+											Program Studi.
 										</div>
 									) : (
 										<Select

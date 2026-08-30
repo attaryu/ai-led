@@ -31,7 +31,7 @@ const visual: Record<
 		className:
 			'bg-amber-100 text-amber-800 border-amber-200/60 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800/40',
 		judul:
-			'Sudah pernah ditinjau, tapi penilaian ulang mengubah hitungan AI-nya — keputusan lamanya perlu ditegaskan atau diperbaiki.',
+			'Hitungan AI berubah setelah penilaian ulang. Keputusan lama perlu ditegaskan atau diperbaiki.',
 	},
 };
 

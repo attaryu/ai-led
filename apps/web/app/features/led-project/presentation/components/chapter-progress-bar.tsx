@@ -30,7 +30,7 @@ const segmentStyles: Record<ChapterProgress, string> = {
  * Pembagian bab satu Dokumen LED dalam satu bar (docs/application_flow.md
  * §5.1b, §4.0c).
  *
- * Dipakai di Dashboard Prodi sebagai ganti empat kartu angka: pertanyaan di
+ * Dipakai di Dashboard Program Studi sebagai ganti empat kartu angka: pertanyaan di
  * lapis prodi hanya "sejauh apa dokumennya berjalan", dan satu bidang yang
  * terbagi menjawab itu lebih cepat daripada empat persentase yang harus
  * dijumlahkan sendiri oleh pembacanya. Rinciannya tetap hidup di Dashboard

@@ -188,10 +188,12 @@ export function ChapterDraftPanel({
 						)}
 					</>
 				) : (
+					/* Akibat dulu, sebab belakangan — lihat catatan yang sama di
+					   chapter-generation-panel.tsx. */
 					<p className="text-xs leading-relaxed text-muted-foreground">
 						{izin.blockedReason === 'terkunci' ||
 						izin.blockedReason === 'diajukan'
-							? `${frasaBlokir[izin.blockedReason]}, jadi checkpoint tidak bisa dibuat atau dipulihkan.`
+							? `Checkpoint tidak bisa dibuat atau dipulihkan. ${frasaBlokir[izin.blockedReason]}.`
 							: 'Anda hanya bisa membaca riwayat bab ini.'}
 					</p>
 				)}
