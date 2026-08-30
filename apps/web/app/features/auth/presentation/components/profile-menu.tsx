@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { DotsThreeVerticalIcon, SignOutIcon } from '@phosphor-icons/react';
 import { useNavigate } from 'react-router';
 
@@ -22,22 +23,34 @@ import { sessionRepository } from '../../data/repositories/session.repository';
 export function ProfileMenu({
 	/** `top` untuk pemanggil yang menempel di dasar layar (card sidebar). */
 	side = 'bottom',
+	render,
 }: {
-	side?: 'top' | 'bottom';
+	side?: 'top' | 'bottom' | 'right';
+	/**
+	 * Pemicu pengganti tombol titik tiga. Dipakai sidebar yang menciut, di mana
+	 * avatar itu sendiri yang jadi pemicunya — tombol kedua di sebelah avatar
+	 * tidak muat di rel 64 px, dan menghilangkannya tanpa pengganti berarti
+	 * satu-satunya jalan keluar dari aplikasi ikut hilang.
+	 */
+	render?: React.ReactElement<Record<string, unknown>>;
 }) {
 	const navigate = useNavigate();
 
 	return (
 		<DropdownMenu>
-			<DropdownMenuTrigger
-				aria-label="Aksi lain"
-				className={cn(
-					buttonVariants({ variant: 'ghost', size: 'icon-sm' }),
-					'size-7 shrink-0 cursor-pointer',
-				)}
-			>
-				<DotsThreeVerticalIcon className="size-4" />
-			</DropdownMenuTrigger>
+			{render ? (
+				<DropdownMenuTrigger render={render} />
+			) : (
+				<DropdownMenuTrigger
+					aria-label="Aksi lain"
+					className={cn(
+						buttonVariants({ variant: 'ghost', size: 'icon-sm' }),
+						'size-7 shrink-0 cursor-pointer',
+					)}
+				>
+					<DotsThreeVerticalIcon className="size-4" />
+				</DropdownMenuTrigger>
+			)}
 
 			{/*
 			 * Lebarnya dipaksa: bawaan `DropdownMenuContent` adalah
