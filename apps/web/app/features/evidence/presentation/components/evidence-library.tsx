@@ -9,6 +9,7 @@ import {
 
 import { Button } from '~/core/components/ui/button';
 import { CollectionToolbar } from '~/core/components/ui/collection-toolbar';
+import { useConfirmDialog } from '~/core/components/ui/confirm-dialog';
 import { DataTable } from '~/core/components/ui/data-table';
 import { PaginationFooter } from '~/core/components/ui/pagination-footer';
 import { evidenceRepository } from '../../data/repositories/evidence.repository';
@@ -77,6 +78,7 @@ export function EvidenceLibrary({
 	studyProgramName?: string;
 }) {
 	const permission = useEvidencePermission(level, studyProgramId);
+	const { konfirmasi, confirmDialog } = useConfirmDialog();
 	const {
 		items,
 		total,
@@ -123,15 +125,21 @@ export function EvidenceLibrary({
 		return node?.tipe === 'BERKAS' ? node.evidence : null;
 	}, [items, selectedId]);
 
-	const handleDelete = React.useCallback((evidence: EvidenceEntity) => {
-		if (
-			!confirm(`Hapus "${evidence.namaDokumen}"? ${PERINGATAN_RUJUKAN}`)
-		) {
-			return;
-		}
-		evidenceRepository.delete(evidence.id);
-		setSelectedId(null);
-	}, []);
+	const handleDelete = React.useCallback(
+		async (evidence: EvidenceEntity) => {
+			const lanjut = await konfirmasi({
+				judul: `Hapus "${evidence.namaDokumen}"?`,
+				deskripsi: PERINGATAN_RUJUKAN,
+				labelAksi: 'Hapus',
+				merusak: true,
+			});
+			if (!lanjut) return;
+
+			evidenceRepository.delete(evidence.id);
+			setSelectedId(null);
+		},
+		[konfirmasi],
+	);
 
 	const handleRetry = React.useCallback((evidence: EvidenceEntity) => {
 		evidenceRepository.retryIngestion(evidence.id);
@@ -141,24 +149,34 @@ export function EvidenceLibrary({
 	 * Konfirmasi hapus folder menyebut angka pastinya sebelum apa pun dihapus —
 	 * itulah satu-satunya penahan, karena tidak ada tempat sampah untuk memulihkan.
 	 */
-	const handleHapusFolder = React.useCallback((node: EvidenceNode) => {
-		if (node.tipe !== 'FOLDER') return;
+	const handleHapusFolder = React.useCallback(
+		async (node: EvidenceNode) => {
+			if (node.tipe !== 'FOLDER') return;
 
-		const rincian = evidenceRepository.rincianHapusFolder(node.id);
-		const isi = [
-			rincian.subfolder > 0 && `${rincian.subfolder} subfolder`,
-			rincian.berkas > 0 && `${rincian.berkas} berkas`,
-		]
-			.filter(Boolean)
-			.join(' dan ');
+			const rincian = evidenceRepository.rincianHapusFolder(node.id);
+			const isi = [
+				rincian.subfolder > 0 && `${rincian.subfolder} subfolder`,
+				rincian.berkas > 0 && `${rincian.berkas} berkas`,
+			]
+				.filter(Boolean)
+				.join(' dan ');
 
-		const pesan = isi
-			? `Hapus folder "${node.folder.nama}" beserta ${isi} di dalamnya?\n\n${PERINGATAN_RUJUKAN}`
-			: `Hapus folder "${node.folder.nama}"? Folder ini kosong.`;
+			// Angkanya naik ke judul, akibatnya turun ke deskripsi — pembagian yang
+			// dulu ditiru dengan `\n\n` di dalam satu string `window.confirm`.
+			const lanjut = await konfirmasi({
+				judul: isi
+					? `Hapus folder "${node.folder.nama}" beserta ${isi} di dalamnya?`
+					: `Hapus folder "${node.folder.nama}"?`,
+				deskripsi: isi ? PERINGATAN_RUJUKAN : 'Folder ini kosong.',
+				labelAksi: 'Hapus',
+				merusak: true,
+			});
+			if (!lanjut) return;
 
-		if (!confirm(pesan)) return;
-		evidenceRepository.deleteFolderCascade(node.id);
-	}, []);
+			evidenceRepository.deleteFolderCascade(node.id);
+		},
+		[konfirmasi],
+	);
 
 	const nodeTerpilih = React.useMemo(
 		() => items.filter((node) => terpilih.has(node.id)),
@@ -178,7 +196,7 @@ export function EvidenceLibrary({
 				: permission.canDelete(node.evidence),
 		);
 
-	const handleHapusMassal = () => {
+	const handleHapusMassal = async () => {
 		const folderDihapus = nodeTerpilih.filter((node) => node.tipe === 'FOLDER');
 		const berkasDihapus = nodeTerpilih.filter((node) => node.tipe === 'BERKAS');
 
@@ -206,11 +224,15 @@ export function EvidenceLibrary({
 			.filter(Boolean)
 			.join(' dan ');
 
-		const pesan = ikut
-			? `Hapus ${bagian}? Ikut terhapus ${ikut} di dalam foldernya.\n\n${PERINGATAN_RUJUKAN}`
-			: `Hapus ${bagian}?\n\n${PERINGATAN_RUJUKAN}`;
-
-		if (!confirm(pesan)) return;
+		const lanjut = await konfirmasi({
+			judul: `Hapus ${bagian}?`,
+			deskripsi: ikut
+				? `Ikut terhapus ${ikut} di dalam foldernya. ${PERINGATAN_RUJUKAN}`
+				: PERINGATAN_RUJUKAN,
+			labelAksi: 'Hapus',
+			merusak: true,
+		});
+		if (!lanjut) return;
 
 		for (const node of berkasDihapus) evidenceRepository.delete(node.id);
 		for (const node of folderDihapus) {
@@ -499,6 +521,8 @@ export function EvidenceLibrary({
 				onDelete={handleDelete}
 				onRetry={handleRetry}
 			/>
+
+			{confirmDialog}
 		</div>
 	);
 }

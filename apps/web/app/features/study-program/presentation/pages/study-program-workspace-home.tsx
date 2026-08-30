@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useNavigate, useParams } from 'react-router';
 
 import { PlaceholderPage } from '~/core/components/placeholder-page';
+import { useConfirmDialog } from '~/core/components/ui/confirm-dialog';
 import {
 	Card,
 	CardDescription,
@@ -89,16 +90,27 @@ function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 	const canManage = session?.role === 'Penjamin Mutu';
 
 	/** Dibawa formulir supaya Batal dan simpan memulangkan ke dashboard ini. */
+	const { konfirmasi, confirmDialog } = useConfirmDialog();
 	const returnTo = `/study-programs/${program.id}`;
 
-	const handleDelete = React.useCallback((id: string) => {
-		if (confirm('Apakah Anda yakin ingin menghapus Dokumen LED ini?')) {
+	const handleDelete = React.useCallback(
+		async (id: string) => {
+			const lanjut = await konfirmasi({
+				judul: 'Hapus Dokumen LED ini?',
+				deskripsi:
+					'Seluruh bab beserta isinya ikut terhapus, dan tidak bisa dipulihkan.',
+				labelAksi: 'Hapus',
+				merusak: true,
+			});
+			if (!lanjut) return;
+
 			ledProjectRepository.delete(id);
 			// Hook kesiapan berlangganan event yang sama, jadi barisnya hilang tanpa
 			// halaman ini perlu memuat ulang sendiri.
 			window.dispatchEvent(new Event('storage-update'));
-		}
-	}, []);
+		},
+		[konfirmasi],
+	);
 
 	const handleEdit = React.useCallback(
 		(id: string) => {
@@ -170,6 +182,8 @@ function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 					<ProgramTeamPanel penyusun={penyusun} />
 				</div>
 			</div>
+
+			{confirmDialog}
 		</div>
 	);
 }

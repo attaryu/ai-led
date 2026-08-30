@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { PlusIcon } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
+import { useConfirmDialog } from '~/core/components/ui/confirm-dialog';
 import { DataTable } from '~/core/components/ui/data-table';
 import { useDataTableState } from '~/core/hooks/use-data-table-state';
 import { useSession } from '~/features/auth/presentation/hooks/use-session';
@@ -13,6 +14,7 @@ import { type StudyProgramEntity } from '../../domain/entities/study-program.ent
 export function StudyProgramManagement() {
 	const navigate = useNavigate();
 	const session = useSession();
+	const { konfirmasi, confirmDialog } = useConfirmDialog();
 	// Penjamin Mutu tidak mengelola prodi (§4.1) — halaman ini baginya hanya
 	// daftar navigasi ke Dashboard Program Studi (§4.3).
 	const canManage = session?.role === 'Admin' || session?.role === 'Pimpinan';
@@ -32,12 +34,22 @@ export function StudyProgramManagement() {
 		};
 	}, [loadData]);
 
-	const handleDelete = React.useCallback((id: string) => {
-		if (confirm('Apakah Anda yakin ingin menghapus program studi ini?')) {
+	const handleDelete = React.useCallback(
+		async (id: string) => {
+			const lanjut = await konfirmasi({
+				judul: 'Hapus program studi ini?',
+				deskripsi:
+					'Dokumen LED dan bukti dukung miliknya ikut terhapus, dan tidak bisa dipulihkan.',
+				labelAksi: 'Hapus',
+				merusak: true,
+			});
+			if (!lanjut) return;
+
 			studyProgramRepository.delete(id);
 			loadData();
-		}
-	}, [loadData]);
+		},
+		[konfirmasi, loadData],
+	);
 
 	const handleEdit = React.useCallback((id: string) => {
 		navigate(`/dashboard/study-programs/${id}/edit`);
@@ -103,6 +115,8 @@ export function StudyProgramManagement() {
 				onPaginationChange={setPagination}
 				onClearAll={clearAll}
 			/>
+
+			{confirmDialog}
 		</div>
 	);
 }

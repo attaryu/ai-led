@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router';
 import { PlusIcon } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
+import { useConfirmDialog } from '~/core/components/ui/confirm-dialog';
 import { DataTable } from '~/core/components/ui/data-table';
 import { useDataTableState } from '~/core/hooks/use-data-table-state';
 import { useSession } from '~/features/auth/presentation/hooks/use-session';
@@ -27,6 +28,7 @@ export function ProgramLedProjectList() {
 	const navigate = useNavigate();
 	const session = useSession();
 	const { programId } = useParams<{ programId: string }>();
+	const { konfirmasi, confirmDialog } = useConfirmDialog();
 
 	// Penyusunan Dokumen LED sepenuhnya wewenang Penjamin Mutu; Pimpinan read-only
 	// di level ini (§6.2) dan Penyusun tidak pernah punya aksi di sini (§15).
@@ -94,14 +96,21 @@ export function ProgramLedProjectList() {
 	const returnTo = `/study-programs/${programId}/led-projects`;
 
 	const handleDelete = React.useCallback(
-		(id: string) => {
-			if (confirm('Apakah Anda yakin ingin menghapus Dokumen LED ini?')) {
-				ledProjectRepository.delete(id);
-				loadData();
-				window.dispatchEvent(new Event('storage-update'));
-			}
+		async (id: string) => {
+			const lanjut = await konfirmasi({
+				judul: 'Hapus Dokumen LED ini?',
+				deskripsi:
+					'Seluruh bab beserta isinya ikut terhapus, dan tidak bisa dipulihkan.',
+				labelAksi: 'Hapus',
+				merusak: true,
+			});
+			if (!lanjut) return;
+
+			ledProjectRepository.delete(id);
+			loadData();
+			window.dispatchEvent(new Event('storage-update'));
 		},
-		[loadData],
+		[konfirmasi, loadData],
 	);
 
 	const handleEdit = React.useCallback(
@@ -166,6 +175,8 @@ export function ProgramLedProjectList() {
 				onPaginationChange={setPagination}
 				onClearAll={clearAll}
 			/>
+
+			{confirmDialog}
 		</div>
 	);
 }

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { PlusIcon } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
+import { useConfirmDialog } from '~/core/components/ui/confirm-dialog';
 import { DataTable } from '~/core/components/ui/data-table';
 import { useDataTableState } from '~/core/hooks/use-data-table-state';
 import { userRepository } from '../../data/repositories/user.repository';
@@ -12,6 +13,7 @@ import { type UserEntity } from '../../domain/entities/user.entity';
 export function UserManagement() {
 	const navigate = useNavigate();
 	const [users, setUsers] = React.useState<UserEntity[]>([]);
+	const { konfirmasi, confirmDialog } = useConfirmDialog();
 
 	const loadData = React.useCallback(() => {
 		setUsers(userRepository.findAll());
@@ -25,12 +27,21 @@ export function UserManagement() {
 		};
 	}, [loadData]);
 
-	const handleDelete = React.useCallback((id: string) => {
-		if (confirm('Apakah Anda yakin ingin menghapus pengguna ini?')) {
+	const handleDelete = React.useCallback(
+		async (id: string) => {
+			const lanjut = await konfirmasi({
+				judul: 'Hapus pengguna ini?',
+				deskripsi: 'Akun beserta penugasannya hilang dan tidak bisa dipulihkan.',
+				labelAksi: 'Hapus',
+				merusak: true,
+			});
+			if (!lanjut) return;
+
 			userRepository.delete(id);
 			loadData();
-		}
-	}, [loadData]);
+		},
+		[konfirmasi, loadData],
+	);
 
 	const handleEdit = React.useCallback((id: string) => {
 		navigate(`/dashboard/users/${id}/edit`);
@@ -86,6 +97,8 @@ export function UserManagement() {
 				onPaginationChange={setPagination}
 				onClearAll={clearAll}
 			/>
+
+			{confirmDialog}
 		</div>
 	);
 }

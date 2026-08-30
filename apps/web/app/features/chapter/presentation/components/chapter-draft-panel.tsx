@@ -9,6 +9,7 @@ import {
 } from '@phosphor-icons/react';
 
 import { Button, buttonVariants } from '~/core/components/ui/button';
+import { useConfirmDialog } from '~/core/components/ui/confirm-dialog';
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -67,6 +68,7 @@ export function ChapterDraftPanel({
 		simpanCheckpoint,
 		pulihkan,
 	} = useChapterDraft({ chapter, izin, ambilSnapshot });
+	const { konfirmasi, confirmDialog } = useConfirmDialog();
 
 	/**
 	 * Isian label tertutup secara bawaan dengan alasan yang sama seperti prompt di
@@ -76,7 +78,21 @@ export function ChapterDraftPanel({
 	 */
 	const [labelTerbuka, setLabelTerbuka] = React.useState(false);
 
-	function handlePulihkan(draft: ChapterDraftEntity) {
+	/*
+	 * Peringatannya menyebut akibat, bukan sekadar "yakin?": tulisan yang
+	 * sekarang hilang tanpa jadi checkpoint lebih dulu, dan tidak ada tempat
+	 * lain yang memberitahukannya.
+	 */
+	async function handlePulihkan(draft: ChapterDraftEntity) {
+		const lanjut = await konfirmasi({
+			judul: `Pulihkan "${labelDraft(draft)}"?`,
+			deskripsi:
+				'Tulisan bab yang sekarang tertimpa, dan tidak tersimpan sebagai checkpoint.',
+			labelAksi: 'Pulihkan',
+			merusak: true,
+		});
+		if (!lanjut) return;
+
 		const hasil = pulihkan(draft);
 		if (hasil) onRestored(hasil);
 	}
@@ -198,6 +214,8 @@ export function ChapterDraftPanel({
 					</p>
 				)}
 			</div>
+
+			{confirmDialog}
 		</div>
 	);
 }

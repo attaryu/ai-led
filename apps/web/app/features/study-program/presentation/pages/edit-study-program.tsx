@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate, useParams } from 'react-router';
 import { ArrowLeftIcon } from '@phosphor-icons/react';
 
+import { PlaceholderPage } from '~/core/components/placeholder-page';
 import { Button } from '~/core/components/ui/button';
 import {
 	Card,
@@ -25,6 +26,7 @@ export function EditStudyProgram() {
 	const navigate = useNavigate();
 	const { programId } = useParams<{ programId: string }>();
 	const [program, setProgram] = React.useState<StudyProgramEntity | null>(null);
+	const [tidakAda, setTidakAda] = React.useState(false);
 
 	React.useEffect(() => {
 		if (programId) {
@@ -32,8 +34,8 @@ export function EditStudyProgram() {
 			if (found) {
 				setProgram(found);
 			} else {
-				alert('Program Studi tidak ditemukan!');
-				navigate('/dashboard/study-programs');
+				// Lihat catatan di edit-user.tsx soal kenapa ini bukan `alert`.
+				setTidakAda(true);
 			}
 		}
 	}, [programId, navigate]);
@@ -87,8 +89,20 @@ export function EditStudyProgram() {
 		navigate('/dashboard/study-programs');
 	};
 
+	if (tidakAda) {
+		return (
+			<PlaceholderPage
+				title="Program studi tidak ditemukan"
+				description={`Tidak ada program studi dengan ID "${programId}". Mungkin sudah dihapus.`}
+				links={[
+					{ label: 'Kembali ke Program Studi', to: '/dashboard/study-programs' },
+				]}
+			/>
+		);
+	}
+
 	if (!program) {
-		return <div className="p-8 text-center text-muted-foreground">Memuat data Program Studi...</div>;
+		return <div className="p-8 text-center text-muted-foreground">Memuat data program studi...</div>;
 	}
 
 	return (

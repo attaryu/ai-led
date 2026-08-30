@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate, useParams } from 'react-router';
 import { ArrowLeftIcon } from '@phosphor-icons/react';
 
+import { PlaceholderPage } from '~/core/components/placeholder-page';
 import { Button } from '~/core/components/ui/button';
 import { Input } from '~/core/components/ui/input';
 import { Select } from '~/core/components/ui/select';
@@ -31,6 +32,7 @@ export function EditUser() {
 	const { userId } = useParams<{ userId: string }>();
 	const [studyPrograms, setStudyPrograms] = React.useState<StudyProgramEntity[]>([]);
 	const [user, setUser] = React.useState<UserEntity | null>(null);
+	const [tidakAda, setTidakAda] = React.useState(false);
 
 	React.useEffect(() => {
 		setStudyPrograms(studyProgramRepository.findAll());
@@ -39,8 +41,12 @@ export function EditUser() {
 			if (found) {
 				setUser(found);
 			} else {
-				alert('Pengguna tidak ditemukan.');
-				navigate('/dashboard/users');
+				// Ditandai, bukan dilempar balik lewat `alert` + `navigate`: kotak
+				// bawaan peramban menghentikan seluruh utas dan tidak menyisakan
+				// jejak setelah ditutup, sehingga pembaca mendarat di daftar tanpa
+				// tahu kenapa. Halaman "tidak ditemukan" adalah bentuk yang sudah
+				// dipakai ruang kerja Dokumen LED dan Program Studi.
+				setTidakAda(true);
 			}
 		}
 	}, [userId, navigate]);
@@ -117,6 +123,16 @@ export function EditUser() {
 		userRepository.update(userId, updatedFields);
 		navigate('/dashboard/users');
 	};
+
+	if (tidakAda) {
+		return (
+			<PlaceholderPage
+				title="Pengguna tidak ditemukan"
+				description={`Tidak ada pengguna dengan ID "${userId}". Mungkin sudah dihapus.`}
+				links={[{ label: 'Kembali ke Pengguna', to: '/dashboard/users' }]}
+			/>
+		);
+	}
 
 	if (!user) {
 		return <div className="p-8 text-center text-muted-foreground">Memuat data pengguna...</div>;

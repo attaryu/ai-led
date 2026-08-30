@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { ArrowLeftIcon } from '@phosphor-icons/react';
 
+import { PlaceholderPage } from '~/core/components/placeholder-page';
 import { Button } from '~/core/components/ui/button';
 import { Input } from '~/core/components/ui/input';
 import { Select } from '~/core/components/ui/select';
@@ -36,6 +37,7 @@ export function EditLedProject() {
 	const { projectId } = useParams<{ projectId: string }>();
 	const [searchParams] = useSearchParams();
 	const [project, setProject] = React.useState<LedProjectEntity | null>(null);
+	const [tidakAda, setTidakAda] = React.useState(false);
 
 	/*
 	 * Formulir ini bisa dibuka dari daftar lintas program studi maupun dari daftar milik
@@ -55,8 +57,8 @@ export function EditLedProject() {
 			if (found) {
 				setProject(found);
 			} else {
-				alert('Dokumen LED tidak ditemukan!');
-				navigate(returnTo);
+				// Lihat catatan di edit-user.tsx soal kenapa ini bukan `alert`.
+				setTidakAda(true);
 			}
 		}
 	}, [projectId, navigate, returnTo]);
@@ -96,7 +98,8 @@ export function EditLedProject() {
 
 		const prodi = studyPrograms.find((p) => p.id === data.studyProgramId);
 		if (!prodi) {
-			alert('Program studi tidak valid.');
+			// Lihat catatan di create-led-project.tsx.
+			setError('studyProgramId', { message: 'Program studi tidak valid.' });
 			return;
 		}
 
@@ -131,6 +134,16 @@ export function EditLedProject() {
 		window.dispatchEvent(new Event('storage-update'));
 		navigate(returnTo);
 	};
+
+	if (tidakAda) {
+		return (
+			<PlaceholderPage
+				title="Dokumen LED tidak ditemukan"
+				description={`Tidak ada Dokumen LED dengan ID "${projectId}". Mungkin sudah dihapus.`}
+				links={[{ label: 'Kembali ke daftar', to: returnTo }]}
+			/>
+		);
+	}
 
 	if (!project) {
 		return <div className="p-8 text-center text-muted-foreground">Memuat data Dokumen LED...</div>;

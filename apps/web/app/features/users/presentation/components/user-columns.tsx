@@ -85,7 +85,7 @@ export const getUserColumns = (): ColumnDef<UserEntity, any>[] => [
 						variant="ghost"
 						size="icon-sm"
 						onClick={() => onEdit?.(id)}
-						aria-label="Ubah user"
+						aria-label="Ubah pengguna"
 						className="cursor-pointer text-muted-foreground hover:text-foreground"
 					>
 						<PencilSimpleIcon className="size-4" />
@@ -94,7 +94,7 @@ export const getUserColumns = (): ColumnDef<UserEntity, any>[] => [
 						variant="ghost"
 						size="icon-sm"
 						onClick={() => onDelete?.(id)}
-						aria-label="Hapus user"
+						aria-label="Hapus pengguna"
 						className="cursor-pointer text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
 					>
 						<TrashIcon className="size-4" />

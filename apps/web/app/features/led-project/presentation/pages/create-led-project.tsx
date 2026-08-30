@@ -101,7 +101,10 @@ export function CreateLedProject() {
 	const onSubmit = (data: CreateLedProjectDto) => {
 		const prodi = studyPrograms.find((p) => p.id === data.studyProgramId);
 		if (!prodi) {
-			alert('Program studi tidak valid.');
+			// Menempel ke kolomnya, sama seperti pemeriksaan tahun ganda di bawah:
+			// yang salah adalah satu isian, bukan seluruh formulir, dan `alert`
+			// lepas tidak menunjukkan yang mana.
+			setError('studyProgramId', { message: 'Program studi tidak valid.' });
 			return;
 		}
 
