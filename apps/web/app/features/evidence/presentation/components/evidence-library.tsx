@@ -322,7 +322,7 @@ export function EvidenceLibrary({
 				</h2>
 				<p className="text-sm text-muted-foreground">
 					{level === 'TENANT'
-						? 'Berkas milik universitas yang bisa dipakai seluruh prodi. Unggahan di sini juga bisa diarahkan ke prodi tertentu.'
+						? 'Berkas milik universitas yang bisa dipakai seluruh program studi. Unggahan di sini juga bisa diarahkan ke satu program studi tertentu.'
 						: 'Tidak terikat ke satu Dokumen LED, jadi otomatis tersedia untuk semua dokumen milik program studi ini.'}
 				</p>
 			</div>

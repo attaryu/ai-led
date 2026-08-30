@@ -84,6 +84,9 @@ export function LedProjectManagement() {
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
 						Dokumen LED lintas program studi
 					</h2>
+					<p className="text-sm text-muted-foreground">
+						Tiap program studi punya satu dokumen per tahun akademik.
+					</p>
 				</div>
 				{canManage && (
 					<Button

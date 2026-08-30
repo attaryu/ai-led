@@ -144,6 +144,9 @@ export function ProgramLedProjectList() {
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
 						Dokumen LED
 					</h2>
+					<p className="text-sm text-muted-foreground">
+						Satu dokumen per tahun akademik, termasuk yang sudah selesai.
+					</p>
 				</div>
 				{canManage && (
 					<Button

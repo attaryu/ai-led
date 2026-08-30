@@ -73,6 +73,9 @@ export function UserManagement() {
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
 						Pengguna
 					</h2>
+					<p className="text-sm text-muted-foreground">
+						Peran tiap akun menentukan halaman apa yang bisa dibukanya.
+					</p>
 				</div>
 				<Button
 					onClick={() => navigate('/dashboard/users/create')}

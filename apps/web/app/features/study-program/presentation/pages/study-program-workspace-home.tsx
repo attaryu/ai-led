@@ -135,6 +135,9 @@ function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 				<h2 className="font-heading text-2xl font-bold tracking-tight">
 					Dashboard Program Studi
 				</h2>
+				<p className="text-sm text-muted-foreground">
+					Akreditasi yang berlaku sekarang, dan penyusunan yang sedang berjalan.
+				</p>
 			</div>
 
 			<div className="grid items-start gap-4 lg:grid-cols-2">

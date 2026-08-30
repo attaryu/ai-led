@@ -18,7 +18,7 @@ import { useProjectProgress } from '../hooks/use-project-progress';
 import { type LedProjectEntity } from '../../domain/entities/led-project.entity';
 
 /**
- * Dashboard Project LED — Progres Dokumen (docs/application_flow.md §6.1).
+ * Dashboard Dokumen — lapis Dokumen LED (docs/application_flow.md §6.1).
  *
  * Hampir seluruhnya baca. Satu-satunya aksi ubah data di sini adalah memilih
  * acuan penilaian dokumen, dan penjagaan per role (§1) untuk aksi itu hidup di
@@ -67,10 +67,13 @@ function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
 				    kolom kanan, karena keduanya jarang dibutuhkan. */}
 				<div className="flex flex-wrap items-center gap-3">
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						Progres Dokumen
+						Dashboard Dokumen
 					</h2>
 					<ProjectAccreditationSetBadge project={ledProject} />
 				</div>
+				<p className="text-sm text-muted-foreground">
+					Sejauh mana dokumen ini sudah tersusun, bab demi bab.
+				</p>
 			</div>
 
 			<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

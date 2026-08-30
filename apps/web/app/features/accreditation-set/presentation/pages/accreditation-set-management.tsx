@@ -109,8 +109,15 @@ export function AccreditationSetManagement() {
 		<div className="flex flex-col gap-8">
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<div>
+					{/*
+					 * Satu judul untuk kedua hak akses, sama seperti di
+					 * study-program-management.tsx: halaman yang berganti nama antara
+					 * "Set Akreditasi" dan "Daftar Set Akreditasi" tidak memberi
+					 * pembaca cara tahu kenapa namanya berbeda dari yang dilihat
+					 * rekannya.
+					 */}
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						{canManage ? 'Set Akreditasi' : 'Daftar Set Akreditasi'}
+						Set Akreditasi
 					</h2>
 					<p className="text-sm text-muted-foreground">
 						Rubrik, panduan, dan template dari satu lembaga penilai untuk satu

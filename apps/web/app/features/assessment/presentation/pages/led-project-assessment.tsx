@@ -172,6 +172,10 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
 						Penilaian AMI
 					</h2>
+					<p className="text-sm text-muted-foreground">
+						AI menilai tiap indikator; Penjamin Mutu yang memutuskan skor
+						akhirnya.
+					</p>
 				</div>
 
 				{/*

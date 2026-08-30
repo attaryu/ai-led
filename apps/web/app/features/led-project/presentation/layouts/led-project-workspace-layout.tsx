@@ -1,5 +1,5 @@
 import {
-	ListChecksIcon,
+	GaugeIcon,
 	NotePencilIcon,
 	SealCheckIcon,
 } from '@phosphor-icons/react';
@@ -98,9 +98,19 @@ export function LedProjectWorkspaceLayout() {
 				contextTitle: ledProject.judul,
 				items: [
 					{
-						name: 'Progres Dokumen',
+						/*
+						 * "Dashboard", bukan "Progres Dokumen": item pertama tiap ruang
+						 * kerja adalah halaman ikhtisarnya, dan lapis tenant sudah
+						 * menamainya begitu. Nama lamanya juga menyempit — halaman ini
+						 * memuat bukti dukung terpakai dan acuan penilaian, bukan cuma
+						 * progres.
+						 *
+						 * Ikonnya `Gauge`, bukan `House` seperti lapis tenant: rumah
+						 * berarti titik awal aplikasi, dan lapis ini bukan itu.
+						 */
+						name: 'Dashboard',
 						path: `/led-projects/${projectId}`,
-						icon: ListChecksIcon,
+						icon: GaugeIcon,
 						end: true,
 					},
 					{
