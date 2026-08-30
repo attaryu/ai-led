@@ -192,7 +192,7 @@ export function AccreditationSetCriteria() {
 	const readiness = deriveSetReadiness(set);
 
 	return (
-		<div className="flex flex-col gap-6">
+		<div className="flex flex-col gap-8">
 			<div className="flex flex-wrap items-start justify-between gap-3">
 				<div className="flex min-w-0 items-center gap-4">
 					<Button

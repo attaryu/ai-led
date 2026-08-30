@@ -3,11 +3,30 @@ import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area"
 
 import { cn } from "~/core/lib/utils"
 
+/**
+ * `orientation` menentukan scrollbar mana yang dipasang, dan sekaligus apakah
+ * `ScrollArea.Content` ikut dirender.
+ *
+ * Bagian `Content` bukan pilihan gaya: ia memasang `min-width: fit-content`,
+ * dan tanpa itu isi tidak pernah boleh melampaui lebar viewport — sehingga
+ * gulir mendatar tidak pernah terjadi dan scrollbar-nya tidak pernah muncul.
+ * Ia sengaja **tidak** dirender untuk `vertical`: tujuh pemakai yang sudah ada
+ * semuanya kolom sempit, dan `fit-content` di sana akan menahan isinya menyusut
+ * mengikuti kolom.
+ *
+ * Bawaannya `vertical` supaya seluruh pemakai lama tidak berubah perilaku.
+ */
 function ScrollArea({
   className,
   children,
+  orientation = "vertical",
   ...props
-}: ScrollAreaPrimitive.Root.Props) {
+}: ScrollAreaPrimitive.Root.Props & {
+  orientation?: "vertical" | "horizontal" | "both"
+}) {
+  const mendatar = orientation === "horizontal" || orientation === "both"
+  const menegak = orientation === "vertical" || orientation === "both"
+
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
@@ -18,9 +37,16 @@ function ScrollArea({
         data-slot="scroll-area-viewport"
         className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1"
       >
-        {children}
+        {mendatar ? (
+          <ScrollAreaPrimitive.Content data-slot="scroll-area-content">
+            {children}
+          </ScrollAreaPrimitive.Content>
+        ) : (
+          children
+        )}
       </ScrollAreaPrimitive.Viewport>
-      <ScrollBar />
+      {menegak && <ScrollBar orientation="vertical" />}
+      {mendatar && <ScrollBar orientation="horizontal" />}
       <ScrollAreaPrimitive.Corner />
     </ScrollAreaPrimitive.Root>
   )

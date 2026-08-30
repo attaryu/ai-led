@@ -22,24 +22,23 @@ export const getUserColumns = (): ColumnDef<UserEntity, any>[] => [
 	}),
 	columnHelper.accessor('role', {
 		header: 'Role',
-		cell: (info) => {
-			const val = info.getValue() as string;
-			const colors: Record<string, string> = {
-				'Penjamin Mutu': 'bg-primary/10 text-primary border-primary/20',
-				Penyusun:
-					'bg-secondary/20 text-secondary-foreground border-secondary',
-				Pimpinan:
-					'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200/50 dark:border-amber-800/30',
-				Admin: 'bg-muted text-muted-foreground border-border',
-			};
-			return (
-				<span
-					className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${colors[val] || ''}`}
-				>
-					{val}
-				</span>
-			);
-		},
+		/*
+		 * Satu rupa untuk keempat role, bukan empat warna pastel.
+		 *
+		 * Warna sebaiknya disimpan untuk hal yang menuntut tindakan — itulah
+		 * yang dikerjakan badge status di `set-status-badge.tsx` dan kawan-kawan,
+		 * dan mereka sengaja dibiarkan berwarna. Role bukan keadaan: ia tidak
+		 * pernah genting, tidak pernah membaik, dan tidak ada satu pun di
+		 * antaranya yang lebih perlu diperhatikan dari yang lain. Memberinya
+		 * empat warna berarti menghabiskan satu-satunya isyarat terkuat di
+		 * halaman untuk membedakan hal yang sudah dibedakan oleh tulisannya
+		 * sendiri — dan membuat badge status di tabel lain ikut kehilangan daya.
+		 */
+		cell: (info) => (
+			<span className="inline-flex items-center rounded-full border border-border bg-muted/60 px-2.5 py-0.5 text-xs font-medium text-foreground/80">
+				{info.getValue() as string}
+			</span>
+		),
 		enableSorting: true,
 	}),
 	columnHelper.accessor('studyProgramName', {
@@ -68,21 +67,35 @@ export const getUserColumns = (): ColumnDef<UserEntity, any>[] => [
 			const id = props.row.original.id;
 			const onDelete = props.table.options.meta?.onDelete;
 			const onEdit = props.table.options.meta?.onEdit;
+			/*
+			 * `ghost`, bukan kotak berbingkai di tiap baris.
+			 *
+			 * Dua bingkai per baris berarti garis tepi tabel terbanyak justru
+			 * berada di kolom yang isinya paling tidak informatif. Ikonnya sendiri
+			 * sudah cukup terbaca sebagai tombol begitu disorot.
+			 *
+			 * Keduanya tetap terlihat permanen, tidak disembunyikan sampai
+			 * baris disorot: hover bukan isyarat yang tersedia di sentuh, dan
+			 * tombol yang hanya muncul saat disorot tidak bisa ditemukan tanpa
+			 * lebih dulu menebak bahwa ia ada.
+			 */
 			return (
-				<div className="flex items-center gap-2">
+				<div className="flex items-center gap-1">
 					<Button
-						variant="outline"
+						variant="ghost"
 						size="icon-sm"
 						onClick={() => onEdit?.(id)}
-						className="cursor-pointer"
+						aria-label="Ubah user"
+						className="cursor-pointer text-muted-foreground hover:text-foreground"
 					>
 						<PencilSimpleIcon className="size-4" />
 					</Button>
 					<Button
-						variant="destructive"
+						variant="ghost"
 						size="icon-sm"
 						onClick={() => onDelete?.(id)}
-						className="cursor-pointer"
+						aria-label="Hapus user"
+						className="cursor-pointer text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
 					>
 						<TrashIcon className="size-4" />
 					</Button>

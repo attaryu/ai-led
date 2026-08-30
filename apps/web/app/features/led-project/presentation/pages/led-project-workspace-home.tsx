@@ -59,7 +59,7 @@ function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
 		useProjectProgress(ledProject.id, ledProject.studyProgramId);
 
 	return (
-		<div className="flex flex-col gap-6">
+		<div className="flex flex-col gap-8">
 			<div>
 				{/* Acuan penilaian menentukan arti seluruh angka di halaman ini, jadi
 				    ia harus terbaca tanpa menggulung — tapi cukup sebagai lencana

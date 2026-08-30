@@ -35,7 +35,7 @@ export function AdminOrganizationSummary() {
 		useOrganizationSummary();
 
 	return (
-		<div className="flex flex-col gap-6">
+		<div className="flex flex-col gap-8">
 			<div className="grid gap-4 sm:grid-cols-2">
 				<StatCard
 					label="Program Studi"

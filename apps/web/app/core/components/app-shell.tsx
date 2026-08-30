@@ -191,7 +191,7 @@ export function AppShell({
 					</div>
 				)}
 
-				<nav className="flex-1 space-y-1 px-4 py-6">
+				<nav className="flex-1 space-y-1.5 px-4 py-6">
 					{sidebar.items.map((item) => {
 						const Icon = item.icon;
 						return (
@@ -199,11 +199,31 @@ export function AppShell({
 								key={item.path}
 								to={item.path}
 								end={item.end}
+								/*
+								 * Penanda aktif: latar bertinta tipis + batang aksen di
+								 * tepi kiri, bukan slab warna penuh.
+								 *
+								 * Slab jenuh selebar item adalah tinta paling banyak di
+								 * seluruh sidebar, padahal yang perlu disampaikannya
+								 * hanya "kamu di sini" — satu bit. Batang 3 px
+								 * menyampaikan bit yang sama, dan sisa perbedaannya
+								 * diambil alih oleh berat huruf dan warna teks.
+								 *
+								 * Item non-aktif ikut diredupkan ke `/70`. Tanpa itu
+								 * penanda yang lebih halus ini harus bersaing dengan
+								 * lima tetangga sekelam dirinya; jarak kontraslah yang
+								 * membuatnya terbaca, bukan kepekatan penandanya
+								 * sendiri.
+								 *
+								 * `before:` diposisikan `-left-1` supaya batangnya jatuh
+								 * di dalam padding `px-4` milik `<nav>`, sebidang di
+								 * semua item.
+								 */
 								className={({ isActive }) =>
-									`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors ${
+									`relative flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors ${
 										isActive
-											? 'bg-sidebar-primary text-sidebar-primary-foreground'
-											: 'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+											? 'bg-sidebar-accent font-semibold text-sidebar-primary before:absolute before:inset-y-1.5 before:-left-1 before:w-[3px] before:rounded-full before:bg-sidebar-primary'
+											: 'font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground'
 									}`
 								}
 							>
@@ -316,7 +336,14 @@ export function AppShell({
 					{headerAction}
 				</header>
 
-				<main className="p-6 lg:p-8">{children}</main>
+				{/*
+				 * Bingkai halaman. `lg:p-10` — bukan `lg:p-8` — karena di lebar
+				 * penuh isi halaman menempel ke tepi jendela, dan margin adalah
+				 * satu-satunya hal yang memberi tahu mata di mana halaman
+				 * berakhir. Di bawah `lg` tetap 24 px: di sana ruang mendatar
+				 * sedang langka, dan margin tebal memakannya dari tabel.
+				 */}
+				<main className="p-6 lg:p-10">{children}</main>
 			</div>
 		</div>
 	);

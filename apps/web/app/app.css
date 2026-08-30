@@ -13,80 +13,136 @@
 
 html,
 body {
-  @apply bg-white dark:bg-gray-950;
+  /*
+   * `bg-background`, bukan `bg-white`: sejak paletnya punya rona, putih murni
+   * disediakan untuk kartu. Aturan ini berada di luar `@layer base`, jadi ia
+   * menang atas `body { @apply bg-background }` di bawah — keduanya kini
+   * menunjuk nilai yang sama, dan `html` ikut terwarnai sehingga area
+   * overscroll tidak berkedip putih.
+   */
+  @apply bg-background;
 
   @media (prefers-color-scheme: dark) {
     color-scheme: dark;
   }
 }
 
+/*
+ * Palet: tinta di atas kertas.
+ *
+ * Nilai sebelumnya adalah bawaan shadcn apa adanya — violet hue 277 dengan
+ * chroma 0.24, dan netral ber-chroma nol. Keduanya adalah ciri paling kentara
+ * dari tampilan hasil generate, dan dua-duanya tidak menyampaikan apa pun
+ * tentang produk ini.
+ *
+ * Yang menggantikannya dipilih berpasangan, bukan satu per satu:
+ *
+ * - `--primary` navy hue 252 dengan chroma 0.105 dan lightness 0.42. Chroma
+ *   rendah dan gelap membuatnya terbaca sebagai tinta, bukan biru tombol;
+ *   biru jenuh biasa hanya memindahkan kesan "bawaan" dari satu kerangka ke
+ *   kerangka lain.
+ * - Netral diberi rona hangat (hue 85, chroma 0.005–0.008). Rona ini nyaris
+ *   tidak kelihatan sendirian, tapi ia yang membedakan "dipilih" dari
+ *   "default", dan ia menghangatkan latar menjadi kertas.
+ * - Karena `--background` bukan lagi putih murni sedangkan `--card` tetap
+ *   putih, kartu naik selapis di atas halaman tanpa perlu tambahan garis atau
+ *   bayangan. Hierarki yang selama ini hilang didapat dari kontras permukaan.
+ * - `--ring` ikut warna merek, bukan abu-abu netral. Fokus keyboard jadi
+ *   bagian dari identitas, bukan sisa bawaan.
+ * - `--muted-foreground` sengaja digelapkan dari 0.556 ke 0.50: nilai lama
+ *   berada di bawah rasio kontras 4.5:1 untuk teks biasa, padahal seluruh
+ *   subjudul dan teks bantu memakainya.
+ * - `--border` di 0.83, bukan 0.922 bawaan. Di atas kertas 0.995 nilai lama
+ *   nyaris tak terbedakan dari latarnya sendiri, sehingga tepi kartu dan
+ *   garis antarbaris tabel hilang. Yang dinaikkan kepekatannya, bukan
+ *   tebalnya: garis tetap 1 px, hanya jadi terlihat. Nilainya duduk di antara
+ *   `gray-300` dan `gray-400` — batas atas sebelum tabel mulai terbaca
+ *   sebagai kisi, bukan sebagai daftar.
+ *
+ * `--radius` turun dari 0.625rem ke 0.375rem. Sudut yang lebih tegas membaca
+ * sebagai perkakas kerja; 10 px seragam di kartu, tombol, input, dan tabel
+ * adalah tanda lain dari kerangka yang tidak disetel.
+ *
+ * Ramp `--chart-*` diselaraskan ke hue yang sama. Belum ada yang memakainya
+ * (tidak ada rujukan di seluruh `app/`), tapi meninggalkannya violet berarti
+ * grafik pertama yang dibuat nanti akan bertengkar dengan sisa halaman.
+ */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: oklch(0.995 0.002 85);
+  --foreground: oklch(0.21 0.012 265);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.21 0.012 265);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.457 0.24 277.023);
-  --primary-foreground: oklch(0.962 0.018 272.314);
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.785 0.115 274.713);
-  --chart-2: oklch(0.585 0.233 277.117);
-  --chart-3: oklch(0.511 0.262 276.966);
-  --chart-4: oklch(0.457 0.24 277.023);
-  --chart-5: oklch(0.398 0.195 277.366);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.511 0.262 276.966);
-  --sidebar-primary-foreground: oklch(0.962 0.018 272.314);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --popover-foreground: oklch(0.21 0.012 265);
+  --primary: oklch(0.42 0.105 252);
+  --primary-foreground: oklch(0.985 0.003 85);
+  --secondary: oklch(0.965 0.005 85);
+  --secondary-foreground: oklch(0.28 0.012 265);
+  --muted: oklch(0.968 0.005 85);
+  --muted-foreground: oklch(0.5 0.012 265);
+  --accent: oklch(0.955 0.008 85);
+  --accent-foreground: oklch(0.28 0.012 265);
+  --destructive: oklch(0.55 0.19 27);
+  --border: oklch(0.83 0.009 85);
+  --input: oklch(0.83 0.009 85);
+  --ring: oklch(0.42 0.105 252);
+  --chart-1: oklch(0.8 0.045 252);
+  --chart-2: oklch(0.68 0.075 252);
+  --chart-3: oklch(0.55 0.1 252);
+  --chart-4: oklch(0.42 0.105 252);
+  --chart-5: oklch(0.32 0.085 254);
+  --radius: 0.375rem;
+  --sidebar: oklch(0.978 0.005 85);
+  --sidebar-foreground: oklch(0.21 0.012 265);
+  --sidebar-primary: oklch(0.42 0.105 252);
+  --sidebar-primary-foreground: oklch(0.985 0.003 85);
+  --sidebar-accent: oklch(0.945 0.008 85);
+  --sidebar-accent-foreground: oklch(0.28 0.012 265);
+  --sidebar-border: oklch(0.83 0.009 85);
+  --sidebar-ring: oklch(0.42 0.105 252);
 }
 
+/*
+ * Mode gelap mengikuti pasangan yang sama, dengan satu pembalikan yang
+ * disengaja: `--primary` di sini lebih *terang* dari mode terang (0.58 lawan
+ * 0.42). Nilai lama justru lebih gelap (0.398), yang berarti tombol utama
+ * tenggelam ke latar alih-alih menonjol darinya.
+ *
+ * Ronanya juga dibalik: netral gelap condong dingin (hue 265) supaya tidak
+ * berlumpur, sedangkan teksnya menyimpan sedikit rona hangat dari kertas.
+ */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.398 0.195 277.366);
-  --primary-foreground: oklch(0.962 0.018 272.314);
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
+  --background: oklch(0.175 0.008 265);
+  --foreground: oklch(0.965 0.003 85);
+  --card: oklch(0.215 0.01 265);
+  --card-foreground: oklch(0.965 0.003 85);
+  --popover: oklch(0.215 0.01 265);
+  --popover-foreground: oklch(0.965 0.003 85);
+  --primary: oklch(0.58 0.12 252);
+  --primary-foreground: oklch(0.985 0.003 85);
+  --secondary: oklch(0.275 0.01 265);
+  --secondary-foreground: oklch(0.965 0.003 85);
+  --muted: oklch(0.27 0.01 265);
+  --muted-foreground: oklch(0.7 0.012 265);
+  --accent: oklch(0.3 0.012 265);
+  --accent-foreground: oklch(0.965 0.003 85);
+  --destructive: oklch(0.66 0.17 25);
+  --border: oklch(1 0 0 / 22%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.785 0.115 274.713);
-  --chart-2: oklch(0.585 0.233 277.117);
-  --chart-3: oklch(0.511 0.262 276.966);
-  --chart-4: oklch(0.457 0.24 277.023);
-  --chart-5: oklch(0.398 0.195 277.366);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.585 0.233 277.117);
-  --sidebar-primary-foreground: oklch(0.962 0.018 272.314);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --ring: oklch(0.58 0.12 252);
+  --chart-1: oklch(0.82 0.05 252);
+  --chart-2: oklch(0.72 0.08 252);
+  --chart-3: oklch(0.62 0.11 252);
+  --chart-4: oklch(0.52 0.11 252);
+  --chart-5: oklch(0.42 0.09 254);
+  --sidebar: oklch(0.205 0.01 265);
+  --sidebar-foreground: oklch(0.965 0.003 85);
+  --sidebar-primary: oklch(0.58 0.12 252);
+  --sidebar-primary-foreground: oklch(0.985 0.003 85);
+  --sidebar-accent: oklch(0.29 0.012 265);
+  --sidebar-accent-foreground: oklch(0.965 0.003 85);
+  --sidebar-border: oklch(1 0 0 / 22%);
+  --sidebar-ring: oklch(0.58 0.12 252);
 }
 
 @theme inline {

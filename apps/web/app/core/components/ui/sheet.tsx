@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { CaretLeftIcon, CaretRightIcon, XIcon } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
+import { ScrollArea } from '~/core/components/ui/scroll-area';
 import { useEscapeLayer } from '~/core/lib/escape-layer';
 import { cn } from '~/core/lib/utils';
 
@@ -165,6 +166,22 @@ export function SheetNav({
 	);
 }
 
+/**
+ * Badan laci yang bergulir.
+ *
+ * `ScrollArea`, bukan `overflow-y-auto`: laci ini lebarnya hanya sekitar 420 px,
+ * dan scrollbar Windows selebar 17 px di dalamnya memotong hampir sepersepuluh
+ * kolom bacaan — alasan yang sama yang sudah membuat keenam panel editor
+ * memakainya.
+ *
+ * `className` tetap jatuh ke pembungkus isi, bukan ke wadah gulirnya: keempat
+ * pemanggil mengirim kelas tata letak (`flex flex-col gap-4`, `space-y-2`) yang
+ * berlaku atas isinya. Memasangnya di `ScrollArea.Root` akan membuat kelas itu
+ * mengatur kotak yang salah dan diam-diam tidak berpengaruh.
+ *
+ * `p-5` ikut pindah ke dalam supaya scrollbar menempel di tepi laci, bukan
+ * mengambang 20 px dari sisinya.
+ */
 export function SheetBody({
 	className,
 	children,
@@ -173,7 +190,9 @@ export function SheetBody({
 	children: React.ReactNode;
 }) {
 	return (
-		<div className={cn('flex-1 overflow-y-auto p-5', className)}>{children}</div>
+		<ScrollArea className="min-h-0 flex-1">
+			<div className={cn('p-5', className)}>{children}</div>
+		</ScrollArea>
 	);
 }
 
