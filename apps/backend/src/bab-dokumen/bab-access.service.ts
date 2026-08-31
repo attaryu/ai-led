@@ -37,7 +37,7 @@ export class BabAccessService {
     const { tenantId } = this.tenantContext.getOrThrow();
     const bab = await this.prisma.documentChapter.findFirst({
       where: { id, document: { studyProgram: { tenantId } } },
-      include: { document: { select: { studyProgramId: true } } },
+      include: { document: { select: { studyProgramId: true, accreditationSetId: true } } },
     });
     if (!bab) {
       throw new NotFoundException('Bab dokumen tidak ditemukan');

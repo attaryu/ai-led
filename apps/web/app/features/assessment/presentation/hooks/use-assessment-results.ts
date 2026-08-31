@@ -1,6 +1,7 @@
 import * as React from 'react';
 
 import { type RubricCriterion } from '~/features/chapter/domain/entities/rubric-criterion.entity';
+import { ledProjectRepository } from '~/features/led-project/data/repositories/led-project.repository';
 import { assessmentSessionRepository } from '../../data/repositories/assessment-session.repository';
 import { rubricCriterionAmiRepository } from '../../data/repositories/rubric-criterion-ami.repository';
 import { assessmentVerdictRepository } from '../../data/repositories/assessment-verdict.repository';
@@ -57,8 +58,16 @@ export function useAssessmentResults({
 	}, [muat]);
 
 	React.useEffect(() => {
-		rubricCriterionAmiRepository.findAll().then(setKriteria);
-	}, []);
+		let dibatalkan = false;
+		ledProjectRepository.findById(projectId).then((proyek) =>
+			rubricCriterionAmiRepository.findAll(proyek?.accreditationSetId).then((k) => {
+				if (!dibatalkan) setKriteria(k);
+			}),
+		);
+		return () => {
+			dibatalkan = true;
+		};
+	}, [projectId]);
 
 	/**
 	 * Seluruh 64 indikator matriks selalu tampil, sesi ada atau belum —

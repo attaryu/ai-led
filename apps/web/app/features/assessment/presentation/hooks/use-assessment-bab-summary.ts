@@ -1,5 +1,6 @@
 import * as React from 'react';
 
+import { ledProjectRepository } from '~/features/led-project/data/repositories/led-project.repository';
 import { assessmentSessionRepository } from '../../data/repositories/assessment-session.repository';
 import { assessmentVerdictRepository } from '../../data/repositories/assessment-verdict.repository';
 import { rubricCriterionAmiRepository } from '../../data/repositories/rubric-criterion-ami.repository';
@@ -43,7 +44,10 @@ export function useAssessmentBabSummary(
 		let dibatalkan = false;
 
 		async function muat() {
-			const semuaKriteria = await rubricCriterionAmiRepository.findAll();
+			const proyek = await ledProjectRepository.findById(ledProjectId);
+			const semuaKriteria = await rubricCriterionAmiRepository.findAll(
+				proyek?.accreditationSetId,
+			);
 			const kriteria = semuaKriteria.filter((k) =>
 				k.urutanBab.includes(urutanBab),
 			);

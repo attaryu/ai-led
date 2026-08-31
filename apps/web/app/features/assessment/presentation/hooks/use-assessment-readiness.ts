@@ -3,6 +3,7 @@ import * as React from 'react';
 import { chapterRepository } from '~/features/chapter/data/repositories/chapter.repository';
 import { hasKonten } from '~/features/chapter/domain/entities/chapter.entity';
 import { evidenceRepository } from '~/features/evidence/data/repositories/evidence.repository';
+import { ledProjectRepository } from '~/features/led-project/data/repositories/led-project.repository';
 import { rubricCriterionAmiRepository } from '../../data/repositories/rubric-criterion-ami.repository';
 import { type EvidenceEntity } from '~/features/evidence/domain/entities/evidence.entity';
 import {
@@ -63,10 +64,16 @@ export function useAssessmentReadiness({
 	}, [projectId, studyProgramId]);
 
 	React.useEffect(() => {
-		rubricCriterionAmiRepository.findAll().then((kriteria) => {
-			setJumlahIndikator(kriteria.length);
-		});
-	}, []);
+		let dibatalkan = false;
+		ledProjectRepository.findById(projectId).then((proyek) =>
+			rubricCriterionAmiRepository.findAll(proyek?.accreditationSetId).then((kriteria) => {
+				if (!dibatalkan) setJumlahIndikator(kriteria.length);
+			}),
+		);
+		return () => {
+			dibatalkan = true;
+		};
+	}, [projectId]);
 
 	React.useEffect(() => {
 		muat();

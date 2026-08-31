@@ -58,6 +58,7 @@ import { ChapterGuidanceDetailSheet } from './chapter-guidance-detail-sheet';
 export function ChapterGuidancePanel({ chapter }: { chapter: ChapterEntity }) {
 	const { kelompok, semuaBaris } = useChapterGuidance({
 		urutanBab: chapter.urutanBab,
+		ledProjectId: chapter.ledProjectId,
 	});
 
 	/**

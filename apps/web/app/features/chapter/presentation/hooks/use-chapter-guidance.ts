@@ -5,6 +5,7 @@ import {
 	kutipanUntukRubrik,
 	type PanduanChunk,
 } from '../../data/sources/remote/chapter-guidance.mock';
+import { ledProjectRepository } from '~/features/led-project/data/repositories/led-project.repository';
 import {
 	findPanduanForBab,
 	findRubrikDipakaiForBab,
@@ -46,16 +47,24 @@ export type KelompokPanduan = {
  * **Tanpa langganan `storage-update`.** Tidak ada satu pun sumbernya yang bisa
  * berubah dari tab lain — cuma jaringan, ditangani `useEffect` biasa.
  */
-export function useChapterGuidance({ urutanBab }: { urutanBab: number }) {
+export function useChapterGuidance({
+	urutanBab,
+	ledProjectId,
+}: {
+	urutanBab: number;
+	ledProjectId: string;
+}) {
 	const [kelompok, setKelompok] = React.useState<KelompokPanduan[]>([]);
 
 	React.useEffect(() => {
 		let dibatalkan = false;
 
 		async function muat() {
+			const proyek = await ledProjectRepository.findById(ledProjectId);
+			const accreditationSetId = proyek?.accreditationSetId;
 			const [daftarPedoman, daftarRubrik] = await Promise.all([
-				findPanduanForBab(urutanBab),
-				findRubrikDipakaiForBab(urutanBab),
+				findPanduanForBab(urutanBab, accreditationSetId),
+				findRubrikDipakaiForBab(urutanBab, accreditationSetId),
 			]);
 			if (dibatalkan) return;
 
@@ -114,7 +123,7 @@ export function useChapterGuidance({ urutanBab }: { urutanBab: number }) {
 		return () => {
 			dibatalkan = true;
 		};
-	}, [urutanBab]);
+	}, [urutanBab, ledProjectId]);
 
 	return {
 		kelompok,

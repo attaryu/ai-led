@@ -25,11 +25,11 @@ import {
  *   kriteria akreditasi C.1–C.7 diverifikasi dari `led_bab_tabel.json` (struktur
  *   asli LED PJJ Teknik Telekomunikasi, diekstrak dari dokumen contoh) —
  *   lewat field `bab` tiap heading, bukan sekadar urutan tampil.
- * - **NYATA — 64 indikator matriks penilaian.** Diambil langsung dari
- *   `rubricCriterionAmiRepository` (`apps/ai/data/rubric_cache/matrix.json`,
- *   hasil `POST /upload/matrix` atas PDF matriks LAM Teknik asli). Bukan
- *   kutipan tersalin di sini — diminta langsung tiap dipanggil, supaya tidak
- *   ada dua salinan yang bisa berbeda isi.
+ * - **NYATA — kriteria Set Akreditasi yang dipilih dokumen ini.** Diambil
+ *   langsung dari `rubricCriterionAmiRepository`, yang sekarang membaca Set
+ *   Akreditasi dokumen (`accreditation-set.repository.ts`), bukan lagi satu
+ *   matriks LAM Teknik global. Bukan kutipan tersalin di sini — diminta
+ *   langsung tiap dipanggil, supaya tidak ada dua salinan yang bisa berbeda isi.
  * - **INFERENSI — batas nomor indikator per kelompok C.1–C.7** di
  *   {@link KELOMPOK_KRITERIA}. Matriksnya sendiri tidak membawa pengelompokan
  *   eksplisit per indikator, jadi batasnya diturunkan dari kecocokan nama
@@ -233,11 +233,25 @@ function keButirIku(kriteria: RubricCriterion): ButirIku {
  * konstanta modul lagi — beda dari versi sebelumnya, yang bisa sinkron karena
  * datanya memang tiruan. Larik kosong berarti LAM tidak mengatur bab itu (BAB
  * I Pendahuluan, BAB IV Penutup) — bukan kegagalan pemuatan.
+ *
+ * `accreditationSetId`: kriteria diambil dari Set Akreditasi yang benar-benar
+ * dipilih dokumen ini (row 90-an, `ledProjectRepository`), bukan lagi satu
+ * matriks LAM Teknik global.
+ *
+ * ponytail: `KELOMPOK_KRITERIA`/`POIN_PEDOMAN` di bawah masih mengasumsikan
+ * struktur & rentang nomor indikator LAM Teknik 64-indikator apa adanya —
+ * kalau `accreditationSetId` menunjuk Set Akreditasi kustom (jumlah/struktur
+ * indikator beda), pengelompokan C.1–C.7 di bawah bisa salah/kosong. Menulis
+ * ulang isi pedoman supaya data-driven per set adalah pekerjaan terpisah yang
+ * lebih besar dari sekadar ganti sumber data.
  */
-export async function findPanduanForBab(urutanBab: number): Promise<PoinPanduan[]> {
+export async function findPanduanForBab(
+	urutanBab: number,
+	accreditationSetId: string | null | undefined,
+): Promise<PoinPanduan[]> {
 	if (urutanBab !== 2 && urutanBab !== 3) return [];
 
-	const semua = await rubricCriterionAmiRepository.findAll();
+	const semua = await rubricCriterionAmiRepository.findAll(accreditationSetId);
 
 	if (urutanBab === 3) {
 		// BAB III "Program Pengembangan Berkelanjutan" — penutup 3 indikator
@@ -284,8 +298,9 @@ export async function findPanduanForBab(urutanBab: number): Promise<PoinPanduan[
  */
 export async function findRubrikDipakaiForBab(
 	urutanBab: number,
+	accreditationSetId: string | null | undefined,
 ): Promise<ButirRubrikDipakai[]> {
-	const semua = await rubricCriterionAmiRepository.findAll();
+	const semua = await rubricCriterionAmiRepository.findAll(accreditationSetId);
 	return semua
 		.filter((kriteria) => kriteria.urutanBab.includes(urutanBab))
 		.map((kriteria) => ({

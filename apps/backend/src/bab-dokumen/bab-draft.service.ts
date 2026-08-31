@@ -60,11 +60,21 @@ export class BabDraftService {
     });
   }
 
-  /** Kriteria rubrik dicocokkan lewat chapterOrder, bukan FK ke BabDokumen.id (database.md §11). */
+  /**
+   * Kriteria rubrik dicocokkan lewat chapterOrder, bukan FK ke BabDokumen.id
+   * (database.md §11) — DAN discope ke accreditationSetId dokumennya, karena
+   * chapterOrder (angka kecil 1-4) berulang lintas set. Tanpa filter ini,
+   * begitu ada >1 AccreditationSet, kriteria dari set lain ikut tercampur.
+   * Dokumen yang belum memilih set (accreditationSetId null) belum punya
+   * rubrik untuk ditampilkan sama sekali.
+   */
   async findRubrik(id: string) {
     const bab = await this.access.findOneScoped(id);
+    const accreditationSetId = bab.document.accreditationSetId;
+    if (!accreditationSetId) return [];
+
     const rows = await this.prisma.rubricCriterionChapter.findMany({
-      where: { chapterOrder: bab.chapterOrder },
+      where: { chapterOrder: bab.chapterOrder, criterion: { accreditationSetId } },
       include: { criterion: { include: { levels: { orderBy: { score: 'desc' } } } } },
     });
     return rows.map((row) => row.criterion);
