@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import { IsArray } from 'class-validator';
 import { UpsertCriterionDto } from './upsert-criterion.dto';
 
@@ -7,6 +8,7 @@ import { UpsertCriterionDto } from './upsert-criterion.dto';
 // yang diunggah sekaligus satu daftar penuh (auto-parse, follow-up round),
 // jadi endpoint ini adalah kontrak yang sama dipakai manual untuk sekarang.
 export class ReplaceCriteriaDto {
+  @ApiProperty({ type: [UpsertCriterionDto] })
   @IsArray()
   criteria!: UpsertCriterionDto[];
 }
