@@ -131,6 +131,7 @@ model Tenant {
   assessmentSessions         AssessmentSession[]
   ledChunkEmbeddings         LedChunkEmbedding[]
   buktiDukungChunkEmbeddings EvidenceChunkEmbedding[]
+  accreditationSets          AccreditationSet[]
 
   @@map("org_tenants")
 }
@@ -192,21 +193,26 @@ model StudyProgram {
 
 /// docs/database.md §4
 model LedDocument {
-  id             String        @id @default(cuid())
-  studyProgramId String        @map("study_program_id")
-  title          String
-  academicYear   String        @map("academic_year")
-  overallStatus  StatusDokumen @map("overall_status")
-  deadline       DateTime?     @db.Date
-  createdAt      DateTime      @default(now()) @map("created_at")
+  id                 String        @id @default(cuid())
+  studyProgramId     String        @map("study_program_id")
+  title              String
+  academicYear       String        @map("academic_year")
+  overallStatus      StatusDokumen @map("overall_status")
+  deadline           DateTime?     @db.Date
+  /// null = belum pilih set (RubrikKriteria lama, sebelum Set Akreditasi ada,
+  /// di-backfill ke set default "LAM Teknik (Default)" oleh seed-rubric-criteria.ts.
+  accreditationSetId String?       @map("accreditation_set_id")
+  createdAt          DateTime      @default(now()) @map("created_at")
 
   studyProgram       StudyProgram        @relation(fields: [studyProgramId], references: [id])
+  accreditationSet   AccreditationSet?   @relation(fields: [accreditationSetId], references: [id])
   chapters           DocumentChapter[]
   assessmentSessions AssessmentSession[]
   assessmentVerdicts AssessmentVerdict[]
   chunkEmbeddings    LedChunkEmbedding[]
 
   @@index([studyProgramId])
+  @@index([accreditationSetId])
   @@map("writing_led_documents")
 }
 
@@ -452,19 +458,67 @@ model EvidenceDraftLink {
   @@map("evidence_draft_links")
 }
 
+// ─────────────────── Kelompok: Set Akreditasi (Rubrik Dinamis) ───────────────────
+
+/// Pengganti rubrik LAM Teknik hardcoded -- satu set = satu rubrik lengkap
+/// (kriteria + level skor + dokumen acuan) yang bisa dikustomisasi per tenant.
+/// Satu LedDocument memilih SATU set (accreditationSetId), dikunci total begitu
+/// dipakai (lihat deriveSetLock di apps/web) -- versi baru dibuat lewat duplikasi,
+/// bukan edit set yang sudah dipakai.
+model AccreditationSet {
+  id          String                 @id @default(cuid())
+  tenantId    String                 @map("tenant_id")
+  nama        String
+  lembaga     String
+  tahunSiklus Int                    @map("tahun_siklus")
+  status      AccreditationSetStatus @default(DRAF)
+  createdAt   DateTime               @default(now()) @map("created_at")
+  updatedAt   DateTime               @updatedAt @map("updated_at")
+
+  tenant         Tenant            @relation(fields: [tenantId], references: [id])
+  criteria       RubricCriterion[]
+  documents      ReferenceGuide[]
+  documentsUsing LedDocument[]
+
+  @@index([tenantId])
+  @@map("accreditation_sets")
+}
+
+enum AccreditationSetStatus {
+  DRAF
+  SIAP
+}
+
 // ─────────────────── Kelompok: Skoring (Simulasi Penilaian) ───────────────────
 
 /// docs/database.md §10 — skor_maksimal sengaja TIDAK dibuat, diturunkan dari RubricLevel
 model RubricCriterion {
-  id            String @id @default(cuid())
-  criterionCode String @map("criterion_code")
-  description   String @db.Text
+  id                 String          @id @default(cuid())
+  accreditationSetId String          @map("accreditation_set_id")
+  indicatorNo        Int             @map("indicator_no")
+  criterionCode      String          @map("criterion_code")
+  criterionGroup     String          @map("criterion_group")
+  description        String          @db.Text
+  scoreType          RubricScoreType @map("score_type")
+  lkpsTableRefs      String[]        @map("lkps_table_refs")
+  /// Non-null hanya untuk scoreType KUANTITATIF/KOMPOSIT -- lihat
+  /// apps/ai/ingestion/matrix_parser.py::IndicatorRubric untuk makna aslinya.
+  formula            String?         @db.Text
+  subScoreFormula    String?         @map("sub_score_formula") @db.Text
 
+  accreditationSet  AccreditationSet         @relation(fields: [accreditationSetId], references: [id])
   levels            RubricLevel[]
   criterionChapters RubricCriterionChapter[]
   scoreResults      CriterionScoreResult[]
 
+  @@unique([accreditationSetId, indicatorNo])
   @@map("rubric_criteria")
+}
+
+enum RubricScoreType {
+  KUALITATIF
+  KUANTITATIF
+  KOMPOSIT
 }
 
 /// docs/database.md §10a
@@ -519,15 +573,19 @@ model CriterionScoreResult {
 
 /// docs/database.md §13
 model ReferenceGuide {
-  id        String      @id @default(cuid())
-  type      TipePanduan
-  title     String
-  fileUrl   String      @map("file_url")
-  fileType  String      @map("file_type")
-  createdAt DateTime    @default(now()) @map("created_at")
+  id                 String      @id @default(cuid())
+  type               TipePanduan
+  title              String
+  fileUrl            String      @map("file_url")
+  fileType           String      @map("file_type")
+  /// null = panduan lama, sebelum Set Akreditasi ada (masih global, bukan per-set).
+  accreditationSetId String?     @map("accreditation_set_id")
+  createdAt          DateTime    @default(now()) @map("created_at")
 
-  details GuideDetail[]
+  accreditationSet AccreditationSet? @relation(fields: [accreditationSetId], references: [id])
+  details          GuideDetail[]
 
+  @@index([accreditationSetId])
   @@map("guide_references")
 }
 

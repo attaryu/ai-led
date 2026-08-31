@@ -120,6 +120,10 @@ class IndicatorListItem(BaseModel):
     score_type: str
     score_criteria: dict[int, str]
     lkps_table_ref: list[str]
+    # Needed to seed RubricCriterion.formula/subScoreFormula (packages/db) for
+    # kuantitatif/komposit scoring -- see IndicatorRubric in matrix_parser.py.
+    formula: str | None = None
+    sub_score_formula: str | None = None
 
 
 class SessionStatusResponse(BaseModel):
@@ -243,6 +247,8 @@ def get_indicators() -> list[IndicatorListItem]:
             score_type=r.score_type,
             score_criteria=r.score_criteria,
             lkps_table_ref=r.lkps_table_ref,
+            formula=r.formula,
+            sub_score_formula=r.sub_score_formula,
         )
         for r in _get_rubrics()
     ]
