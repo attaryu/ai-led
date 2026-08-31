@@ -132,8 +132,14 @@ def get_llm_for_synthesis(model: str) -> OllamaLLM:
 
 
 def get_llm_for_checklist(model: str) -> OllamaLLM:
-    """Checklist: output pendek (4-8 bullet)."""
-    return get_llm(model, temperature=0.2, num_predict=800)
+    """Checklist: output akhir pendek (4-8 bullet), TAPI num_predict TIDAK
+    BOLEH kecil (800 TERBUKTI memotong output di tengah kalimat pada kasus
+    nyata -- deepseek-r1 kadang tetap 'berpikir' meski diminta skip via
+    disable_thinking_prompt, menghabiskan sebagian token budget sebelum
+    sempat menulis semua item checklist). 2500 memberi ruang cukup, sama
+    pola dgn get_llm_for_select_pedoman (300->1500) yg mengalami masalah
+    identik."""
+    return get_llm(model, temperature=0.2, num_predict=2500)
 
 
 def get_llm_for_judge(model: str) -> OllamaLLM:
@@ -162,11 +168,47 @@ def get_llm_for_route_and_plan(model: str) -> OllamaLLM:
     return get_llm(model, temperature=0.2, num_predict=700)
 
 
+def get_llm_for_select_pedoman(model: str) -> OllamaLLM:
+    """Pilih kandidat pedoman (dari k=5 search_pedoman) yg BENAR2 relevan
+    ke section, via id -- pengganti threshold distance numerik yg terbukti
+    rapuh thd kandidat berdekatan. Output akhir kecil (list id), TAPI
+    num_predict TIDAK BOLEH kecil (300 TERBUKTI kosong total di kasus
+    nyata -- deepseek-r1 kadang tetap 'berpikir' meski diminta skip via
+    disable_thinking_prompt, menghabiskan token budget sebelum sempat
+    menjawab). 1500 memberi ruang cukup utk kasus reasoning yg tidak
+    patuh instruksi no-thinking."""
+    return get_llm(model, temperature=0.1, num_predict=1500)
+
+
 def get_llm_for_assess_and_recommend(model: str) -> OllamaLLM:
     """Gabungan lkps_sufficient + lkps_evidence_query + recommendation_text/
-    items (3 keputusan 1 call) -- num_predict = jumlah kebutuhan
-    lkps_sufficiency(300) + evidence_query(400) + recommendation(800)."""
-    return get_llm(model, temperature=0.2, num_predict=1500)
+    items (3 keputusan 1 call). num_predict dinaikkan signifikan drpd
+    perkiraan awal (1500) -- katalog dokumen sekarang closed-set ~94 entri,
+    dan section yg butuh banyak bukti LKPS bisa memilih >10 item sekaligus
+    (tiap item: no+label panjang disalin ulang+reason ~15-20 kata). 1500
+    token TERBUKTI terpotong di tengah JSON pada kasus nyata (>2 item LKPS
+    terpilih) -- parse gagal total, bukan sekadar item hilang.
+
+    temperature=0.3 -- SEMPAT diturunkan ke 0.0 utk coba menstabilkan
+    variasi jumlah item (pernah terlihat 2 vs 8 dokumen utk PEDOMAN yg
+    sama), TAPI 0.0 (greedy decoding) TERBUKTI mengunci ke jawaban PALING
+    KONSERVATIF/SEDIKIT (selalu 2 item), bukan yg paling LENGKAP. Dinaikkan
+    bertahap 0.2 -> 0.3 (user konfirmasi hasil membaik) -> 0.4/0.35 (TERBUKTI
+    memperburuk lagi -- kasus nyata: dokumen L1 "Permendikbud tentang
+    Statuta Institusi" yg SEHARUSNYA SELALU terpilih krn pedoman eksplisit
+    sebut "peraturan perundang-undangan" jadi kadang HILANG antar-run utk
+    PEDOMAN yg sama persis -- LANGKAH 3 di prompt tidak konsisten
+    dieksekusi pd temperature lebih tinggi). Dikembalikan ke 0.3, titik yg
+    sudah dikonfirmasi user lebih baik drpd 0.2 maupun 0.4."""
+    return get_llm(model, temperature=0.4, num_predict=6000)
+
+
+def get_llm_for_suggest_custom_document(model: str) -> OllamaLLM:
+    """Fallback usulan dokumen DI LUAR katalog -- HANYA dipanggil kalau
+    tahap assess_and_recommend (katalog closed-set) hasilnya benar-benar
+    kosong. Output kecil (1-3 item, label+reason singkat), num_predict
+    cukup kecil spt checklist."""
+    return get_llm(model, temperature=0.2, num_predict=800)
 
 
 # ──────────────────────────────────────────────────────────────────────

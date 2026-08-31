@@ -91,6 +91,17 @@ def _build_sections() -> List[Dict]:
         # supaya query embedding ke Chroma kaya konteks dan retrieval
         # mengembalikan chunk yang relevan — kalau cuma "iii Proses tinjauan
         # rutin RPS" saja embeddingnya terlalu pendek/ambigu.
+        #
+        # SEMPAT dicoba dibalik (diri sendiri dulu, breadcrumb belakang) utk
+        # perbaiki kasus top-1 search_pedoman yg salah section -- terbukti
+        # membantu di 1 kasus TAPI tidak menyelesaikan akar masalahnya:
+        # breadcrumb section itu sendiri (mis. BAB-II.C.C1.153) TERNYATA
+        # melompati level induk langsung (.15, yg py title lengkap "Strategi
+        # perbaikan dan pengembangan (Menggunakan Analisis SWOT)"), jadi
+        # query kehilangan kata kunci pembeda terlepas dari urutan. Fix
+        # urutan DIKEMBALIKAN ke lama -- perbaikan sebenarnya ada di sisi
+        # search_pedoman (k=5 + sorting/filter, lihat generator.py
+        # _retrieve_rules), bukan di sini.
         chain_for_query = breadcrumb + [{"marker": marker, "title": title}]
         retrieval_query = "\n".join(
             f"{c['marker']} {c['title']}".strip() for c in chain_for_query if c['marker']

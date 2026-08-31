@@ -65,9 +65,9 @@ export default function UploadZone() {
         kind: "success",
         title: "Upload berhasil",
         message: `${created.length} file masuk antrean pemrosesan.`,
-        duration: 5000,
+        duration: 12000,
       });
-      setTimeout(() => removeToast(tid), 5000);
+      setTimeout(() => removeToast(tid), 12000);
     } catch (e) {
       updateToast(tid, {
         kind: "error",

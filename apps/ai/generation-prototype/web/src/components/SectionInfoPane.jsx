@@ -26,7 +26,7 @@ function formatDate(iso) {
 const TABS = [
   { id: "recommendation", label: "Dokumen Pendukung", hint: "Rekomendasi dokumen sebelum narasi ditulis" },
   { id: "draft",          label: "Draft",             hint: "Histori versi draft (klik utk pilih)" },
-  { id: "query",          label: "Query",             hint: "Checklist query yg dipakai RAG saat generate" },
+  { id: "query",          label: "Pengambilan Info",  hint: "Pengambilan informasi dari pedoman yang dilampirkan" },
   { id: "pedoman",        label: "Pedoman",            hint: "RAG 1 — aturan penulisan" },
   { id: "lkps",           label: "Referensi",          hint: "RAG 2 — LKPS (kuantitatif) + Evidence (bukti dukung)" },
   { id: "judge",          label: "Kualitas AI",        hint: "Evaluasi RAGAS" },
@@ -224,7 +224,7 @@ export default function SectionInfoPane() {
         {tab === "query" && (
           <div className="p-6">
             <p className="text-sm text-slate-500 mb-3">
-              Checklist query yang dipakai LLM untuk RAG LKPS + Evidence saat generate narasi (draft aktif).
+              Daftar informasi yang diambil dari pedoman yang dilampirkan, dipakai untuk mencari data LKPS + Evidence saat generate narasi (draft aktif).
             </p>
             {draft?.checklist?.length > 0 ? (
               <div className="space-y-2">
@@ -235,7 +235,7 @@ export default function SectionInfoPane() {
                 ))}
               </div>
             ) : (
-              <EmptyState title="Belum ada query" message="Muncul setelah narasi ditulis." />
+              <EmptyState title="Belum ada informasi yang diambil" message="Muncul setelah narasi ditulis." />
             )}
           </div>
         )}
@@ -431,21 +431,6 @@ function JudgeTab({ draft }) {
         })}
       </div>
 
-      {jr.missing_facts?.length > 0 && (
-        <Alert tone="rose" title="Missing facts (gap di retrieval)">
-          <ul className="list-disc pl-5 mt-1 space-y-0.5">
-            {jr.missing_facts.map((m, i) => <li key={i}>{m}</li>)}
-          </ul>
-        </Alert>
-      )}
-
-      {jr.hallucinated?.length > 0 && (
-        <Alert tone="amber" title="Hallucinated (klaim tanpa basis)">
-          <ul className="list-disc pl-5 mt-1 space-y-0.5">
-            {jr.hallucinated.map((m, i) => <li key={i}>{m}</li>)}
-          </ul>
-        </Alert>
-      )}
 
       {jr.error && (
         <Alert tone="rose" title="Judge error">

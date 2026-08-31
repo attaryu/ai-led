@@ -24,17 +24,18 @@ from .db import conn
 from .context import get_system_user_id, get_urutan_bab
 from .outline import get_section
 from .retrieval import (search_rubric, search_pedoman,
-                          search_lkps, search_evidence,
-                          search_document_registry)
+                          search_lkps, search_evidence)
 from .prompts import (build_generate_prompt, build_checklist_prompt,
                        build_judge_prompt, SYSTEM_GENERATE, SYSTEM_CHECKLIST,
                        SYSTEM_JUDGE, _parse_llm_json,
-                       build_route_and_plan_prompt,
-                       build_assess_and_recommend_prompt)
+                       build_assess_and_recommend_prompt, parse_items,
+                       build_suggest_custom_document_prompt,
+                       build_select_pedoman_prompt)
 from .ollama_client import (get_llm_for_synthesis, get_llm_for_checklist,
                               get_llm_for_judge, disable_thinking_prompt,
-                              get_llm_for_route_and_plan,
-                              get_llm_for_assess_and_recommend)
+                              get_llm_for_assess_and_recommend,
+                              get_llm_for_suggest_custom_document,
+                              get_llm_for_select_pedoman)
 from .prose import text_to_doc, doc_to_text, is_empty_doc, EMPTY_DOC
 
 JUDGE_MODEL = os.environ.get("JUDGE_MODEL", "gpt-oss:20b")
@@ -84,10 +85,68 @@ def _route_section(inp: Dict) -> Dict:
     return {**inp,
             "section":         sec,
             "title":           retrieval_query,
-            "retrieval_query": retrieval_query}
+            "retrieval_query": retrieval_query,
+            "institution_context": _get_institution_context(inp.get("dokumen_id"))}
+
+
+def _get_institution_context(dokumen_id: str) -> Dict:
+    """Nama universitas + program studi pemilik dokumen_id ini -- dipakai
+    di prompt Tahap 5 Synthesis supaya narasi tidak generik (tahu ini LED
+    untuk prodi/universitas apa)."""
+    if not dokumen_id:
+        return {}
+    with conn() as con:
+        row = con.execute(
+            """SELECT ps.nama AS nama_prodi, t.nama_universitas
+               FROM dokumen_led dl
+               JOIN program_studi ps ON ps.id = dl.program_studi_id
+               JOIN tenant t ON t.id = ps.tenant_id
+               WHERE dl.id = %s""",
+            (dokumen_id,),
+        ).fetchone()
+    if not row:
+        return {}
+    return {"nama_prodi": row["nama_prodi"], "nama_universitas": row["nama_universitas"]}
 
 
 RUBRIC_MAX_DISTANCE = 0.40
+
+
+def _select_pedoman(section_title: str, model: str, candidates: List[Dict]) -> List[Dict]:
+    """Pilih kandidat pedoman (dari search_pedoman k=5) yg BENAR2 relevan
+    ke section, via LLM + id -- pengganti threshold distance numerik yg
+    TERBUKTI rapuh: kandidat SALAH section kadang distance-nya lebih dekat
+    drpd kandidat BENAR (selisih tipis, mis. 0.10 vs 0.12) krn breadcrumb
+    umum yg sama mendominasi embedding. LLM diminta pilih via id (pola sama
+    sprt DOCUMENT_CATALOG/parse_items) supaya tidak menebak isi bebas.
+
+    Kalau LLM invoke/parse gagal, FALLBACK ke top-1 candidates (perilaku
+    lama) -- jangan sampai section gagal total krn tahap seleksi ini error."""
+    if len(candidates) <= 1:
+        return candidates
+    prompt_text = build_select_pedoman_prompt(section_title, candidates)
+    prompt_text = disable_thinking_prompt(prompt_text, model)
+    llm = get_llm_for_select_pedoman(model)
+    try:
+        raw = llm.invoke(prompt_text)
+        raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+        data = _parse_llm_json(raw)
+        if data.get("parse_error"):
+            raise ValueError("parse_error")
+        selected_ids = set(data.get("selected_ids") or [])
+    except Exception as e:
+        print(f"[pedoman] Seleksi LLM gagal (model={model}): {type(e).__name__}: {e} "
+              f"-- fallback ke top-1 candidates", flush=True)
+        return candidates[:1]
+
+    selected = [c for c in candidates if c["id"] in selected_ids]
+    if not selected:
+        # LLM sengaja bilang tidak ada yg relevan (array kosong) ATAU id yg
+        # disebut tidak match apapun -- tetap fallback ke top-1 drpd pedoman
+        # kosong total (lebih aman utk checklist/synthesis di tahap
+        # berikutnya drpd tidak ada konteks pedoman sama sekali).
+        return candidates[:1]
+    return selected
 
 
 def _retrieve_rules(inp: Dict) -> Dict:
@@ -98,7 +157,8 @@ def _retrieve_rules(inp: Dict) -> Dict:
     narasi, judge, rekomendasi dokumen, bab_referensi_chunk semua reuse stage
     ini), jadi cukup dimatikan di sini utk mempengaruhi semuanya sekaligus."""
     query = inp["retrieval_query"]
-    pedoman = search_pedoman(query, k=1)
+    pedoman_candidates = search_pedoman(query, k=5)
+    pedoman = _select_pedoman(inp["title"], inp["model"], pedoman_candidates)
 
     if not RUBRIK_WRITING:
         return {**inp, "pedoman": pedoman, "rubric": []}
@@ -124,9 +184,30 @@ def _retrieve_rules(inp: Dict) -> Dict:
     return {**inp, "pedoman": pedoman, "rubric": rubric}
 
 
+def _selected_document_names(selected_bukti_dukung_ids: List[str]) -> List[str]:
+    """Nama file (bukti_dukung.nama_dokumen) dari ID yg dikonfirmasi user di
+    tahap rekomendasi -- dipakai _build_checklist supaya query yg dihasilkan
+    terarah ke isi file yg MEMANG akan dipakai (bukan menebak generik dari
+    pedoman/rubric saja), konsisten dgn _retrieve_facts yg sudah men-scope
+    search_evidence ke id yg sama."""
+    if not selected_bukti_dukung_ids:
+        return []
+    with conn() as con:
+        rows = con.execute(
+            "SELECT nama_dokumen FROM bukti_dukung WHERE id = ANY(%s)",
+            (selected_bukti_dukung_ids,),
+        ).fetchall()
+    return [r["nama_dokumen"] for r in rows]
+
+
 def _build_checklist(inp: Dict) -> Dict:
     """Tahap 3: LLM buat daftar pertanyaan."""
-    prompt_text = build_checklist_prompt(inp["title"], inp["pedoman"], inp["rubric"])
+    prompt_text = build_checklist_prompt(
+        # inp["title"], inp["pedoman"], inp["rubric"],
+        inp["title"], inp["pedoman"],
+        institution_context=inp.get("institution_context"),
+        selected_document_names=_selected_document_names(inp.get("selected_bukti_dukung_ids")),
+    )
     prompt_text = disable_thinking_prompt(prompt_text, inp["model"])
     llm = get_llm_for_checklist(inp["model"])
 
@@ -240,6 +321,7 @@ def _synthesize(inp: Dict) -> Dict:
     prompt_text = build_generate_prompt(
         inp["title"], inp["rubric"], inp["facts"], inp["pedoman"],
         checklist=inp["checklist"],
+        institution_context=inp.get("institution_context"),
     )
     prompt_text = disable_thinking_prompt(prompt_text, inp["model"])
     llm = get_llm_for_synthesis(inp["model"])
@@ -566,101 +648,28 @@ def _pedoman_mentions_lkps(pedoman: List[Dict]) -> bool:
 
 
 def _route_and_plan(inp: Dict) -> Dict:
-    """R3+R4 gabungan: needs_lkps + document_query dalam 1 LLM call --
-    keduanya independen (input sama: pedoman+rubric section ini), jadi aman
-    digabung tanpa mengubah shape output yg dikonsumsi stage berikutnya
-    (_retrieve_lkps, _search_document_registry_candidates).
-
-    needs_lkps: GATE KERAS via regex _pedoman_mentions_lkps, BUKAN sekadar
-    hint ke LLM. Pedoman LAM Teknik SELALU eksplisit menyebut '(Tabel X.Y
-    LKPS)' kalau subbab itu memang butuh data LKPS, dan TIDAK PERNAH
-    menyebutnya kalau tidak -- jadi regex ini definitif utk KEDUA arah:
+    """R3: needs_lkps SAJA -- GATE via regex _pedoman_mentions_lkps, tanpa
+    LLM call sama sekali. Pedoman LAM Teknik SELALU eksplisit menyebut
+    '(Tabel X.Y LKPS)' kalau subbab itu memang butuh data LKPS, dan TIDAK
+    PERNAH menyebutnya kalau tidak -- regex ini definitif utk KEDUA arah:
     ketemu -> needs_lkps=True PASTI, tidak ketemu -> needs_lkps=False PASTI.
-    LLM TIDAK dipanggil sama sekali utk keputusan ini (sebelumnya LLM bisa
-    override False jadi True krn menebak dari konteks umum "tim penyusun"/
-    "data institusi" dsb -- padahal pedoman tidak minta LKPS sama sekali,
-    jadi retrieval LKPS ikut jalan & tampil di referensi padahal tidak
-    relevan). LLM tetap dipanggil, tapi HANYA utk document_query."""
+
+    document_query (dulu dihasilkan di sini utk search_document_registry)
+    DIHAPUS -- tahap rekomendasi dokumen tidak lagi pakai RAG folder
+    kandidat, LLM di _assess_and_recommend langsung pilih dari katalog
+    dokumen statis (DOCUMENT_CATALOG di prompts.py)."""
     needs_lkps = _pedoman_mentions_lkps(inp["pedoman"])
-
-    prompt_text = build_route_and_plan_prompt(inp["title"], inp["pedoman"], inp["rubric"])
-    prompt_text = disable_thinking_prompt(prompt_text, inp["model"])
-    llm = get_llm_for_route_and_plan(inp["model"])
-    try:
-        raw = llm.invoke(prompt_text)
-    except Exception:
-        return {**inp, "needs_lkps": needs_lkps, "document_query": [inp["title"]]}
-
-    raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
-    data = _parse_llm_json(raw)
-
-    queries = data.get("document_query") or []
-    return {**inp, "needs_lkps": needs_lkps, "document_query": queries or [inp["title"]]}
+    return {**inp, "needs_lkps": needs_lkps}
 
 
 def _retrieve_lkps(inp: Dict) -> Dict:
-    """R5 (RAG only): kalau needs_lkps, search_lkps. Cek kecukupan +
-    lkps_evidence_query DIPINDAH ke _assess_and_recommend (gabung dgn R7)
-    krn keduanya LLM call yg bisa jalan 1x sekaligus dgn candidate_folders."""
+    """R4: kalau needs_lkps, search_lkps (RAG tetap dipakai DI SINI --
+    hanya document_registry/candidate_folders yg dihapus, LKPS numerik
+    tetap perlu retrieval nyata)."""
     if not inp["needs_lkps"]:
         return {**inp, "lkps_results": []}
     lkps_results = search_lkps(inp["retrieval_query"], k=5)
     return {**inp, "lkps_results": lkps_results}
-
-
-REGISTRY_MAX_DISTANCE = 0.50
-
-
-def _search_registry_by_queries(candidates: List[Dict], seen: set,
-                                queries: List[str], k: int, kind: str) -> None:
-    """Helper: search_document_registry per query, append ke candidates (in-place)
-    sambil dedup via `seen`. Folder yg distance-nya > REGISTRY_MAX_DISTANCE
-    DIBUANG -- index document_registry kecil (~280 folder) & isinya nama
-    file mentah (bukan deskripsi), jadi begitu kandidat #1 relevan (~0.43-0.46)
-    habis, sisanya melompat jauh (~0.52+, folder yg tidak nyambung sama
-    sekali) tapi tetap "dipaksa" ikut sbg top-k -- LLM di _assess_and_recommend
-    lalu menyimpulkan card generik/salah dari kandidat yg sebenarnya noise."""
-    for q in queries or []:
-        for h in search_document_registry(q, k=k):
-            if h["id"] in seen:
-                continue
-            if h.get("distance") is not None and h["distance"] > REGISTRY_MAX_DISTANCE:
-                continue
-            seen.add(h["id"])
-            h["_query"] = q
-            h["_query_kind"] = kind
-            candidates.append(h)
-
-
-def _search_document_registry_candidates(inp: Dict) -> Dict:
-    """R6: search document_registry pakai document_query SAJA.
-
-    NOTE: sebelumnya juga search pakai lkps_evidence_query di sini -- tapi
-    lkps_evidence_query sekarang BARU dihasilkan di _assess_and_recommend
-    (digabung dgn R7, lihat catatan di sana), yg jalan SETELAH stage ini.
-    Top-up kandidat dari lkps_evidence_query dipindah ke
-    _topup_registry_from_evidence_query (setelah _assess_and_recommend)."""
-    seen, candidates = set(), []
-    _search_registry_by_queries(candidates, seen, inp["document_query"] or [inp["title"]],
-                                 k=5, kind="document_query")
-    return {**inp, "candidate_folders": candidates, "_registry_seen_ids": seen}
-
-
-def _topup_registry_from_evidence_query(inp: Dict) -> Dict:
-    """R7b: kalau _assess_and_recommend menemukan lkps_evidence_query baru
-    (LKPS ternyata tidak cukup), cari kandidat folder TAMBAHAN dari query
-    itu. Trade-off dari penggabungan R5-LLM+R7: query ini kini muncul
-    SETELAH candidate_folders sudah disusun (bukan sebelum spt alur lama),
-    jadi butuh 1 retrieval susulan -- HANYA jalan kalau evidence_query ada
-    isinya (kasus umum: array kosong, jadi skip tanpa retrieval ekstra)."""
-    evidence_query = inp.get("lkps_evidence_query") or []
-    if not evidence_query:
-        return inp
-    candidates = list(inp["candidate_folders"])
-    seen = set(inp.get("_registry_seen_ids") or [c["id"] for c in candidates])
-    _search_registry_by_queries(candidates, seen, evidence_query,
-                                 k=3, kind="lkps_evidence_query")
-    return {**inp, "candidate_folders": candidates}
 
 
 FALLBACK_RECOMMENDATION_TEXT = (
@@ -669,31 +678,120 @@ FALLBACK_RECOMMENDATION_TEXT = (
 )
 
 
-def _assess_and_recommend(inp: Dict) -> Dict:
-    """R5-LLM + R7 gabungan: 1 LLM call yg terima SEMUA context sekaligus
-    (lkps_results dari _retrieve_lkps + candidate_folders dari
-    _search_document_registry_candidates), lalu output 3 keputusan:
-    lkps_sufficient, lkps_evidence_query, recommendation_text/items."""
-    prompt_text = build_assess_and_recommend_prompt(
-        inp["title"], inp["candidate_folders"], inp["document_query"],
-        lkps_results=inp.get("lkps_results"), needs_lkps=inp["needs_lkps"],
+def _suggest_custom_document(inp: Dict) -> List[Dict]:
+    """Fallback TERPISAH dari _assess_and_recommend -- HANYA dipanggil kalau
+    tahap katalog closed-set sudah dijalankan SUKSES (bukan error/parse
+    gagal) tapi hasilnya BENAR-BENAR kosong (LLM sudah menelusuri katalog,
+    tidak menemukan apapun). Prompt terpisah (build_suggest_custom_document_prompt,
+    prompts.py) supaya aturan closed-set di prompt utama tidak pernah
+    melunak. Kegagalan di sini (invoke/parse error) diperlakukan sbg
+    "tidak ada usulan" -- BUKAN dieskalasi jadi FALLBACK_RECOMMENDATION_TEXT,
+    krn tahap katalog utama sudah sukses valid (items=[] itu sendiri jawaban
+    sah kalau usulan mandiri juga gagal/kosong).
+
+    Pakai inp["model"] (model pilihan user, deepseek-r1/qwen3.5) -- SEMPAT
+    dicoba RECOMMEND_MODEL (gpt-oss:20b) supaya beda dari model reasoning yg
+    tidak patuh, TAPI gpt-oss ternyata punya masalah SENDIRI yg lebih parah
+    utk tugas ini: dia menomori ulang item pilihannya sendiri dari 1 (BUKAN
+    memakai nomor asli katalog), sehingga hampir SEMUA item dibuang
+    parse_items() krn no/label tidak sepakat -- lebih buruk drpd deepseek-r1
+    yg biasanya salah di sebagian kecil item saja. Dikembalikan ke model
+    user."""
+    prompt_text = build_suggest_custom_document_prompt(
+        inp["title"], pedoman=inp["pedoman"], rubric=inp["rubric"],
     )
     prompt_text = disable_thinking_prompt(prompt_text, inp["model"])
-    llm = get_llm_for_assess_and_recommend(inp["model"])
-    raw = None
+    llm = get_llm_for_suggest_custom_document(inp["model"])
     try:
         raw = llm.invoke(prompt_text)
         raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
         data = _parse_llm_json(raw)
     except Exception as e:
-        print(f"[recommend] LLM invoke gagal (model={inp['model']}): {type(e).__name__}: {e}", flush=True)
-        data = {"recommendation_text": f"Gagal menyusun rekomendasi: {e}", "items": []}
-
+        print(f"[recommend] Fallback usulan custom gagal (model={inp['model']}): "
+              f"{type(e).__name__}: {e}", flush=True)
+        return []
     if data.get("parse_error"):
-        print(f"[recommend] Gagal parse JSON dari LLM (model={inp['model']}). "
-              f"Raw output (500 char pertama): {(raw or '')[:500]!r}", flush=True)
+        return []
+    raw_items = data.get("items") or []
+    items = [{"label": (it.get("label") or "").strip(), "reason": it.get("reason", "")}
+              for it in raw_items if isinstance(it, dict) and (it.get("label") or "").strip()]
+    if items:
+        print(f"[recommend] {len(items)} dokumen diusulkan DI LUAR katalog "
+              f"(model={inp['model']}, section={inp.get('title')})", flush=True)
+    return items
 
-    items = data.get("items") or []
+
+def _assess_and_recommend(inp: Dict) -> Dict:
+    """R5: 1 LLM call yg terima lkps_results (dari _retrieve_lkps) + katalog
+    dokumen statis (DOCUMENT_CATALOG, prompts.py -- BUKAN lagi hasil RAG
+    document_registry), lalu output 3 keputusan: lkps_sufficient,
+    lkps_evidence_query, recommendation_text/items. LLM memilih dari katalog
+    bernomor (field 'no'+'label' per item) -- parse_items() (prompts.py)
+    memvalidasi no & label SEPAKAT dgn entri katalog yg sama sebelum
+    diterima; item yg tidak sepakat (LLM parafrase/salah nomor) DIBUANG,
+    bukan diloloskan mentah -- inilah yg bikin hasil sebelumnya "tidak
+    stabil" (exact-match string manual gagal senyap saat LLM mengubah
+    kapitalisasi/memangkas suffix label).
+
+    Pakai inp["model"] (model pilihan user, deepseek-r1/qwen3.5) -- SEMPAT
+    dicoba RECOMMEND_MODEL (gpt-oss:20b, non-reasoning, sama pola dgn
+    JUDGE_MODEL) krn deepseek-r1 terbukti kadang tidak patuh instruksi di
+    tugas ini (output narasi bebas Bahasa Inggris, salah asosiasi topik).
+    TAPI gpt-oss ternyata punya masalah SENDIRI yg lebih parah: dia
+    menomori ulang item pilihannya sendiri dari 1 (BUKAN memakai nomor asli
+    katalog yg dikirim), sehingga HAMPIR SEMUA item dibuang parse_items()
+    krn no/label tidak sepakat -- 5/5, 5/5, 6/7, 3/5 item dibuang di
+    berbagai kasus nyata, jauh lebih buruk drpd deepseek-r1 yg biasanya cuma
+    salah di sebagian kecil item. Dikembalikan ke model user. Pemilihan
+    PEDOMAN (_select_pedoman) TETAP LLM call TERPISAH dari tahap ini
+    (arsitektur 2-call dipertahankan), keduanya sama2 pakai model user."""
+    prompt_text = build_assess_and_recommend_prompt(
+        inp["title"], pedoman=inp["pedoman"], rubric=inp["rubric"],
+        lkps_results=inp.get("lkps_results"), needs_lkps=inp["needs_lkps"],
+    )
+    prompt_text = disable_thinking_prompt(prompt_text, inp["model"])
+    llm = get_llm_for_assess_and_recommend(inp["model"])
+    # Retry sampai 3x total -- diagnosa nyata (diagnose_ollama.py) menunjukkan
+    # deepseek-r1:32b KADANG mengabaikan instruksi "output JSON saja" dan
+    # menjawab narasi bebas Bahasa Inggris. Ini BUKAN soal token budget/
+    # konteks (prompt jauh di bawah batas, model berhenti wajar bukan
+    # kehabisan num_predict) -- murni ketidakpatuhan format yg tidak
+    # terkait parameter sampling apapun. Retry MURNI utk kasus JSON gagal
+    # diparse -- exception invoke (network/timeout) TIDAK di-retry di sini
+    # (biarkan gagal cepat, jangan perpanjang request yg sudah bermasalah
+    # di level koneksi).
+    raw, data = None, {}
+    for attempt in range(3):
+        try:
+            raw = llm.invoke(prompt_text)
+            raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+            data = _parse_llm_json(raw)
+        except Exception as e:
+            print(f"[recommend] LLM invoke gagal (model={inp['model']}): {type(e).__name__}: {e}", flush=True)
+            data = {"recommendation_text": f"Gagal menyusun rekomendasi: {e}", "items": []}
+            break
+        if not data.get("parse_error"):
+            break
+        print(f"[recommend] Gagal parse JSON dari LLM (model={inp['model']}, "
+              f"percobaan {attempt + 1}/3). Raw output (300 char pertama): "
+              f"{(raw or '')[:300]!r}", flush=True)
+
+    raw_items = data.get("items") or []
+    accepted, rejected = parse_items(raw_items)
+    if rejected:
+        print(f"[recommend] {len(rejected)}/{len(raw_items)} item dibuang "
+              f"(no/label tidak sepakat dgn katalog, model={inp['model']}): "
+              f"{rejected[:3]}", flush=True)
+    items = [{"label": it["label"], "reason": it.get("reason", "")} for it in accepted]
+
+    # Fallback usulan DI LUAR katalog -- HANYA kalau tahap katalog SUKSES
+    # (bukan invoke/parse error) DAN LLM sendiri sudah simpulkan 0 item dari
+    # awal (raw_items kosong, BUKAN "ada item tapi semua di-reject validasi"
+    # -- itu kasus beda, kegagalan format bukan "benar-benar tidak ada").
+    raw_had_success = raw is not None and not data.get("parse_error")
+    if raw_had_success and not raw_items:
+        items = _suggest_custom_document(inp)
+
     text = data.get("recommendation_text") or ""
     if data.get("parse_error") or (not text and not items):
         text = FALLBACK_RECOMMENDATION_TEXT
@@ -788,11 +886,15 @@ def _save_recommendation(inp: Dict) -> Dict:
                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'recommended')
                RETURNING id""",
             (dokumen_id, urutan_bab, model, draft_id,
-             json.dumps(inp["document_query"], ensure_ascii=False),
+             # document_query/candidate_folders: kolom lama dipertahankan
+             # (bukan di-drop) tapi tahap ini tidak lagi hasilkan RAG folder
+             # kandidat -- LLM assess_and_recommend langsung pilih dari
+             # DOCUMENT_CATALOG statis, jadi kedua kolom ini selalu [].
+             json.dumps([], ensure_ascii=False),
              inp["needs_lkps"],
              inp.get("lkps_sufficient"),
              json.dumps(inp.get("lkps_evidence_query"), ensure_ascii=False) if inp.get("lkps_evidence_query") is not None else None,
-             json.dumps(inp["candidate_folders"], ensure_ascii=False),
+             json.dumps([], ensure_ascii=False),
              inp["recommendation_text"],
              json.dumps(pedoman_used, ensure_ascii=False),
              json.dumps(rubric_used, ensure_ascii=False),
@@ -838,14 +940,14 @@ def _save_recommendation(inp: Dict) -> Dict:
         "section_id":           section_id,
         "section_title":        title,
         "model":                model,
-        "document_query":       inp["document_query"],
+        "document_query":       [],
         "lkps_needed":          inp["needs_lkps"],
         "pedoman_used":         pedoman_used,
         "rubric_used":          rubric_used,
         "lkps_used":            lkps_used,
         "lkps_sufficient":      inp.get("lkps_sufficient"),
         "lkps_evidence_query":  inp.get("lkps_evidence_query"),
-        "candidate_folders":    inp["candidate_folders"],
+        "candidate_folders":    [],
         "recommendation_text":  inp["recommendation_text"],
         "recommendation_items": inp.get("recommendation_items", []),
         "selected_bukti_dukung_ids": [],
@@ -858,10 +960,8 @@ recommend_chain = (
     | RunnableLambda(_retrieve_rules, name="r02_retrieve_rules")
     | RunnableLambda(_route_and_plan, name="r03_route_and_plan")
     | RunnableLambda(_retrieve_lkps,  name="r04_retrieve_lkps")
-    | RunnableLambda(_search_document_registry_candidates, name="r05_search_registry")
-    | RunnableLambda(_assess_and_recommend, name="r06_assess_and_recommend")
-    | RunnableLambda(_topup_registry_from_evidence_query, name="r06b_topup_registry")
-    | RunnableLambda(_save_recommendation, name="r07_save")
+    | RunnableLambda(_assess_and_recommend, name="r05_assess_and_recommend")
+    | RunnableLambda(_save_recommendation, name="r06_save")
 ).with_config({"run_name": "led_recommend_documents"})
 
 

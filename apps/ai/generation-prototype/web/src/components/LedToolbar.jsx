@@ -96,9 +96,9 @@ export default function LedToolbar() {
         kind: "success",
         title: "Berhasil dihapus",
         message: `${r.drafts_deleted} draft + ${r.chats_deleted} chat dibersihkan.`,
-        duration: 5000,
+        duration: 12000,
       });
-      setTimeout(() => removeToast(tid), 5000);
+      setTimeout(() => removeToast(tid), 12000);
     } catch (e) {
       updateToast(tid, {
         kind: "error",
@@ -142,7 +142,7 @@ export default function LedToolbar() {
           <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
             <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
           </svg>
-          Hapus draft
+          Hapus semua draft
         </Btn>
 
         {/* Right-side status */}

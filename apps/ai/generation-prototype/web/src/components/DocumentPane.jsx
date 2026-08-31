@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../lib/store.js";
 import { api } from "../lib/api.js";
+import { formatDuration, recommendationFailed } from "../lib/format.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import ProseEditor from "./ProseEditor.jsx";
 
@@ -108,16 +109,22 @@ export default function DocumentPane() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dokumenId, activeId, model, selectedDraftId]);
 
-  async function refreshAfterChange({ backToActive = false } = {}) {
+  async function refreshAfterChange({ backToActive = false, draftId: draftIdOverride } = {}) {
     const fresh = await api.getSection(dokumenId, activeId, model);
     setSectionDetail(fresh);
     const freshList = await api.listSections(dokumenId, model);
     setSections(freshList);
     if (backToActive) setSelectedDraftId(null);
     // Re-trigger effect pemuatan versi (selectedDraftId sama nilainya kalau
-    // sudah null, jadi paksa reload manual di sini).
+    // sudah null, jadi paksa reload manual di sini). draftIdOverride dipakai
+    // caller yg BARU SAJA memanggil setSelectedDraftId(x) di baris sebelumnya
+    // -- closure `selectedDraftId` di sini MASIH nilai LAMA (setState React
+    // async, belum re-render), jadi TIDAK BOLEH diandalkan utk kasus itu.
+    // Tanpa override, refreshAfterChange bisa fetch draft yg SALAH (mis.
+    // draft yg baru dihapus) sehingga openVersion.id tidak berubah dan
+    // SectionInfoPane/RecommendationPanel di panel kanan tidak ikut refresh.
     try {
-      let draftId = backToActive ? null : selectedDraftId;
+      let draftId = backToActive ? null : (draftIdOverride !== undefined ? draftIdOverride : selectedDraftId);
       if (!draftId) {
         const r = await api.listDraftVersions(dokumenId, activeId, model);
         draftId = r.active_draft_id;
@@ -182,9 +189,14 @@ export default function DocumentPane() {
     recommendation?.section_id === activeId &&
     recommendation?.bab_draft_id === (openVersion?.id ?? null)
       ? recommendation : null;
-  const recommendationCardCount = activeRecommendation?.recommendation_items?.length || 0;
+  // Kartu kosong (recommendation_items.length === 0) TIDAK SELALU berarti
+  // gagal -- katalog dokumen sekarang closed-set, LLM bisa sah memutuskan
+  // "tidak ada dokumen relevan" utk section murni naratif. Kegagalan
+  // sungguhan ditandai backend via FALLBACK_RECOMMENDATION_TEXT (lihat
+  // recommendationFailed() di lib/format.js).
+  const activeRecFailed = recommendationFailed(activeRecommendation);
   // 'none'       : draft ini blm pernah punya rekomendasi tersimpan sama sekali
-  // 'recommended': ada rekomendasi TAPI card kosong (gagal/tidak lengkap) ATAU valid -- bedakan via recommendationCardCount
+  // 'recommended': ada rekomendasi TAPI gagal (activeRecFailed) ATAU valid (termasuk valid-kosong)
   // 'confirmed'  : rekomendasi sudah dikonfirmasi user (bisa msh 'recommended' scr card kalau backend blm update)
   const recState = !activeRecommendation
     ? "none"
@@ -214,14 +226,14 @@ export default function DocumentPane() {
       // backend -- pilih & muat isinya (kosong, tapi pedoman/rubric sudah
       // terkait) supaya langsung terlihat di panel tengah.
       setSelectedDraftId(result.bab_draft_id);
-      await refreshAfterChange();
+      await refreshAfterChange({ draftId: result.bab_draft_id });
       updateToast(tid, {
         kind: "success",
         title: "Rekomendasi siap",
-        message: "Tinjau dokumen yang disarankan sebelum menulis narasi.",
-        duration: 4000,
+        message: `Tinjau dokumen yang disarankan sebelum menulis narasi. (${formatDuration(result.total_latency_sec)})`,
+        duration: 12000,
       });
-      setTimeout(() => removeToast(tid), 4000);
+      setTimeout(() => removeToast(tid), 12000);
     } catch (e) {
       setRecommendationStatus(activeId, previousStatus);
       updateToast(tid, { kind: "error", title: "Gagal merekomendasikan dokumen", message: e.message, duration: 7000 });
@@ -237,7 +249,7 @@ export default function DocumentPane() {
     try {
       const r = await api.createEmptyDraft(dokumenId, activeId, model);
       setSelectedDraftId(r.id);
-      await refreshAfterChange();
+      await refreshAfterChange({ draftId: r.id });
       pushToast({ kind: "success", title: "Draft baru (kosong) dibuat", message: `Draft ${r.versi} siap direkomendasikan/diisi.` });
     } catch (e) {
       pushToast({ kind: "error", title: "Gagal membuat draft baru", message: e.message });
@@ -295,7 +307,7 @@ export default function DocumentPane() {
     try {
       await api.activateDraftVersion(dokumenId, activeId, openVersion.id);
       setSelectedDraftId(openVersion.id);
-      await refreshAfterChange();
+      await refreshAfterChange({ draftId: openVersion.id });
       pushToast({ kind: "success", title: `Draft ${openVersion.versi} sekarang aktif` });
     } catch (e) {
       pushToast({ kind: "error", title: "Gagal mengaktifkan draft", message: e.message });
@@ -316,7 +328,7 @@ export default function DocumentPane() {
         try {
           const r = await api.deleteDraftVersion(dokumenId, activeId, openVersion.id);
           setSelectedDraftId(r.new_active_id || null);
-          await refreshAfterChange({ backToActive: !r.new_active_id });
+          await refreshAfterChange({ backToActive: !r.new_active_id, draftId: r.new_active_id || null });
           if (!r.new_active_id) {
             // Section kembali ke "belum ada draft sama sekali" -- rekomendasi
             // MILIK draft yg baru dihapus ikut ter-CASCADE di DB (lihat
@@ -366,21 +378,16 @@ export default function DocumentPane() {
                 {recommending ? "Menganalisis…" : "Rekomendasikan Dokumen"}
               </Btn>
             )}
-            {isEmpty && recState === "recommended" && recommendationCardCount > 0 && (
-              <>
-                <span className="text-xs text-slate-500 italic">
-                  Pilih dokumen &amp; klik "Konfirmasi &amp; Tulis Narasi" di tab "Dokumen Pendukung" →
-                </span>
-                <Btn variant="ghost" onClick={handleRecommend} disabled={recommending}
-                     title="Analisis ulang kebutuhan dokumen dari awal">
-                  {recommending ? <Spinner /> : <Refresh />}
-                  {recommending ? "Menganalisis…" : "Rekomendasikan Ulang"}
-                </Btn>
-              </>
+            {isEmpty && recState === "recommended" && !activeRecFailed && (
+              <Btn variant="ghost" onClick={handleRecommend} disabled={recommending}
+                   title="Analisis ulang kebutuhan dokumen dari awal">
+                {recommending ? <Spinner /> : <Refresh />}
+                {recommending ? "Menganalisis…" : "Rekomendasikan Ulang"}
+              </Btn>
             )}
-            {/* Rekomendasi ADA tapi card kosong (gagal parse/tidak lengkap) --
-                satu2nya aksi valid adalah retry. */}
-            {isEmpty && recState === "recommended" && recommendationCardCount === 0 && (
+            {/* Rekomendasi BENAR-BENAR gagal (LLM error/parse gagal, bukan
+                sekadar 0 dokumen relevan) -- satu2nya aksi valid adalah retry. */}
+            {isEmpty && recState === "recommended" && activeRecFailed && (
               <>
                 <span className="text-xs text-rose-500 italic">
                   Rekomendasi sebelumnya tidak lengkap.
@@ -396,16 +403,11 @@ export default function DocumentPane() {
                 Pendukung) -- tidak ada lagi tombol "Tulis Narasi" terpisah
                 di sini, cuma retry rekomendasi kalau perlu. */}
             {isEmpty && recState === "confirmed" && (
-              <>
-                <span className="text-xs text-slate-500 italic">
-                  Klik "Konfirmasi &amp; Tulis Narasi" di tab "Dokumen Pendukung" →
-                </span>
-                <Btn variant="ghost" onClick={handleRecommend} disabled={recommending}
-                     title="Analisis ulang kebutuhan dokumen dari awal">
-                  {recommending ? <Spinner /> : <Refresh />}
-                  {recommending ? "Menganalisis…" : "Rekomendasikan Ulang"}
-                </Btn>
-              </>
+              <Btn variant="ghost" onClick={handleRecommend} disabled={recommending}
+                   title="Analisis ulang kebutuhan dokumen dari awal">
+                {recommending ? <Spinner /> : <Refresh />}
+                {recommending ? "Menganalisis…" : "Rekomendasikan Ulang"}
+              </Btn>
             )}
             {/* Selalu tersedia -- user bisa mulai versi kosong baru kapan
                 saja, lepas dari alur rekomendasi. */}
@@ -440,9 +442,9 @@ export default function DocumentPane() {
                       <Pencil />
                       Edit
                     </Btn>
-                    <Btn variant="success" onClick={handleApprove} disabled={draft.status === "approved"}>
+                    <Btn variant="success" onClick={handleApprove} disabled={draft?.status === "approved"}>
                       <Check />
-                      {draft.status === "approved" ? "Approved" : "Approve"}
+                      {draft?.status === "approved" ? "Approved" : "Approve"}
                     </Btn>
                   </>
                 )}

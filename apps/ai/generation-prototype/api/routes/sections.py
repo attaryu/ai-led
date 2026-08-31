@@ -565,6 +565,8 @@ def recommend(dokumen_id: str, section_id: str, req: RecommendRequest,
     recommend_chain & database.md #9c."""
     _require_dokumen(dokumen_id)
     import traceback
+    import time
+    t0 = time.time()
     try:
         result = recommend_documents(dokumen_id, section_id, req.model, reuse_draft_id=req.draft_id)
     except SectionNotGeneratableError as e:
@@ -576,6 +578,10 @@ def recommend(dokumen_id: str, section_id: str, req: RecommendRequest,
         traceback.print_exc()
         print("=== END ERROR ===\n", flush=True)
         raise HTTPException(500, f"Recommend error: {type(e).__name__}: {e}")
+    # Durasi total request (semua tahap recommend_chain) -- HANYA di response,
+    # tidak disimpan ke DB (sesuai permintaan user, cukup tampil sekali di UI
+    # setelah klik, tidak perlu riwayat).
+    result["total_latency_sec"] = round(time.time() - t0, 1)
     return result
 
 
@@ -640,6 +646,8 @@ def generate(dokumen_id: str, section_id: str, req: GenerateRequest,
     user via /recommend/confirm). Idempotent unless overwrite=true."""
     _require_dokumen(dokumen_id)
     import traceback
+    import time
+    t0 = time.time()
     try:
         result = generate_section(dokumen_id, section_id, req.model,
                                    selected_bukti_dukung_ids=req.selected_bukti_dukung_ids,
@@ -655,6 +663,10 @@ def generate(dokumen_id: str, section_id: str, req: GenerateRequest,
         traceback.print_exc()
         print("=== END ERROR ===\n", flush=True)
         raise HTTPException(500, f"Generate error: {type(e).__name__}: {e}")
+    # Durasi total request (route+rules+checklist+facts+synthesis+judge+save) --
+    # beda dari latency_sec lama yg cuma tahap synthesis. HANYA di response,
+    # tidak disimpan ke DB.
+    result["total_latency_sec"] = round(time.time() - t0, 1)
     return result
 
 

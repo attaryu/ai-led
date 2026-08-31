@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../lib/store.js";
 import { api } from "../lib/api.js";
+import { formatDuration, recommendationFailed } from "../lib/format.js";
 import UploadZone from "./UploadZone.jsx";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 
@@ -72,10 +73,13 @@ export default function RecommendationPanel({ dokumenId, sectionId, recommendati
   }, [recommendation?.recommendation_id, recommendation?.selected_bukti_dukung_ids]);
 
   const recommendationCards = recommendation?.recommendation_items || [];
-  // Card TETAP disimpan server-side setelah confirm (tidak dihapus lagi) --
-  // jadi kosong beneran cuma berarti rekomendasi gagal/tidak lengkap.
-  const recFailed = recommendationCards.length === 0;
-  const recommendationReady = recommendationCards.length > 0;
+  // Katalog dokumen sekarang closed-set (DOCUMENT_CATALOG, prompts.py) --
+  // LLM BOLEH sah memutuskan "tidak ada dokumen relevan" utk section murni
+  // naratif (mis. analisis lingkungan eksternal), items=[] TAPI
+  // recommendation_text tetap berisi penjelasan. Itu BUKAN kegagalan --
+  // lihat recommendationFailed() (lib/format.js) utk penanda gagal yg valid.
+  const recFailed = recommendationFailed(recommendation);
+  const recommendationReady = recommendationCards.length > 0 || (!!recommendation && !recFailed);
   // Draft yg sedang dibuka SUDAH terisi narasi -- tombol jadi "Regenerate",
   // menimpa versi yg SEDANG DIBUKA. Draft kosong (status='EMPTY', termasuk
   // yg baru dibuat via Rekomendasikan Dokumen) TETAP "Konfirmasi & Tulis
@@ -101,13 +105,13 @@ export default function RecommendationPanel({ dokumenId, sectionId, recommendati
       const tid = pushToast({
         kind: "progress",
         title: isRegenerate ? `Regenerate ${sectionId}…` : `Generate ${sectionId}…`,
-        message: "Menjalankan pipeline RAG…",
+        message: "Menyusun narasi dari pedoman dan dokumen pendukung yang dipilih…",
       });
       try {
         // draft_id SELALU dikirim -- Rekomendasikan Dokumen sudah membuat
         // (atau reuse) draft sejak awal, jadi openVersion.id selalu ada di
         // titik ini (baik utk isi pertama kali/EMPTY maupun Regenerate/FILLED).
-        await api.generate(dokumenId, sectionId, model, false, buktiDukungIds, null,
+        const genResult = await api.generate(dokumenId, sectionId, model, false, buktiDukungIds, null,
                             openVersion?.id ?? null);
         const fresh = await api.getSection(dokumenId, sectionId, model);
         setSectionDetail(fresh);
@@ -125,10 +129,10 @@ export default function RecommendationPanel({ dokumenId, sectionId, recommendati
         updateToast(tid, {
           kind: "success",
           title: isRegenerate ? "Regenerate selesai" : "Generate selesai",
-          message: `Section ${sectionId} siap dibaca.`,
-          duration: 4500,
+          message: `Section ${sectionId} siap dibaca. (${formatDuration(genResult?.total_latency_sec)})`,
+          duration: 12000,
         });
-        setTimeout(() => removeToast(tid), 4500);
+        setTimeout(() => removeToast(tid), 12000);
       } catch (e) {
         updateToast(tid, { kind: "error", title: "Generate gagal", message: e.message, duration: 7000 });
         setTimeout(() => removeToast(tid), 7000);
@@ -169,6 +173,11 @@ export default function RecommendationPanel({ dokumenId, sectionId, recommendati
         {recFailed && (
           <p className="text-sm text-rose-500">
             Rekomendasi ini tidak lengkap (kartu kosong). Klik "Rekomendasikan Ulang" di panel tengah untuk mencoba lagi.
+          </p>
+        )}
+        {!recFailed && recommendationCards.length === 0 && recommendation?.recommendation_text && (
+          <p className="text-sm text-slate-500 italic">
+            {recommendation.recommendation_text}
           </p>
         )}
         <div className="space-y-2">

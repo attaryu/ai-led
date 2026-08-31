@@ -73,7 +73,7 @@ export const useStore = create((set, get) => ({
      'progress' toasts have no auto-dismiss until you call updateToast / removeToast. */
   pushToast: (toast) => {
     const id = toast.id || `t_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
-    const t = { id, kind: "info", duration: 4500, ...toast };
+    const t = { id, kind: "info", duration: 12000, ...toast };
     set((s) => ({ toasts: [...s.toasts, t] }));
     if (t.kind !== "progress" && t.duration > 0) {
       setTimeout(() => get().removeToast(id), t.duration);
