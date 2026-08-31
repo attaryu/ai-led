@@ -262,8 +262,26 @@ def _build_checklist_prompt(
     pedoman: list[dict],
     rubric: list[dict],
     institution_context: dict | None = None,
+    selected_document_names: list[str] | None = None,
 ) -> str:
     parts = [_SYSTEM_CHECKLIST, "", f"## SECTION: {judul_bab}", ""]
+    if selected_document_names:
+        # Port of Dimas's 332ab2f: terminology hint only, NOT a scope
+        # narrower — checklist must still be driven by PEDOMAN.
+        parts.append("## DOKUMEN YANG SUDAH DIPILIH USER:")
+        for name in selected_document_names:
+            parts.append(f"- {name}")
+        parts.append(
+            "(Konteks saja — checklist TETAP harus diturunkan dari PEDOMAN, "
+            "BUKAN dari daftar dokumen ini. Dokumen di atas hanya membantu "
+            "Anda memperkirakan istilah/nama yang mungkin dipakai sumber "
+            "saat menyusun pertanyaan — mis. kalau ada dokumen \"Renstra "
+            "2020-2024\", boleh sertakan tahun itu di pertanyaan kalau "
+            "relevan dengan kebutuhan PEDOMAN. JANGAN membatasi atau "
+            "mengubah cakupan topik checklist supaya \"cocok\" dengan "
+            "dokumen ini — kebutuhan informasi tetap ditentukan PEDOMAN.)"
+        )
+        parts.append("")
     parts += _institution_context_block(
         institution_context,
         "(Konteks saja — pakai HANYA kalau membantu pertanyaan lebih spesifik "
@@ -645,7 +663,8 @@ ATURAN WAJIB:
 1. WAJIB Bahasa Indonesia 100% — dilarang menulis paragraf berbahasa Inggris (akronim teknis seperti LED/SK/SKS/IPK boleh tetap dipakai).
 2. Setiap klaim faktual harus diikuti penanda sumber: "(sumber: LABEL)" untuk BUKTI (LED atau Evidence) — LABEL adalah teks PERSIS di dalam tanda kurung "(sumber: ...)" pada bukti yang dikutip, bisa berupa nama file ATAU nama folder, ikuti apa adanya, JANGAN diubah/disingkat — atau "(sumber: LKPS <referensi tabel>)" untuk DATA KUANTITATIF. Penanda HANYA boleh dipakai kalau nama/referensi itu BENAR-BENAR muncul literal di bagian BUKTI/DATA KUANTITATIF di atas — dilarang menebak atau mengarang nama sumber.
 3. Jika BUKTI dan DATA KUANTITATIF sama-sama kosong/minim, tulis narasi singkat dan umum berdasarkan PEDOMAN/RUBRIK saja tanpa klaim faktual bersitasi — jangan dipaksakan panjang dengan fakta karangan.
-4. OUTPUT MURNI NARASI SAJA dalam format Markdown (heading/paragraf/daftar poin sesuai kebutuhan) — dilarang menambahkan catatan, disclaimer, atau ringkasan proses di luar narasi."""
+4. OUTPUT MURNI NARASI SAJA dalam format Markdown (heading/paragraf/daftar poin sesuai kebutuhan) — dilarang menambahkan catatan, disclaimer, atau ringkasan proses di luar narasi.
+5. JANGAN mengulang judul bab ("{judul_bab}") sebagai heading/baris pembuka — langsung mulai dari isi narasi. Heading lain boleh dipakai untuk menyusun sub-bagian kalau memang membantu, asal bukan duplikasi judul bab itu sendiri."""
 
 
 async def _handle_generasi_bab(job) -> dict:
@@ -708,9 +727,21 @@ async def _handle_generasi_bab(job) -> dict:
 
     llm = build_plain_llm()
 
+    # Bukti Dukung selected via the CONFIRMED recommendation for `draftId`
+    # (Dimas's _retrieve_facts: zero selected = zero evidence, no blanket
+    # fallback) — resolved before the checklist call so the checklist prompt
+    # can use the selected documents' names as a terminology hint (port of
+    # Dimas's 332ab2f, see _build_checklist_prompt's selected_document_names).
+    confirmed = get_confirmed_recommendation(draft_id) if draft_id else None
+    selected_ids: list[str] = (confirmed or {}).get("selected_evidence_ids") or []
+    evidence_labels: dict[str, str] = get_evidence_citation_labels(selected_ids) if selected_ids else {}
+
     # 2. Checklist — real LLM call (port of SYSTEM_CHECKLIST), same fallback
     # safety net as the old pedoman-titles stub for empty pedoman/LLM failure.
-    checklist_prompt = _build_checklist_prompt(bab["chapter_title"], pedoman, rubric, institution_context)
+    checklist_prompt = _build_checklist_prompt(
+        bab["chapter_title"], pedoman, rubric, institution_context,
+        list(evidence_labels.values()),
+    )
     try:
         checklist_raw = await llm.ainvoke(checklist_prompt)
         checklist = _parse_checklist(checklist_raw.content)
@@ -731,15 +762,9 @@ async def _handle_generasi_bab(job) -> dict:
     lkps_refs = _lkps_refs_in_pedoman(pedoman)
     lkps_tables = _load_lkps_tables(bab, lkps_refs)
 
-    # 2c. Bukti Dukung evidence — scoped strictly to the CONFIRMED
-    # recommendation's selectedEvidenceIds for `draftId` (Dimas's
-    # _retrieve_facts: zero selected = zero evidence, no blanket fallback).
-    confirmed = get_confirmed_recommendation(draft_id) if draft_id else None
-    selected_ids: list[str] = (confirmed or {}).get("selected_evidence_ids") or []
+    # 2c. Bukti Dukung evidence chunks for the selected ids above.
     evidence_chunks: list[dict] = []
-    evidence_labels: dict[str, str] = {}
     if selected_ids:
-        evidence_labels = get_evidence_citation_labels(selected_ids)
         seen_chunks: set[str] = set()
         for item in checklist:
             hits = await asyncio.to_thread(search_evidence, item, bab["tenant_id"], selected_ids, 2)

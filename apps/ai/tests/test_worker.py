@@ -129,3 +129,32 @@ def test_parse_judge_json_empty_response():
     from worker import _parse_judge_json
 
     assert _parse_judge_json("")["error"] == "empty response"
+
+
+def test_build_checklist_prompt_includes_selected_document_names_as_hint_only():
+    """Port of Dimas's 332ab2f: selected document names are a terminology
+    hint, not a scope narrower — the prompt must say so explicitly."""
+    from worker import _build_checklist_prompt
+
+    prompt = _build_checklist_prompt(
+        "Tata Pamong", [], [], selected_document_names=["Renstra 2020-2024"]
+    )
+    assert "Renstra 2020-2024" in prompt
+    assert "checklist TETAP harus diturunkan dari PEDOMAN" in prompt
+
+
+def test_build_checklist_prompt_omits_selected_documents_block_when_none():
+    from worker import _build_checklist_prompt
+
+    prompt = _build_checklist_prompt("Tata Pamong", [], [])
+    assert "DOKUMEN YANG SUDAH DIPILIH USER" not in prompt
+
+
+def test_build_generasi_prompt_forbids_repeating_chapter_title_as_heading():
+    """Port of Dimas's 332ab2f: the LLM shouldn't restate the chapter title
+    as its opening heading — that's already rendered by the editor."""
+    from worker import _build_generasi_prompt
+
+    prompt = _build_generasi_prompt("Tata Pamong", [], [], [], [], [])
+    assert "JANGAN mengulang judul bab" in prompt
+    assert '"Tata Pamong"' in prompt
