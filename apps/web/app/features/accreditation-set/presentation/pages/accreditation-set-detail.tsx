@@ -27,6 +27,7 @@ import {
 	findSetDocument,
 	type SetDocumentType,
 } from '../../domain/entities/accreditation-set.entity';
+import { EvidenceStatusBadge } from '~/features/evidence/presentation/components/evidence-status-badge';
 import { accreditationSetRepository } from '../../data/repositories/accreditation-set.repository';
 import { AccreditationSetFormFields } from '../components/accreditation-set-form-fields';
 import { DocumentSlotCard } from '../components/document-slot-card';
@@ -205,6 +206,13 @@ export function AccreditationSetDetail() {
 								{set.nama}
 							</h2>
 							<SetStatusBadge status={set.status} />
+							{/* Cuma tampil selagi ada yang perlu diketahui pengguna -- ekstraksi
+							    lagi jalan, atau gagal. Status "Siap" tenggelam di antara badge
+							    lain kalau selalu ditampilkan, padahal itu keadaan diam yang
+							    sudah cukup diwakili munculnya kriteria di bawah. */}
+							{(set.criteriaParseStatus === 'DIPROSES' || set.criteriaParseStatus === 'GAGAL') && (
+								<EvidenceStatusBadge status={set.criteriaParseStatus} />
+							)}
 						</div>
 						{/* Jumlah kriteria ikut di sini, bukan di kartu tersendiri di dasar
 						    halaman: ia keterangan tentang set ini, sama seperti lembaga dan
@@ -256,6 +264,20 @@ export function AccreditationSetDetail() {
 			)}
 
 			<SetLockNotice lock={lock} />
+
+			{set.criteriaParseStatus === 'DIPROSES' && (
+				<div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+					Memproses ekstraksi kriteria dari berkas Dokumen Rubrik yang baru diunggah — halaman ini akan
+					memperbarui diri begitu selesai.
+				</div>
+			)}
+
+			{set.criteriaParseStatus === 'GAGAL' && (
+				<div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+					Ekstraksi kriteria otomatis gagal: {set.criteriaParseError ?? 'penyebab tidak diketahui'}. Isi
+					kriteria manual lewat "Tinjau dan Koreksi Isi", atau unggah ulang Dokumen Rubrik.
+				</div>
+			)}
 
 			{/* Kebalikan dari pemberitahuan kunci, dan sama pentingnya: set draf
 			    tidak terkunci, tapi juga belum berlaku. Tanpa kalimat ini, set yang

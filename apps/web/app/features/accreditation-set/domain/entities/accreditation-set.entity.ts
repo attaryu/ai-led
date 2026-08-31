@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { rubricCriterionSchema } from '~/features/chapter/domain/entities/rubric-criterion.entity';
+import { evidenceStatusEnum } from '~/features/evidence/domain/entities/evidence.entity';
 
 /**
  * Tiga jenis berkas acuan dalam satu set, mengikuti `TipePanduan` di
@@ -101,6 +102,14 @@ export const accreditationSetSchema = z.object({
 	 * adalah sumber datanya, bukan bentuknya.
 	 */
 	kriteria: z.array(rubricCriterionSchema),
+	/**
+	 * Status ekstraksi otomatis kriteria dari berkas DOKUMEN_RUBRIK terakhir
+	 * yang diunggah (worker.py::_handle_ingestion_rubrik_dokumen). Sama
+	 * enumnya dengan status ekstraksi bukti dukung — dua pipeline berbeda,
+	 * satu kosakata status, satu badge (`EvidenceStatusBadge`) dipakai ulang.
+	 */
+	criteriaParseStatus: evidenceStatusEnum,
+	criteriaParseError: z.string().nullable(),
 	createdAt: z.string(),
 });
 

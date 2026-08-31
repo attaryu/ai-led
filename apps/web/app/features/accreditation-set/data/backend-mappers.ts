@@ -110,6 +110,8 @@ export function toEntity(row: AnyBackendSet): AccreditationSetEntity {
 		status: row.status,
 		dokumen: documents.map(mapDocument),
 		kriteria: criteria.map(mapCriterion),
+		criteriaParseStatus: row.criteriaParseStatus,
+		criteriaParseError: row.criteriaParseError,
 		createdAt: row.createdAt,
 	};
 }
@@ -142,6 +144,8 @@ export function toListEntity(row: BackendAccreditationSetListItem): Accreditatio
 		status: row.status,
 		dokumen: row.documents.map((d) => dokumenPlaceholder(d.type as SetDocumentType)),
 		kriteria: new Array(row._count.criteria) as RubricCriterion[],
+		criteriaParseStatus: row.criteriaParseStatus,
+		criteriaParseError: row.criteriaParseError,
 		createdAt: row.createdAt,
 	};
 }

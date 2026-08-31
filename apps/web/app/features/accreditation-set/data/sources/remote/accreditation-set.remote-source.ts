@@ -6,6 +6,9 @@ export type BackendScoreType = 'KUALITATIF' | 'KUANTITATIF' | 'KOMPOSIT';
 /** Nilai `AccreditationSetStatus` Prisma. */
 export type BackendSetStatus = 'DRAF' | 'SIAP';
 
+/** Nilai `StatusEkstraksi` Prisma -- dipakai ulang dari pipeline bukti dukung. */
+export type BackendCriteriaParseStatus = 'MENUNGGU' | 'DIPROSES' | 'SIAP' | 'GAGAL';
+
 /** Nilai `TipePanduan` Prisma -- sama dengan `SetDocumentType` frontend. */
 export type BackendDocumentType = 'DOKUMEN_RUBRIK' | 'PANDUAN_LAM' | 'TEMPLATE_LKPS';
 
@@ -57,6 +60,8 @@ export type BackendAccreditationSet = {
 	lembaga: string;
 	tahunSiklus: number;
 	status: BackendSetStatus;
+	criteriaParseStatus: BackendCriteriaParseStatus;
+	criteriaParseError: string | null;
 	createdAt: string;
 	updatedAt: string;
 };
