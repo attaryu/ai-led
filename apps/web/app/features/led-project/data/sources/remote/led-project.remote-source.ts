@@ -9,6 +9,8 @@ export type BackendDokumenLed = {
 	academicYear: string;
 	overallStatus: LedProjectStatus;
 	deadline: string | null;
+	/** Acuan penilaian (Set Akreditasi) yang dipilih dokumen ini; `null` = belum dipilih. */
+	accreditationSetId: string | null;
 	createdAt: string;
 };
 
@@ -20,6 +22,7 @@ export type DokumenLedCreatePayload = {
 
 export type DokumenLedUpdatePayload = Partial<DokumenLedCreatePayload> & {
 	overallStatus?: LedProjectStatus;
+	accreditationSetId?: string;
 };
 
 export const ledProjectRemoteSource = {

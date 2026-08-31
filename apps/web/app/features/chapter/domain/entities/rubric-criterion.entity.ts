@@ -98,6 +98,16 @@ export const rubricCriterionSchema = z.object({
 	levelSkor: z.array(rubricLevelSchema).min(1),
 	/** Nomor bab standar yang dinilai kriteria ini (`RUBRIK_KRITERIA_BAB`). */
 	urutanBab: z.array(z.number().int().positive()),
+	/**
+	 * Rumus penghitung skor dari angka tabel LKPS, mis. `"BOP / 5000000"`.
+	 * Berlaku hanya untuk `tipeSkor` `kuantitatif`/`komposit` -- `null` untuk
+	 * kualitatif, dan `undefined` untuk baris lama (seed contoh) yang lahir
+	 * sebelum kolom ini ada. Bentuknya dari
+	 * `apps/ai/ingestion/matrix_parser.py::IndicatorRubric.formula`.
+	 */
+	formula: z.string().nullable().optional(),
+	/** Rumus gabungan sub-skor komposit, mis. `"((I x 2) + II) / 3"`. Sama syaratnya dengan `formula`. */
+	subScoreFormula: z.string().nullable().optional(),
 });
 
 export type RubricCriterion = z.infer<typeof rubricCriterionSchema>;

@@ -55,10 +55,7 @@ function toEntity(row: BackendDokumenLed, studyProgramName: string): LedProjectE
 		tahunAkademik: row.academicYear,
 		statusKeseluruhan: row.overallStatus,
 		tenggat: row.deadline,
-		// TODO: backend belum punya kolom ini -- Set Akreditasi masih stub
-		// frontend-only (localStorage). Ganti begitu field ini ada di
-		// BackendDokumenLed.
-		accreditationSetId: null,
+		accreditationSetId: row.accreditationSetId,
 		createdAt: row.createdAt,
 	};
 }
@@ -191,6 +188,8 @@ export const ledProjectRepository = {
 		if (data.statusKeseluruhan !== undefined)
 			payload.overallStatus = data.statusKeseluruhan;
 		if (data.tenggat !== undefined) payload.deadline = data.tenggat ?? undefined;
+		if (data.accreditationSetId !== undefined && data.accreditationSetId !== null)
+			payload.accreditationSetId = data.accreditationSetId;
 
 		const updated = await ledProjectRemoteSource.update(id, payload);
 		const program = await studyProgramRepository.findById(updated.studyProgramId);

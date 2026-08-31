@@ -124,6 +124,7 @@ export function ProjectAccreditationSetCard({
 	const { set, sudahDinilai, bolehMengganti, pilih } =
 		useProjectAccreditationSet(project);
 	const [dialogTerbuka, setDialogTerbuka] = React.useState(false);
+	const [errorPilih, setErrorPilih] = React.useState<string | null>(null);
 
 	return (
 		<Card size="sm">
@@ -194,13 +195,20 @@ export function ProjectAccreditationSetCard({
 				)}
 			</CardContent>
 
+			{errorPilih && (
+				<p className="px-6 pb-4 text-xs text-destructive">{errorPilih}</p>
+			)}
+
 			<DaftarPilihan
 				terbuka={dialogTerbuka}
 				onTutup={() => setDialogTerbuka(false)}
 				terpilihId={set?.id ?? null}
 				onPilih={(dipilih) => {
-					pilih(dipilih);
 					setDialogTerbuka(false);
+					setErrorPilih(null);
+					pilih(dipilih).catch((e) =>
+						setErrorPilih(e instanceof Error ? e.message : 'Gagal mengganti acuan.'),
+					);
 				}}
 			/>
 		</Card>

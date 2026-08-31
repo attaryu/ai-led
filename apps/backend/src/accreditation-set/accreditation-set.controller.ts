@@ -84,4 +84,11 @@ export class AccreditationSetController {
   ) {
     return this.accreditationSetService.attachDocument(id, type, dto);
   }
+
+  @Delete(':id/documents/:type')
+  @Protected(...WRITE_ROLES)
+  @HttpCode(204)
+  removeDocument(@Param('id') id: string, @Param('type') type: TipePanduan) {
+    return this.accreditationSetService.removeDocument(id, type);
+  }
 }

@@ -46,6 +46,8 @@ function toFormValues(kriteria: RubricCriterion): RubricCriterionFormDto {
 		tabelLkps: kriteria.tabelLkps.join(', '),
 		urutanBab: kriteria.urutanBab,
 		levelSkor: kriteria.levelSkor,
+		formula: kriteria.formula ?? null,
+		subScoreFormula: kriteria.subScoreFormula ?? null,
 	};
 }
 
@@ -104,6 +106,8 @@ export function CriterionFormDialog({
 	}, [open, initial, reset]);
 
 	const babTerpilih = watch('urutanBab') ?? [];
+	const tipeSkorDipilih = watch('tipeSkor');
+	const butuhRumus = tipeSkorDipilih !== 'kualitatif';
 
 	const toggleBab = (urutan: number) => {
 		const sudahAda = babTerpilih.includes(urutan);
@@ -121,6 +125,7 @@ export function CriterionFormDialog({
 		setFormError(null);
 
 		try {
+			const kualitatif = data.tipeSkor === 'kualitatif';
 			await onSubmit({
 				no: data.no,
 				kodeKriteria: data.kodeKriteria.trim(),
@@ -132,6 +137,10 @@ export function CriterionFormDialog({
 				// Diurutkan sebelum disimpan supaya setiap tempat yang membacanya
 				// tidak perlu mengurutkannya lagi sendiri.
 				levelSkor: [...data.levelSkor].sort((a, b) => a.skor - b.skor),
+				// Rumus tidak berarti apa pun untuk kualitatif -- dikosongkan alih-alih
+				// menyimpan sisa ketikan dari tipe skor sebelumnya.
+				formula: kualitatif ? null : (data.formula?.trim() || null),
+				subScoreFormula: kualitatif ? null : (data.subScoreFormula?.trim() || null),
 			});
 			onOpenChange(false);
 		} catch (e) {
@@ -240,6 +249,41 @@ export function CriterionFormDialog({
 								dari narasi LED — kosongnya bermakna, bukan sekadar belum diisi.
 							</FieldDescription>
 						</Field>
+
+						{/* Cuma berarti untuk indikator yang angkanya dihitung dari tabel
+						    LKPS -- kualitatif dinilai dari narasi LED, jadi rumus di sini
+						    tidak akan pernah dipakai. */}
+						{butuhRumus && (
+							<div className="grid gap-4 sm:grid-cols-2">
+								<Field data-invalid={!!errors.formula}>
+									<FieldLabel htmlFor="formula">Rumus</FieldLabel>
+									<Input
+										id="formula"
+										placeholder="BOP / 5000000"
+										{...register('formula')}
+									/>
+									{errors.formula && (
+										<FieldError>{errors.formula.message}</FieldError>
+									)}
+								</Field>
+
+								<Field data-invalid={!!errors.subScoreFormula}>
+									<FieldLabel htmlFor="subScoreFormula">Rumus Sub-Skor</FieldLabel>
+									<Input
+										id="subScoreFormula"
+										placeholder="((I x 2) + II) / 3"
+										{...register('subScoreFormula')}
+									/>
+									<FieldDescription>
+										Isi hanya untuk kriteria komposit yang menggabungkan
+										beberapa sub-skor.
+									</FieldDescription>
+									{errors.subScoreFormula && (
+										<FieldError>{errors.subScoreFormula.message}</FieldError>
+									)}
+								</Field>
+							</div>
+						)}
 
 						<Field data-invalid={!!errors.urutanBab}>
 							<FieldLabel>Bab yang Dinilai</FieldLabel>

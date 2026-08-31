@@ -64,11 +64,16 @@ export class AccreditationSetService {
     return set;
   }
 
+  /** Daftar tenant-scoped -- documents dipangkas ke {type} dan criteria ke hitungannya saja (accreditation-set-columns.tsx: kelengkapan berkas + jumlah kriteria), bukan detail penuh yang cuma dipakai halaman detail. */
   async findAll() {
     const { tenantId } = this.tenantContext.getOrThrow();
     return this.prisma.accreditationSet.findMany({
       where: { tenantId },
       orderBy: { createdAt: 'desc' },
+      include: {
+        documents: { select: { type: true } },
+        _count: { select: { criteria: true } },
+      },
     });
   }
 
@@ -287,6 +292,16 @@ export class AccreditationSetService {
     if (!criterion) throw new NotFoundException('Kriteria tidak ditemukan');
 
     await this.prisma.rubricCriterion.delete({ where: { id: criterionId } });
+  }
+
+  /** Mengosongkan satu slot acuan -- accreditation-set.repository.ts::removeDocument. No-op kalau slotnya memang sudah kosong. */
+  async removeDocument(id: string, type: TipePanduan) {
+    const { tenantId } = this.tenantContext.getOrThrow();
+    await this.requireUnlocked(id, tenantId);
+
+    await this.prisma.referenceGuide.deleteMany({
+      where: { accreditationSetId: id, type },
+    });
   }
 
   /**

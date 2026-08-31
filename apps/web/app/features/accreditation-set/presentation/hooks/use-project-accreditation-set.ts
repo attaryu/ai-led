@@ -1,6 +1,7 @@
 import * as React from 'react';
 
 import { assessmentSessionRepository } from '~/features/assessment/data/repositories/assessment-session.repository';
+import { ledProjectRepository } from '~/features/led-project/data/repositories/led-project.repository';
 import { type LedProjectEntity } from '~/features/led-project/domain/entities/led-project.entity';
 import { useSession } from '~/features/auth/presentation/hooks/use-session';
 import { accreditationSetRepository } from '../../data/repositories/accreditation-set.repository';
@@ -50,13 +51,16 @@ export function useProjectAccreditationSet(project: LedProjectEntity) {
 			.then((ditemukan) => setSet(ditemukan ?? null));
 	}, [project.id, acuanId]);
 
-	// TODO: backend belum punya kolom accreditationSetId (Set Akreditasi masih
-	// stub frontend-only) -- pilihan di sini cuma mengubah state lokal, belum
-	// disimpan lewat ledProjectRepository.update().
-	const pilih = React.useCallback((dipilih: AccreditationSetEntity) => {
-		setAcuanId(dipilih.id);
-		setSet(dipilih);
-	}, []);
+	const pilih = React.useCallback(
+		async (dipilih: AccreditationSetEntity) => {
+			await ledProjectRepository.update(project.id, {
+				accreditationSetId: dipilih.id,
+			});
+			setAcuanId(dipilih.id);
+			setSet(dipilih);
+		},
+		[project.id],
+	);
 
 	return {
 		set,

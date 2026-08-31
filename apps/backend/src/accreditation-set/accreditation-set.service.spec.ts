@@ -74,6 +74,7 @@ function makeService(tenantId = 't1') {
       findFirst: jest.fn(),
       update: jest.fn(),
       create: jest.fn(),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     $transaction: jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(prisma)),
   };
@@ -194,6 +195,52 @@ describe('AccreditationSetService.duplicate', () => {
     expect(callArg.data.nama).toBe(`${source.nama} (salinan)`);
     expect(callArg.data.criteria.create).toHaveLength(2);
     expect(callArg.data.documents.create).toHaveLength(1);
+  });
+});
+
+describe('AccreditationSetService.findAll', () => {
+  it('includes document types and a criteria count for the list view, not full criteria', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findMany.mockResolvedValue([
+      { ...makeSet(), documents: [{ type: TipePanduan.DOKUMEN_RUBRIK }], _count: { criteria: 3 } },
+    ]);
+
+    const result = await service.findAll();
+
+    expect(prisma.accreditationSet.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: {
+          documents: { select: { type: true } },
+          _count: { select: { criteria: true } },
+        },
+      }),
+    );
+    expect(result[0]._count.criteria).toBe(3);
+  });
+});
+
+describe('AccreditationSetService.removeDocument (lock check)', () => {
+  it('rejects when the set is in use', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet());
+    prisma.ledDocument.count.mockResolvedValue(1);
+
+    await expect(service.removeDocument('s1', TipePanduan.DOKUMEN_RUBRIK)).rejects.toThrow(
+      ConflictException,
+    );
+    expect(prisma.referenceGuide.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('deletes the slot for that type when unlocked', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet());
+    prisma.ledDocument.count.mockResolvedValue(0);
+
+    await service.removeDocument('s1', TipePanduan.DOKUMEN_RUBRIK);
+
+    expect(prisma.referenceGuide.deleteMany).toHaveBeenCalledWith({
+      where: { accreditationSetId: 's1', type: TipePanduan.DOKUMEN_RUBRIK },
+    });
   });
 });
 
