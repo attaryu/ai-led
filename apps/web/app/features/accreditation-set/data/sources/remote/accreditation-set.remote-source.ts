@@ -10,7 +10,7 @@ export type BackendSetStatus = 'DRAF' | 'SIAP';
 export type BackendCriteriaParseStatus = 'MENUNGGU' | 'DIPROSES' | 'SIAP' | 'GAGAL';
 
 /** Nilai `TipePanduan` Prisma -- sama dengan `SetDocumentType` frontend. */
-export type BackendDocumentType = 'DOKUMEN_RUBRIK' | 'PANDUAN_LAM' | 'TEMPLATE_LKPS';
+export type BackendDocumentType = 'DOKUMEN_RUBRIK' | 'PANDUAN_LAM';
 
 export type BackendRubricLevel = {
 	id: string;

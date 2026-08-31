@@ -17,7 +17,9 @@ import { AttachSetDocumentDto } from './dto/attach-set-document.dto';
 
 /// accreditation-set.entity.ts::MIN_KRITERIA_SIAP -- syarat minimum sebelum boleh SIAP.
 const MIN_KRITERIA_SIAP = 1;
-const SET_DOCUMENT_TYPES = Object.values(TipePanduan);
+/// Set Akreditasi cukup Matriks Penilaian + Pedoman Penyusunan -- TipePanduan.TEMPLATE_LKPS
+/// (nilai ketiga di enum Prisma) sengaja tidak dipakai di sini.
+const SET_DOCUMENT_TYPES: TipePanduan[] = [TipePanduan.DOKUMEN_RUBRIK, TipePanduan.PANDUAN_LAM];
 
 const CRITERION_INCLUDE = {
   levels: { orderBy: { score: 'desc' as const } },
@@ -143,7 +145,7 @@ export class AccreditationSetService {
     );
     if (kosong.length > 0) {
       throw new BadRequestException(
-        `Set siap harus punya ketiga berkas acuan — ${kosong.join(' dan ')} belum ada.`,
+        `Set siap harus punya kedua berkas acuan — ${kosong.join(' dan ')} belum ada.`,
       );
     }
     if (set.criteria.length < MIN_KRITERIA_SIAP) {

@@ -4,27 +4,27 @@ import { rubricCriterionSchema } from '~/features/chapter/domain/entities/rubric
 import { evidenceStatusEnum } from '~/features/evidence/domain/entities/evidence.entity';
 
 /**
- * Tiga jenis berkas acuan dalam satu set, mengikuti `TipePanduan` di
- * docs/database.md → PANDUAN_REFERENSI. Ketiganya menjawab pertanyaan yang
+ * Dua jenis berkas acuan dalam satu set, mengikuti `TipePanduan` di
+ * docs/database.md → PANDUAN_REFERENSI (yang punya nilai ketiga,
+ * `TEMPLATE_LKPS` — sengaja tidak dipakai di sini, Set Akreditasi cukup
+ * Matriks Penilaian + Pedoman Penyusunan). Keduanya menjawab pertanyaan yang
  * sama — menilai ke lembaga mana, siklus kapan — sehingga selalu dipilih
  * sebagai satu paket, bukan satu per satu.
  */
 export const setDocumentTypeEnum = z.enum([
 	'DOKUMEN_RUBRIK',
 	'PANDUAN_LAM',
-	'TEMPLATE_LKPS',
 ]);
 export type SetDocumentType = z.infer<typeof setDocumentTypeEnum>;
 
 export const SET_DOCUMENT_TYPE_LABEL: Record<SetDocumentType, string> = {
-	DOKUMEN_RUBRIK: 'Dokumen Rubrik',
-	PANDUAN_LAM: 'Panduan LAM',
-	TEMPLATE_LKPS: 'Template LKPS',
+	DOKUMEN_RUBRIK: 'Matriks Penilaian',
+	PANDUAN_LAM: 'Pedoman Penyusunan',
 };
 
 /**
  * Urutan slot di layar, sekaligus satu-satunya sumber kebenaran bahwa slotnya
- * ada tiga. Tampilan mengulang daftar ini alih-alih menulis ketiga slot satu
+ * ada dua. Tampilan mengulang daftar ini alih-alih menulis tiap slot satu
  * per satu, supaya penambahan jenis berkas cukup disentuh di sini.
  */
 export const SET_DOCUMENT_TYPES = setDocumentTypeEnum.options;
@@ -215,7 +215,7 @@ export function cekSyaratSiap(set: AccreditationSetEntity): string | null {
 
 	if (kosong.length > 0) {
 		const nama = kosong.map((tipe) => SET_DOCUMENT_TYPE_LABEL[tipe]).join(' dan ');
-		return `Set siap harus punya ketiga berkas acuan — ${nama} belum ada.`;
+		return `Set siap harus punya kedua berkas acuan — ${nama} belum ada.`;
 	}
 
 	if (set.kriteria.length < MIN_KRITERIA_SIAP) {
@@ -235,7 +235,7 @@ export type SetReadiness = {
  * Apakah set ini boleh ditandai siap, dan kalau belum, apa yang kurang.
  *
  * `SIAP` adalah **gerbang, bukan kunci**: artinya "boleh dipilih Dokumen LED",
- * bukan "tidak boleh diubah". Syaratnya ketiga berkas lengkap dan isi rubriknya
+ * bukan "tidak boleh diubah". Syaratnya kedua berkas lengkap dan isi rubriknya
  * sudah terbaca, supaya set yang ditawarkan ke proyek selalu set yang utuh —
  * proyek yang memilih set setengah jadi akan mendapati penilaiannya berjalan
  * tanpa acuan lengkap.

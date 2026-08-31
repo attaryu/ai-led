@@ -24,7 +24,7 @@ import {
 	type SetDocumentType,
 } from '../../domain/entities/accreditation-set.entity';
 
-/** Jenis berkas yang diterima; sama untuk ketiga slot. */
+/** Jenis berkas yang diterima; sama untuk kedua slot. */
 const ACCEPTED = '.pdf,.docx';
 
 /**
