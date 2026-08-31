@@ -100,6 +100,7 @@ enum JobType {
   INGESTION_BUKTI_DUKUNG
   SIMULASI_SKOR
   REKOMENDASI_DOKUMEN
+  INGESTION_RUBRIK_DOKUMEN
 }
 
 enum JobStatus {
@@ -466,14 +467,19 @@ model EvidenceDraftLink {
 /// dipakai (lihat deriveSetLock di apps/web) -- versi baru dibuat lewat duplikasi,
 /// bukan edit set yang sudah dipakai.
 model AccreditationSet {
-  id          String                 @id @default(cuid())
-  tenantId    String                 @map("tenant_id")
-  nama        String
-  lembaga     String
-  tahunSiklus Int                    @map("tahun_siklus")
-  status      AccreditationSetStatus @default(DRAF)
-  createdAt   DateTime               @default(now()) @map("created_at")
-  updatedAt   DateTime               @updatedAt @map("updated_at")
+  id                  String                 @id @default(cuid())
+  tenantId            String                 @map("tenant_id")
+  nama                String
+  lembaga             String
+  tahunSiklus         Int                    @map("tahun_siklus")
+  status              AccreditationSetStatus @default(DRAF)
+  /// Status ekstraksi otomatis kriteria dari dokumen DOKUMEN_RUBRIK yang
+  /// diunggah (worker.py::_handle_ingestion_rubrik_dokumen). Default SIAP
+  /// supaya set lama/isi-manual tidak tampak "belum diproses" selamanya.
+  criteriaParseStatus StatusEkstraksi        @default(SIAP) @map("criteria_parse_status")
+  criteriaParseError  String?                @map("criteria_parse_error") @db.Text
+  createdAt           DateTime               @default(now()) @map("created_at")
+  updatedAt           DateTime               @updatedAt @map("updated_at")
 
   tenant         Tenant            @relation(fields: [tenantId], references: [id])
   criteria       RubricCriterion[]
