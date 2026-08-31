@@ -3,6 +3,7 @@ import { AccreditationSetStatus, RubricScoreType, TipePanduan } from '@ai-led/db
 import { AccreditationSetService } from './accreditation-set.service';
 import type { TenantContextService } from '../tenant/tenant-context.service';
 import type { StorageService } from '../storage/storage.service';
+import type { JobsService } from '../jobs/jobs.service';
 
 function makeSet(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -85,12 +86,16 @@ function makeService(tenantId = 't1') {
     headObject: jest.fn().mockResolvedValue({ sizeBytes: 1, contentType: 'application/pdf' }),
     deleteObject: jest.fn().mockResolvedValue(undefined),
   };
+  const jobsService: Pick<JobsService, 'enqueue'> = {
+    enqueue: jest.fn().mockResolvedValue(undefined),
+  };
   const service = new AccreditationSetService(
     prisma as never,
     tenantContext as TenantContextService,
     storage as StorageService,
+    jobsService as JobsService,
   );
-  return { service, prisma, storage };
+  return { service, prisma, storage, jobsService };
 }
 
 describe('AccreditationSetService.create', () => {
@@ -241,6 +246,46 @@ describe('AccreditationSetService.removeDocument (lock check)', () => {
     expect(prisma.referenceGuide.deleteMany).toHaveBeenCalledWith({
       where: { accreditationSetId: 's1', type: TipePanduan.DOKUMEN_RUBRIK },
     });
+  });
+});
+
+describe('AccreditationSetService.attachDocument', () => {
+  it('enqueues INGESTION_RUBRIK_DOKUMEN and marks DIPROSES for DOKUMEN_RUBRIK', async () => {
+    const { service, prisma, jobsService } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet());
+    prisma.ledDocument.count.mockResolvedValue(0);
+    prisma.referenceGuide.findFirst.mockResolvedValue(null);
+    prisma.referenceGuide.create.mockResolvedValue({ id: 'rg1' });
+
+    await service.attachDocument('s1', TipePanduan.DOKUMEN_RUBRIK, {
+      fileKey: 'tenant/s1/matriks.pdf',
+      title: 'Matriks Penilaian',
+    });
+
+    expect(prisma.accreditationSet.update).toHaveBeenCalledWith({
+      where: { id: 's1' },
+      data: { criteriaParseStatus: 'DIPROSES', criteriaParseError: null },
+    });
+    expect(jobsService.enqueue).toHaveBeenCalledWith('INGESTION_RUBRIK_DOKUMEN', {
+      accreditationSetId: 's1',
+      fileUrl: 'tenant/s1/matriks.pdf',
+    });
+  });
+
+  it('does not enqueue anything for PANDUAN_LAM/TEMPLATE_LKPS', async () => {
+    const { service, prisma, jobsService } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet());
+    prisma.ledDocument.count.mockResolvedValue(0);
+    prisma.referenceGuide.findFirst.mockResolvedValue(null);
+    prisma.referenceGuide.create.mockResolvedValue({ id: 'rg1' });
+
+    await service.attachDocument('s1', TipePanduan.PANDUAN_LAM, {
+      fileKey: 'tenant/s1/panduan.pdf',
+      title: 'Panduan LAM',
+    });
+
+    expect(jobsService.enqueue).not.toHaveBeenCalled();
+    expect(prisma.accreditationSet.update).not.toHaveBeenCalled();
   });
 });
 

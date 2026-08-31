@@ -34,6 +34,7 @@ _SCORE_TYPE_TO_ENGLISH = {
     "KUANTITATIF": "quantitative",
     "KOMPOSIT": "composite",
 }
+_SCORE_TYPE_FROM_ENGLISH = {v: k for k, v in _SCORE_TYPE_TO_ENGLISH.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -281,6 +282,12 @@ def log_reasoning_step(
 # ---------------------------------------------------------------------------
 
 
+class RubricSetInUseError(RuntimeError):
+    """Raised by replace_rubric_criteria_for_set when the set already has
+    real scoring history — overwriting its criteria would silently orphan
+    rubric_score_results rows that graded against the old ones."""
+
+
 def get_document_accreditation_set(dokumen_id: str) -> Optional[str]:
     """Return the accreditation_set_id chosen for this document, or None if
     it hasn't picked one yet (blocks /start and /resume — see assessment.py)."""
@@ -334,3 +341,87 @@ def get_rubric_criteria_for_set(accreditation_set_id: str) -> list[IndicatorRubr
         )
         for c in criteria
     ]
+
+
+def replace_rubric_criteria_for_set(accreditation_set_id: str, rubrics: list[IndicatorRubric]) -> int:
+    """Wipe and rewrite every rubric_criteria(+levels) row for this set from
+    a freshly parsed rubric PDF (worker.py::_handle_ingestion_rubrik_dokumen).
+
+    rubric_criterion_chapters is deliberately left untouched/empty for the
+    new rows -- chapter mapping is LAM Teknik-specific hardcoding
+    (seed-rubric-criteria.ts::chapterOrderFor), meaningless for an arbitrary
+    custom rubric. A reviewer assigns chapters manually via the criteria
+    form (UpsertCriterionDto.chapterOrders) after the auto-parse lands.
+
+    Refuses (RubricSetInUseError) if any of the CURRENT criteria already
+    has a real scoring result -- that means the set was actually used to
+    score something, not just drafted, and blindly replacing it would
+    orphan history. accreditation-set.service.ts's own requireUnlocked
+    (checked at attach-document time, before this job is even enqueued)
+    is a different, narrower gate: it only looks at whether a LedDocument
+    currently points at the set, not whether it was ever scored.
+    """
+    with _get_conn().cursor() as cur:
+        cur.execute(
+            """
+            SELECT count(*) AS n FROM rubric_score_results
+            WHERE criterion_id IN (SELECT id FROM rubric_criteria WHERE accreditation_set_id = %s)
+            """,
+            (accreditation_set_id,),
+        )
+        if cur.fetchone()["n"] > 0:
+            raise RubricSetInUseError(
+                "Set ini sudah punya riwayat skor tersimpan, tidak bisa ditimpa otomatis — hubungi admin."
+            )
+
+        cur.execute("BEGIN")
+        try:
+            cur.execute(
+                "DELETE FROM rubric_criterion_chapters WHERE criterion_id IN "
+                "(SELECT id FROM rubric_criteria WHERE accreditation_set_id = %s)",
+                (accreditation_set_id,),
+            )
+            cur.execute(
+                "DELETE FROM rubric_levels WHERE criterion_id IN "
+                "(SELECT id FROM rubric_criteria WHERE accreditation_set_id = %s)",
+                (accreditation_set_id,),
+            )
+            cur.execute(
+                "DELETE FROM rubric_criteria WHERE accreditation_set_id = %s",
+                (accreditation_set_id,),
+            )
+
+            for r in sorted(rubrics, key=lambda x: x.no):
+                criterion_id = str(uuid.uuid4())
+                cur.execute(
+                    """
+                    INSERT INTO rubric_criteria
+                        (id, accreditation_set_id, indicator_no, criterion_code, criterion_group,
+                         description, score_type, lkps_table_refs, formula, sub_score_formula)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        criterion_id,
+                        accreditation_set_id,
+                        r.no,
+                        str(r.no),
+                        r.kriteria,
+                        r.indikator,
+                        _SCORE_TYPE_FROM_ENGLISH[r.score_type],
+                        r.lkps_table_ref,
+                        r.formula,
+                        r.sub_score_formula,
+                    ),
+                )
+                for score, description in r.score_criteria.items():
+                    cur.execute(
+                        "INSERT INTO rubric_levels (id, criterion_id, score, description) VALUES (%s, %s, %s, %s)",
+                        (str(uuid.uuid4()), criterion_id, int(score), description),
+                    )
+        except Exception:
+            cur.execute("ROLLBACK")
+            raise
+        else:
+            cur.execute("COMMIT")
+
+    return len(rubrics)

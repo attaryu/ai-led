@@ -4,9 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AccreditationSetStatus, TipePanduan } from '@ai-led/db';
+import { AccreditationSetStatus, JobType, StatusEkstraksi, TipePanduan } from '@ai-led/db';
 import { PrismaService } from '../database/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
+import { JobsService } from '../jobs/jobs.service';
 import { extractFileNameFromKey } from '../storage/storage-key.util';
 import { StorageService } from '../storage/storage.service';
 import { CreateAccreditationSetDto } from './dto/create-accreditation-set.dto';
@@ -29,6 +30,7 @@ export class AccreditationSetService {
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
     private readonly storage: StorageService,
+    private readonly jobsService: JobsService,
   ) {}
 
   /** Baris mentah -> bentuk yang dipakai controller, plus dipakaiProyek untuk gerbang kunci di satu round-trip. */
@@ -324,20 +326,34 @@ export class AccreditationSetService {
       where: { accreditationSetId: id, type },
     });
 
-    if (existing) {
-      return this.prisma.referenceGuide.update({
-        where: { id: existing.id },
-        data: { title: dto.title, fileUrl: dto.fileKey, fileType },
+    const saved = existing
+      ? await this.prisma.referenceGuide.update({
+          where: { id: existing.id },
+          data: { title: dto.title, fileUrl: dto.fileKey, fileType },
+        })
+      : await this.prisma.referenceGuide.create({
+          data: {
+            accreditationSetId: id,
+            type,
+            title: dto.title,
+            fileUrl: dto.fileKey,
+            fileType,
+          },
+        });
+
+    // DOKUMEN_RUBRIK saja yang jadi sumber kriteria -- PANDUAN_LAM/TEMPLATE_LKPS
+    // cuma dokumen acuan, disimpan apa adanya di atas tanpa ekstraksi apapun.
+    if (type === TipePanduan.DOKUMEN_RUBRIK) {
+      await this.prisma.accreditationSet.update({
+        where: { id },
+        data: { criteriaParseStatus: StatusEkstraksi.DIPROSES, criteriaParseError: null },
+      });
+      await this.jobsService.enqueue(JobType.INGESTION_RUBRIK_DOKUMEN, {
+        accreditationSetId: id,
+        fileUrl: dto.fileKey,
       });
     }
-    return this.prisma.referenceGuide.create({
-      data: {
-        accreditationSetId: id,
-        type,
-        title: dto.title,
-        fileUrl: dto.fileKey,
-        fileType,
-      },
-    });
+
+    return saved;
   }
 }

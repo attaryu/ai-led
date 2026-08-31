@@ -19,4 +19,5 @@ export const QUEUE_NAME_BY_JOB_TYPE: Record<JobType, string> = {
   // pekerjaan baru yang butuh antrean/worker terpisah.
   [JobType.SIMULASI_SKOR]: GENERATION_QUEUE,
   [JobType.REKOMENDASI_DOKUMEN]: GENERATION_QUEUE,
+  [JobType.INGESTION_RUBRIK_DOKUMEN]: INGESTION_QUEUE,
 };

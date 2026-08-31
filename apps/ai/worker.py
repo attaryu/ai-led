@@ -75,6 +75,8 @@ async def process_job(job, token: str):
         result = await _handle_assessment_ami(job)
     elif job.name == "INGESTION_BUKTI_DUKUNG":
         result = await _handle_ingestion_bukti_dukung(job)
+    elif job.name == "INGESTION_RUBRIK_DOKUMEN":
+        result = await _handle_ingestion_rubrik_dokumen(job)
     else:
         logger.warning("job type tidak dikenal, diselesaikan tanpa aksi: %s", job.name)
         result = {"status": "skipped", "reason": f"unknown job type {job.name}"}
@@ -1266,6 +1268,58 @@ async def _handle_ingestion_bukti_dukung(job) -> dict:
 
     _set_status("SIAP", None)
     return {"status": "completed", "buktiDukungId": bukti_dukung_id, "chunks": len(chunks)}
+
+
+async def _handle_ingestion_rubrik_dokumen(job) -> dict:
+    """Download the DOKUMEN_RUBRIK PDF from R2, parse it with the same
+    matriks parser /upload/matrix uses (ingestion/matrix_parser.py), and
+    replace this AccreditationSet's rubric_criteria/rubric_levels wholesale.
+
+    Same discipline as _handle_ingestion_bukti_dukung: catch everything,
+    always end SIAP/GAGAL on accreditation_sets.criteria_parse_status,
+    never leave it stuck on DIPROSES.
+    """
+    import tempfile
+    from pathlib import Path
+
+    from db.connection import get_conn
+    from db.postgres_client import RubricSetInUseError, replace_rubric_criteria_for_set
+    from db.r2_client import download_to
+    from ingestion.matrix_parser import parse_matrix_pdf
+
+    accreditation_set_id = job.data["accreditationSetId"]
+    file_url = job.data["fileUrl"]
+
+    def _set_status(status: str, catatan: str | None) -> None:
+        with get_conn().cursor() as cur:
+            cur.execute(
+                "UPDATE accreditation_sets SET criteria_parse_status = %s, criteria_parse_error = %s WHERE id = %s",
+                (status, catatan, accreditation_set_id),
+            )
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="rubrik_parse_") as tmp:
+            local_path = Path(tmp) / Path(file_url).name
+            download_to(file_url, local_path)
+            rubrics = parse_matrix_pdf(str(local_path))
+            if not rubrics:
+                _set_status(
+                    "GAGAL",
+                    "Tidak ada kriteria yang berhasil diekstrak dari PDF ini — "
+                    "pastikan formatnya sesuai matriks penilaian.",
+                )
+                return {"status": "empty", "accreditationSetId": accreditation_set_id}
+            count = replace_rubric_criteria_for_set(accreditation_set_id, rubrics)
+    except RubricSetInUseError as e:
+        _set_status("GAGAL", str(e))
+        return {"status": "in_use", "accreditationSetId": accreditation_set_id, "reason": str(e)}
+    except Exception as e:
+        logger.exception("Parsing rubrik gagal untuk set %s", accreditation_set_id)
+        _set_status("GAGAL", str(e)[:500])
+        return {"status": "error", "accreditationSetId": accreditation_set_id, "reason": str(e)}
+
+    _set_status("SIAP", None)
+    return {"status": "completed", "accreditationSetId": accreditation_set_id, "count": count}
 
 
 async def main() -> None:
