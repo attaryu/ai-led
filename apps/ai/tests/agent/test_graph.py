@@ -69,6 +69,47 @@ def test_build_llm_wraps_ollama_with_retry(monkeypatch):
     bound.with_retry.assert_called_once()
 
 
+def test_build_llm_ollama_passes_timeout_to_underlying_client(monkeypatch):
+    """Regression: OLLAMA_TIMEOUT_SECONDS was read by OllamaClient but never
+    actually passed to the real ChatOllama instance used for live calls --
+    the underlying ollama Client/httpx client had no configured timeout at
+    all, so a hung request (e.g. a NAT/proxy killing an idle connection)
+    never timed out or errored; it just sat forever, stalling that indicator
+    until someone manually triggered a resume. client_kwargs["timeout"] is
+    what actually reaches httpx.Client(**client_kwargs) via ollama.Client."""
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("OLLAMA_TIMEOUT_SECONDS", "123")
+    from llm.ollama_client import OllamaClient
+    from agent.graph import _build_llm
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
+
+    with patch("langchain_ollama.ChatOllama") as mock_chat_ollama_cls:
+        mock_chat_ollama_cls.return_value = MagicMock()
+        _build_llm(fake_client)
+
+    assert mock_chat_ollama_cls.call_args.kwargs["client_kwargs"]["timeout"] == 123
+
+
+def test_build_judge_llm_passes_timeout_to_underlying_client(monkeypatch):
+    """Same gap as _build_llm, for the inline grounding judge's ChatOllama."""
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("OLLAMA_MODEL", "deepseek-r1:7b")
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://fake:11434")
+    monkeypatch.setenv("OLLAMA_TIMEOUT_SECONDS", "123")
+    monkeypatch.delenv("RAGAS_PROVIDER", raising=False)
+    monkeypatch.delenv("RAGAS_OLLAMA_BASE_URL", raising=False)
+    monkeypatch.delenv("RAGAS_OLLAMA_MODEL", raising=False)
+
+    from agent.graph import build_judge_llm
+
+    with patch("langchain_ollama.ChatOllama") as mock_chat_ollama_cls:
+        mock_chat_ollama_cls.return_value = MagicMock()
+        build_judge_llm()
+
+    assert mock_chat_ollama_cls.call_args.kwargs["client_kwargs"]["timeout"] == 123
+
+
 def test_build_judge_llm_round_robins_across_ollama_endpoints(monkeypatch):
     """The inline per-indicator grounding judge must also spread across a
     multi-GPU endpoint pool (via pick_ollama_endpoint), not always hit the

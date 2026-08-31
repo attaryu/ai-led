@@ -113,11 +113,16 @@ def _build_llm(ollama_client: OllamaClient):
         "base_url": ollama_client.base_url,
         "model": ollama_client.model,
         "temperature": 0.1,
+        # Without this, a stalled/hung connection to the remote Ollama
+        # instance (e.g. a NAT/idle-connection kill) never times out or
+        # raises -- it just waits forever, leaving that indicator's task
+        # stuck with the GPU idle until someone manually triggers a resume.
+        "client_kwargs": {"timeout": int(os.environ.get("OLLAMA_TIMEOUT_SECONDS", "300"))},
     }
     api_key = os.environ.get("OLLAMA_API_KEY")
     if api_key and not api_key.startswith("<"):
         # Pass Bearer token to the underlying ollama Client
-        kwargs["client_kwargs"] = {"headers": {"Authorization": f"Bearer {api_key}"}}
+        kwargs["client_kwargs"]["headers"] = {"Authorization": f"Bearer {api_key}"}
 
     # Retry transient connection failures (e.g. connection reset mid-request
     # to the remote Ollama instance) instead of letting them propagate raw
@@ -335,10 +340,11 @@ def build_judge_llm():
         "base_url": judge_base_url,
         "model": cfg["model"],
         "temperature": 0.0,
+        "client_kwargs": {"timeout": int(os.environ.get("OLLAMA_TIMEOUT_SECONDS", "300"))},
     }
     api_key = os.environ.get("RAGAS_OLLAMA_API_KEY", os.environ.get("OLLAMA_API_KEY"))
     if api_key and not api_key.startswith("<"):
-        kwargs["client_kwargs"] = {"headers": {"Authorization": f"Bearer {api_key}"}}
+        kwargs["client_kwargs"]["headers"] = {"Authorization": f"Bearer {api_key}"}
     return ChatOllama(**kwargs)
 
 

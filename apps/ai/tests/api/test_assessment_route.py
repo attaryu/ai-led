@@ -436,6 +436,42 @@ def test_resume_without_laporan_path_uses_default_rubrics():
     assert remaining_nos == {1, 2}
 
 
+def test_resume_respects_original_first_n_indicators_scope():
+    """Regression: a session started with first_n_indicators=2 (no
+    laporan_path) must resume within that same 2-indicator scope -- not
+    expand to every cached rubric just because laporan_path is empty.
+    Bug symptom: completed_indicators grew past total_indicators (e.g.
+    12/10, 120%) because resume silently pulled in extra indicators the
+    original /start call was never asked to run."""
+    from main import app
+
+    fake_rubrics = []
+    for no, kriteria in [(1, "K1"), (2, "K2"), (3, "K3"), (4, "K4"), (5, "K5")]:
+        r = MagicMock()
+        r.no = no
+        r.kriteria = kriteria
+        fake_rubrics.append(r)
+
+    captured = {}
+
+    async def fake_pipeline(**kwargs):
+        captured.update(kwargs)
+
+    with (
+        patch("api.routes.assessment.get_session", return_value=_fake_session_row(total_indicators=2)),
+        patch("api.routes.assessment._get_rubrics", return_value=fake_rubrics),
+        patch("api.routes.assessment.get_completed_indicator_numbers", return_value=set()),
+        patch("api.routes.assessment.update_session_status"),
+        patch("api.routes.assessment._run_assessment_pipeline", new=AsyncMock(side_effect=fake_pipeline)),
+    ):
+        with TestClient(app) as c:
+            resp = c.post("/assessment/sess-1/resume", json=_resume_body(laporan_path=None))
+
+    assert resp.status_code == 200
+    remaining_nos = {ind.indicator_no for ind in captured["indicators"]}
+    assert remaining_nos == {1, 2}
+
+
 def test_resume_all_done_marks_completed_without_running_pipeline(fake_indicators):
     from main import app
 

@@ -333,7 +333,22 @@ async def resume_assessment(
     if sess is None:
         raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
 
-    all_indicators = _derive_indicators(body.laporan_path)
+    if body.laporan_path:
+        all_indicators = _derive_indicators(body.laporan_path)
+    else:
+        # No Excel-derived subset to re-read -- reconstruct the ORIGINAL
+        # scope from the session's own recorded total_indicators, which
+        # faithfully reflects whatever first_n_indicators (if any) the
+        # initial /start call used. Without this, resume falls through to
+        # "every cached rubric" regardless of what the session actually
+        # started with, silently pulling in extra indicators the original
+        # run was never asked to cover -- completed_indicators then grows
+        # past the session's own total_indicators (e.g. 12/10, 120%).
+        # A no-op for default (no first_n_indicators) sessions, since
+        # total_indicators there already equals the full cached-rubric count.
+        all_indicators = _derive_indicators(
+            body.laporan_path, first_n_indicators=sess["total_indicators"]
+        )
 
     done = get_completed_indicator_numbers(session_id, retry_failed=retry_failed)
     remaining = [ind for ind in all_indicators if ind.indicator_no not in done]

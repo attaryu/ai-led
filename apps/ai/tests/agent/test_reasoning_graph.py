@@ -181,6 +181,25 @@ def test_build_reasoning_llm_wraps_ollama_with_retry(monkeypatch):
     mock_chat_ollama_cls.return_value.with_retry.assert_called_once()
 
 
+def test_build_reasoning_llm_passes_timeout_to_underlying_client(monkeypatch):
+    """Same gap as agent.graph._build_llm: OLLAMA_TIMEOUT_SECONDS never
+    reached the real ChatOllama instance, so a hung request to Ollama had
+    no timeout at all and never errored -- only a manual resume unstuck it."""
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("OLLAMA_TIMEOUT_SECONDS", "123")
+    from unittest.mock import MagicMock
+    from llm.ollama_client import OllamaClient
+    from agent.reasoning_graph import _build_reasoning_llm
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
+
+    with patch("langchain_ollama.ChatOllama") as mock_chat_ollama_cls:
+        mock_chat_ollama_cls.return_value = MagicMock()
+        _build_reasoning_llm(fake_client)
+
+    assert mock_chat_ollama_cls.call_args.kwargs["client_kwargs"]["timeout"] == 123
+
+
 def test_build_reasoning_llm_openrouter_uses_ollama_client_model():
     """Same regression as graph.py's _build_llm: the openrouter branch must
     use ollama_client.model (the single resolved source of truth), not

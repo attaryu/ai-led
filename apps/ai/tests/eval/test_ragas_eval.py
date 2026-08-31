@@ -476,6 +476,11 @@ def test_build_ragas_llm_round_robins_across_ollama_endpoints():
     base_urls = {c.kwargs["base_url"] for c in mock_chat_ollama_cls.call_args_list}
     assert base_urls == {"http://gpu1:11435", "http://gpu2:11436"}
 
+    # Regression: client_kwargs["timeout"] was never set, so a hung request
+    # to Ollama had no timeout and never errored -- see agent.graph's same fix.
+    for c in mock_chat_ollama_cls.call_args_list:
+        assert c.kwargs["client_kwargs"]["timeout"] == 300  # OLLAMA_TIMEOUT_SECONDS default
+
 
 def test_get_judge_llm_config_explicit_model_override():
     """A caller-supplied model wins over RAGAS_* / assessment env vars —

@@ -212,13 +212,14 @@ def _build_ragas_llm(model: Optional[str] = None):
             "base_url": ragas_base_url,
             "model": cfg["model"],
             "temperature": 0.1,
+            "client_kwargs": {"timeout": int(os.environ.get("OLLAMA_TIMEOUT_SECONDS", "300"))},
         }
         api_key = os.environ.get(
             "RAGAS_OLLAMA_API_KEY",
             os.environ.get("OLLAMA_API_KEY"),
         )
         if api_key and not api_key.startswith("<"):
-            kwargs["client_kwargs"] = {"headers": {"Authorization": f"Bearer {api_key}"}}
+            kwargs["client_kwargs"]["headers"] = {"Authorization": f"Bearer {api_key}"}
         chat = ChatOllama(**kwargs)
 
     wrapper = LangchainLLMWrapper(chat)
