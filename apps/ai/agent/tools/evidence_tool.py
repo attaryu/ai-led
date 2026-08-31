@@ -30,7 +30,9 @@ def search_evidence_documents(query: str, n_results: int = 5) -> str:
     penilaian dengan LED+LKPS seperti biasa.
     """
     ctx = require_current_context()
-    evidence_ids = list_available_evidence_ids(ctx.tenant_id, ctx.indicator_no)
+    evidence_ids = list_available_evidence_ids(
+        ctx.tenant_id, ctx.accreditation_set_id, ctx.indicator_no
+    )
     if not evidence_ids:
         return json.dumps([], ensure_ascii=False)
 

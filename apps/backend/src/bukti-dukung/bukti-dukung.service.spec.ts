@@ -142,19 +142,20 @@ describe('BuktiDukungService.create', () => {
     expect(result.folderId).toBe('fld1');
   });
 
-  it('bulk-creates EvidenceIndicatorTag rows when indicatorNos is given', async () => {
+  it('bulk-creates EvidenceIndicatorTag rows scoped to accreditationSetId when indicatorNos is given', async () => {
     const { service, prisma } = makeService({ tenantId: 't1', role: Role.PENJAMIN_MUTU, studyProgramId: null });
 
     const result = await service.create({
       ownerType: OwnerTipe.TENANT,
       fileKey: FILE_KEY,
       indicatorNos: [3, 7],
+      accreditationSetId: 'set-1',
     });
 
     expect(prisma.evidenceIndicatorTag.createMany).toHaveBeenCalledWith({
       data: [
-        { evidenceId: result.id, indicatorNo: 3 },
-        { evidenceId: result.id, indicatorNo: 7 },
+        { evidenceId: result.id, accreditationSetId: 'set-1', indicatorNo: 3 },
+        { evidenceId: result.id, accreditationSetId: 'set-1', indicatorNo: 7 },
       ],
       skipDuplicates: true,
     });
@@ -166,6 +167,14 @@ describe('BuktiDukungService.create', () => {
     await service.create({ ownerType: OwnerTipe.TENANT, fileKey: FILE_KEY });
 
     expect(prisma.evidenceIndicatorTag.createMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects indicatorNos without accreditationSetId', async () => {
+    const { service } = makeService({ tenantId: 't1', role: Role.PENJAMIN_MUTU, studyProgramId: null });
+
+    await expect(
+      service.create({ ownerType: OwnerTipe.TENANT, fileKey: FILE_KEY, indicatorNos: [3] }),
+    ).rejects.toThrow('accreditationSetId wajib diisi bila indicatorNos disertakan');
   });
 });
 

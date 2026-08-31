@@ -30,4 +30,11 @@ export class CreateBuktiDukungDto {
   @IsOptional()
   @IsInt({ each: true })
   indicatorNos?: number[];
+
+  // Which AccreditationSet indicatorNos refers to — required together with indicatorNos
+  // (validated in the service): indicator numbers restart from 1 in every set, so a bare
+  // number is ambiguous once a prodi has projects on more than one set.
+  @IsOptional()
+  @IsString()
+  accreditationSetId?: string;
 }

@@ -33,6 +33,8 @@ export type EvidenceUploadItem = {
 	namaFolder: string | null;
 	/** Nomor indikator AMI yang ditandai, berlaku untuk seluruh batch — sama seperti `target`. */
 	indicatorNos?: number[];
+	/** Set Akreditasi yang jadi acuan `indicatorNos` — wajib bareng `indicatorNos`. */
+	accreditationSetId?: string;
 	progress: number;
 	phase: UploadPhase;
 	/** Baris `BUKTI_DUKUNG` yang tercipta; baru terisi sesudah `phase = 'selesai'`. */
@@ -63,6 +65,8 @@ type EvidenceUploadState = {
 		studyProgramName: string | null;
 		/** Nomor indikator AMI yang ditandai, berlaku untuk seluruh batch — sama seperti `target`. */
 		indicatorNos?: number[];
+		/** Set Akreditasi yang jadi acuan `indicatorNos` — wajib bareng `indicatorNos`. */
+		accreditationSetId?: string;
 		uploader: UploaderIdentity;
 		/** Dipanggil per berkas yang barisnya berhasil tercatat; lihat catatan di bawah. */
 		onUploaded?: (evidence: EvidenceEntity) => void;
@@ -105,6 +109,7 @@ export const useEvidenceUploadStore = create<EvidenceUploadState>(
 					studyProgramName: item.studyProgramName,
 					folderId: item.folderId,
 					indicatorNos: item.indicatorNos,
+					accreditationSetId: item.accreditationSetId,
 					onProgress: (percent) =>
 						patch(item.id, { phase: 'uploading', progress: percent }),
 				});
@@ -149,6 +154,7 @@ export const useEvidenceUploadStore = create<EvidenceUploadState>(
 				target,
 				studyProgramName,
 				indicatorNos,
+				accreditationSetId,
 				uploader,
 				onUploaded,
 			}) => {
@@ -164,6 +170,7 @@ export const useEvidenceUploadStore = create<EvidenceUploadState>(
 					folderId: entri.folderId,
 					namaFolder: entri.namaFolder,
 					indicatorNos,
+					accreditationSetId,
 					progress: 0,
 					phase: 'antre',
 				}));

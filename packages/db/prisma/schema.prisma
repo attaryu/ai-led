@@ -346,15 +346,22 @@ model EvidenceFolder {
 /// hanya terlihat ke agen asesmen untuk indikator yang eksplisit ditag di
 /// sini, meniru skema tagging origin/ariel. Tidak ada fallback ke seluruh
 /// evidence tenant/prodi kalau kosong.
+/// indicatorNo alone is ambiguous once >1 AccreditationSet exists -- a prodi
+/// can realistically run concurrent LED projects under different
+/// accreditation bodies (e.g. BAN-PT + LAM Teknik), each numbering their own
+/// indicators from 1. accreditationSetId disambiguates which set's indicator
+/// this tag refers to.
 model EvidenceIndicatorTag {
-  id          String @id @default(cuid())
-  evidenceId  String @map("evidence_id")
-  indicatorNo Int    @map("indicator_no")
+  id                 String @id @default(cuid())
+  evidenceId         String @map("evidence_id")
+  accreditationSetId String @map("accreditation_set_id")
+  indicatorNo        Int    @map("indicator_no")
 
-  evidence Evidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  evidence         Evidence         @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  accreditationSet AccreditationSet @relation(fields: [accreditationSetId], references: [id])
 
-  @@unique([evidenceId, indicatorNo])
-  @@index([indicatorNo])
+  @@unique([evidenceId, accreditationSetId, indicatorNo])
+  @@index([accreditationSetId, indicatorNo])
   @@map("evidence_indicator_tags")
 }
 
@@ -481,10 +488,11 @@ model AccreditationSet {
   createdAt           DateTime               @default(now()) @map("created_at")
   updatedAt           DateTime               @updatedAt @map("updated_at")
 
-  tenant         Tenant            @relation(fields: [tenantId], references: [id])
+  tenant         Tenant                 @relation(fields: [tenantId], references: [id])
   criteria       RubricCriterion[]
   documents      ReferenceGuide[]
   documentsUsing LedDocument[]
+  evidenceTags   EvidenceIndicatorTag[]
 
   @@index([tenantId])
   @@map("accreditation_sets")

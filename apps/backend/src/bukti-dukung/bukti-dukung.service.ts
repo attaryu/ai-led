@@ -34,6 +34,15 @@ export class BuktiDukungService {
       throw new ForbiddenException('fileKey ini bukan milik tenant Anda');
     }
 
+    // accreditationSetId wajib bareng indicatorNos -- indicatorNo polos ambigu begitu
+    // prodi punya proyek di lebih dari satu set (lihat komentar schema.prisma). Dicek
+    // di awal, sebelum ada efek samping (R2 read, insert row), supaya gagal cepat.
+    if (dto.indicatorNos?.length && !dto.accreditationSetId) {
+      throw new BadRequestException(
+        'accreditationSetId wajib diisi bila indicatorNos disertakan',
+      );
+    }
+
     if (dto.ownerType === OwnerTipe.PROGRAM_STUDI) {
       if (!dto.studyProgramId) {
         throw new BadRequestException(
@@ -115,7 +124,11 @@ export class BuktiDukungService {
     if (dto.indicatorNos?.length) {
       // skipDuplicates so re-uploading/re-tagging the same evidence+indicator pair doesn't 500.
       await this.prisma.evidenceIndicatorTag.createMany({
-        data: dto.indicatorNos.map((indicatorNo) => ({ evidenceId: bukti.id, indicatorNo })),
+        data: dto.indicatorNos.map((indicatorNo) => ({
+          evidenceId: bukti.id,
+          accreditationSetId: dto.accreditationSetId!,
+          indicatorNo,
+        })),
         skipDuplicates: true,
       });
     }

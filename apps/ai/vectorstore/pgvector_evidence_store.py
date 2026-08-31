@@ -100,9 +100,13 @@ def index_evidence_chunks(chunks: list[dict], tenant_id: str, bukti_dukung_id: s
     )
 
 
-def list_available_evidence_ids(tenant_id: str, indicator_no: int) -> list[str]:
-    """Evidence ids explicitly tagged to this indicator (evidence_indicator_tags),
-    hard-scoped to tenant. Zero tags for this indicator on this tenant -> []
+def list_available_evidence_ids(
+    tenant_id: str, accreditation_set_id: str, indicator_no: int
+) -> list[str]:
+    """Evidence ids explicitly tagged to this indicator, hard-scoped to tenant
+    AND accreditation_set_id (evidence_indicator_tags) -- indicator_no alone
+    is ambiguous once >1 AccreditationSet exists (every set renumbers its own
+    indicators from 1). Zero tags for this indicator on this tenant/set -> []
     -> caller returns immediately, no fallback to a blanket tenant/prodi search
     (matches origin/ariel's design; tenant filter is dev-v1-only, Ariel's
     prototype has no tenant concept at all).
@@ -114,9 +118,9 @@ def list_available_evidence_ids(tenant_id: str, indicator_no: int) -> list[str]:
             SELECT ef.id
             FROM evidence_files ef
             JOIN evidence_indicator_tags eit ON eit.evidence_id = ef.id
-            WHERE ef.tenant_id = %s AND eit.indicator_no = %s
+            WHERE ef.tenant_id = %s AND eit.accreditation_set_id = %s AND eit.indicator_no = %s
             """,
-            (tenant_id, indicator_no),
+            (tenant_id, accreditation_set_id, indicator_no),
         )
         return [row["id"] for row in cur.fetchall()]
 

@@ -25,10 +25,9 @@ import { Input } from '~/core/components/ui/input';
 import { Select } from '~/core/components/ui/select';
 import { Field, FieldLabel } from '~/core/components/ui/field';
 import { cn } from '~/core/lib/utils';
-import {
-	assessmentRemoteSource,
-	type AssessmentIndicator,
-} from '~/features/assessment/data/sources/remote/assessment.remote-source';
+import { accreditationSetRepository } from '~/features/accreditation-set/data/repositories/accreditation-set.repository';
+import { type AccreditationSetEntity } from '~/features/accreditation-set/domain/entities/accreditation-set.entity';
+import { type RubricCriterion } from '~/features/chapter/domain/entities/rubric-criterion.entity';
 import { studyProgramRepository } from '~/features/study-program/data/repositories/study-program.repository';
 import { type StudyProgramEntity } from '~/features/study-program/domain/entities/study-program.entity';
 import { evidenceFolderRepository } from '../../data/repositories/evidence-folder.repository';
@@ -161,7 +160,9 @@ export function EvidenceUploadDialog({
 	const [tolakanTerbuka, setTolakanTerbuka] = React.useState(false);
 	const [dilewati, setDilewati] = React.useState(0);
 	const [folders, setFolders] = React.useState<EvidenceFolderEntity[]>([]);
-	const [indikatorList, setIndikatorList] = React.useState<AssessmentIndicator[]>([]);
+	const [setList, setSetList] = React.useState<AccreditationSetEntity[]>([]);
+	const [accreditationSetId, setAccreditationSetId] = React.useState<string>('');
+	const [indikatorList, setIndikatorList] = React.useState<RubricCriterion[]>([]);
 	const [indikatorTerpilih, setIndikatorTerpilih] = React.useState<Set<number>>(
 		() => new Set(),
 	);
@@ -191,9 +192,26 @@ export function EvidenceUploadDialog({
 		setIndikatorTerpilih(new Set());
 		setIndikatorTerbuka(false);
 		setCariIndikator('');
+		setAccreditationSetId('');
+		setIndikatorList([]);
 		evidenceFolderRepository.findByScope(cakupan).then(setFolders);
-		assessmentRemoteSource.findIndicators().then(setIndikatorList);
+		accreditationSetRepository.findSelectable().then(setSetList);
 	}, [open, targetBawaan, folderAktif, cakupan]);
+
+	// Daftar indikator ikut Set Akreditasi yang dipilih -- nomor indikator
+	// mulai dari 1 lagi di tiap set, jadi tidak ada daftar tunggal yang "benar
+	// buat semua". Ganti set = pilihan indikator lama tidak lagi bermakna.
+	React.useEffect(() => {
+		if (!accreditationSetId) {
+			setIndikatorList([]);
+			setIndikatorTerpilih(new Set());
+			return;
+		}
+		accreditationSetRepository.findById(accreditationSetId).then((set) => {
+			setIndikatorList(set?.kriteria ?? []);
+		});
+		setIndikatorTerpilih(new Set());
+	}, [accreditationSetId]);
 
 	const indikatorTersaring = React.useMemo(() => {
 		const kunci = cariIndikator.trim().toLowerCase();
@@ -366,6 +384,7 @@ export function EvidenceUploadDialog({
 			target: parsed.data,
 			studyProgramName: targetProgramName,
 			indicatorNos: indikatorTerpilih.size > 0 ? [...indikatorTerpilih] : undefined,
+			accreditationSetId: indikatorTerpilih.size > 0 ? accreditationSetId : undefined,
 			uploader,
 			onUploaded,
 		});
@@ -504,24 +523,45 @@ export function EvidenceUploadDialog({
 					 * berkas ini murni referensi Bukti Dukung, tidak dipakai asesmen AMI.
 					 */}
 					<Field>
+						<FieldLabel htmlFor="evidence-accreditation-set">
+							Set Akreditasi acuan (opsional)
+						</FieldLabel>
+						<Select
+							id="evidence-accreditation-set"
+							value={accreditationSetId}
+							onChange={(event) => setAccreditationSetId(event.target.value)}
+						>
+							<option value="">Tidak ditandai ke indikator manapun</option>
+							{setList.map((set) => (
+								<option key={set.id} value={set.id}>
+									{set.nama}
+								</option>
+							))}
+						</Select>
+					</Field>
+
+					<Field>
 						<FieldLabel htmlFor="evidence-indicator-tujuan">
 							Tag indikator AMI (opsional)
 						</FieldLabel>
 						<button
 							id="evidence-indicator-tujuan"
 							type="button"
+							disabled={!accreditationSetId}
 							onClick={() => setIndikatorTerbuka((buka) => !buka)}
 							aria-expanded={indikatorTerbuka}
-							className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-accent/40"
+							className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-accent/40 disabled:cursor-not-allowed disabled:opacity-50"
 						>
 							<TagIcon
 								weight="fill"
 								className="size-4 shrink-0 text-muted-foreground"
 							/>
 							<span className="min-w-0 flex-1 truncate">
-								{indikatorTerpilih.size > 0
-									? `${indikatorTerpilih.size} indikator dipilih`
-									: 'Belum ditandai (tidak dipakai asesmen AMI)'}
+								{!accreditationSetId
+									? 'Pilih Set Akreditasi dulu untuk menandai indikator'
+									: indikatorTerpilih.size > 0
+										? `${indikatorTerpilih.size} indikator dipilih`
+										: 'Belum ditandai (tidak dipakai asesmen AMI)'}
 							</span>
 							{indikatorTerbuka ? (
 								<CaretDownIcon className="size-4 shrink-0 text-muted-foreground" />

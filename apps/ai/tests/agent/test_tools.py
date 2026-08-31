@@ -290,8 +290,9 @@ def test_led_tool_no_context_raises():
 def test_search_evidence_documents_returns_json_list(monkeypatch):
     from agent.tools import evidence_tool
 
-    def fake_ids(tenant_id, indicator_no):
+    def fake_ids(tenant_id, accreditation_set_id, indicator_no):
         assert tenant_id == "tenant-x"
+        assert accreditation_set_id == "set-x"
         assert indicator_no == 1
         return ["ev1"]
 
@@ -345,7 +346,7 @@ def test_search_evidence_documents_scoped_to_current_indicator_only(monkeypatch)
 
     tags_by_indicator = {2: ["ev-for-indicator-2"]}
 
-    def fake_ids(tenant_id, indicator_no):
+    def fake_ids(tenant_id, accreditation_set_id, indicator_no):
         return tags_by_indicator.get(indicator_no, [])
 
     monkeypatch.setattr(evidence_tool, "list_available_evidence_ids", fake_ids)

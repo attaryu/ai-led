@@ -88,6 +88,7 @@ export async function reportUploadComplete({
 	target,
 	folderId,
 	indicatorNos,
+	accreditationSetId,
 }: {
 	objectKey: string;
 	namaDokumen: string;
@@ -96,6 +97,8 @@ export async function reportUploadComplete({
 	folderId: string | null;
 	/** Nomor indikator AMI yang ditandai untuk berkas ini (§ pemilih indikator modal unggah). Kosong = berlaku untuk semua indikator. */
 	indicatorNos?: number[];
+	/** Set Akreditasi yang jadi acuan `indicatorNos` — wajib bareng `indicatorNos` (indicatorNo polos ambigu lintas set). */
+	accreditationSetId?: string;
 }): Promise<EvidenceEntity> {
 	try {
 		const row = await apiFetch<BuktiDukungApiRow>('/bukti-dukung', {
@@ -107,6 +110,7 @@ export async function reportUploadComplete({
 				fileKey: objectKey,
 				folderId: folderId ?? undefined,
 				indicatorNos: indicatorNos && indicatorNos.length > 0 ? indicatorNos : undefined,
+				accreditationSetId: indicatorNos && indicatorNos.length > 0 ? accreditationSetId : undefined,
 			},
 		});
 		return mapBuktiDukungToEvidence(row);
