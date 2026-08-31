@@ -33,10 +33,11 @@ from pydantic import BaseModel
 
 from agent.context import AssessmentContext, current_assessment_context
 from agent.graph import build_graph_auto
-from agent.tools.rubric_tool import _get_rubrics
+from agent.tools.rubric_tool import _get_rubrics, _get_rubrics_for_set
 from db.postgres_client import (
     create_session,
     get_completed_indicator_numbers,
+    get_document_accreditation_set,
     get_indicator_results,
     get_session,
     list_sessions as list_sessions_db,
@@ -181,13 +182,17 @@ class _SimpleIndicator:
 
 
 def _derive_indicators(
-    laporan_path: Optional[str], first_n_indicators: Optional[int] = None
+    laporan_path: Optional[str],
+    first_n_indicators: Optional[int] = None,
+    *,
+    accreditation_set_id: str,
 ) -> list:
     """Shared by /start and /resume: laporan_path -> Excel-derived subset,
-    otherwise every cached rubric. first_n_indicators overrides both. Raises
+    otherwise every rubric_criteria row in the document's chosen
+    AccreditationSet. first_n_indicators overrides both. Raises
     HTTPException on failure."""
     if first_n_indicators is not None:
-        rubrics = _get_rubrics()
+        rubrics = _get_rubrics_for_set(accreditation_set_id)
         indicators = [
             _SimpleIndicator(indicator_no=r.no, kriteria=r.kriteria)
             for r in rubrics[:first_n_indicators]
@@ -195,7 +200,7 @@ def _derive_indicators(
         if not indicators:
             raise HTTPException(
                 status_code=500,
-                detail="No rubrics available — has the matrix been parsed?",
+                detail="No rubrics available for this AccreditationSet.",
             )
         return indicators
 
@@ -213,8 +218,8 @@ def _derive_indicators(
             )
         return indicators
 
-    # Default: evaluate every rubric in the cached matrix
-    rubrics = _get_rubrics()
+    # Default: evaluate every rubric_criteria row in this AccreditationSet
+    rubrics = _get_rubrics_for_set(accreditation_set_id)
     indicators = [
         _SimpleIndicator(indicator_no=r.no, kriteria=r.kriteria)
         for r in rubrics
@@ -222,7 +227,7 @@ def _derive_indicators(
     if not indicators:
         raise HTTPException(
             status_code=500,
-            detail="No rubrics available — has the matrix been parsed?",
+            detail="No rubrics available for this AccreditationSet.",
         )
     return indicators
 
@@ -238,7 +243,17 @@ def get_assessment_models() -> AvailableModelsResponse:
 
 @router.get("/indicators", response_model=list[IndicatorListItem])
 def get_indicators() -> list[IndicatorListItem]:
-    """Return the AMI indicators from the cached rubric matrix — backend has no Postgres-side master table for these."""
+    """Return the AMI indicators from the cached matrix.json rubric.
+
+    Deliberately still matrix.json, not rubric_criteria — this is the
+    one-time BOOTSTRAP source packages/db/prisma/seed-rubric-criteria.ts
+    imports FROM to populate Postgres's rubric_criteria/AccreditationSet
+    tables in the first place. Pointing it at Postgres instead would make
+    the seed script read from the very table it's supposed to populate.
+    The live scoring path (agent/tools/rubric_tool.py's get_indicator_rubric
+    tool) reads rubric_criteria directly, scoped per AccreditationSet — see
+    db.postgres_client.get_rubric_criteria_for_set.
+    """
     return [
         IndicatorListItem(
             no=r.no,
@@ -265,7 +280,15 @@ async def start_assessment(
     Excel template. Otherwise, all 64 default indicators are evaluated.
     Results are persisted to Postgres only — nothing is written back to Excel.
     """
-    indicators = _derive_indicators(body.laporan_path, body.first_n_indicators)
+    accreditation_set_id = get_document_accreditation_set(body.dokumen_id)
+    if accreditation_set_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Dokumen ini belum memilih Set Akreditasi — pilih Set Akreditasi dulu sebelum menjalankan penilaian.",
+        )
+    indicators = _derive_indicators(
+        body.laporan_path, body.first_n_indicators, accreditation_set_id=accreditation_set_id
+    )
 
     if body.model is not None:
         available = get_available_models()
@@ -293,6 +316,7 @@ async def start_assessment(
         max_parallel=parallel,
         tenant_id=body.tenant_id,
         dokumen_id=body.dokumen_id,
+        accreditation_set_id=accreditation_set_id,
         model=body.model,
     )
 
@@ -339,8 +363,17 @@ async def resume_assessment(
     if sess is None:
         raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
 
+    accreditation_set_id = get_document_accreditation_set(body.dokumen_id)
+    if accreditation_set_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Dokumen ini belum memilih Set Akreditasi — pilih Set Akreditasi dulu sebelum menjalankan penilaian.",
+        )
+
     if body.laporan_path:
-        all_indicators = _derive_indicators(body.laporan_path)
+        all_indicators = _derive_indicators(
+            body.laporan_path, accreditation_set_id=accreditation_set_id
+        )
     else:
         # No Excel-derived subset to re-read -- reconstruct the ORIGINAL
         # scope from the session's own recorded total_indicators, which
@@ -353,7 +386,9 @@ async def resume_assessment(
         # A no-op for default (no first_n_indicators) sessions, since
         # total_indicators there already equals the full cached-rubric count.
         all_indicators = _derive_indicators(
-            body.laporan_path, first_n_indicators=sess["total_indicators"]
+            body.laporan_path,
+            first_n_indicators=sess["total_indicators"],
+            accreditation_set_id=accreditation_set_id,
         )
 
     done = get_completed_indicator_numbers(session_id, retry_failed=retry_failed)
@@ -383,6 +418,7 @@ async def resume_assessment(
         initial_completed=len(done),
         tenant_id=body.tenant_id,
         dokumen_id=body.dokumen_id,
+        accreditation_set_id=accreditation_set_id,
         model=model,
     )
 
@@ -439,8 +475,16 @@ async def get_session_results(session_id: str) -> SessionResultsResponse:
 
     rows = get_indicator_results(session_id)
 
-    # Map indicator_no → kriteria for fast lookup
-    kriteria_map: dict[int, str] = {r.no: r.kriteria for r in _get_rubrics()}
+    # Map indicator_no → kriteria for fast lookup, scoped to whatever
+    # AccreditationSet this session's document actually used. Falls back to
+    # an empty map (kriteria shows as None) rather than raising — a missing
+    # set shouldn't block viewing already-scored results.
+    accreditation_set_id = get_document_accreditation_set(sess["document_id"])
+    kriteria_map: dict[int, str] = (
+        {r.no: r.kriteria for r in _get_rubrics_for_set(accreditation_set_id)}
+        if accreditation_set_id
+        else {}
+    )
 
     items: list[IndicatorResultItem] = [
         IndicatorResultItem(
@@ -475,6 +519,7 @@ async def _process_single_indicator(
     semaphore: asyncio.Semaphore,
     tenant_id: str,
     dokumen_id: str,
+    accreditation_set_id: str,
     study_program_id: Optional[str] = None,
     model: Optional[str] = None,
 ) -> bool:
@@ -518,7 +563,9 @@ async def _process_single_indicator(
             # run_in_executor doesn't inherit context by default — copy it
             # explicitly so search_led_evidence/get_lkps_table see this.
             current_assessment_context.set(
-                AssessmentContext(tenant_id, dokumen_id, indicator.indicator_no, study_program_id)
+                AssessmentContext(
+                    tenant_id, dokumen_id, indicator.indicator_no, accreditation_set_id, study_program_id
+                )
             )
             ctx = contextvars.copy_context()
             result = await asyncio.get_event_loop().run_in_executor(
@@ -579,6 +626,7 @@ async def _run_assessment_pipeline(
     max_parallel: int,
     tenant_id: str,
     dokumen_id: str,
+    accreditation_set_id: str,
     study_program_id: Optional[str] = None,
     initial_completed: int = 0,
     on_progress: Optional[Callable[[int, int], Awaitable[None]]] = None,
@@ -619,6 +667,7 @@ async def _run_assessment_pipeline(
                     semaphore=semaphore,
                     tenant_id=tenant_id,
                     dokumen_id=dokumen_id,
+                    accreditation_set_id=accreditation_set_id,
                     study_program_id=study_program_id,
                     model=model,
                 )

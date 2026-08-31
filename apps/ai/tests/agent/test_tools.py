@@ -54,41 +54,39 @@ def test_formula_tool_missing_variable_returns_error():
     assert "error" in result
 
 
-# ── rubric_tool (mocked file system) ─────────────────────────────────────────
+# ── rubric_tool (Postgres, scoped per AccreditationSet via AssessmentContext) ──
+#
+# get_indicator_rubric reads rubric_criteria for require_current_context().
+# accreditation_set_id (here, "set-x" per the module's autouse fixture above),
+# cached in _rubric_cache_by_set — tests seed that cache directly rather than
+# hitting a real DB. _rubric_cache/RUBRIC_CACHE_PATH (matrix.json) below still
+# exist but are now only read by GET /assessment/indicators (the seed script's
+# bootstrap source), not by this tool.
 
 
 def test_rubric_tool_not_found(monkeypatch):
-    """Returns error JSON when indicator_no is not in cache."""
+    """Returns error JSON when indicator_no is not in the set's cache."""
     from agent.tools import rubric_tool
 
-    monkeypatch.setitem(rubric_tool._rubric_cache, "rubrics", [])
+    monkeypatch.setitem(rubric_tool._rubric_cache_by_set, "set-x", [])
     result = json.loads(rubric_tool.get_indicator_rubric.invoke({"indicator_no": 999}))
     assert "error" in result
 
 
-def test_rubric_tool_missing_cache_file_returns_error(monkeypatch, tmp_path):
-    """The cache file not existing yet (e.g. matrix.pdf never uploaded) must
-    surface as a structured tool error, not an unhandled FileNotFoundError —
-    get_indicator_rubric is the mandatory FIRST tool call per the system
-    prompt, so an uncaught crash here kills every single indicator."""
+def test_rubric_tool_db_error_returns_error(monkeypatch):
+    """A Postgres failure loading the set's criteria must surface as a
+    structured tool error, not an unhandled exception — get_indicator_rubric
+    is the mandatory FIRST tool call per the system prompt, so an uncaught
+    crash here kills every single indicator."""
     from agent.tools import rubric_tool
 
-    rubric_tool._rubric_cache.clear()
-    monkeypatch.setenv("RUBRIC_CACHE_PATH", str(tmp_path / "does_not_exist.json"))
-
-    result = json.loads(rubric_tool.get_indicator_rubric.invoke({"indicator_no": 1}))
-    assert "error" in result
-
-
-def test_rubric_tool_corrupted_cache_file_returns_error(monkeypatch, tmp_path):
-    """A corrupted (non-JSON) cache file must also degrade to a structured
-    error instead of an unhandled json.JSONDecodeError."""
-    from agent.tools import rubric_tool
-
-    rubric_tool._rubric_cache.clear()
-    bad_file = tmp_path / "corrupt.json"
-    bad_file.write_text("{not valid json", encoding="utf-8")
-    monkeypatch.setenv("RUBRIC_CACHE_PATH", str(bad_file))
+    rubric_tool._rubric_cache_by_set.clear()
+    rubric_tool._rubric_load_errors_by_set.clear()
+    monkeypatch.setattr(
+        rubric_tool,
+        "get_rubric_criteria_for_set",
+        lambda accreditation_set_id: (_ for _ in ()).throw(RuntimeError("connection refused")),
+    )
 
     result = json.loads(rubric_tool.get_indicator_rubric.invoke({"indicator_no": 1}))
     assert "error" in result
@@ -109,11 +107,37 @@ def test_rubric_tool_returns_fields(monkeypatch):
         lkps_table_ref=[],
         sub_score_formula=None,
     )
-    monkeypatch.setitem(rubric_tool._rubric_cache, "rubrics", [fake])
+    monkeypatch.setitem(rubric_tool._rubric_cache_by_set, "set-x", [fake])
     result = json.loads(rubric_tool.get_indicator_rubric.invoke({"indicator_no": 1}))
     assert result["no"] == 1
     assert result["score_type"] == "qualitative"
     assert "score_criteria" in result
+
+
+def test_rubric_tool_scopes_cache_per_accreditation_set(monkeypatch):
+    """Two different accreditation_set_id contexts must not see each other's
+    cached rubrics — a wrong-set lookup was the whole point of moving off the
+    old single global _rubric_cache."""
+    from ingestion.matrix_parser import IndicatorRubric
+    from agent.context import AssessmentContext, current_assessment_context
+    from agent.tools import rubric_tool
+
+    fake_x = IndicatorRubric(
+        no=1, kriteria="Set X", indikator="i", score_type="qualitative",
+        score_criteria={}, formula=None, lkps_table_ref=[], sub_score_formula=None,
+    )
+    monkeypatch.setitem(rubric_tool._rubric_cache_by_set, "set-x", [fake_x])
+    monkeypatch.setitem(rubric_tool._rubric_cache_by_set, "set-y", [])
+
+    result_x = json.loads(rubric_tool.get_indicator_rubric.invoke({"indicator_no": 1}))
+    assert result_x["kriteria"] == "Set X"
+
+    token = current_assessment_context.set(AssessmentContext("tenant-y", "doc-9", 1, "set-y"))
+    try:
+        result_y = json.loads(rubric_tool.get_indicator_rubric.invoke({"indicator_no": 1}))
+    finally:
+        current_assessment_context.reset(token)
+    assert "error" in result_y
 
 
 # ── lkps_tool / led_tool: (tenant_id, dokumen_id) scoping ──────────────────────
@@ -130,7 +154,7 @@ def _assessment_context():
     reset it after — tests must not leak context into each other."""
     from agent.context import AssessmentContext, current_assessment_context
 
-    token = current_assessment_context.set(AssessmentContext("tenant-x", "doc-1", 1))
+    token = current_assessment_context.set(AssessmentContext("tenant-x", "doc-1", 1, "set-x"))
     yield
     current_assessment_context.reset(token)
 
@@ -198,7 +222,7 @@ def test_lkps_tool_scoped_per_tenant_document(monkeypatch):
     result_x = lkps_tool.get_lkps_table.invoke({"table_reference": "Tabel 1"})
     assert "tenant-x-data" in result_x
 
-    token = current_assessment_context.set(AssessmentContext("tenant-y", "doc-9", 1))
+    token = current_assessment_context.set(AssessmentContext("tenant-y", "doc-9", 1, "set-y"))
     try:
         result_y = lkps_tool.get_lkps_table.invoke({"table_reference": "Tabel 1"})
     finally:

@@ -29,6 +29,19 @@ def _make_state(**overrides) -> AssessmentState:
     return base
 
 
+@pytest.fixture(autouse=True)
+def _assessment_context():
+    """get_indicator_rubric now requires an AssessmentContext (scopes rubric
+    lookup to accreditation_set_id) — every test in this module runs a real
+    graph.invoke() that can reach that tool, so set a default context for all
+    of them rather than each patching agent.context individually."""
+    from agent.context import AssessmentContext, current_assessment_context
+
+    token = current_assessment_context.set(AssessmentContext("tenant-x", "doc-1", 1, "set-x"))
+    yield
+    current_assessment_context.reset(token)
+
+
 # ── graph import / compilation ─────────────────────────────────────────────────
 
 def test_build_graph_returns_compiled_graph():
@@ -210,7 +223,7 @@ def test_graph_terminates_when_llm_always_calls_tools():
 
     with (
         patch("agent.graph._build_llm", return_value=fake_llm),
-        patch("agent.tools.rubric_tool._get_rubrics", return_value=[]),
+        patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[]),
     ):
         graph = build_graph(fake_client)
         # Small-but-generous recursion_limit: the fix must terminate well
@@ -275,7 +288,7 @@ def test_checklist_built_once_and_injected_before_finalizing():
 
     with (
         patch("agent.graph._build_llm", return_value=fake_llm),
-        patch("agent.tools.rubric_tool._get_rubrics") as mock_rubrics,
+        patch("agent.tools.rubric_tool._get_rubrics_for_set") as mock_rubrics,
     ):
         mock_rubrics.return_value = [
             MagicMock(
@@ -325,7 +338,7 @@ def test_checklist_generation_failure_does_not_block_flow():
 
     with (
         patch("agent.graph._build_llm", return_value=fake_llm),
-        patch("agent.tools.rubric_tool._get_rubrics", return_value=[]),
+        patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[]),
     ):
         graph = build_graph(fake_client)
         result = graph.invoke(_make_state(), config={"recursion_limit": 40})
@@ -377,7 +390,7 @@ def test_graph_uses_formula_tool_result_for_quantitative_indicator():
 
     with (
         patch("agent.graph._build_llm", return_value=fake_llm),
-        patch("agent.tools.rubric_tool._get_rubrics") as mock_rubrics,
+        patch("agent.tools.rubric_tool._get_rubrics_for_set") as mock_rubrics,
     ):
         mock_rubrics.return_value = [
             MagicMock(
@@ -439,7 +452,7 @@ def test_graph_uses_formula_tool_result_for_composite_indicator():
 
     with (
         patch("agent.graph._build_llm", return_value=fake_llm),
-        patch("agent.tools.rubric_tool._get_rubrics") as mock_rubrics,
+        patch("agent.tools.rubric_tool._get_rubrics_for_set") as mock_rubrics,
     ):
         mock_rubrics.return_value = [
             MagicMock(
@@ -470,14 +483,11 @@ def test_judge_runs_after_parse_output_and_lowers_confidence_when_ungrounded():
     import json
     from langchain_core.messages import AIMessage
     from llm.ollama_client import OllamaClient
-    from agent.context import AssessmentContext, current_assessment_context
     from agent.graph import build_graph
 
     # search_led_evidence reads (tenant_id, dokumen_id) from agent.context —
-    # see agent/context.py. This is the only test in this module that reaches
-    # that tool, so the context is set locally rather than via a module-wide
-    # autouse fixture (test_tools.py's pattern for the tools that all need it).
-    token = current_assessment_context.set(AssessmentContext("tenant-x", "doc-1", 1))
+    # see agent/context.py. Covered by this module's autouse _assessment_context
+    # fixture (tenant-x/doc-1/set-x), same values this test used to set manually.
 
     rubric_tool_call = AIMessage(
         content="",
@@ -512,24 +522,21 @@ def test_judge_runs_after_parse_output_and_lowers_confidence_when_ungrounded():
 
     fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
 
-    try:
-        with (
-            patch("agent.graph._build_llm", return_value=fake_llm),
-            patch("agent.graph.build_judge_llm", return_value=fake_judge_llm),
-            patch("agent.tools.rubric_tool._get_rubrics", return_value=[]),
-            patch(
-                "agent.tools.led_tool.search_led",
-                return_value=[{
-                    "text": "Visi misi disusun lewat rapat pimpinan.",
-                    "metadata": {"page_start": 12, "page_end": 12, "para_start": -1, "para_end": -1, "section_heading": ""},
-                    "distance": 0.1,
-                }],
-            ),
-        ):
-            graph = build_graph(fake_client)
-            result = graph.invoke(_make_state(), config={"recursion_limit": 60})
-    finally:
-        current_assessment_context.reset(token)
+    with (
+        patch("agent.graph._build_llm", return_value=fake_llm),
+        patch("agent.graph.build_judge_llm", return_value=fake_judge_llm),
+        patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[]),
+        patch(
+            "agent.tools.led_tool.search_led",
+            return_value=[{
+                "text": "Visi misi disusun lewat rapat pimpinan.",
+                "metadata": {"page_start": 12, "page_end": 12, "para_start": -1, "para_end": -1, "section_heading": ""},
+                "distance": 0.1,
+            }],
+        ),
+    ):
+        graph = build_graph(fake_client)
+        result = graph.invoke(_make_state(), config={"recursion_limit": 60})
 
     assert result["final_score"] == 3.0
     assert result["judge_verdict"]["grounded"] is False
@@ -565,7 +572,7 @@ def test_judge_leaves_confidence_untouched_when_grounded():
     with (
         patch("agent.graph._build_llm", return_value=fake_llm),
         patch("agent.graph.build_judge_llm", return_value=fake_judge_llm),
-        patch("agent.tools.rubric_tool._get_rubrics", return_value=[]),
+        patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[]),
     ):
         graph = build_graph(fake_client)
         result = graph.invoke(_make_state(), config={"recursion_limit": 60})
@@ -599,7 +606,7 @@ def test_judge_failure_does_not_block_result():
     with (
         patch("agent.graph._build_llm", return_value=fake_llm),
         patch("agent.graph.build_judge_llm", return_value=fake_judge_llm),
-        patch("agent.tools.rubric_tool._get_rubrics", return_value=[]),
+        patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[]),
     ):
         graph = build_graph(fake_client)
         result = graph.invoke(_make_state(), config={"recursion_limit": 60})

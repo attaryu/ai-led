@@ -21,8 +21,19 @@ import uuid
 from typing import Any, Optional
 
 from db.connection import get_conn as _get_conn
+from ingestion.matrix_parser import IndicatorRubric
 
 logger = logging.getLogger(__name__)
+
+# rubric_criteria.score_type is stored as the uppercase Indonesian enum
+# (KUALITATIF/KUANTITATIF/KOMPOSIT) -- translated back to the lowercase
+# English strings the LLM prompt/tests were built against (matrix.json's
+# original vocabulary), same spirit as this module's status translation.
+_SCORE_TYPE_TO_ENGLISH = {
+    "KUALITATIF": "qualitative",
+    "KUANTITATIF": "quantitative",
+    "KOMPOSIT": "composite",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -111,7 +122,7 @@ def get_session(session_id: str) -> Optional[dict]:
     with _get_conn().cursor() as cur:
         cur.execute(
             """
-            SELECT id AS session_id, status, total_indicators, completed_indicators, error
+            SELECT id AS session_id, document_id, status, total_indicators, completed_indicators, error
             FROM assessment_sessions WHERE id = %s
             """,
             (session_id,),
@@ -260,3 +271,66 @@ def log_reasoning_step(
             indicator_no,
             session_id,
         )
+
+
+# ---------------------------------------------------------------------------
+# Rubric helpers (dynamic per-AccreditationSet rubrics — replaces the old
+# global matrix.json cache for the live scoring path; matrix.json stays the
+# bootstrap source ingestion.matrix_parser/seed-rubric-criteria.ts import
+# FROM, not something the agent reads directly anymore)
+# ---------------------------------------------------------------------------
+
+
+def get_document_accreditation_set(dokumen_id: str) -> Optional[str]:
+    """Return the accreditation_set_id chosen for this document, or None if
+    it hasn't picked one yet (blocks /start and /resume — see assessment.py)."""
+    with _get_conn().cursor() as cur:
+        cur.execute(
+            "SELECT accreditation_set_id FROM writing_led_documents WHERE id = %s",
+            (dokumen_id,),
+        )
+        row = cur.fetchone()
+    return row["accreditation_set_id"] if row else None
+
+
+def get_rubric_criteria_for_set(accreditation_set_id: str) -> list[IndicatorRubric]:
+    """Return every rubric_criteria row for this set as IndicatorRubric
+    objects — same shape as ingestion.matrix_parser.load_cached_rubrics(),
+    so agent/tools/rubric_tool.py can use either interchangeably."""
+    with _get_conn().cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, indicator_no, criterion_group, description, score_type,
+                   lkps_table_refs, formula, sub_score_formula
+            FROM rubric_criteria WHERE accreditation_set_id = %s ORDER BY indicator_no
+            """,
+            (accreditation_set_id,),
+        )
+        criteria = [dict(r) for r in cur.fetchall()]
+        if not criteria:
+            return []
+
+        cur.execute(
+            """
+            SELECT criterion_id, score, description FROM rubric_levels
+            WHERE criterion_id = ANY(%s)
+            """,
+            ([c["id"] for c in criteria],),
+        )
+        levels_by_criterion: dict[str, dict[int, str]] = {}
+        for row in cur.fetchall():
+            levels_by_criterion.setdefault(row["criterion_id"], {})[row["score"]] = row["description"]
+
+    return [
+        IndicatorRubric(
+            no=c["indicator_no"],
+            kriteria=c["criterion_group"],
+            indikator=c["description"],
+            score_type=_SCORE_TYPE_TO_ENGLISH[c["score_type"]],
+            score_criteria=levels_by_criterion.get(c["id"], {}),
+            formula=c["formula"],
+            lkps_table_ref=list(c["lkps_table_refs"] or []),
+            sub_score_formula=c["sub_score_formula"],
+        )
+        for c in criteria
+    ]

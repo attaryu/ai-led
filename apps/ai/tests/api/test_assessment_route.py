@@ -19,9 +19,24 @@ from fastapi.testclient import TestClient
 TENANT_ID = "tenant-1"
 DOKUMEN_ID = "dokumen-1"
 USER_ID = "user-1"
+ACCREDITATION_SET_ID = "set-1"
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _default_accreditation_set():
+    """/start and /resume now reject (400) unless the document has an
+    AccreditationSet chosen — default every test in this module to one so
+    existing tests don't need to know about this. Tests exercising the
+    rejection path override with their own nested
+    patch(..., return_value=None)."""
+    with patch(
+        "api.routes.assessment.get_document_accreditation_set",
+        return_value=ACCREDITATION_SET_ID,
+    ):
+        yield
 
 
 @pytest.fixture()
@@ -82,6 +97,25 @@ def test_start_returns_session_id(client):
     data = resp.json()
     assert "session_id" in data
     assert data["total_indicators"] == 2
+
+
+def test_start_rejects_document_without_accreditation_set(client):
+    """A document that hasn't picked an AccreditationSet yet can't be scored
+    -- there's no rubric to score it against."""
+    with patch("api.routes.assessment.get_document_accreditation_set", return_value=None):
+        resp = client.post("/assessment/start", json=_start_body())
+    assert resp.status_code == 400
+    assert "Set Akreditasi" in resp.json()["detail"]
+
+
+def test_resume_rejects_document_without_accreditation_set(client):
+    with (
+        patch("api.routes.assessment.get_session", return_value=_fake_session_row()),
+        patch("api.routes.assessment.get_document_accreditation_set", return_value=None),
+    ):
+        resp = client.post("/assessment/sess-1/resume", json=_resume_body())
+    assert resp.status_code == 400
+    assert "Set Akreditasi" in resp.json()["detail"]
 
 
 def test_start_missing_file_returns_400():
@@ -189,7 +223,7 @@ def test_start_no_rubrics_available_returns_500():
     a distinct failure mode from 'file not found' or 'file has no rows'."""
     from main import app
 
-    with patch("api.routes.assessment._get_rubrics", return_value=[]):
+    with patch("api.routes.assessment._get_rubrics_for_set", return_value=[]):
         with TestClient(app) as c:
             resp = c.post("/assessment/start", json=_start_body(laporan_path=None))
 
@@ -208,7 +242,7 @@ def test_start_without_laporan_path_uses_default_rubrics():
     fake_rubric_b.kriteria = "K2"
 
     with (
-        patch("api.routes.assessment._get_rubrics", return_value=[fake_rubric_a, fake_rubric_b]),
+        patch("api.routes.assessment._get_rubrics_for_set", return_value=[fake_rubric_a, fake_rubric_b]),
         patch("api.routes.assessment.create_session"),
         patch("api.routes.assessment._run_assessment_pipeline", new=AsyncMock()),
     ):
@@ -240,7 +274,7 @@ def test_start_with_first_n_indicators_limits_default_rubrics():
 
     with (
         patch(
-            "api.routes.assessment._get_rubrics",
+            "api.routes.assessment._get_rubrics_for_set",
             return_value=[fake_rubric_a, fake_rubric_b, fake_rubric_c],
         ),
         patch("api.routes.assessment.create_session"),
@@ -272,7 +306,7 @@ def test_start_first_n_indicators_overrides_laporan_path(fake_indicators):
     with (
         patch("api.routes.assessment.os.path.exists", return_value=True),
         patch("api.routes.assessment.read_indicator_rows", return_value=fake_indicators),
-        patch("api.routes.assessment._get_rubrics", return_value=[fake_rubric_a]),
+        patch("api.routes.assessment._get_rubrics_for_set", return_value=[fake_rubric_a]),
         patch("api.routes.assessment.create_session"),
         patch("api.routes.assessment._run_assessment_pipeline", new=AsyncMock(side_effect=fake_pipeline)),
     ):
@@ -423,7 +457,7 @@ def test_resume_without_laporan_path_uses_default_rubrics():
 
     with (
         patch("api.routes.assessment.get_session", return_value=_fake_session_row(total_indicators=2)),
-        patch("api.routes.assessment._get_rubrics", return_value=[fake_rubric_a, fake_rubric_b]),
+        patch("api.routes.assessment._get_rubrics_for_set", return_value=[fake_rubric_a, fake_rubric_b]),
         patch("api.routes.assessment.get_completed_indicator_numbers", return_value=set()),
         patch("api.routes.assessment.update_session_status"),
         patch("api.routes.assessment._run_assessment_pipeline", new=AsyncMock(side_effect=fake_pipeline)),
@@ -459,7 +493,7 @@ def test_resume_respects_original_first_n_indicators_scope():
 
     with (
         patch("api.routes.assessment.get_session", return_value=_fake_session_row(total_indicators=2)),
-        patch("api.routes.assessment._get_rubrics", return_value=fake_rubrics),
+        patch("api.routes.assessment._get_rubrics_for_set", return_value=fake_rubrics),
         patch("api.routes.assessment.get_completed_indicator_numbers", return_value=set()),
         patch("api.routes.assessment.update_session_status"),
         patch("api.routes.assessment._run_assessment_pipeline", new=AsyncMock(side_effect=fake_pipeline)),
@@ -641,7 +675,7 @@ async def test_process_single_indicator_success(fake_indicators):
             session_id="test-session",
             semaphore=semaphore,
             tenant_id=TENANT_ID,
-            dokumen_id=DOKUMEN_ID,
+            dokumen_id=DOKUMEN_ID, accreditation_set_id=ACCREDITATION_SET_ID,
         )
 
     assert result is True
@@ -676,11 +710,11 @@ async def test_process_single_indicator_builds_its_own_graph_per_call(fake_indic
     ):
         await _process_single_indicator(
             indicator=indicator, session_id="s", semaphore=semaphore,
-            tenant_id=TENANT_ID, dokumen_id=DOKUMEN_ID,
+            tenant_id=TENANT_ID, dokumen_id=DOKUMEN_ID, accreditation_set_id=ACCREDITATION_SET_ID,
         )
         await _process_single_indicator(
             indicator=indicator, session_id="s", semaphore=semaphore,
-            tenant_id=TENANT_ID, dokumen_id=DOKUMEN_ID,
+            tenant_id=TENANT_ID, dokumen_id=DOKUMEN_ID, accreditation_set_id=ACCREDITATION_SET_ID,
         )
 
     assert mock_create.call_count == 2
@@ -708,7 +742,7 @@ async def test_process_single_indicator_handles_exception(fake_indicators):
             session_id="test-session",
             semaphore=semaphore,
             tenant_id=TENANT_ID,
-            dokumen_id=DOKUMEN_ID,
+            dokumen_id=DOKUMEN_ID, accreditation_set_id=ACCREDITATION_SET_ID,
         )
 
     assert result is False
@@ -732,6 +766,7 @@ def test_results_returns_indicators_with_kriteria():
 
     session_row = {
         "session_id": "sess-1",
+        "document_id": DOKUMEN_ID,
         "status": "completed",
         "total_indicators": 3,
         "completed_indicators": 3,
@@ -758,7 +793,7 @@ def test_results_returns_indicators_with_kriteria():
     with (
         patch("api.routes.assessment.get_session", return_value=session_row),
         patch("api.routes.assessment.get_indicator_results", return_value=rows),
-        patch("api.routes.assessment._get_rubrics", return_value=[fake_rubric_1, fake_rubric_2, fake_rubric_3]),
+        patch("api.routes.assessment._get_rubrics_for_set", return_value=[fake_rubric_1, fake_rubric_2, fake_rubric_3]),
     ):
         with TestClient(app) as c:
             resp = c.get("/assessment/sess-1/results")
@@ -780,6 +815,7 @@ def test_results_null_recommendation_row_does_not_crash():
 
     session_row = {
         "session_id": "sess-null",
+        "document_id": DOKUMEN_ID,
         "status": "completed",
         "total_indicators": 1,
         "completed_indicators": 1,
@@ -796,7 +832,7 @@ def test_results_null_recommendation_row_does_not_crash():
     with (
         patch("api.routes.assessment.get_session", return_value=session_row),
         patch("api.routes.assessment.get_indicator_results", return_value=rows),
-        patch("api.routes.assessment._get_rubrics", return_value=[fake_rubric]),
+        patch("api.routes.assessment._get_rubrics_for_set", return_value=[fake_rubric]),
     ):
         with TestClient(app) as c:
             resp = c.get("/assessment/sess-null/results")
@@ -838,7 +874,7 @@ async def test_run_assessment_pipeline_seeds_progress_from_initial_completed(fak
             indicators=fake_indicators,  # 2 indicators
             max_parallel=5,
             tenant_id=TENANT_ID,
-            dokumen_id=DOKUMEN_ID,
+            dokumen_id=DOKUMEN_ID, accreditation_set_id=ACCREDITATION_SET_ID,
             initial_completed=1,
         )
 
@@ -872,7 +908,7 @@ async def test_run_assessment_pipeline_completes_even_when_every_indicator_fails
     ):
         await _run_assessment_pipeline(
             session_id="sess-1", indicators=fake_indicators, max_parallel=5,
-            tenant_id=TENANT_ID, dokumen_id=DOKUMEN_ID,
+            tenant_id=TENANT_ID, dokumen_id=DOKUMEN_ID, accreditation_set_id=ACCREDITATION_SET_ID,
         )
 
     # Every indicator logged its own error instead of the pipeline crashing
@@ -918,7 +954,7 @@ async def test_run_assessment_pipeline_stops_early_when_cancelled(fake_indicator
             indicators=fake_indicators,  # 2 indicators
             max_parallel=5,
             tenant_id=TENANT_ID,
-            dokumen_id=DOKUMEN_ID,
+            dokumen_id=DOKUMEN_ID, accreditation_set_id=ACCREDITATION_SET_ID,
             is_cancelled=AsyncMock(return_value=True),
         )
 
@@ -964,7 +1000,7 @@ async def test_run_assessment_pipeline_detects_cancel_even_when_nothing_complete
             indicators=fake_indicators,  # 2 indicators, both hang forever
             max_parallel=5,
             tenant_id=TENANT_ID,
-            dokumen_id=DOKUMEN_ID,
+            dokumen_id=DOKUMEN_ID, accreditation_set_id=ACCREDITATION_SET_ID,
             is_cancelled=AsyncMock(return_value=True),
         )
 

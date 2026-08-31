@@ -20,6 +20,9 @@ class AssessmentContext:
     # STRICTLY to evidence tagged to this indicator (evidence_indicator_tags),
     # no fallback to a blanket tenant/prodi search.
     indicator_no: int
+    # Which AccreditationSet's rubric_criteria applies to this document —
+    # get_indicator_rubric scopes to THIS set, never the old global matrix.json.
+    accreditation_set_id: str
     study_program_id: str | None = None
 
 

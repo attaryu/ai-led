@@ -8,6 +8,19 @@ from unittest.mock import patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _assessment_context():
+    """get_indicator_rubric requires an AssessmentContext (scopes rubric
+    lookup to accreditation_set_id) — every test in this module that reaches
+    a real graph.invoke() can hit that tool. See test_graph.py's identical
+    fixture."""
+    from agent.context import AssessmentContext, current_assessment_context
+
+    token = current_assessment_context.set(AssessmentContext("tenant-x", "doc-1", 1, "set-x"))
+    yield
+    current_assessment_context.reset(token)
+
+
 # ── is_reasoning_model dispatcher ─────────────────────────────────────────────
 
 
@@ -274,7 +287,7 @@ def test_reasoning_graph_terminates_when_llm_always_calls_tools():
 
     with (
         patch("agent.reasoning_graph._build_reasoning_llm", return_value=fake_llm),
-        patch("agent.tools.rubric_tool._get_rubrics", return_value=[]),
+        patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[]),
     ):
         graph = build_reasoning_graph(fake_client)
         result = graph.invoke(_make_state(), config={"recursion_limit": 60})
@@ -317,7 +330,7 @@ def test_checklist_built_once_and_injected_before_finalizing():
 
     with (
         patch("agent.reasoning_graph._build_reasoning_llm", return_value=fake_llm),
-        patch("agent.tools.rubric_tool._get_rubrics") as mock_rubrics,
+        patch("agent.tools.rubric_tool._get_rubrics_for_set") as mock_rubrics,
     ):
         mock_rubrics.return_value = [
             MagicMock(
@@ -364,7 +377,7 @@ def test_checklist_generation_failure_does_not_block_flow():
 
     with (
         patch("agent.reasoning_graph._build_reasoning_llm", return_value=fake_llm),
-        patch("agent.tools.rubric_tool._get_rubrics", return_value=[]),
+        patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[]),
     ):
         graph = build_reasoning_graph(fake_client)
         result = graph.invoke(_make_state(), config={"recursion_limit": 40})
@@ -419,7 +432,7 @@ def test_judge_runs_after_finalize_and_lowers_confidence_when_ungrounded():
     with (
         patch("agent.reasoning_graph._build_reasoning_llm", return_value=fake_llm),
         patch("agent.reasoning_graph.build_judge_llm", return_value=fake_judge_llm),
-        patch("agent.tools.rubric_tool._get_rubrics", return_value=[]),
+        patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[]),
         patch(
             "agent.tools.led_tool.search_led",
             return_value=[{
@@ -467,7 +480,7 @@ def test_judge_failure_does_not_block_result():
     with (
         patch("agent.reasoning_graph._build_reasoning_llm", return_value=fake_llm),
         patch("agent.reasoning_graph.build_judge_llm", return_value=fake_judge_llm),
-        patch("agent.tools.rubric_tool._get_rubrics", return_value=[]),
+        patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[]),
     ):
         graph = build_reasoning_graph(fake_client)
         result = graph.invoke(_make_state(), config={"recursion_limit": 60})
