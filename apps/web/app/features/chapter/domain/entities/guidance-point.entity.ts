@@ -21,21 +21,22 @@ import {
  *
  * Ini bagian yang paling perlu dibaca sebelum menyunting berkas ini.
  *
- * - **NYATA — kerangka LED-PS.** `CHAPTER_TEMPLATE` (4 bab) dan pengelompokan
- *   kriteria akreditasi C.1–C.7 diverifikasi dari `led_bab_tabel.json` (struktur
- *   asli LED PJJ Teknik Telekomunikasi, diekstrak dari dokumen contoh) —
- *   lewat field `bab` tiap heading, bukan sekadar urutan tampil.
- * - **NYATA — kriteria Set Akreditasi yang dipilih dokumen ini.** Diambil
+ * - **NYATA -- kerangka LED-PS.** `CHAPTER_TEMPLATE` (4 bab) diverifikasi dari
+ *   `led_bab_tabel.json` (struktur asli LED PJJ Teknik Telekomunikasi,
+ *   diekstrak dari dokumen contoh) -- lewat field `bab` tiap heading, bukan
+ *   sekadar urutan tampil. Kriteria ditugaskan ke bab lewat `chapterOrders`-nya
+ *   sendiri (diisi manual atau auto-parse saat Set Akreditasi dibuat), bukan
+ *   rentang nomor yang ditebak di sini.
+ * - **NYATA -- kriteria Set Akreditasi yang dipilih dokumen ini.** Diambil
  *   langsung dari `rubricCriterionAmiRepository`, yang sekarang membaca Set
  *   Akreditasi dokumen (`accreditation-set.repository.ts`), bukan lagi satu
- *   matriks LAM Teknik global. Bukan kutipan tersalin di sini — diminta
+ *   matriks LAM Teknik global. Bukan kutipan tersalin di sini -- diminta
  *   langsung tiap dipanggil, supaya tidak ada dua salinan yang bisa berbeda isi.
- * - **INFERENSI — batas nomor indikator per kelompok C.1–C.7** di
- *   {@link KELOMPOK_KRITERIA}. Matriksnya sendiri tidak membawa pengelompokan
- *   eksplisit per indikator, jadi batasnya diturunkan dari kecocokan nama
- *   indikator dengan judul tiap kelompok (mis. indikator 1–3 semuanya
- *   menyebut VMTS, cocok dengan C.1 "Diferensiasi Misi"). Itu penilaian,
- *   bukan data — beda dari nomor indikatornya sendiri yang nyata.
+ * - **NYATA -- pengelompokan tiap poin pedoman.** {@link kelompokkanKriteria}
+ *   mengelompokkan berdasarkan `kriteria.kriteria` (nama kelompok) kriteria itu
+ *   sendiri, data nyata dari Set Akreditasi yang dipilih -- bukan lagi rentang
+ *   nomor C.1--C.7 LAM Teknik yang di-hardcode/ditebak seperti versi lama file
+ *   ini, jadi tetap benar untuk set kustom apa pun strukturnya.
  * - **TIRUAN — seluruh kalimat kerangka `isiTeks`** di {@link POIN_PEDOMAN}.
  *   Tidak ada satu kalimat pedoman LAM pun di repo ini.
  *
@@ -101,30 +102,27 @@ const MATRIKS_PENILAIAN: SumberPanduan = {
 };
 
 /**
- * Kelompok kriteria akreditasi (C.1–C.7), seluruhnya anak BAB II "Struktur
- * Laporan Evaluasi Diri" — lihat catatan `urutanBab` di
- * `rubric-criterion-ami.repository.ts` untuk cara batasnya diverifikasi.
- * `dariNo`/`sampaiNo` inklusif, mengacu ke `RubricCriterion.no`.
+ * Kelompokkan kriteria satu bab berdasarkan `kriteria.kriteria` (nama
+ * kelompok) apa adanya -- data nyata dari Set Akreditasi yang dipilih
+ * dokumen ini, bukan lagi rentang nomor indikator LAM Teknik yang
+ * di-hardcode (C.1–C.7). Berapa pun jumlah kelompoknya dan apa pun
+ * namanya di set kustom, pengelompokan ini ikut -- tidak berasumsi
+ * strukturnya selalu LAM Teknik 64-indikator.
  */
-const KELOMPOK_KRITERIA: {
-	nomor: number;
-	judul: string;
-	dariNo: number;
-	sampaiNo: number;
-}[] = [
-	{ nomor: 1, judul: 'Diferensiasi Misi (Visi, Misi, Tujuan, dan Strategi)', dariNo: 1, sampaiNo: 3 },
-	{ nomor: 2, judul: 'Akuntabilitas', dariNo: 4, sampaiNo: 11 },
-	{ nomor: 3, judul: 'Relevansi Pendidikan, Penelitian, dan PkM', dariNo: 12, sampaiNo: 27 },
-	{ nomor: 4, judul: 'Sumber Daya Manusia', dariNo: 28, sampaiNo: 42 },
-	{
-		nomor: 5,
-		judul: 'Sarana, Prasarana, dan Keselamatan Kesehatan Kerja dan Lingkungan (K3L)',
-		dariNo: 43,
-		sampaiNo: 44,
-	},
-	{ nomor: 6, judul: 'Mahasiswa dan Luaran Mahasiswa', dariNo: 45, sampaiNo: 56 },
-	{ nomor: 7, judul: 'Sistem Penjaminan Mutu', dariNo: 57, sampaiNo: 61 },
-];
+function kelompokkanKriteria(
+	kriteria: RubricCriterion[],
+): { judul: string; indikator: RubricCriterion[] }[] {
+	const urutanMuncul: string[] = [];
+	const perKelompok = new Map<string, RubricCriterion[]>();
+	for (const k of kriteria) {
+		if (!perKelompok.has(k.kriteria)) {
+			perKelompok.set(k.kriteria, []);
+			urutanMuncul.push(k.kriteria);
+		}
+		perKelompok.get(k.kriteria)!.push(k);
+	}
+	return urutanMuncul.map((judul) => ({ judul, indikator: perKelompok.get(judul)! }));
+}
 
 /**
  * Rincian aspek penilaian tingkat tertinggi yang **nyata**, dikutip dari
@@ -230,59 +228,34 @@ function keButirIku(kriteria: RubricCriterion): ButirIku {
  * Poin pedoman penulisan yang mencocoki satu nomor bab.
  *
  * Async karena sumbernya (`rubricCriterionAmiRepository`) jaringan, bukan
- * konstanta modul lagi — beda dari versi sebelumnya, yang bisa sinkron karena
- * datanya memang tiruan. Larik kosong berarti LAM tidak mengatur bab itu (BAB
- * I Pendahuluan, BAB IV Penutup) — bukan kegagalan pemuatan.
+ * konstanta modul lagi -- beda dari versi sebelumnya, yang bisa sinkron karena
+ * datanya memang tiruan. Larik kosong berarti bab ini tidak punya kriteria
+ * yang ditugaskan ke situ (lewat `chapterOrders` tiap kriteria) -- bukan
+ * kegagalan pemuatan, dan bukan lagi dibatasi ke bab 2/3 saja: set kustom
+ * bebas menugaskan kriterianya ke bab manapun.
  *
  * `accreditationSetId`: kriteria diambil dari Set Akreditasi yang benar-benar
  * dipilih dokumen ini (row 90-an, `ledProjectRepository`), bukan lagi satu
- * matriks LAM Teknik global.
- *
- * ponytail: `KELOMPOK_KRITERIA`/`POIN_PEDOMAN` di bawah masih mengasumsikan
- * struktur & rentang nomor indikator LAM Teknik 64-indikator apa adanya —
- * kalau `accreditationSetId` menunjuk Set Akreditasi kustom (jumlah/struktur
- * indikator beda), pengelompokan C.1–C.7 di bawah bisa salah/kosong. Menulis
- * ulang isi pedoman supaya data-driven per set adalah pekerjaan terpisah yang
- * lebih besar dari sekadar ganti sumber data.
+ * matriks LAM Teknik global. Pengelompokan (`kelompokkanKriteria`) turun dari
+ * `kriteria.kriteria` set itu sendiri, jadi tetap benar untuk berapa pun
+ * jumlah kelompok/indikator set kustomnya.
  */
 export async function findPanduanForBab(
 	urutanBab: number,
 	accreditationSetId: string | null | undefined,
 ): Promise<PoinPanduan[]> {
-	if (urutanBab !== 2 && urutanBab !== 3) return [];
-
 	const semua = await rubricCriterionAmiRepository.findAll(accreditationSetId);
+	const kriteriaBab = semua.filter((k) => k.urutanBab.includes(urutanBab));
+	if (kriteriaBab.length === 0) return [];
 
-	if (urutanBab === 3) {
-		// BAB III "Program Pengembangan Berkelanjutan" — penutup 3 indikator
-		// (Analisis SWOT, Tujuan Strategi Pengembangan, Program Pengembangan
-		// Berkelanjutan) yang namanya cocok persis judul babnya sendiri.
-		const indikator = semua
-			.filter((k) => k.urutanBab.includes(3))
-			.map(keButirIku);
-		return POIN_PEDOMAN.map((poin) => ({
-			id: `poin-pedoman-3-${poin.akhiran}`,
-			sumber: PANDUAN_LED,
-			kodePoin: `3.${poin.akhiran}`,
-			judulPoin: poin.judulPoin,
-			isiTeks: poin.isiTeks({
-				judulKriteria: 'Program Pengembangan Berkelanjutan',
-				indikator,
-			}),
-			iku: poin.akhiran === '3' ? indikator : [],
-		}));
-	}
-
-	// BAB II: kerangka lima poin diulang sekali per kelompok C.1–C.7.
-	return KELOMPOK_KRITERIA.flatMap((kelompok) => {
-		const indikator = semua
-			.filter((k) => k.no >= kelompok.dariNo && k.no <= kelompok.sampaiNo)
-			.map(keButirIku);
+	return kelompokkanKriteria(kriteriaBab).flatMap((kelompok, indeksKelompok) => {
+		const nomorKelompok = indeksKelompok + 1;
+		const indikator = kelompok.indikator.map(keButirIku);
 
 		return POIN_PEDOMAN.map((poin) => ({
-			id: `poin-pedoman-2-${kelompok.nomor}-${poin.akhiran}`,
+			id: `poin-pedoman-${urutanBab}-${nomorKelompok}-${poin.akhiran}`,
 			sumber: PANDUAN_LED,
-			kodePoin: `${kelompok.nomor}.${poin.akhiran}`,
+			kodePoin: `${nomorKelompok}.${poin.akhiran}`,
 			judulPoin: poin.judulPoin,
 			isiTeks: poin.isiTeks({ judulKriteria: kelompok.judul, indikator }),
 			iku: poin.akhiran === '3' ? indikator : [],

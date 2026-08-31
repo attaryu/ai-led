@@ -78,12 +78,14 @@ const RINCIAN_C1: ChapterTocNode[] = [
 
 /**
  * Tujuh kelompok kriteria akreditasi C.1–C.7, judulnya sama persis dengan
- * `KELOMPOK_KRITERIA` di `guidance-point.entity.ts` (satu penurunan yang sama
- * dari `led_bab_tabel.json`, sengaja tidak disalin dua kali sebagai konstanta
- * terpisah — lihat catatan di sana kalau berubah). C.2–C.7 sengaja belum
+ * kelompok yang muncul di panel Panduan (`guidance-point.entity.ts::kelompokkanKriteria`)
+ * untuk Set Akreditasi LAM Teknik (Default) -- ini daftar navigasi statis,
+ * TIDAK ikut berubah kalau dokumennya pakai Set Akreditasi kustom dengan
+ * struktur kelompok berbeda (di luar scope penulisan ulang panel Panduan,
+ * lihat riwayat `guidance-point.entity.ts`). C.2–C.7 sengaja belum
  * dijabarkan serinci C.1: rincian lima-poinnya identik untuk semua kelompok
- * (lihat `POIN_PEDOMAN`), jadi mengulangnya di sini cuma menyalin nama yang
- * sudah benar di panel Panduan.
+ * (lihat `POIN_PEDOMAN` di `guidance-point.entity.ts`), jadi mengulangnya di
+ * sini cuma menyalin nama yang sudah benar di panel Panduan.
  */
 const KRITERIA: ChapterTocNode[] = [
 	simpul(
