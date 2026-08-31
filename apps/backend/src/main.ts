@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -7,9 +8,13 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.use(helmet());
   app.use(cookieParser());
+  const allowedOrigins = (process.env.WEB_ORIGIN ?? 'http://localhost:5173')
+    .split(',')
+    .map((origin) => origin.trim());
   app.enableCors({
-    origin: process.env.WEB_ORIGIN ?? 'http://localhost:5173',
+    origin: allowedOrigins,
     credentials: true,
   });
   app.useGlobalPipes(

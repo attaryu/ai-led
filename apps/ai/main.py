@@ -18,9 +18,13 @@ from api.routes.upload import router as upload_router
 
 app = FastAPI(title="AMI Assessment API", version="0.1.0")
 
+_allowed_origins = [
+    origin.strip()
+    for origin in os.environ.get("CORS_ORIGINS", "http://localhost:5173").split(",")
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )

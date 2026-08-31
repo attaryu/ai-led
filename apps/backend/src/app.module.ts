@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
@@ -18,6 +20,12 @@ import { AccreditationSetModule } from './accreditation-set/accreditation-set.mo
 
 @Module({
   imports: [
+    ThrottlerModule.forRoot([
+      {
+        ttl: Number(process.env.THROTTLE_TTL_MS ?? 60_000),
+        limit: Number(process.env.THROTTLE_LIMIT ?? 100),
+      },
+    ]),
     DatabaseModule,
     AuthModule,
     TenantModule,
@@ -34,6 +42,6 @@ import { AccreditationSetModule } from './accreditation-set/accreditation-set.mo
     AccreditationSetModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}
