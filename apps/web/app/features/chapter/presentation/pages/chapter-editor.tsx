@@ -16,7 +16,11 @@ import { ledProjectRepository } from '~/features/led-project/data/repositories/l
 import { type LedProjectEntity } from '~/features/led-project/domain/entities/led-project.entity';
 import { chapterRepository } from '../../data/repositories/chapter.repository';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
-import { findTocPathForChapter } from '../../domain/entities/chapter-toc.entity';
+import {
+	buildChapterToc,
+	findTocPathForChapter,
+	type ChapterTocNode,
+} from '../../domain/entities/chapter-toc.entity';
 import { ChapterEditorCanvas } from '../components/chapter-editor-canvas';
 import { ChapterEditorHeader } from '../components/chapter-editor-header';
 import {
@@ -88,6 +92,28 @@ export function ChapterEditor() {
 	const guard = useRoleGuard('project', ledProject?.studyProgramId);
 
 	/**
+	 * Pohon Daftar Isi, dibangun per Set Akreditasi dokumen ini
+	 * (`buildChapterToc`) — kosong selama `ledProject` masih dimuat atau
+	 * dokumennya belum memilih set. Menunggu `ledProject` (bukan `projectId`)
+	 * supaya tidak perlu request kedua begitu Set Akreditasi-nya ganti di
+	 * halaman lain lalu pengguna kembali ke sini dengan `ledProject` yang sama.
+	 */
+	const [chapterToc, setChapterToc] = React.useState<ChapterTocNode[]>([]);
+	React.useEffect(() => {
+		if (!ledProject) {
+			setChapterToc([]);
+			return;
+		}
+		let cancelled = false;
+		buildChapterToc(ledProject.accreditationSetId).then((tree) => {
+			if (!cancelled) setChapterToc(tree);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [ledProject]);
+
+	/**
 	 * Simpul Daftar Isi yang sedang terbentang.
 	 *
 	 * Tinggal di sini, bukan di dalam komponen Daftar Isi, karena ruang kerja di
@@ -102,10 +128,13 @@ export function ChapterEditor() {
 	// Cabang menuju bab yang sedang dibuka selalu dibentangkan — termasuk saat
 	// bab berganti — supaya posisi pengguna tidak pernah tersembunyi di balik
 	// simpul tertutup. Sesudah itu ia bebas ditutup lagi seperti simpul lain.
+	// Digerbang juga oleh `chapterToc.length > 0` supaya percobaan pertama
+	// (sebelum pohonnya termuat) tidak menandai bab ini "sudah ditangani" --
+	// begitu pohonnya termuat, kondisinya masih benar dan jalurnya baru dihitung.
 	const babTerbentangRef = React.useRef<number | null>(null);
-	if (chapter && babTerbentangRef.current !== chapter.urutanBab) {
+	if (chapter && chapterToc.length > 0 && babTerbentangRef.current !== chapter.urutanBab) {
 		babTerbentangRef.current = chapter.urutanBab;
-		const jalur = findTocPathForChapter(chapter.urutanBab).map((node) => node.id);
+		const jalur = findTocPathForChapter(chapter.urutanBab, chapterToc).map((node) => node.id);
 		setTocTerbentang((sebelumnya) =>
 			// Kembalikan yang sama saat tidak ada yang perlu ditambah, supaya
 			// penyetelan saat render ini tidak memicu render berikutnya.
@@ -194,6 +223,7 @@ export function ChapterEditor() {
 			studyProgramId={ledProject.studyProgramId}
 			chapter={chapter}
 			chapters={chapters}
+			chapterToc={chapterToc}
 			tocTerbentang={tocTerbentang}
 			onToggleTocNode={toggleTocNode}
 		/>
@@ -212,6 +242,7 @@ function ChapterEditorWorkspace({
 	studyProgramId,
 	chapter,
 	chapters,
+	chapterToc,
 	tocTerbentang,
 	onToggleTocNode,
 }: {
@@ -220,6 +251,7 @@ function ChapterEditorWorkspace({
 	studyProgramId: string;
 	chapter: ChapterEntity;
 	chapters: ChapterEntity[];
+	chapterToc: ChapterTocNode[];
 	tocTerbentang: ReadonlySet<string>;
 	onToggleTocNode: (id: string) => void;
 }) {
@@ -509,6 +541,7 @@ function ChapterEditorWorkspace({
 					<ChapterEditorToc
 						projectId={projectId}
 						chapters={chapters}
+						chapterToc={chapterToc}
 						chapterAktif={chapter}
 						terbentang={tocTerbentang}
 						onToggle={onToggleTocNode}

@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
+import { rubricCriterionAmiRepository } from '~/features/assessment/data/repositories/rubric-criterion-ami.repository';
 import { type ChapterEntity } from './chapter.entity';
+import { kelompokkanKriteria } from './guidance-point.entity';
 
 /**
  * Daftar Isi Editor Bab (docs/application_flow.md §7.1).
@@ -10,14 +12,22 @@ import { type ChapterEntity } from './chapter.entity';
  * ini terpaksa menebak-nebak pemetaannya. Sesudah struktur LED asli
  * diverifikasi dari `led_bab_tabel.json`, `CHAPTER_TEMPLATE` diperkecil jadi 4
  * bab yang cocok persis dokumen aslinya — dan seluruh kriteria akreditasi
- * (C.1–C.7) ternyata anak BAB II, bukan bab tersendiri. Itu menjawab
+ * ternyata anak BAB II, bukan bab tersendiri. Itu menjawab
  * Pertanyaan Terbuka #2 (§16) dengan sendirinya: **satu `BAB_DOKUMEN` = satu
- * `konten_kerja`, C.1–C.7 di bawahnya murni visual** (§7.2) — bukan lagi
- * tebakan, karena sekarang cuma ada 4 `BAB_DOKUMEN` sungguhan.
+ * `konten_kerja`, kriteria akreditasi di bawahnya murni visual** (§7.2) — bukan
+ * lagi tebakan, karena sekarang cuma ada 4 `BAB_DOKUMEN` sungguhan.
  *
  * **Hanya simpul ber-`urutanBab` yang navigasional** (empat simpul BAB
- * teratas). Cabang di bawahnya (`A`/`B`/`C.1`…`C.7`) `urutanBab`-nya `null`:
- * kliknya tidak boleh keluar dari bab yang sedang dibuka.
+ * teratas). Cabang di bawahnya `urutanBab`-nya `null`: kliknya tidak boleh
+ * keluar dari bab yang sedang dibuka.
+ *
+ * **Kelompok kriteria akreditasi di bawah BAB II dibangun per Set Akreditasi
+ * dokumen ini** (`buildChapterToc`, lewat {@link kelompokkanKriteria} yang
+ * sama dipakai panel Panduan) — bukan lagi daftar C.1–C.7 LAM Teknik yang
+ * di-hardcode. Rincian IKU per-huruf yang dulu ada di bawah tiap kelompok
+ * dihapus: itu placeholder visual yang tidak pernah bisa diklik (butuh anchor
+ * heading nyata di dalam `kontenKerja` yang belum ada), jadi menyalinnya jadi
+ * data dinamis cuma menambah kerumitan tanpa menambah fungsi.
  */
 const tocNodeBase = z.object({
 	/** Stabil; dipakai sebagai key React dan — nanti — sebagai id anchor. */
@@ -52,78 +62,57 @@ function simpul(
 }
 
 /**
- * Cabang dalam milik C.1, cocok dengan tiga indikator asli (matrix.json no.
- * 1–3 — lihat `guidance-point.entity.ts`). Seluruhnya visual: semuanya bagian
- * dari satu `konten_kerja` BAB II (§7.2).
+ * Kelompok kriteria akreditasi di bawah BAB II, judulnya diambil dari
+ * `kriteria.kriteria` Set Akreditasi dokumen ini — lihat
+ * `guidance-point.entity.ts::kelompokkanKriteria` untuk cara pengelompokannya.
+ * Nomor urutnya sekuensial (1, 2, 3, …) mengikuti urutan kemunculan, bukan
+ * kode "C.N" tetap — set kustom bisa punya jumlah kelompok berapa pun.
  */
-const RINCIAN_C1: ChapterTocNode[] = [
-	simpul('c1-1-1', '1.1 Latar Belakang', null),
-	simpul('c1-1-2', '1.2 Kebijakan', null),
-	simpul('c1-1-3', '1.3 Indikator Kinerja Utama (IKU)', null, [
-		simpul('c1-1-3-a', 'a) Kekhasan VMTS', null),
-		simpul('c1-1-3-b', 'b) Mekanisme penyusunan VMTS', null),
-		simpul('c1-1-3-c', 'c) Tingkat pemahaman dan pencapaian VMTS', null),
-	]),
-	simpul(
-		'c1-1-4',
-		'1.4. Analisis Faktor Keberhasilan dan Penghambat Pencapaian VMTS',
-		null,
-	),
-	simpul(
-		'c1-1-5',
-		'1.5. Strategi perbaikan dan pengembangan (Menggunakan Analisis SWOT)',
-		null,
-	),
-];
+function simpulKriteriaUntukBab(
+	semuaKriteria: Awaited<ReturnType<typeof rubricCriterionAmiRepository.findAll>>,
+	urutanBab: number,
+): ChapterTocNode[] {
+	const kriteriaBab = semuaKriteria.filter((k) => k.urutanBab.includes(urutanBab));
+	return kelompokkanKriteria(kriteriaBab).map((kelompok, indeks) =>
+		simpul(`bab-${urutanBab}-kelompok-${indeks + 1}`, `C.${indeks + 1}. ${kelompok.judul}`, null),
+	);
+}
 
 /**
- * Tujuh kelompok kriteria akreditasi C.1–C.7, judulnya sama persis dengan
- * kelompok yang muncul di panel Panduan (`guidance-point.entity.ts::kelompokkanKriteria`)
- * untuk Set Akreditasi LAM Teknik (Default) -- ini daftar navigasi statis,
- * TIDAK ikut berubah kalau dokumennya pakai Set Akreditasi kustom dengan
- * struktur kelompok berbeda (di luar scope penulisan ulang panel Panduan,
- * lihat riwayat `guidance-point.entity.ts`). C.2–C.7 sengaja belum
- * dijabarkan serinci C.1: rincian lima-poinnya identik untuk semua kelompok
- * (lihat `POIN_PEDOMAN` di `guidance-point.entity.ts`), jadi mengulangnya di
- * sini cuma menyalin nama yang sudah benar di panel Panduan.
+ * Bangun pohon Daftar Isi lengkap untuk satu dokumen, mengambil kelompok
+ * kriteria BAB II dari Set Akreditasi yang benar-benar dipilihnya
+ * (`accreditationSetId`, dari `ledProjectRepository`) — bukan lagi konstanta
+ * modul statis. Async untuk alasan yang sama dengan `findPanduanForBab`.
  */
-const KRITERIA: ChapterTocNode[] = [
-	simpul(
-		'c-1',
-		'C.1. Diferensiasi Misi (Visi, Misi, Tujuan, dan Strategi)',
-		null,
-		RINCIAN_C1,
-	),
-	simpul('c-2', 'C.2. Akuntabilitas', null),
-	simpul('c-3', 'C.3. Relevansi Pendidikan, Penelitian, dan PkM', null),
-	simpul('c-4', 'C.4. Sumber Daya Manusia', null),
-	simpul(
-		'c-5',
-		'C.5. Sarana, Prasarana, dan Keselamatan Kesehatan Kerja dan Lingkungan (K3L)',
-		null,
-	),
-	simpul('c-6', 'C.6. Mahasiswa dan Luaran Mahasiswa', null),
-	simpul('c-7', 'C.7. Sistem Penjaminan Mutu', null),
-];
+export async function buildChapterToc(
+	accreditationSetId: string | null | undefined,
+): Promise<ChapterTocNode[]> {
+	const semuaKriteria = await rubricCriterionAmiRepository.findAll(accreditationSetId);
 
-export const CHAPTER_TOC: ChapterTocNode[] = [
-	simpul('bab-1', 'BAB I. PENDAHULUAN', 1),
-	simpul('bab-2', 'BAB II. STRUKTUR LAPORAN EVALUASI DIRI', 2, [
-		simpul('bab-2-a', 'A. Struktur Tim Penyusun dan Mekanisme Kerja', null),
-		simpul(
-			'bab-2-b',
-			'B. Analisis Lingkungan Eksternal dalam Pengembangan UPPS dan Prodi',
-			null,
-			[
-				simpul('bab-2-b-1', 'B.1 Lingkungan Makro', null),
-				simpul('bab-2-b-2', 'B.2 Lingkungan Mikro', null),
-			],
-		),
-		simpul('bab-2-c', 'C. Kriteria Akreditasi', null, KRITERIA),
-	]),
-	simpul('bab-3', 'BAB III. PROGRAM PENGEMBANGAN BERKELANJUTAN', 3),
-	simpul('bab-4', 'BAB IV. PENUTUP', 4),
-];
+	return [
+		simpul('bab-1', 'BAB I. PENDAHULUAN', 1),
+		simpul('bab-2', 'BAB II. STRUKTUR LAPORAN EVALUASI DIRI', 2, [
+			simpul('bab-2-a', 'A. Struktur Tim Penyusun dan Mekanisme Kerja', null),
+			simpul(
+				'bab-2-b',
+				'B. Analisis Lingkungan Eksternal dalam Pengembangan UPPS dan Prodi',
+				null,
+				[
+					simpul('bab-2-b-1', 'B.1 Lingkungan Makro', null),
+					simpul('bab-2-b-2', 'B.2 Lingkungan Mikro', null),
+				],
+			),
+			simpul(
+				'bab-2-c',
+				'C. Kriteria Akreditasi',
+				null,
+				simpulKriteriaUntukBab(semuaKriteria, 2),
+			),
+		]),
+		simpul('bab-3', 'BAB III. PROGRAM PENGEMBANGAN BERKELANJUTAN', 3),
+		simpul('bab-4', 'BAB IV. PENUTUP', 4),
+	];
+}
 
 /**
  * Simpul → bab, lewat pencarian di daftar bab nyata alih-alih menyusun
@@ -141,11 +130,12 @@ export function findChapterForTocNode(
 /**
  * Jalur dari akar ke simpul yang memuat bab tersebut, dipakai sidebar untuk
  * membentangkan cabang yang sedang dibuka. Kosong bila babnya tidak terwakili
- * di pohon — mungkin selama pemetaan #2 masih provisional, jadi bukan kesalahan.
+ * di pohon, atau `nodes` belum sempat termuat (`buildChapterToc` masih
+ * berjalan) — bukan kesalahan, hanya belum ada apa-apa untuk dibentangkan.
  */
 export function findTocPathForChapter(
 	urutanBab: number,
-	nodes: ChapterTocNode[] = CHAPTER_TOC,
+	nodes: ChapterTocNode[],
 ): ChapterTocNode[] {
 	for (const node of nodes) {
 		if (node.urutanBab === urutanBab) return [node];

@@ -109,7 +109,7 @@ const MATRIKS_PENILAIAN: SumberPanduan = {
  * namanya di set kustom, pengelompokan ini ikut -- tidak berasumsi
  * strukturnya selalu LAM Teknik 64-indikator.
  */
-function kelompokkanKriteria(
+export function kelompokkanKriteria(
 	kriteria: RubricCriterion[],
 ): { judul: string; indikator: RubricCriterion[] }[] {
 	const urutanMuncul: string[] = [];

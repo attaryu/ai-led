@@ -6,7 +6,6 @@ import { ScrollArea } from '~/core/components/ui/scroll-area';
 import { cn } from '~/core/lib/utils';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import {
-	CHAPTER_TOC,
 	findChapterForTocNode,
 	findTocPathForChapter,
 	type ChapterTocNode,
@@ -15,8 +14,8 @@ import {
 /**
  * Sidebar kiri Editor Bab — Daftar Isi (docs/application_flow.md §7.1).
  *
- * Pohonnya mock statis (lihat `chapter-toc.entity.ts`). Dua hal yang berbeda
- * dilakukan simpul yang punya anak, dan keduanya sengaja dipisah:
+ * Pohonnya dibangun per Set Akreditasi dokumen ini (`chapterToc`, dari
+ * `chapter-toc.entity.ts::buildChapterToc`). Dua hal yang berbeda
  *
  * - **Caret** membentangkan/menutup cabangnya, tanpa berpindah bab.
  * - **Label** berpindah bab, tapi hanya untuk simpul yang punya `urutanBab`.
@@ -37,6 +36,7 @@ import {
 export function ChapterEditorToc({
 	projectId,
 	chapters,
+	chapterToc,
 	chapterAktif,
 	terbentang,
 	onToggle,
@@ -45,6 +45,8 @@ export function ChapterEditorToc({
 }: {
 	projectId: string;
 	chapters: ChapterEntity[];
+	/** Dibangun per Set Akreditasi dokumen ini -- lihat `chapter-toc.entity.ts::buildChapterToc`. Kosong selama masih dimuat. */
+	chapterToc: ChapterTocNode[];
 	chapterAktif: ChapterEntity;
 	terbentang: ReadonlySet<string>;
 	onToggle: (id: string) => void;
@@ -53,7 +55,7 @@ export function ChapterEditorToc({
 	onTutup: () => void;
 }) {
 	const jalurAktif = new Set(
-		findTocPathForChapter(chapterAktif.urutanBab).map((node) => node.id),
+		findTocPathForChapter(chapterAktif.urutanBab, chapterToc).map((node) => node.id),
 	);
 
 	return (
@@ -110,7 +112,7 @@ export function ChapterEditorToc({
 			</div>
 
 			<nav className="space-y-0.5 px-2 pb-8">
-				{CHAPTER_TOC.map((node) => (
+				{chapterToc.map((node) => (
 					<TocNode
 						key={node.id}
 						node={node}
