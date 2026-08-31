@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from scalar_fastapi import get_scalar_api_reference
 
 from api.routes.assessment import router as assessment_router
 from api.routes.chat import router as chat_router
@@ -47,3 +48,10 @@ async def index():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/reference", include_in_schema=False)
+async def scalar_reference():
+    return get_scalar_api_reference(
+        openapi_url=app.openapi_url, title=app.title
+    )
