@@ -21,16 +21,16 @@ const deadlineStyles: Record<DeadlineUrgency, string> = {
 };
 
 /**
- * Dokumen LED yang sedang disusun prodi ini (docs/application_flow.md §5.1b).
+ * Dokumen LED yang sedang disusun program studi ini (docs/application_flow.md §5.1b).
  *
  * Bentuknya sengaja satu kartu sederajat dengan `ProgramAccreditationCard`:
- * keduanya berdampingan dua kolom, dan yang kiri menjawab "prodi ini sekarang
+ * keduanya berdampingan dua kolom, dan yang kiri menjawab "program studi ini sekarang
  * terakreditasi apa" sementara yang kanan menjawab "usaha menuju akreditasi
  * berikutnya sudah sejauh mana". Dua pertanyaan, dua kartu, satu pandangan.
  *
  * **Kartu ini bukan tempat rincian.** Versi sebelumnya membongkar empat kartu
  * angka di sini — kelengkapan bab, kesiapan review, bukti dukung terpakai, sisa
- * tenggat — sehingga Dashboard Prodi jadi salinan Dashboard Project LED (§6.1)
+ * tenggat — sehingga Dashboard Program Studi jadi salinan Dashboard Project LED (§6.1)
  * dan kehilangan subjeknya sendiri. Sekarang yang tersisa hanya penanda apakah
  * dokumennya bergerak; siapa pun yang butuh lebih dalam menekan Lihat Detail.
  */

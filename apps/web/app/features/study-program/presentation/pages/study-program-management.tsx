@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { PlusIcon } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
+import { useConfirmDialog } from '~/core/components/ui/confirm-dialog';
 import { DataTable } from '~/core/components/ui/data-table';
 import { useDataTableState } from '~/core/hooks/use-data-table-state';
 import { useSession } from '~/features/auth/presentation/hooks/use-session';
@@ -13,8 +14,9 @@ import { type StudyProgramEntity } from '../../domain/entities/study-program.ent
 export function StudyProgramManagement() {
 	const navigate = useNavigate();
 	const session = useSession();
+	const { konfirmasi, confirmDialog } = useConfirmDialog();
 	// Penjamin Mutu tidak mengelola prodi (§4.1) — halaman ini baginya hanya
-	// daftar navigasi ke Dashboard Prodi (§4.3).
+	// daftar navigasi ke Dashboard Program Studi (§4.3).
 	const canManage = session?.role === 'Admin' || session?.role === 'Pimpinan';
 	const [studyPrograms, setStudyPrograms] = React.useState<
 		StudyProgramEntity[]
@@ -33,16 +35,23 @@ export function StudyProgramManagement() {
 	}, [loadData]);
 
 	const handleDelete = React.useCallback(
-		(id: string) => {
-			if (confirm('Apakah Anda yakin ingin menghapus Prodi ini?')) {
-				// `delete()` menyiarkan 'storage-update' sendiri setelah selesai —
-				// listener di atas yang memuat ulang, tidak perlu dipanggil di sini.
-				studyProgramRepository.delete(id).catch((e: unknown) => {
-					alert(e instanceof Error ? e.message : 'Gagal menghapus Prodi.');
-				});
-			}
+		async (id: string) => {
+			const lanjut = await konfirmasi({
+				judul: 'Hapus program studi ini?',
+				deskripsi:
+					'Dokumen LED dan bukti dukung miliknya ikut terhapus, dan tidak bisa dipulihkan.',
+				labelAksi: 'Hapus',
+				merusak: true,
+			});
+			if (!lanjut) return;
+
+			// `delete()` menyiarkan 'storage-update' sendiri setelah selesai —
+			// listener di atas yang memuat ulang, tidak perlu dipanggil di sini.
+			studyProgramRepository.delete(id).catch((e: unknown) => {
+				alert(e instanceof Error ? e.message : 'Gagal menghapus Prodi.');
+			});
 		},
-		[],
+		[konfirmasi],
 	);
 
 	const handleEdit = React.useCallback((id: string) => {
@@ -72,14 +81,20 @@ export function StudyProgramManagement() {
 	);
 
 	return (
-		<div className="flex flex-col gap-6">
+		<div className="flex flex-col gap-8">
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<div>
+					{/*
+					 * Satu judul untuk kedua hak akses. Sebelumnya "Manajemen …" dan
+					 * "Daftar …" bergantian menurut `canManage`, sehingga halaman yang
+					 * sama berganti nama tanpa pembaca punya cara tahu kenapa.
+					 */}
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						{canManage ? 'Manajemen Program Studi (Prodi)' : 'Daftar Program Studi'}
+						Program Studi
 					</h2>
 					<p className="text-sm text-muted-foreground">
-						Klik nama prodi untuk membuka Dashboard Prodi-nya
+						Identitas dan peringkat akreditasi yang berlaku di tiap program
+						studi.
 					</p>
 				</div>
 				{canManage && (
@@ -88,7 +103,7 @@ export function StudyProgramManagement() {
 						className="gap-2 cursor-pointer"
 					>
 						<PlusIcon className="size-4" />
-						Tambah Prodi
+						Tambah program studi
 					</Button>
 				)}
 			</div>
@@ -107,6 +122,8 @@ export function StudyProgramManagement() {
 				onPaginationChange={setPagination}
 				onClearAll={clearAll}
 			/>
+
+			{confirmDialog}
 		</div>
 	);
 }

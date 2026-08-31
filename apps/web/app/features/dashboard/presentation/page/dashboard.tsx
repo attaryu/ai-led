@@ -14,7 +14,7 @@ import { useInstitutionReadiness } from '../hooks/use-institution-readiness';
  * bukan daftar menunya.
  *
  * **Aturan utama halaman ini: satu blok, satu kerangka waktu** — aturan yang sama
- * yang berlaku di Dashboard Prodi (§5.1) dan yang secara khusus diperingatkan
+ * yang berlaku di Dashboard Program Studi (§5.1) dan yang secara khusus diperingatkan
  * PRD §3.8 untuk level institusi: capaian akreditasi yang sudah disahkan dan
  * usaha penyusunan yang sedang berjalan tidak boleh disandingkan sebagai angka
  * sederajat.
@@ -42,14 +42,14 @@ import { useInstitutionReadiness } from '../hooks/use-institution-readiness';
  * menyebutkan pembagiannya lewat tooltip.
  *
  * Berbeda dari versi sebelumnya, halaman ini **punya** aksi ubah data: tombol
- * Buat Proyek LED di tabel kedua. Sesuai §1 ia tidak dirender sama sekali di luar
+ * Buat Dokumen LED di tabel kedua. Sesuai §1 ia tidak dirender sama sekali di luar
  * Penjamin Mutu, sama seperti tautan Manajemen User di §4.0d.
  */
 export function Dashboard() {
 	const session = useSession();
 
 	return (
-		<div className="flex flex-col gap-6">
+		<div className="flex flex-col gap-8">
 			<div>
 				<h2 className="font-heading text-2xl font-bold tracking-tight">
 					Dashboard Utama
@@ -81,7 +81,7 @@ export function Dashboard() {
 /**
  * Dipisah dari komponen di atas supaya hook kesiapan tidak berjalan (dan
  * menyentuh penyimpanan) untuk Admin yang tidak akan merendernya — pemisahan
- * yang sama seperti `ProgramReadinessView` di Dashboard Prodi.
+ * yang sama seperti `ProgramReadinessView` di Dashboard Program Studi.
  */
 function InstitutionReadinessView({
 	dapatKelolaUser,
@@ -109,7 +109,7 @@ function InstitutionReadinessView({
 				<div className="rounded-md border border-dashed border-border p-8 text-center">
 					<p className="text-sm font-medium">Belum ada program studi</p>
 					<p className="mt-1 text-sm text-muted-foreground">
-						Kesiapan akreditasi baru bisa dipantau setelah ada prodi yang
+						Kesiapan akreditasi baru bisa dipantau setelah ada program studi yang
 						terdaftar.
 					</p>
 				</div>
@@ -118,16 +118,15 @@ function InstitutionReadinessView({
 					<section className="flex flex-col gap-3">
 						<div>
 							<h3 className="font-heading text-lg font-bold tracking-tight">
-								Sedang Menyusun
+								Sedang menyusun
 								{sedangMenyusun.length > 0 && (
 									<span className="ml-2 text-sm font-normal text-muted-foreground">
-										{sedangMenyusun.length} prodi
+										{sedangMenyusun.length} program studi
 									</span>
 								)}
 							</h3>
 							<p className="text-sm text-muted-foreground">
-								Diurutkan dari tenggat yang paling menekan. Klik nama prodi untuk
-								masuk ke Dashboard Prodi-nya.
+								Diurutkan dari tenggat yang paling menekan.
 							</p>
 						</div>
 						<ActiveDraftingTable rows={sedangMenyusun} />
@@ -136,17 +135,22 @@ function InstitutionReadinessView({
 					<section className="flex flex-col gap-3">
 						<div>
 							<h3 className="font-heading text-lg font-bold tracking-tight">
-								Perlu Segera Disusun
+								Perlu segera disusun
 								{perluDisusun.length > 0 && (
 									<span className="ml-2 text-sm font-normal text-muted-foreground">
-										{perluDisusun.length} prodi
+										{perluDisusun.length} program studi
 									</span>
 								)}
 							</h3>
+							{/*
+							 * Dua kalimat pendek, bukan satu kalimat 22 kata dengan tiga
+							 * cabang "atau" dan satu "dan" di ujungnya. Syaratnya memang
+							 * dua hal yang harus benar bersamaan, dan itu lebih jelas
+							 * dibaca sebagai dua kalimat daripada satu rangkaian.
+							 */}
 							<p className="text-sm text-muted-foreground">
-								Masa berlaku akreditasinya tersisa setahun atau kurang, sudah
-								habis, atau belum pernah ada — dan belum ada Dokumen LED yang
-								dikerjakan.
+								Akreditasinya tersisa setahun atau kurang, sudah habis, atau
+								belum pernah ada. Belum ada Dokumen LED yang dikerjakan.
 							</p>
 						</div>
 						<PendingDraftingTable
@@ -160,7 +164,7 @@ function InstitutionReadinessView({
 						 */}
 						{belumPerlu > 0 && (
 							<p className="text-xs text-muted-foreground">
-								{belumPerlu} prodi lain akreditasinya masih panjang dan belum
+								{belumPerlu} program studi lain akreditasinya masih panjang dan belum
 								perlu menyusun.
 							</p>
 						)}

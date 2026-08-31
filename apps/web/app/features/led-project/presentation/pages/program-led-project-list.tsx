@@ -3,6 +3,7 @@ import { useNavigate, useOutletContext, useParams } from 'react-router';
 import { PlusIcon } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
+import { useConfirmDialog } from '~/core/components/ui/confirm-dialog';
 import { DataTable } from '~/core/components/ui/data-table';
 import { useDataTableState } from '~/core/hooks/use-data-table-state';
 import { useSession } from '~/features/auth/presentation/hooks/use-session';
@@ -14,12 +15,12 @@ import { type LedProjectPage } from '../../domain/dtos/led-project-query.dto';
 /**
  * Daftar Dokumen LED milik satu prodi (docs/application_flow.md §5.3).
  *
- * Kembaran dari daftar lintas prodi di lapis tenant, dipersempit ke
+ * Kembaran dari daftar lintas program studi di lapis tenant, dipersempit ke
  * `:programId` di URL. Dua kolomnya berbeda karena konteksnya berbeda: nama
  * prodi dibuang (seluruh baris memuat nilai yang sama), tenggat ditambahkan
  * supaya dokumen yang tersendat terbaca tanpa dibuka satu per satu.
  *
- * Dashboard Prodi (§5.1c) memang sudah memuat riwayat, tapi ringkas: lima baris
+ * Dashboard Program Studi (§5.1c) memang sudah memuat riwayat, tapi ringkas: lima baris
  * teratas, empat kolom, tanpa perkakas. Halaman inilah daftar penuhnya, dan
  * tautan "Lihat semua" di dashboard bermuara ke sini.
  */
@@ -27,6 +28,7 @@ export function ProgramLedProjectList() {
 	const navigate = useNavigate();
 	const session = useSession();
 	const { programId } = useParams<{ programId: string }>();
+	const { konfirmasi, confirmDialog } = useConfirmDialog();
 
 	// Penyusunan Dokumen LED sepenuhnya wewenang Penjamin Mutu; Pimpinan read-only
 	// di level ini (§6.2) dan Penyusun tidak pernah punya aksi di sini (§15).
@@ -93,14 +95,24 @@ export function ProgramLedProjectList() {
 	/** Dibawa formulir supaya Batal dan simpan memulangkan ke daftar ini. */
 	const returnTo = `/study-programs/${programId}/led-projects`;
 
-	const handleDelete = React.useCallback((id: string) => {
-		if (confirm('Apakah Anda yakin ingin menghapus Dokumen LED ini?')) {
+	const handleDelete = React.useCallback(
+		async (id: string) => {
+			const lanjut = await konfirmasi({
+				judul: 'Hapus Dokumen LED ini?',
+				deskripsi:
+					'Seluruh bab beserta isinya ikut terhapus, dan tidak bisa dipulihkan.',
+				labelAksi: 'Hapus',
+				merusak: true,
+			});
+			if (!lanjut) return;
+
 			// `delete()` menyiarkan 'storage-update' sendiri setelah selesai.
 			ledProjectRepository.delete(id).catch((e: unknown) => {
 				alert(e instanceof Error ? e.message : 'Gagal menghapus Dokumen LED.');
 			});
-		}
-	}, []);
+		},
+		[konfirmasi],
+	);
 
 	const handleEdit = React.useCallback(
 		(id: string) => {
@@ -127,16 +139,14 @@ export function ProgramLedProjectList() {
 	);
 
 	return (
-		<div className="flex flex-col gap-6">
+		<div className="flex flex-col gap-8">
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<div>
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
 						Dokumen LED
 					</h2>
 					<p className="text-sm text-muted-foreground">
-						Seluruh penyusunan Dokumen LED
-						{studyProgram ? ` ${studyProgram.studyProgramName}` : ' prodi ini'}.
-						Klik judul untuk membuka dokumennya.
+						Satu dokumen per tahun akademik, termasuk yang sudah selesai.
 					</p>
 				</div>
 				{canManage && (
@@ -169,6 +179,8 @@ export function ProgramLedProjectList() {
 				onPaginationChange={setPagination}
 				onClearAll={clearAll}
 			/>
+
+			{confirmDialog}
 		</div>
 	);
 }

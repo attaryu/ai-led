@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { ArrowLeftIcon } from '@phosphor-icons/react';
 
+import { PlaceholderPage } from '~/core/components/placeholder-page';
 import { Button } from '~/core/components/ui/button';
 import { Input } from '~/core/components/ui/input';
 import { Select } from '~/core/components/ui/select';
@@ -43,9 +44,10 @@ export function EditLedProject() {
 	const { projectId } = useParams<{ projectId: string }>();
 	const [searchParams] = useSearchParams();
 	const [project, setProject] = React.useState<LedProjectEntity | null>(null);
+	const [tidakAda, setTidakAda] = React.useState(false);
 
 	/*
-	 * Formulir ini bisa dibuka dari daftar lintas prodi maupun dari daftar milik
+	 * Formulir ini bisa dibuka dari daftar lintas program studi maupun dari daftar milik
 	 * satu prodi (§5.3); yang kedua menitipkan tujuan pulangnya lewat query
 	 * string supaya Penjamin Mutu tidak terlempar ke lapis tenant.
 	 */
@@ -68,8 +70,8 @@ export function EditLedProject() {
 			if (found) {
 				setProject(found);
 			} else {
-				alert('Proyek LED tidak ditemukan!');
-				navigate(returnTo);
+				// Lihat catatan di edit-user.tsx soal kenapa ini bukan `alert`.
+				setTidakAda(true);
 			}
 		});
 		return () => {
@@ -112,7 +114,8 @@ export function EditLedProject() {
 
 		const prodi = studyPrograms.find((p) => p.id === data.studyProgramId);
 		if (!prodi) {
-			alert('Program Studi tidak valid!');
+			// Lihat catatan di create-led-project.tsx.
+			setError('studyProgramId', { message: 'Program studi tidak valid.' });
 			return;
 		}
 
@@ -149,8 +152,18 @@ export function EditLedProject() {
 		}
 	};
 
+	if (tidakAda) {
+		return (
+			<PlaceholderPage
+				title="Dokumen LED tidak ditemukan"
+				description={`Tidak ada Dokumen LED dengan ID "${projectId}". Mungkin sudah dihapus.`}
+				links={[{ label: 'Kembali ke daftar', to: returnTo }]}
+			/>
+		);
+	}
+
 	if (!project) {
-		return <div className="p-8 text-center text-muted-foreground">Memuat data Proyek LED...</div>;
+		return <div className="p-8 text-center text-muted-foreground">Memuat data Dokumen LED...</div>;
 	}
 
 	return (
@@ -166,21 +179,13 @@ export function EditLedProject() {
 				</Button>
 				<div>
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						Edit Proyek LED
+						Edit Dokumen LED
 					</h2>
-					<p className="text-sm text-muted-foreground">
-						Ubah detail Proyek LED di bawah ini.
-					</p>
 				</div>
 			</div>
 
+			{/* Lihat catatan di create-led-project.tsx soal CardHeader yang dibuang. */}
 			<Card>
-				<CardHeader>
-					<CardTitle>Formulir Proyek LED</CardTitle>
-					<CardDescription>
-						Ubah detail Proyek LED. Tekan simpan jika sudah selesai.
-					</CardDescription>
-				</CardHeader>
 				<CardContent>
 					<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 						<FieldGroup>
@@ -209,7 +214,7 @@ export function EditLedProject() {
 
 							<Field data-invalid={!!errors.judul}>
 								<FieldLabel htmlFor="judul">
-									Judul Proyek LED
+									Judul Dokumen LED
 								</FieldLabel>
 								<Input
 									id="judul"
@@ -231,7 +236,7 @@ export function EditLedProject() {
 
 							<Field data-invalid={!!errors.statusKeseluruhan}>
 								<FieldLabel htmlFor="statusKeseluruhan">
-									Status Proyek
+									Status dokumen
 								</FieldLabel>
 								<Select
 									id="statusKeseluruhan"

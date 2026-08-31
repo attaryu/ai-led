@@ -4,6 +4,7 @@ import { PlusIcon } from '@phosphor-icons/react';
 
 import { ApiError } from '~/core/lib/api-client';
 import { Button } from '~/core/components/ui/button';
+import { useConfirmDialog } from '~/core/components/ui/confirm-dialog';
 import { DataTable } from '~/core/components/ui/data-table';
 import { useDataTableState } from '~/core/hooks/use-data-table-state';
 import { userRepository } from '../../data/repositories/user.repository';
@@ -13,6 +14,7 @@ import { type UserEntity } from '../../domain/entities/user.entity';
 export function UserManagement() {
 	const navigate = useNavigate();
 	const [users, setUsers] = React.useState<UserEntity[]>([]);
+	const { konfirmasi, confirmDialog } = useConfirmDialog();
 
 	const loadData = React.useCallback(() => {
 		userRepository.findAll().then(setUsers);
@@ -28,7 +30,14 @@ export function UserManagement() {
 
 	const handleDelete = React.useCallback(
 		async (id: string) => {
-			if (!confirm('Apakah Anda yakin ingin menghapus User ini?')) return;
+			const lanjut = await konfirmasi({
+				judul: 'Hapus pengguna ini?',
+				deskripsi: 'Akun beserta penugasannya hilang dan tidak bisa dipulihkan.',
+				labelAksi: 'Hapus',
+				merusak: true,
+			});
+			if (!lanjut) return;
+
 			try {
 				await userRepository.delete(id);
 				loadData();
@@ -40,7 +49,7 @@ export function UserManagement() {
 				);
 			}
 		},
-		[loadData],
+		[konfirmasi, loadData],
 	);
 
 	const handleEdit = React.useCallback((id: string) => {
@@ -67,14 +76,14 @@ export function UserManagement() {
 	const columns = React.useMemo(() => getUserColumns(), []);
 
 	return (
-		<div className="flex flex-col gap-6">
+		<div className="flex flex-col gap-8">
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<div>
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						Manajemen Pengguna (User)
+						Pengguna
 					</h2>
 					<p className="text-sm text-muted-foreground">
-						Kelola akses, data diri, dan peran pengguna di dalam sistem
+						Peran tiap akun menentukan halaman apa yang bisa dibukanya.
 					</p>
 				</div>
 				<Button
@@ -82,7 +91,7 @@ export function UserManagement() {
 					className="gap-2 cursor-pointer"
 				>
 					<PlusIcon className="size-4" />
-					Tambah User
+					Tambah pengguna
 				</Button>
 			</div>
 
@@ -100,6 +109,8 @@ export function UserManagement() {
 				onPaginationChange={setPagination}
 				onClearAll={clearAll}
 			/>
+
+			{confirmDialog}
 		</div>
 	);
 }

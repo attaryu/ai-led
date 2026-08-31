@@ -1,9 +1,5 @@
 import * as React from 'react';
-import {
-	ArchiveIcon,
-	FileIcon,
-	IdentificationCardIcon,
-} from '@phosphor-icons/react';
+import { ArchiveIcon, FileIcon, GaugeIcon } from '@phosphor-icons/react';
 import { Navigate, Outlet, useLocation, useParams } from 'react-router';
 
 import {
@@ -20,7 +16,7 @@ import { studyProgramRepository } from '../../data/repositories/study-program.re
 import { type StudyProgramEntity } from '../../domain/entities/study-program.entity';
 
 /**
- * Lapis 2 — Dashboard Prodi (docs/application_flow.md §5).
+ * Lapis 2 — Dashboard Program Studi (docs/application_flow.md §5).
  *
  * `programId` di URL adalah satu-satunya sumber kebenaran konteks prodi.
  * Pimpinan/Penjamin Mutu memilih prodi lewat navigasi sehingga konteksnya tidak
@@ -77,15 +73,15 @@ export function StudyProgramWorkspaceLayout() {
 				sidebar={{
 					universityName: tenant.universityName,
 					backTo: showTenantLink ? '/dashboard' : null,
-					eyebrow: 'Dashboard Prodi',
+					eyebrow: 'Dashboard Program Studi',
 					contextTitle: 'Tidak ditemukan',
 					items: [],
 				}}
 				breadcrumbs={[...tenantCrumb, { label: 'Prodi tidak ditemukan' }]}
 			>
 				<PlaceholderPage
-					title="Prodi tidak ditemukan"
-					description={`Tidak ada Program Studi dengan ID "${programId}". Mungkin sudah dihapus.`}
+					title="Program studi tidak ditemukan"
+					description={`Tidak ada program studi dengan ID "${programId}". Mungkin sudah dihapus.`}
 					// Penyusun tidak berhak atas daftar prodi, dan bila prodinya sendiri
 					// yang terhapus ia memang tidak punya tujuan lain — hubungi Pimpinan.
 					links={
@@ -108,16 +104,26 @@ export function StudyProgramWorkspaceLayout() {
 			sidebar={{
 				universityName: tenant.universityName,
 				backTo: showTenantLink ? '/dashboard' : null,
-				eyebrow: 'Dashboard Prodi',
+				eyebrow: 'Dashboard Program Studi',
 				contextTitle: studyProgram.studyProgramName,
 				items: [
 					{
-						// Halamannya bukan daftar dokumen melainkan keadaan prodi itu
-						// sendiri — akreditasi berjalan, dokumen yang disusun, dan timnya
-						// (§5.1), jadi namanya menyebut subjeknya.
-						name: 'Profil Prodi',
+						/*
+						 * "Dashboard", seperti item pertama di kedua ruang kerja lain.
+						 * Halamannya sendiri sudah bernama Dashboard Program Studi, dan
+						 * nama menu yang berbeda dari judul halamannya membuat pembaca
+						 * mengira keduanya dua tempat.
+						 *
+						 * Nama lamanya, "Profil", juga menyempitkan: yang ada di sana
+						 * bukan cuma identitas prodi, melainkan akreditasi berjalan,
+						 * dokumen yang sedang disusun, dan timnya (§5.1).
+						 *
+						 * Ikonnya sama dengan lapis dokumen — perannya memang sama, dan
+						 * keduanya tidak pernah tampil bersamaan di satu sidebar.
+						 */
+						name: 'Dashboard',
 						path: `/study-programs/${programId}`,
-						icon: IdentificationCardIcon,
+						icon: GaugeIcon,
 						end: true,
 					},
 					{

@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useNavigate, useOutletContext } from 'react-router';
 
+import { useConfirmDialog } from '~/core/components/ui/confirm-dialog';
 import {
 	Card,
 	CardDescription,
@@ -18,7 +19,7 @@ import { ProgramTeamPanel } from '../components/program-team-panel';
 import { useProgramReadiness } from '../hooks/use-program-readiness';
 
 /**
- * Dashboard Prodi (docs/application_flow.md §5.1).
+ * Dashboard Program Studi (docs/application_flow.md §5.1).
  *
  * Subjek halaman ini adalah prodinya, bukan daftar dokumennya: akreditasi LAM
  * Teknik berjalan per prodi, satu dokumen pada satu waktu.
@@ -35,7 +36,7 @@ import { useProgramReadiness } from '../hooks/use-program-readiness';
  * hanya membuat halaman ini jadi salinan lapis di bawahnya. Yang tersisa cuma
  * satu bar: cukup untuk tahu dokumennya bergerak atau tidak.
  *
- * Aturan "prodi ini tersendat di mana" yang dulu menggerakkan panel itu sudah
+ * Aturan "program studi ini tersendat di mana" yang dulu menggerakkan panel itu sudah
  * dihapus seluruhnya: sejak §4.0c dipecah jadi dua tabel, pemicunya berubah jadi
  * bentuk halaman — tabel Perlu Segera Disusun, kolom tenggat yang merah — bukan
  * lagi angka yang perlu dijumlahkan.
@@ -73,18 +74,29 @@ function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 	const canManage = session?.role === 'Penjamin Mutu';
 
 	/** Dibawa formulir supaya Batal dan simpan memulangkan ke dashboard ini. */
+	const { konfirmasi, confirmDialog } = useConfirmDialog();
 	const returnTo = `/study-programs/${program.id}`;
 
-	const handleDelete = React.useCallback((id: string) => {
-		if (confirm('Apakah Anda yakin ingin menghapus Dokumen LED ini?')) {
+	const handleDelete = React.useCallback(
+		async (id: string) => {
+			const lanjut = await konfirmasi({
+				judul: 'Hapus Dokumen LED ini?',
+				deskripsi:
+					'Seluruh bab beserta isinya ikut terhapus, dan tidak bisa dipulihkan.',
+				labelAksi: 'Hapus',
+				merusak: true,
+			});
+			if (!lanjut) return;
+
 			// `delete()` menyiarkan 'storage-update' sendiri setelah selesai — hook
 			// kesiapan berlangganan event yang sama, jadi barisnya hilang tanpa
 			// halaman ini perlu memuat ulang sendiri.
 			ledProjectRepository.delete(id).catch((e: unknown) => {
 				alert(e instanceof Error ? e.message : 'Gagal menghapus Dokumen LED.');
 			});
-		}
-	}, []);
+		},
+		[konfirmasi],
+	);
 
 	const handleEdit = React.useCallback(
 		(id: string) => {
@@ -104,13 +116,13 @@ function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 	const riwayat = penyusunanAktif ? [penyusunanAktif, ...arsip] : arsip;
 
 	return (
-		<div className="flex flex-col gap-6">
+		<div className="flex flex-col gap-8">
 			<div>
 				<h2 className="font-heading text-2xl font-bold tracking-tight">
-					Dashboard Prodi
+					Dashboard Program Studi
 				</h2>
 				<p className="text-sm text-muted-foreground">
-					Kesiapan akreditasi {program.studyProgramName}.
+					Akreditasi yang berlaku sekarang, dan penyusunan yang sedang berjalan.
 				</p>
 			</div>
 
@@ -137,8 +149,8 @@ function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 							</CardTitle>
 							<CardDescription>
 								{arsip.length === 0
-									? 'Prodi ini belum punya Dokumen LED. Dokumen baru dibuat oleh Penjamin Mutu lewat Dashboard Utama.'
-									: 'Seluruh Dokumen LED prodi ini sudah berstatus SELESAI. Penyusunan berikutnya dimulai dengan membuat Dokumen LED baru.'}
+									? 'Program studi ini belum punya Dokumen LED. Dokumen baru dibuat oleh Penjamin Mutu lewat Dashboard Utama.'
+									: 'Seluruh Dokumen LED program studi ini sudah berstatus SELESAI. Penyusunan berikutnya dimulai dengan membuat Dokumen LED baru.'}
 							</CardDescription>
 						</CardHeader>
 					</Card>
@@ -159,6 +171,8 @@ function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 					<ProgramTeamPanel penyusun={penyusun} />
 				</div>
 			</div>
+
+			{confirmDialog}
 		</div>
 	);
 }

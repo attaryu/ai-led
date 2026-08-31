@@ -14,7 +14,7 @@ import { useProjectProgress } from '../hooks/use-project-progress';
 import { type LedProjectEntity } from '../../domain/entities/led-project.entity';
 
 /**
- * Dashboard Project LED — Progres Dokumen (docs/application_flow.md §6.1).
+ * Dashboard Dokumen — lapis Dokumen LED (docs/application_flow.md §6.1).
  *
  * Halaman ini murni baca: tidak ada aksi ubah data di sini, jadi tidak ada yang
  * perlu disembunyikan per role (§1) — penjagaannya sudah selesai di layout
@@ -39,13 +39,20 @@ function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
 		useProjectProgress(ledProject.id, ledProject.studyProgramId);
 
 	return (
-		<div className="flex flex-col gap-6">
+		<div className="flex flex-col gap-8">
 			<div>
-				<h2 className="font-heading text-2xl font-bold tracking-tight">
-					Progres Dokumen
-				</h2>
+				{/* Acuan penilaian menentukan arti seluruh angka di halaman ini, jadi
+				    ia harus terbaca tanpa menggulung — tapi cukup sebagai lencana
+				    sebaris judul. Rincian dan tempat menggantinya ada di kartu pada
+				    kolom kanan, karena keduanya jarang dibutuhkan. */}
+				<div className="flex flex-wrap items-center gap-3">
+					<h2 className="font-heading text-2xl font-bold tracking-tight">
+						Dashboard Dokumen
+					</h2>
+					<ProjectAccreditationSetBadge project={ledProject} />
+				</div>
 				<p className="text-sm text-muted-foreground">
-					Ringkasan penyusunan {ledProject.judul}.
+					Sejauh mana dokumen ini sudah tersusun, bab demi bab.
 				</p>
 			</div>
 
@@ -75,7 +82,7 @@ function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
 					label="Bukti Dukung Dipakai"
 					icon={PaperclipIcon}
 					value={String(summary.buktiDukungTerpakai)}
-					hint={`Dari ${buktiDukungTersedia} berkas tersedia untuk prodi ini`}
+					hint={`Dari ${buktiDukungTersedia} berkas tersedia untuk program studi ini`}
 				/>
 				<StatCard
 					label="Aktivitas Terakhir"
@@ -108,7 +115,10 @@ function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
 					<h3 className="font-heading text-base font-medium">Progres per Bab</h3>
 					<ChapterProgressTable projectId={ledProject.id} chapters={chapters} />
 				</section>
-				<ProjectAttentionPanel project={ledProject} attention={attention} />
+				<div className="flex min-w-0 flex-col gap-4">
+					<ProjectAttentionPanel project={ledProject} attention={attention} />
+					<ProjectAccreditationSetCard project={ledProject} />
+				</div>
 			</div>
 		</div>
 	);

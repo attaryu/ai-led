@@ -71,20 +71,22 @@ export function CreateStudyProgram() {
 				</Button>
 				<div>
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						Tambah Program Studi Baru
+						Tambah program studi
 					</h2>
-					<p className="text-sm text-muted-foreground">
-						Masukkan identitas Program Studi beserta akreditasi yang berlaku.
-					</p>
 				</div>
 			</div>
 
+			{/*
+			 * CardHeader di sini tidak dibuang seperti di formulir lain: kalimatnya
+			 * memuat aturan yang tidak bisa diketahui dari kolomnya sendiri — dua
+			 * kolom wajib yang justru boleh kosong dalam satu keadaan tertentu.
+			 * Yang dibuang cuma judul kartu dan kalimat penutup soal tombol Simpan.
+			 */}
 			<Card>
 				<CardHeader>
-					<CardTitle>Formulir Program Studi</CardTitle>
 					<CardDescription>
-						Nomor SK dan masa berlaku boleh dikosongkan bila prodi belum
-						terakreditasi. Tekan simpan jika sudah selesai.
+						Nomor SK dan masa berlaku boleh kosong kalau program studi ini
+						belum terakreditasi.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>

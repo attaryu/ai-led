@@ -9,7 +9,7 @@ export const ledProjectSchema = z.object({
 	id: z.string(),
 	studyProgramId: z.string().min(1, 'Program studi wajib dipilih'),
 	studyProgramName: z.string().min(1, 'Nama program studi wajib diisi'),
-	judul: z.string().min(1, 'Judul proyek wajib diisi').max(200, 'Judul proyek maksimal 200 karakter'),
+	judul: z.string().min(1, 'Judul Dokumen LED wajib diisi').max(200, 'Judul Dokumen LED maksimal 200 karakter'),
 	/**
 	 * Selalu dua tahun berurutan, `YYYY/YYYY`. Tidak pernah diketik utuh oleh
 	 * pengguna: formulir meminta satu angka tahun mulai lalu menyusunnya lewat
@@ -31,6 +31,19 @@ export const ledProjectSchema = z.object({
 	 * sehari-hari adalah target penyelesaian dokumen yang sedang disusun.
 	 */
 	tenggat: z.string().nullable(),
+	/**
+	 * Set akreditasi yang jadi acuan penilaian dokumen ini.
+	 *
+	 * `null` berarti belum dipilih — dokumen masih bisa ditulis, tapi belum bisa
+	 * dinilai, karena tidak ada rubrik yang menyatakan apa yang dinilai.
+	 *
+	 * Ditaruh di dokumen, bukan di prodi maupun tenant: satu universitas bisa
+	 * punya prodi di bawah lembaga penilai berbeda, dan dokumen dari siklus
+	 * berbeda dinilai dengan rubrik berbeda. Ini juga yang membuat skor lama
+	 * tetap bermakna — dokumen selamanya memegang set yang dipakainya, walau
+	 * tenant sudah beralih ke set yang lebih baru.
+	 */
+	accreditationSetId: z.string().nullable(),
 	createdAt: z.string(),
 });
 

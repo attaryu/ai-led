@@ -12,7 +12,7 @@ const statusStyles: Record<LedProjectStatus, string> = {
 
 /**
  * `DOKUMEN_LED.status_keseluruhan` (§14). Satu tempat untuk warnanya karena
- * status yang sama muncul di tabel lintas prodi, kartu Dashboard Prodi, dan
+ * status yang sama muncul di tabel lintas program studi, kartu Dashboard Program Studi, dan
  * Dashboard Project LED.
  */
 export function LedProjectStatusBadge({

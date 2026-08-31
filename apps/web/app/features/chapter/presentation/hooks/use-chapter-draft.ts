@@ -101,19 +101,15 @@ export function useChapterDraft({
 		async (draft: ChapterDraftEntity): Promise<HasilPulih | null> => {
 			if (!izin.canEdit || sibuk) return null;
 
-			// Peringatannya menyebut akibat, bukan sekadar "yakin?" — mengikuti
-			// kalimat konfirmasi di `evidence-library.tsx`. Wajib menyebut kehilangan
-			// tulisan sekarang: docs tegas bahwa restore **tidak** membuat checkpoint
-			// otomatis dari kondisi yang tertimpa, jadi ini satu-satunya peringatan
-			// yang pengguna dapat.
-			if (
-				!confirm(
-					`Pulihkan "${labelDraft(draft)}"? Tulisan bab yang sekarang akan tertimpa dan tidak tersimpan sebagai checkpoint.`,
-				)
-			) {
-				return null;
-			}
-
+			/*
+			 * Konfirmasinya tidak di sini, melainkan di `chapter-draft-panel.tsx`.
+			 * `useConfirmDialog` menitipkan elemen dialog yang harus ikut dirender,
+			 * dan hook ini tidak merender apa pun — memaksanya masuk ke sini berarti
+			 * hook wajib mengembalikan sepotong JSX yang tidak ada hubungannya
+			 * dengan urusannya. Peringatannya sendiri wajib ada di suatu tempat:
+			 * restore **tidak** membuat checkpoint otomatis dari kondisi yang
+			 * tertimpa, jadi itu satu-satunya peringatan yang pengguna dapat.
+			 */
 			setStatus('memulihkan');
 			setPesanGagal(null);
 

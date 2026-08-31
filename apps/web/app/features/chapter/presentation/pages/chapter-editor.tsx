@@ -155,14 +155,14 @@ export function ChapterEditor() {
 				<div className="w-full max-w-lg">
 					<PlaceholderPage
 						title="Dokumen LED tidak ditemukan"
-						description={`Tidak ada Dokumen LED dengan ID "${projectId}". Mungkin sudah dihapus, atau ikut terhapus bersama prodinya.`}
+						description={`Tidak ada Dokumen LED dengan ID "${projectId}". Mungkin sudah dihapus, atau ikut terhapus bersama program studinya.`}
 						links={
 							escapeTo
 								? [
 										{
 											label: showTenantLink
-												? 'Lihat Dokumen LED lintas prodi'
-												: 'Kembali ke Dashboard Prodi',
+												? 'Lihat Dokumen LED lintas program studi'
+												: 'Kembali ke Dashboard Program Studi',
 											to: escapeTo,
 										},
 									]

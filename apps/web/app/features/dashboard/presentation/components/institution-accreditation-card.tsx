@@ -30,7 +30,7 @@ const validityTones: Record<AccreditationUrgency, string> = {
  * Berdiri sebagai bloknya sendiri, bukan kartu kelima di baris ringkasan
  * penyusunan. Menyandingkannya dengan angka kelengkapan bab membuat peringkat
  * hasil penyusunan sebelumnya terbaca sebagai ukuran pekerjaan sekarang —
- * kesalahan yang sudah pernah dibuat dan diperbaiki di Dashboard Prodi
+ * kesalahan yang sudah pernah dibuat dan diperbaiki di Dashboard Program Studi
  * (§5.1, PRD §3.8).
  *
  * Disajikan sebagai distribusi, bukan rata-rata: peringkat itu ordinal, dan
@@ -88,7 +88,7 @@ export function InstitutionAccreditationCard({
 								aria-label={peringkatAkreditasiEnum.options
 									.map(
 										(peringkat) =>
-											`${PERINGKAT_AKREDITASI_LABEL[peringkat]} ${komposisi[peringkat]} prodi`,
+											`${PERINGKAT_AKREDITASI_LABEL[peringkat]} ${komposisi[peringkat]} program studi`,
 									)
 									.join(', ')}
 							>
@@ -99,7 +99,7 @@ export function InstitutionAccreditationCard({
 										style={{
 											width: `${(komposisi[peringkat] / totalProdi) * 100}%`,
 										}}
-										title={`${PERINGKAT_AKREDITASI_LABEL[peringkat]} — ${komposisi[peringkat]} prodi (${persenKomposisi[peringkat]}%)`}
+										title={`${PERINGKAT_AKREDITASI_LABEL[peringkat]} — ${komposisi[peringkat]} program studi (${persenKomposisi[peringkat]}%)`}
 									/>
 								))}
 							</div>
@@ -133,7 +133,7 @@ export function InstitutionAccreditationCard({
 										<span className="font-medium text-foreground">
 											{komposisi[peringkat]}
 										</span>{' '}
-										prodi · {persenKomposisi[peringkat]}%
+										program studi · {persenKomposisi[peringkat]}%
 									</span>
 								</li>
 							))}

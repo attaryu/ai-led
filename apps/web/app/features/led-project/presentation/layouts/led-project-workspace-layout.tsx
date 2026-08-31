@@ -1,6 +1,6 @@
 import * as React from 'react';
 import {
-	ListChecksIcon,
+	GaugeIcon,
 	NotePencilIcon,
 	SealCheckIcon,
 } from '@phosphor-icons/react';
@@ -70,7 +70,7 @@ export function LedProjectWorkspaceLayout() {
 		: [];
 
 	if (!ledProject) {
-		// Penyusun tidak berhak atas daftar lintas prodi, jadi ia dipulangkan ke
+		// Penyusun tidak berhak atas daftar lintas program studi, jadi ia dipulangkan ke
 		// prodinya sendiri (§1: yang tidak boleh diakses disembunyikan).
 		const escapeTo = showTenantLink
 			? '/dashboard/led-projects'
@@ -91,14 +91,14 @@ export function LedProjectWorkspaceLayout() {
 			>
 				<PlaceholderPage
 					title="Dokumen LED tidak ditemukan"
-					description={`Tidak ada Dokumen LED dengan ID "${projectId}". Mungkin sudah dihapus, atau ikut terhapus bersama prodinya.`}
+					description={`Tidak ada Dokumen LED dengan ID "${projectId}". Mungkin sudah dihapus, atau ikut terhapus bersama program studinya.`}
 					links={
 						escapeTo
 							? [
 									{
 										label: showTenantLink
-											? 'Lihat Dokumen LED lintas prodi'
-											: 'Kembali ke Dashboard Prodi',
+											? 'Lihat Dokumen LED lintas program studi'
+											: 'Kembali ke Dashboard Program Studi',
 										to: escapeTo,
 									},
 								]
@@ -122,9 +122,19 @@ export function LedProjectWorkspaceLayout() {
 				contextTitle: ledProject.judul,
 				items: [
 					{
-						name: 'Progres Dokumen',
+						/*
+						 * "Dashboard", bukan "Progres Dokumen": item pertama tiap ruang
+						 * kerja adalah halaman ikhtisarnya, dan lapis tenant sudah
+						 * menamainya begitu. Nama lamanya juga menyempit — halaman ini
+						 * memuat bukti dukung terpakai dan acuan penilaian, bukan cuma
+						 * progres.
+						 *
+						 * Ikonnya `Gauge`, bukan `House` seperti lapis tenant: rumah
+						 * berarti titik awal aplikasi, dan lapis ini bukan itu.
+						 */
+						name: 'Dashboard',
 						path: `/led-projects/${projectId}`,
-						icon: ListChecksIcon,
+						icon: GaugeIcon,
 						end: true,
 					},
 					{

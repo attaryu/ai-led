@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate, useParams } from 'react-router';
 import { ArrowLeftIcon } from '@phosphor-icons/react';
 
+import { PlaceholderPage } from '~/core/components/placeholder-page';
 import { ApiError } from '~/core/lib/api-client';
 import { Button } from '~/core/components/ui/button';
 import { Input } from '~/core/components/ui/input';
@@ -14,13 +15,7 @@ import {
 	FieldGroup,
 	FieldLabel,
 } from '~/core/components/ui/field';
-import {
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
-	CardDescription,
-} from '~/core/components/ui/card';
+import { Card, CardContent } from '~/core/components/ui/card';
 import {
 	updateUserSchema,
 	type UpdateUserDto,
@@ -39,6 +34,7 @@ export function EditUser() {
 	const [studyPrograms, setStudyPrograms] = React.useState<StudyProgramEntity[]>([]);
 	const [user, setUser] = React.useState<UserEntity | null>(null);
 	const [formError, setFormError] = React.useState<string | null>(null);
+	const [tidakAda, setTidakAda] = React.useState(false);
 
 	React.useEffect(() => {
 		studyProgramRepository.findAll().then(setStudyPrograms);
@@ -47,8 +43,12 @@ export function EditUser() {
 				if (found) {
 					setUser(found);
 				} else {
-					alert('User tidak ditemukan!');
-					navigate('/dashboard/users');
+					// Ditandai, bukan dilempar balik lewat `alert` + `navigate`: kotak
+					// bawaan peramban menghentikan seluruh utas dan tidak menyisakan
+					// jejak setelah ditutup, sehingga pembaca mendarat di daftar tanpa
+					// tahu kenapa. Halaman "tidak ditemukan" adalah bentuk yang sudah
+					// dipakai ruang kerja Dokumen LED dan Program Studi.
+					setTidakAda(true);
 				}
 			});
 		}
@@ -123,8 +123,18 @@ export function EditUser() {
 		}
 	};
 
+	if (tidakAda) {
+		return (
+			<PlaceholderPage
+				title="Pengguna tidak ditemukan"
+				description={`Tidak ada pengguna dengan ID "${userId}". Mungkin sudah dihapus.`}
+				links={[{ label: 'Kembali ke Pengguna', to: '/dashboard/users' }]}
+			/>
+		);
+	}
+
 	if (!user) {
-		return <div className="p-8 text-center text-muted-foreground">Memuat data user...</div>;
+		return <div className="p-8 text-center text-muted-foreground">Memuat data pengguna...</div>;
 	}
 
 	return (
@@ -140,21 +150,13 @@ export function EditUser() {
 				</Button>
 				<div>
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						Edit Pengguna
+						Edit pengguna
 					</h2>
-					<p className="text-sm text-muted-foreground">
-						Ubah data lengkap pengguna di bawah ini.
-					</p>
 				</div>
 			</div>
 
+			{/* Lihat catatan di create-user.tsx soal CardHeader yang dibuang. */}
 			<Card>
-				<CardHeader>
-					<CardTitle>Formulir Pengguna</CardTitle>
-					<CardDescription>
-						Seluruh kolom wajib diisi sesuai dengan data pengguna.
-					</CardDescription>
-				</CardHeader>
 				<CardContent>
 					<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 						{formError && (
@@ -236,8 +238,8 @@ export function EditUser() {
 									</FieldLabel>
 									{studyPrograms.length === 0 ? (
 										<div className="text-sm text-destructive py-1.5 px-3 bg-destructive/10 border border-destructive/20 rounded-md">
-											Belum ada data Prodi. Silakan buat Prodi terlebih dahulu
-											di menu Manajemen Prodi.
+											Belum ada program studi. Buat satu dulu lewat menu
+											Program Studi.
 										</div>
 									) : (
 										<Select

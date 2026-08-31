@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate, useParams } from 'react-router';
 import { ArrowLeftIcon } from '@phosphor-icons/react';
 
+import { PlaceholderPage } from '~/core/components/placeholder-page';
 import { Button } from '~/core/components/ui/button';
 import {
 	Card,
@@ -27,6 +28,7 @@ export function EditStudyProgram() {
 	const { programId } = useParams<{ programId: string }>();
 	const [program, setProgram] = React.useState<StudyProgramEntity | null>(null);
 	const [formError, setFormError] = React.useState<string | null>(null);
+	const [tidakAda, setTidakAda] = React.useState(false);
 
 	React.useEffect(() => {
 		if (!programId) return;
@@ -36,8 +38,8 @@ export function EditStudyProgram() {
 			if (found) {
 				setProgram(found);
 			} else {
-				alert('Program Studi tidak ditemukan!');
-				navigate('/dashboard/study-programs');
+				// Lihat catatan di edit-user.tsx soal kenapa ini bukan `alert`.
+				setTidakAda(true);
 			}
 		});
 		return () => {
@@ -98,8 +100,20 @@ export function EditStudyProgram() {
 		}
 	};
 
+	if (tidakAda) {
+		return (
+			<PlaceholderPage
+				title="Program studi tidak ditemukan"
+				description={`Tidak ada program studi dengan ID "${programId}". Mungkin sudah dihapus.`}
+				links={[
+					{ label: 'Kembali ke Program Studi', to: '/dashboard/study-programs' },
+				]}
+			/>
+		);
+	}
+
 	if (!program) {
-		return <div className="p-8 text-center text-muted-foreground">Memuat data Program Studi...</div>;
+		return <div className="p-8 text-center text-muted-foreground">Memuat data program studi...</div>;
 	}
 
 	return (
@@ -115,20 +129,17 @@ export function EditStudyProgram() {
 				</Button>
 				<div>
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						Edit Program Studi
+						Edit program studi
 					</h2>
-					<p className="text-sm text-muted-foreground">
-						Ubah identitas dan akreditasi Program Studi di bawah ini.
-					</p>
 				</div>
 			</div>
 
+			{/* Lihat catatan di create-study-program.tsx soal CardHeader yang ini. */}
 			<Card>
 				<CardHeader>
-					<CardTitle>Formulir Program Studi</CardTitle>
 					<CardDescription>
-						Nomor SK dan masa berlaku boleh dikosongkan bila prodi belum
-						terakreditasi. Tekan simpan jika sudah selesai.
+						Nomor SK dan masa berlaku boleh kosong kalau program studi ini
+						belum terakreditasi.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>

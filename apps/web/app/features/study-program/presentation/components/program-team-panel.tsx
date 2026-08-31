@@ -10,7 +10,7 @@ import {
 import { type UserEntity } from '~/features/users/domain/entities/user.entity';
 
 /**
- * Penyusun yang ditugaskan ke prodi ini (docs/application_flow.md §5.1c).
+ * Penyusun yang ditugaskan ke program studi ini (docs/application_flow.md §5.1c).
  *
  * Prodi tanpa Penyusun bukan daftar kosong biasa: dokumennya tidak akan pernah
  * bergerak, jadi keadaan itu ditampilkan sebagai peringatan beserta jalan
@@ -26,14 +26,14 @@ export function ProgramTeamPanel({ penyusun }: { penyusun: UserEntity[] }) {
 				<CardDescription>
 					{penyusun.length === 0
 						? 'Belum ada yang ditugaskan.'
-						: `${penyusun.length} orang ditugaskan di prodi ini.`}
+						: `${penyusun.length} orang ditugaskan di program studi ini.`}
 				</CardDescription>
 			</CardHeader>
 			<CardContent>
 				{penyusun.length === 0 ? (
 					<p className="flex items-start gap-2 text-sm text-amber-700 dark:text-amber-400">
 						<WarningCircleIcon className="mt-0.5 size-4 shrink-0" weight="fill" />
-						Penyusun ditempatkan oleh Pimpinan lewat Manajemen User.
+						Penyusun ditempatkan oleh Pimpinan lewat menu Pengguna.
 					</p>
 				) : (
 					<ul className="flex flex-col gap-3">

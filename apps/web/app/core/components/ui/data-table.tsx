@@ -303,16 +303,13 @@ export function DataTable<TData, TValue>({
 			 * `overflow-hidden` di sini memotong kotak gulir di dalamnya sehingga
 			 * kolom yang tidak muat hilang diam-diam alih-alih bisa digeser.
 			 */}
-			<div className="bg-card shadow-xs">
+			<div className="bg-card">
 				<Table>
 					<TableHeader>
 						{table.getHeaderGroups().map((headerGroup) => (
 							<TableRow key={headerGroup.id}>
 								{headerGroup.headers.map((header) => (
-									<TableHead
-										key={header.id}
-										className="h-10 py-2 font-semibold"
-									>
+									<TableHead key={header.id}>
 										{header.isPlaceholder
 											? null
 											: flexRender(

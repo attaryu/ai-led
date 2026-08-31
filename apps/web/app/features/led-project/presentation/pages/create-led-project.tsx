@@ -35,15 +35,20 @@ import { TahunAkademikField } from '../components/tahun-akademik-field';
 import { ledProjectRepository } from '../../data/repositories/led-project.repository';
 import { type StudyProgramEntity } from '../../../study-program/domain/entities/study-program.entity';
 import { studyProgramRepository } from '../../../study-program/data/repositories/study-program.repository';
+import { accreditationSetRepository } from '~/features/accreditation-set/data/repositories/accreditation-set.repository';
+import { type AccreditationSetEntity } from '~/features/accreditation-set/domain/entities/accreditation-set.entity';
 
 export function CreateLedProject() {
 	const navigate = useNavigate();
 	const [searchParams] = useSearchParams();
 	const [studyPrograms, setStudyPrograms] = React.useState<StudyProgramEntity[]>([]);
 	const [formError, setFormError] = React.useState<string | null>(null);
+	const [acuanTersedia, setAcuanTersedia] = React.useState<
+		AccreditationSetEntity[]
+	>([]);
 
 	/*
-	 * Formulir ini bisa dibuka dari dua tempat: daftar lintas prodi di lapis
+	 * Formulir ini bisa dibuka dari dua tempat: daftar lintas program studi di lapis
 	 * tenant, dan daftar milik satu prodi di lapis prodi (§5.3). Yang kedua sudah
 	 * tahu prodinya dan berhak kembali ke tempatnya semula, jadi keduanya
 	 * dititipkan lewat query string alih-alih membuat rute pembuatan kedua.
@@ -56,6 +61,7 @@ export function CreateLedProject() {
 
 	React.useEffect(() => {
 		studyProgramRepository.findAll().then(setStudyPrograms);
+		accreditationSetRepository.findSelectable().then(setAcuanTersedia);
 	}, []);
 
 	const {
@@ -70,8 +76,12 @@ export function CreateLedProject() {
 		defaultValues: {
 			studyProgramId: '',
 			judul: '',
-			tahunMulai: '',
+			// Dokumen LED nyaris selalu disusun untuk tahun akademik yang sedang
+			// berjalan, jadi tahun sekarang adalah tebakan yang hampir selalu benar
+			// — dan kolomnya langsung memperlihatkan tahun akhirnya tanpa diketik.
+			tahunMulai: String(new Date().getFullYear()),
 			tenggat: '',
+			accreditationSetId: '',
 		},
 	});
 
@@ -87,10 +97,21 @@ export function CreateLedProject() {
 		);
 	}, [studyPrograms, prodiTerpilih, setValue]);
 
+	// Satu siklus umumnya hanya punya satu acuan yang berlaku, jadi pilihan
+	// pertama nyaris selalu jawaban yang benar dan kolomnya tinggal dilewati.
+	React.useEffect(() => {
+		if (acuanTersedia.length > 0) {
+			setValue('accreditationSetId', acuanTersedia[0].id);
+		}
+	}, [acuanTersedia, setValue]);
+
 	const onSubmit = async (data: CreateLedProjectDto) => {
 		const prodi = studyPrograms.find((p) => p.id === data.studyProgramId);
 		if (!prodi) {
-			alert('Program Studi tidak valid!');
+			// Menempel ke kolomnya, sama seperti pemeriksaan tahun ganda di bawah:
+			// yang salah adalah satu isian, bukan seluruh formulir, dan `alert`
+			// lepas tidak menunjukkan yang mana.
+			setError('studyProgramId', { message: 'Program studi tidak valid.' });
 			return;
 		}
 
@@ -142,21 +163,17 @@ export function CreateLedProject() {
 				</Button>
 				<div>
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						Tambah Proyek LED Baru
+						Tambah Dokumen LED
 					</h2>
-					<p className="text-sm text-muted-foreground">
-						Buat proyek penyusunan Laporan Evaluasi Diri (LED) baru.
-					</p>
 				</div>
 			</div>
 
+			{/*
+			 * Tanpa CardHeader: judul halaman di atasnya sudah menyebut apa yang
+			 * sedang dikerjakan, dan "Formulir Dokumen LED" cuma mengulanginya satu
+			 * baris di bawahnya.
+			 */}
 			<Card>
-				<CardHeader>
-					<CardTitle>Formulir Proyek LED</CardTitle>
-					<CardDescription>
-						Masukkan detail Proyek LED baru. Tekan simpan jika sudah selesai.
-					</CardDescription>
-				</CardHeader>
 				<CardContent>
 					<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 						<FieldGroup>
@@ -189,9 +206,41 @@ export function CreateLedProject() {
 								)}
 							</Field>
 
+							<Field data-invalid={!!errors.accreditationSetId}>
+								<FieldLabel htmlFor="accreditationSetId">
+									Acuan Penilaian
+								</FieldLabel>
+								{acuanTersedia.length === 0 ? (
+									// Menolak dengan alasan, bukan kolom kosong yang diam.
+									// Lembaga penilai menerbitkan panduan, template, dan rubrik
+									// sekaligus, jadi acuannya memang mestinya sudah ada sebelum
+									// penyusunan dibuka — kalau belum ada, yang kurang bukan
+									// isian formulir ini, melainkan setnya sendiri.
+									<div className="text-sm text-destructive border border-destructive/20 bg-destructive/10 rounded-md p-3">
+										Belum ada set akreditasi yang siap dipakai. Lengkapi berkas
+										dan isi rubriknya lebih dulu di menu Set Akreditasi.
+									</div>
+								) : (
+									<Select
+										id="accreditationSetId"
+										disabled={isSubmitting}
+										{...register('accreditationSetId')}
+									>
+										{acuanTersedia.map((set) => (
+											<option key={set.id} value={set.id}>
+												{set.nama} — {set.lembaga} · siklus {set.tahunSiklus}
+											</option>
+										))}
+									</Select>
+								)}
+								{errors.accreditationSetId && (
+									<FieldError>{errors.accreditationSetId.message}</FieldError>
+								)}
+							</Field>
+
 							<Field data-invalid={!!errors.judul}>
 								<FieldLabel htmlFor="judul">
-									Judul Proyek LED
+									Judul Dokumen LED
 								</FieldLabel>
 								<Input
 									id="judul"

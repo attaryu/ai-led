@@ -9,6 +9,7 @@ import {
 
 import { Button } from '~/core/components/ui/button';
 import { CollectionToolbar } from '~/core/components/ui/collection-toolbar';
+import { useConfirmDialog } from '~/core/components/ui/confirm-dialog';
 import { DataTable } from '~/core/components/ui/data-table';
 import { PaginationFooter } from '~/core/components/ui/pagination-footer';
 import { evidenceRepository } from '../../data/repositories/evidence.repository';
@@ -77,6 +78,7 @@ export function EvidenceLibrary({
 	studyProgramName?: string;
 }) {
 	const permission = useEvidencePermission(level, studyProgramId);
+	const { konfirmasi, confirmDialog } = useConfirmDialog();
 	const {
 		items,
 		total,
@@ -112,7 +114,7 @@ export function EvidenceLibrary({
 	const labelAkar =
 		level === 'TENANT'
 			? 'Bukti Dukung Universitas'
-			: `Bukti Dukung Prodi ${studyProgramName ?? ''}`.trim();
+			: `Bukti Dukung ${studyProgramName ?? ''}`.trim();
 
 	// Dibaca ulang dari daftar supaya panel detail ikut memperbarui statusnya
 	// saat ingestion selesai selagi panel terbuka.
@@ -123,17 +125,23 @@ export function EvidenceLibrary({
 		return node?.tipe === 'BERKAS' ? node.evidence : null;
 	}, [items, selectedId]);
 
-	const handleDelete = React.useCallback((evidence: EvidenceEntity) => {
-		if (
-			!confirm(`Hapus "${evidence.namaDokumen}"? ${PERINGATAN_RUJUKAN}`)
-		) {
-			return;
-		}
-		setSelectedId(null);
-		evidenceRepository.delete(evidence.id).catch((error: unknown) => {
-			alert(error instanceof Error ? error.message : 'Gagal menghapus berkas.');
-		});
-	}, []);
+	const handleDelete = React.useCallback(
+		async (evidence: EvidenceEntity) => {
+			const lanjut = await konfirmasi({
+				judul: `Hapus "${evidence.namaDokumen}"?`,
+				deskripsi: PERINGATAN_RUJUKAN,
+				labelAksi: 'Hapus',
+				merusak: true,
+			});
+			if (!lanjut) return;
+
+			setSelectedId(null);
+			evidenceRepository.delete(evidence.id).catch((error: unknown) => {
+				alert(error instanceof Error ? error.message : 'Gagal menghapus berkas.');
+			});
+		},
+		[konfirmasi],
+	);
 
 	const handleRetry = React.useCallback((evidence: EvidenceEntity) => {
 		evidenceRepository.retryIngestion(evidence.id).catch((error: unknown) => {
@@ -157,16 +165,23 @@ export function EvidenceLibrary({
 				.filter(Boolean)
 				.join(' dan ');
 
-			const pesan = isi
-				? `Hapus folder "${node.folder.nama}" beserta ${isi} di dalamnya?\n\n${PERINGATAN_RUJUKAN}`
-				: `Hapus folder "${node.folder.nama}"? Folder ini kosong.`;
+			// Angkanya naik ke judul, akibatnya turun ke deskripsi — pembagian yang
+			// dulu ditiru dengan `\n\n` di dalam satu string `window.confirm`.
+			const lanjut = await konfirmasi({
+				judul: isi
+					? `Hapus folder "${node.folder.nama}" beserta ${isi} di dalamnya?`
+					: `Hapus folder "${node.folder.nama}"?`,
+				deskripsi: isi ? PERINGATAN_RUJUKAN : 'Folder ini kosong.',
+				labelAksi: 'Hapus',
+				merusak: true,
+			});
+			if (!lanjut) return;
 
-			if (!confirm(pesan)) return;
 			evidenceRepository.deleteFolderCascade(cakupan, node.id).catch((error: unknown) => {
 				alert(error instanceof Error ? error.message : 'Gagal menghapus folder.');
 			});
 		},
-		[cakupan],
+		[cakupan, konfirmasi],
 	);
 
 	const nodeTerpilih = React.useMemo(
@@ -215,11 +230,15 @@ export function EvidenceLibrary({
 			.filter(Boolean)
 			.join(' dan ');
 
-		const pesan = ikut
-			? `Hapus ${bagian}? Ikut terhapus ${ikut} di dalam foldernya.\n\n${PERINGATAN_RUJUKAN}`
-			: `Hapus ${bagian}?\n\n${PERINGATAN_RUJUKAN}`;
-
-		if (!confirm(pesan)) return;
+		const lanjut = await konfirmasi({
+			judul: `Hapus ${bagian}?`,
+			deskripsi: ikut
+				? `Ikut terhapus ${ikut} di dalam foldernya. ${PERINGATAN_RUJUKAN}`
+				: PERINGATAN_RUJUKAN,
+			labelAksi: 'Hapus',
+			merusak: true,
+		});
+		if (!lanjut) return;
 
 		for (const node of berkasDihapus) evidenceRepository.delete(node.id);
 		for (const node of folderDihapus) {
@@ -304,15 +323,15 @@ export function EvidenceLibrary({
 	);
 
 	return (
-		<div className="flex flex-col gap-6">
+		<div className="flex flex-col gap-8">
 			<div>
 				<h2 className="font-heading text-2xl font-bold tracking-tight">
 					{labelAkar}
 				</h2>
 				<p className="text-sm text-muted-foreground">
 					{level === 'TENANT'
-						? 'Berkas milik universitas yang bisa dipakai seluruh prodi. Unggahan di sini juga bisa diarahkan ke prodi tertentu.'
-						: 'Tidak terikat ke satu Dokumen LED, jadi otomatis tersedia untuk semua dokumen milik prodi ini.'}
+						? 'Berkas milik universitas yang bisa dipakai seluruh program studi. Unggahan di sini juga bisa diarahkan ke satu program studi tertentu.'
+						: 'Tidak terikat ke satu Dokumen LED, jadi otomatis tersedia untuk semua dokumen milik program studi ini.'}
 				</p>
 			</div>
 
@@ -510,6 +529,8 @@ export function EvidenceLibrary({
 				onDelete={handleDelete}
 				onRetry={handleRetry}
 			/>
+
+			{confirmDialog}
 		</div>
 	);
 }

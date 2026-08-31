@@ -404,10 +404,16 @@ export function ChapterGenerationPanel({
 						)}
 					</>
 				) : (
+					/*
+					 * Akibatnya lebih dulu, sebabnya belakangan — dua kalimat pendek,
+					 * bukan satu kalimat "X, jadi Y tidak bisa". Yang dicari pembaca
+					 * saat tombolnya mati adalah "apa yang tidak bisa saya lakukan",
+					 * dan itu tidak boleh menunggu sampai anak kalimat kedua.
+					 */
 					<p className="text-xs leading-relaxed text-muted-foreground">
 						{izin.blockedReason === 'terkunci' ||
 						izin.blockedReason === 'diajukan'
-							? `${frasaBlokir[izin.blockedReason]}, jadi generate tidak bisa dijalankan.`
+							? `Generate tidak tersedia. ${frasaBlokir[izin.blockedReason]}.`
 							: 'Anda hanya bisa membaca bab ini.'}
 					</p>
 				)}
@@ -438,7 +444,7 @@ export function ChapterGenerationPanel({
 						ownerTipe: 'PROGRAM_STUDI',
 						studyProgramId,
 					})}
-					labelAkar={`Bukti Dukung Prodi ${namaProdi ?? ''}`.trim()}
+					labelAkar={`Bukti Dukung ${namaProdi ?? ''}`.trim()}
 					uploader={{
 						userId: izinBukti.session.userId,
 						name: izinBukti.session.namaLengkap,

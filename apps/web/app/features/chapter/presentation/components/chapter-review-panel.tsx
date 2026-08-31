@@ -105,7 +105,7 @@ export function ChapterReviewPanel({
 		<div className="flex min-h-0 flex-1 flex-col">
 			<div className="shrink-0 space-y-3 px-5 pt-4 pb-3">
 				{/*
-				 * Warnanya mengikuti badge di tabel Progres Dokumen supaya keadaan yang
+				 * Warnanya mengikuti badge di tabel Dashboard Dokumen supaya keadaan yang
 				 * sama tidak dibaca dua rupa di dua layar.
 				 */}
 				<div

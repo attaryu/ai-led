@@ -12,7 +12,15 @@ function Card({
       data-slot="card"
       data-size={size}
       className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-sm text-card-foreground shadow-xs ring-1 ring-foreground/10 [--card-spacing:--spacing(6)] has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(4)] *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
+        // `shadow-xs` dibuang: sejak `--background` menjadi kertas dan `--card`
+        // tetap putih, kartu sudah terangkat oleh kontras permukaan. Bayangan
+        // di atasnya hanya menumpuk dua isyarat untuk satu pesan yang sama.
+        //
+        // `ring-border`, bukan `ring-foreground/10`: garis tepi kartu dan garis
+        // tepi tabel harus satu sumber. Dengan alfa sendiri, keduanya berpisah
+        // diam-diam setiap kali `--border` disetel — dan itulah yang membuat
+        // kartu tampak lebih pudar dari tabel di sebelahnya.
+        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-sm text-card-foreground ring-1 ring-border [--card-spacing:--spacing(7)] has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(5)] *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
         className
       )}
       {...props}

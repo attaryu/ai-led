@@ -47,6 +47,10 @@ export default [
     route("led-projects/create", "routes/dashboard-led-project-create.tsx"),
     route("led-projects/:projectId/edit", "routes/dashboard-led-project-edit.tsx"),
     route("evidence", "routes/dashboard-evidence.tsx"),
+    route("accreditation-sets", "routes/dashboard-accreditation-set.tsx"),
+    route("accreditation-sets/create", "routes/dashboard-accreditation-set-create.tsx"),
+    route("accreditation-sets/:setId", "routes/dashboard-accreditation-set-detail.tsx"),
+    route("accreditation-sets/:setId/criteria", "routes/dashboard-accreditation-set-criteria.tsx"),
   ]),
 
   // LAPIS 2 — prodi: Pimpinan, Penjamin Mutu (lintas prodi), Penyusun (prodinya)

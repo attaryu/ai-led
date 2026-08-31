@@ -91,7 +91,7 @@ export function ProjectAttentionPanel({
 						to={`/study-programs/${project.studyProgramId}/evidence`}
 						className={buttonVariants({ variant: 'outline', size: 'sm' })}
 					>
-						Bukti Dukung prodi ini
+						Bukti Dukung program studi ini
 					</Link>
 				</CardContent>
 			</Card>

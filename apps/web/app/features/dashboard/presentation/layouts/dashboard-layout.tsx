@@ -21,16 +21,16 @@ const staticSegments = new Set([
 
 const breadcrumbNameMap: Record<string, string> = {
   "/dashboard": "Dashboard",
-  "/dashboard/users": "Manajemen User",
-  "/dashboard/users/create": "Tambah User",
-  "/dashboard/users/:id/edit": "Edit User",
-  "/dashboard/study-programs": "Manajemen Program Studi",
-  "/dashboard/study-programs/create": "Tambah Program Studi",
-  "/dashboard/study-programs/:id/edit": "Edit Program Studi",
-  "/dashboard/led-projects": "Manajemen Proyek LED",
-  "/dashboard/led-projects/create": "Tambah Proyek LED",
-  "/dashboard/led-projects/:id/edit": "Edit Proyek LED",
-  "/dashboard/evidence": "Bukti Dukung Tenant",
+  "/dashboard/users": "Pengguna",
+  "/dashboard/users/create": "Tambah pengguna",
+  "/dashboard/users/:id/edit": "Edit pengguna",
+  "/dashboard/study-programs": "Program Studi",
+  "/dashboard/study-programs/create": "Tambah program studi",
+  "/dashboard/study-programs/:id/edit": "Edit program studi",
+  "/dashboard/led-projects": "Dokumen LED",
+  "/dashboard/led-projects/create": "Tambah Dokumen LED",
+  "/dashboard/led-projects/:id/edit": "Edit Dokumen LED",
+  "/dashboard/evidence": "Bukti Dukung Universitas",
 }
 
 /**

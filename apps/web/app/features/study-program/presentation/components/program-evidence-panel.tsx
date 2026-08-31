@@ -35,10 +35,10 @@ export function ProgramEvidencePanel({
 	return (
 		<Card size="sm">
 			<CardHeader>
-				<CardTitle>Bukti Dukung Prodi</CardTitle>
+				<CardTitle>Bukti Dukung</CardTitle>
 				<CardDescription>
 					{summary.total === 0
-						? 'Belum ada berkas milik prodi ini.'
+						? 'Belum ada berkas milik program studi ini.'
 						: `${summary.siap} dari ${summary.total} berkas siap dipakai AI (${summary.persenSiap}%).`}
 				</CardDescription>
 			</CardHeader>
@@ -50,7 +50,7 @@ export function ProgramEvidencePanel({
 						aria-valuenow={summary.persenSiap}
 						aria-valuemin={0}
 						aria-valuemax={100}
-						aria-label="Bukti dukung prodi yang siap"
+						aria-label="Bukti dukung program studi yang siap"
 					>
 						<div
 							className="h-full rounded-full bg-primary transition-[width]"
