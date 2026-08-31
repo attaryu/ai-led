@@ -339,57 +339,15 @@ def _parse_checklist(raw: str) -> list[str]:
 
 
 # ──────────────────────────────────────────────────────────────────────
-# REKOMENDASI_DOKUMEN prompts (port of AI-LED-dimas SYSTEM_ROUTE_AND_PLAN /
-# SYSTEM_ASSESS_AND_RECOMMEND) -- see _handle_rekomendasi_dokumen below.
+# REKOMENDASI_DOKUMEN prompt (port of AI-LED-dimas SYSTEM_ASSESS_AND_RECOMMEND,
+# 332ab2f) -- see _handle_rekomendasi_dokumen below. Dimas's route_and_plan
+# stage (an LLM call producing free-text document_query, then fed into
+# vectorstore/document_registry_store.py's semantic search over a tenant's
+# already-uploaded folders) is GONE -- a tenant with nothing uploaded yet
+# got zero candidates and a useless recommendation. Documents are now
+# picked directly from document_catalog.DOCUMENT_CATALOG, a closed-set
+# vocabulary that works from day one regardless of what has been uploaded.
 # ──────────────────────────────────────────────────────────────────────
-
-_SYSTEM_ROUTE_AND_PLAN = """Anda adalah asesor akreditasi program studi di Indonesia.
-
-Berdasarkan PEDOMAN PENULISAN dan RUBRIK PENILAIAN suatu subbab LED, tentukan
-dokumen non-LKPS apa saja yang diperlukan sebagai bukti/sumber dalam
-penyusunan narasi (SK, notulensi, peraturan, RPS, dst).
-
-Catatan: kebutuhan data LKPS TIDAK ditentukan oleh Anda -- itu sudah
-diputuskan lewat pengecekan otomatis terpisah, di luar tugas Anda di sini.
-
-ATURAN document_query:
-1. Identifikasi klaim/informasi yang perlu didukung dokumen (fakta, data,
-   regulasi, kebijakan, keputusan, kegiatan, mekanisme, kondisi program
-   studi, hasil evaluasi, pernyataan faktual).
-2. Cari sumber untuk klaim konseptual (regulasi/pedoman resmi yang
-   melandasi penjelasan pedoman).
-3. Cari bukti untuk fakta institusi (SK, notulensi, berita acara, dst).
-4. Pertahankan identifier penting (nomor peraturan, nomor SK, judul
-   dokumen) -- JANGAN diganti jadi istilah generik.
-5. LKPS adalah jalur terpisah -- JANGAN buat document_query untuk data yang
-   secara eksplisit diminta dari LKPS (mis. "Tabel 3.a.1 LKPS").
-6. Jangan membuat dokumen berdasarkan asumsi -- setiap query harus punya
-   dasar dari Pedoman/Rubrik, bukan sekadar dokumen umum akreditasi.
-7. Query harus berupa kata kunci dokumen (utk semantic search ke nama
-   file/folder/metadata), BUKAN pertanyaan.
-8. Tidak ada jumlah query minimum -- buat hanya yang benar-benar perlu.
-
-OUTPUT HARUS JSON VALID SAJA (no explanation outside JSON):
-{
-  "requires_documents": <true/false>,
-  "document_query": ["query 1", "query 2", ...]
-}"""
-
-
-def _build_route_and_plan_prompt(judul_bab: str, pedoman: list[dict], rubric: list[dict]) -> str:
-    parts = [_SYSTEM_ROUTE_AND_PLAN, "", f"## SECTION: {judul_bab}", ""]
-    if pedoman:
-        parts.append("## PEDOMAN PENULISAN:")
-        for p in pedoman[:6]:
-            parts.append(f"- {(p.get('content_text') or '')[:400]}")
-        parts.append("")
-    if rubric:
-        parts.append("## RUBRIK SKOR 4:")
-        for r in rubric[:5]:
-            parts.append(f"- {(r.get('description') or '')[:400]}")
-        parts.append("")
-    parts.append("Output HANYA JSON:")
-    return "\n".join(parts)
 
 
 _SYSTEM_ASSESS_AND_RECOMMEND = """Anda adalah asesor akreditasi program studi di Indonesia.
@@ -412,59 +370,83 @@ tersurat di data. Contoh: kalau data menyebut "MoU PT ABC, Nomor:
 123/MOU/PENS/2025", maka query: "MoU PT ABC", "123/MOU/PENS/2025". Kalau
 lkps_sufficient = true atau null, biarkan array ini kosong.
 
-## KEPUTUSAN 3 -- recommendation_text & items
-Simpulkan JENIS dokumen pendukung apa saja yang perlu disiapkan user untuk
-menyusun subbab ini, dan jelaskan singkat ISI/CAKUPAN dokumen tsb --
-berdasarkan PEMAHAMAN ANDA atas kebutuhan subbab (dari QUERY KEBUTUHAN
-DOKUMEN), BUKAN sekadar menyalin nama folder hasil pencarian arsip.
+## KEPUTUSAN 3 -- recommendation_text & items (dokumen dari KATALOG)
+KATALOG DOKUMEN di bawah adalah CLOSED SET. Anda hanya boleh memilih dokumen
+yang terdapat dalam KATALOG. Jangan membuat, menebak, atau mengusulkan
+dokumen di luar katalog.
 
-PENTING -- HASIL HARUS GENERIC/PORTABLE, bukan spesifik ke satu arsip:
-- Folder kandidat di bawah ini adalah HASIL PENCARIAN dari arsip SATU prodi
-  tertentu -- bisa saja mengandung nama folder yang terlalu detail (nama
-  dosen, tahun ajaran spesifik, dsb). Arsip ini HANYA referensi/petunjuk --
-  JANGAN pernah menyalin nama folder granular semacam itu mentah-mentah ke
-  output.
-- Tulis kesimpulan sbg JENIS dokumen yg dibutuhkan secara umum + deskripsi
-  singkat isinya, SUPAYA rekomendasi ini tetap masuk akal dipakai di
-  program studi LAIN yang arsipnya berbeda struktur.
-- BENAR: "Dokumen modul ajar yang memuat rencana pembelajaran tiap mata
-  kuliah", "Bukti pelaksanaan tinjauan RPS (notulensi/laporan rapat)"
-- SALAH (menyalin folder granular apa adanya): "Tabel 4j/Prof Puja",
-  "MODUL AJAR/Modul Ajar 2022/Semester 5/1. K3L"
+Gunakan PEDOMAN untuk memahami seluruh informasi yang perlu dibahas dalam
+SECTION. Kemudian periksa KATALOG dan pilih dokumen yang dapat menjadi
+sumber atau bukti untuk informasi tersebut. Jangan hanya mencari kecocokan
+kata -- pahami fungsi dokumen berdasarkan label, scope, tier, dan purpose.
 
-`recommendation_text`: ringkasan naratif BAHASA INDONESIA, format ringkas &
-jelas, mis: "Untuk menyusun subbab ini diperlukan:\\n- Tabel 3.a.1 LKPS yang
-memuat data kerja sama pendidikan\\n- Dokumen RPS tiap mata kuliah"
+Perhatikan seluruh informasi yang diminta PEDOMAN dalam SECTION. Jika
+SECTION membutuhkan beberapa jenis informasi dan tersedia beberapa dokumen
+yang mendukung informasi tersebut, pilih semuanya -- jangan membatasi
+jumlah. Dokumen tingkat institusi dan program studi dapat sama-sama dipilih
+jika keduanya diperlukan untuk menjelaskan SECTION. Namun jangan memilih
+dokumen hanya karena berkaitan secara umum dengan institusi, program studi,
+mutu, pendidikan, atau akreditasi -- dokumen harus punya hubungan yang
+jelas dengan informasi yang perlu ditulis dalam SECTION.
 
-`items`: PECAH kesimpulan yang SAMA di atas jadi kartu terpisah, SATU item
-per JENIS dokumen (bukan per folder arsip). WAJIB diisi (jangan kosong)
-kecuali benar-benar tidak ada kebutuhan dokumen apapun. Tiap item:
-- "label": nama jenis dokumen, SINGKAT (mis. "Dokumen Modul Ajar")
-- "reason": 1 kalimat deskripsi ISI/CAKUPAN dokumen tsb & kenapa dibutuhkan
-JANGAN isi field folder_path/path apapun -- item HANYA berisi label+reason.
+ATURAN KATALOG:
+- "label" pada tiap item output HARUS disalin PERSIS dari KATALOG. Jangan
+  mengubah, memparafrase, menyingkat, menerjemahkan, atau membuat label baru.
+- "no" dan "label" pada satu item HARUS berasal dari entri KATALOG yang sama.
+- Gunakan scope, tier, dan purpose hanya untuk membantu memilih dokumen.
+- Kalau tidak ada satupun dokumen di KATALOG yang cocok untuk SECTION ini,
+  kembalikan items: [] -- itu jawaban yang sah, jangan memaksakan pilihan.
+
+ATURAN REASON: jelaskan secara SPESIFIK informasi dalam SECTION yang dapat
+didukung dokumen tsb. Jangan gunakan alasan yang terlalu umum seperti
+"mendukung VMTS", "mendukung mutu", atau "mendukung pengembangan program
+studi".
+
+`recommendation_text`: ringkasan naratif BAHASA INDONESIA dari kesimpulan
+`items` di atas, format ringkas & jelas.
 
 OUTPUT HARUS JSON VALID SAJA (no explanation outside JSON):
 {
   "lkps_sufficient": <true/false/null>,
   "lkps_evidence_query": ["identifier 1", ...],
-  "recommendation_text": "<ringkasan naratif, general/portable>",
-  "items": [{"label": "<jenis dokumen, singkat>", "reason": "<isi/cakupan & alasan, 1 kalimat>"}, ...]
+  "recommendation_text": "<ringkasan naratif>",
+  "items": [{"no": 1, "label": "SALIN PERSIS DARI KATALOG", "reason": "Alasan spesifik."}]
 }"""
 
 _FALLBACK_RECOMMENDATION_TEXT = (
     "LLM gagal menghasilkan rekomendasi yang valid untuk subbab ini. "
-    "Klik \"Rekomendasikan Ulang\" untuk mencoba lagi."
+    'Klik "Rekomendasikan Ulang" untuk mencoba lagi.'
 )
 
 
 def _build_assess_and_recommend_prompt(
     judul_bab: str,
-    candidate_folders: list[dict],
-    document_query: list[str],
+    pedoman: list[dict],
+    rubric: list[dict],
     lkps_tables: list[str],
     needs_lkps: bool,
 ) -> str:
+    from document_catalog import catalog_for_prompt
+
     parts = [_SYSTEM_ASSESS_AND_RECOMMEND, "", f"## SECTION: {judul_bab}", ""]
+    if pedoman:
+        parts.append("## PEDOMAN PENULISAN:")
+        for p in pedoman[:8]:
+            parts.append(f"- {(p.get('content_text') or '')[:1200]}")
+        parts.append("")
+    else:
+        parts.append(
+            "## PEDOMAN PENULISAN: TIDAK TERSEDIA -- Anda tidak punya dasar "
+            "untuk memilih dokumen. Kembalikan items: [] dan jelaskan pada "
+            "recommendation_text bahwa pedoman untuk subbab ini belum "
+            "tersedia. JANGAN menebak dokumen dari judul SECTION."
+        )
+        parts.append("")
+    if rubric:
+        parts.append("## RUBRIK SKOR 4 (target kualitas subbab ini):")
+        for r in rubric[:5]:
+            parts.append(f"- {(r.get('description') or '')[:400]}")
+        parts.append("")
     if needs_lkps:
         parts.append("## HASIL PENCARIAN LKPS:")
         if lkps_tables:
@@ -479,29 +461,88 @@ def _build_assess_and_recommend_prompt(
             "lkps_evidence_query: []."
         )
         parts.append("")
-    if document_query:
-        parts.append("## QUERY KEBUTUHAN DOKUMEN (dasar utama kesimpulan Anda):")
-        for q in document_query:
-            parts.append(f"- {q}")
-        parts.append("")
-    if candidate_folders:
+    # Format satu baris per entri, label diapit kutip dan diakhiri "|" --
+    # supaya LLM tidak ikut menyalin metadata [tier, scope] sbg bagian dari
+    # label saat menyalin balik ke output JSON (bug nyata dialami dimas:
+    # label keluar sbg "... Institusi [L1, institusi]").
+    parts.append("## KATALOG DOKUMEN (closed set -- pilih HANYA dari daftar bernomor ini):")
+    parts.append('Format tiap baris: NOMOR. "LABEL" | metadata (BUKAN bagian dari label)')
+    parts.append("")
+    for entry in catalog_for_prompt():
         parts.append(
-            "## FOLDER KANDIDAT (HANYA referensi arsip -- JANGAN disalin mentah, "
-            "JANGAN dimasukkan ke items):"
+            f"{entry['no']}. \"{entry['label']}\" | tier={entry['tier']} "
+            f"scope={entry['scope']} -- {entry['purpose']}"
         )
-        for i, c in enumerate(candidate_folders[:15], 1):
-            parts.append(f"\n[{i}] folder: {c.get('label')}")
-        parts.append("")
-    else:
-        parts.append("## TIDAK ADA folder kandidat ditemukan.")
-        parts.append("")
+    parts.append("")
     parts.append(
-        "Susun recommendation_text sbg KESIMPULAN jenis dokumen yg "
-        "dibutuhkan (general, portable ke prodi lain -- lihat instruksi di "
-        "atas), berdasarkan QUERY KEBUTUHAN DOKUMEN. FOLDER KANDIDAT hanya "
-        "sbg petunjuk tambahan gambaran ISI dokumen yg mungkin relevan. "
-        "Lalu PECAH kesimpulan itu jadi `items`."
+        "PENTING: field \"label\" pada output HANYA berisi teks di antara "
+        "tanda kutip di atas -- JANGAN sertakan nomor, tanda kutip, atau "
+        "metadata setelah tanda \"|\" sebagai bagian dari label."
     )
+    parts.append(
+        "Setiap item WAJIB punya \"no\" (bilangan bulat dari daftar di atas), "
+        "\"label\", dan \"reason\". Pilih dokumen untuk SETIAP lapisan dan "
+        "tingkat yang dipicu PEDOMAN, bukan satu dokumen per frasa."
+    )
+    parts.append("recommendation_text dan reason WAJIB Bahasa Indonesia.")
+    parts.append("Output HANYA JSON:")
+    return "\n".join(parts)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Fallback: usulan dokumen DI LUAR katalog -- HANYA dipanggil
+# _handle_rekomendasi_dokumen setelah _build_assess_and_recommend_prompt()
+# (di atas) sudah dijalankan SUKSES (bukan gagal parse/invoke) dan hasil
+# `items`-nya BENAR-BENAR kosong -- LLM sudah menelusuri seluruh KATALOG
+# closed-set dan tidak menemukan satupun yang cocok. Prompt TERPISAH dari
+# _SYSTEM_ASSESS_AND_RECOMMEND supaya aturan closed-set di prompt utama
+# tidak pernah melunak/tercampur dengan izin mengarang ini (port of
+# AI-LED-dimas SYSTEM_SUGGEST_CUSTOM_DOCUMENT, 332ab2f).
+# ──────────────────────────────────────────────────────────────────────
+
+_SYSTEM_SUGGEST_CUSTOM_DOCUMENT = """Anda adalah asesor akreditasi program studi di Indonesia.
+
+KONTEKS: Anda sebelumnya sudah memeriksa seluruh KATALOG DOKUMEN closed-set
+milik institusi ini untuk SECTION di bawah, dan TIDAK ADA satu pun entri
+katalog yang sesuai dengan kebutuhan dokumen SECTION ini. Katalog itu
+TERBUKTI TIDAK LENGKAP untuk kasus ini.
+
+TUGAS ANDA SEKARANG: usulkan sendiri nama dokumen pendukung yang benar-benar
+dibutuhkan untuk SECTION ini, berdasarkan PEDOMAN yang diberikan.
+
+ATURAN:
+- Usulkan HANYA kalau memang ada kebutuhan dokumen formal yang jelas
+  tersirat dari PEDOMAN. Jangan mengarang demi mengisi jumlah.
+- Kalau memang tidak ada kebutuhan dokumen formal sama sekali (section
+  murni naratif/analisis), kembalikan items: [] -- itu jawaban yang sah.
+- Nama dokumen harus jenis dokumen yang wajar ada di institusi pendidikan
+  Indonesia (SK, peraturan, pedoman, laporan, dsb), bukan istilah generik
+  atau nama yang mengada-ada.
+- reason WAJIB menjelaskan kenapa dokumen ini diperlukan DAN kenapa tidak
+  ada padanan yang cocok di katalog institusi.
+
+OUTPUT HARUS JSON VALID SAJA:
+{
+  "items": [{"label": "<nama dokumen yang diusulkan>", "reason": "<1-2 kalimat>"}, ...]
+}"""
+
+
+def _build_suggest_custom_document_prompt(
+    judul_bab: str, pedoman: list[dict], rubric: list[dict]
+) -> str:
+    """Dipanggil _handle_rekomendasi_dokumen HANYA sbg fallback -- lihat
+    catatan di atas."""
+    parts = [_SYSTEM_SUGGEST_CUSTOM_DOCUMENT, "", f"## SECTION: {judul_bab}", ""]
+    if pedoman:
+        parts.append("## PEDOMAN PENULISAN:")
+        for p in pedoman[:6]:
+            parts.append(f"- {(p.get('content_text') or '')[:400]}")
+        parts.append("")
+    if rubric:
+        parts.append("## RUBRIK SKOR 4:")
+        for r in rubric[:5]:
+            parts.append(f"- {(r.get('description') or '')[:400]}")
+        parts.append("")
     parts.append("Output HANYA JSON:")
     return "\n".join(parts)
 
@@ -866,6 +907,11 @@ async def _handle_rekomendasi_dokumen(job) -> dict:
     DocumentChapter.workingContent's own "no content yet" convention
     (apps/backend/src/bab-dokumen/bab-dokumen.service.ts).
 
+    Document picks come from document_catalog.DOCUMENT_CATALOG (a closed-set
+    taxonomy the LLM chooses from directly), not a per-tenant registry
+    search — port of AI-LED-dimas 332ab2f, see _SYSTEM_ASSESS_AND_RECOMMEND's
+    module comment above for why.
+
     `draftId` in the payload names an existing EMPTY draft to reuse
     ("Rekomendasikan Ulang") instead of creating a new one — the prior
     DIKONFIRMASI recommendation on that draft, if any, is marked DIGANTIKAN
@@ -880,8 +926,8 @@ async def _handle_rekomendasi_dokumen(job) -> dict:
         get_user_nama,
         update_bab_dokumen_aktif,
     )
+    from document_catalog import parse_items
     from llm.chat_model import build_plain_llm
-    from vectorstore.document_registry_store import search_document_registry_candidates
 
     payload = job.data
     bab_id = payload["babDokumenId"]
@@ -904,57 +950,83 @@ async def _handle_rekomendasi_dokumen(job) -> dict:
 
     llm = build_plain_llm()
 
-    # 3. document_query — LLM call porting SYSTEM_ROUTE_AND_PLAN.
-    route_prompt = _build_route_and_plan_prompt(bab["chapter_title"], pedoman, rubric)
-    try:
-        raw = await llm.ainvoke(route_prompt)
-        route_data = _parse_llm_json(_strip_think(raw.content))
-    except Exception:
-        logger.exception("document_query LLM gagal untuk bab %s", bab_id)
-        route_data = {}
-    document_query = route_data.get("document_query") or [bab["chapter_title"]]
-
-    # 4. Candidate folders from Document Registry (already dedup'd/cutoff'd).
-    candidates = search_document_registry_candidates(
-        document_query, bab["tenant_id"], bab.get("study_program_id"), k=5,
-    )
-
     # LKPS content the pedoman references, fed to the assess-and-recommend
     # call below as "LKPS search results" — see _load_lkps_tables's note on
     # why this is an exact-ref lookup rather than Dimas's semantic search.
     lkps_tables = _load_lkps_tables(bab, lkps_refs) if needs_lkps else []
 
-    # 5. lkps_sufficient / lkps_evidence_query / recommendation_text+items —
-    # LLM call porting SYSTEM_ASSESS_AND_RECOMMEND.
+    # 3. lkps_sufficient / lkps_evidence_query / recommendation_text+items —
+    # 1 LLM call picking documents from the closed-set catalog. Retry up to
+    # 3x on JSON PARSE failure only (invoke/network exceptions fail fast,
+    # not retried) — deepseek-r1 sometimes answers free-text narration
+    # instead of JSON for this task, same fragility Dimas documented in
+    # generator.py::_assess_and_recommend.
     assess_prompt = _build_assess_and_recommend_prompt(
-        bab["chapter_title"], candidates, document_query, lkps_tables, needs_lkps,
+        bab["chapter_title"], pedoman, rubric, lkps_tables, needs_lkps,
     )
-    try:
-        raw = await llm.ainvoke(assess_prompt)
-        assess_data = _parse_llm_json(_strip_think(raw.content))
-    except Exception as e:
-        logger.exception("assess_and_recommend LLM gagal untuk bab %s", bab_id)
-        assess_data = {"recommendation_text": f"Gagal menyusun rekomendasi: {e}", "items": []}
+    assess_data: dict = {}
+    for attempt in range(3):
+        try:
+            raw = await llm.ainvoke(assess_prompt)
+            assess_data = _parse_llm_json(_strip_think(raw.content))
+        except Exception as e:
+            logger.exception("assess_and_recommend LLM gagal untuk bab %s", bab_id)
+            assess_data = {"recommendation_text": f"Gagal menyusun rekomendasi: {e}", "items": []}
+            break
+        if not assess_data.get("parse_error"):
+            break
+        logger.warning(
+            "Gagal parse JSON assess_and_recommend (bab %s, percobaan %d/3)",
+            bab_id, attempt + 1,
+        )
 
-    items = assess_data.get("items") or []
+    catalog_ok = not assess_data.get("parse_error")
+    raw_items = assess_data.get("items") or []
+    accepted, rejected = parse_items(raw_items)
+    if rejected:
+        logger.warning(
+            "%d/%d item dibuang (no/label tidak sepakat dgn katalog) untuk bab %s: %s",
+            len(rejected), len(raw_items), bab_id, rejected[:3],
+        )
+
     recommendation_text = assess_data.get("recommendation_text") or ""
-    if assess_data.get("parse_error") or (not recommendation_text and not items):
+
+    if catalog_ok and not accepted:
+        # LLM genuinely searched the whole closed set and found nothing —
+        # ask it to propose a document name outside the catalog instead of
+        # silently returning an empty recommendation (port of Dimas's
+        # _suggest_custom_document fallback). A failure here is treated as
+        # "no proposal" (items stays empty), not escalated to
+        # _FALLBACK_RECOMMENDATION_TEXT — the main catalog stage already
+        # succeeded validly, an empty custom-suggestion result is itself a
+        # legitimate answer.
+        custom_prompt = _build_suggest_custom_document_prompt(bab["chapter_title"], pedoman, rubric)
+        try:
+            raw = await llm.ainvoke(custom_prompt)
+            custom_data = _parse_llm_json(_strip_think(raw.content))
+        except Exception:
+            logger.exception("suggest_custom_document LLM gagal untuk bab %s", bab_id)
+            custom_data = {}
+        items = [
+            {"label": (it.get("label") or "").strip(), "reason": it.get("reason", "")}
+            for it in (custom_data.get("items") or [])
+            if isinstance(it, dict) and (it.get("label") or "").strip()
+        ]
+        if items and not recommendation_text:
+            recommendation_text = (
+                "Tidak ada dokumen yang cocok di katalog standar untuk subbab ini; "
+                "berikut usulan dokumen di luar katalog."
+            )
+    else:
+        items = [{"label": it["label"], "reason": it.get("reason", "")} for it in accepted]
+
+    if not catalog_ok or (not recommendation_text and not items):
         recommendation_text = _FALLBACK_RECOMMENDATION_TEXT
 
     lkps_sufficient = assess_data.get("lkps_sufficient") if needs_lkps else None
     lkps_evidence_query = (assess_data.get("lkps_evidence_query") or []) if lkps_sufficient is False else []
 
-    # 6. Topup registry search from lkps_evidence_query, merged + dedup'd by
-    # folder_id (search_document_registry_candidates already dedups within
-    # one call, so only the merge across the two calls needs doing here).
-    if lkps_evidence_query:
-        topup = search_document_registry_candidates(
-            lkps_evidence_query, bab["tenant_id"], bab.get("study_program_id"), k=3,
-        )
-        seen_folder_ids = {c["folder_id"] for c in candidates}
-        candidates = candidates + [c for c in topup if c["folder_id"] not in seen_folder_ids]
-
-    # 7. Persist: empty draft (reuse `draftId` if given) + DocumentRecommendation.
+    # 4. Persist: empty draft (reuse `draftId` if given) + DocumentRecommendation.
     if reuse_draft_id:
         draft_id = reuse_draft_id
     else:
@@ -966,14 +1038,23 @@ async def _handle_rekomendasi_dokumen(job) -> dict:
     pedoman_used = [{"id": p.get("point_code"), "text": (p.get("content_text") or "")[:300]} for p in pedoman]
     rubric_used = [{"id": r.get("id"), "text": (r.get("description") or "")[:300]} for r in rubric]
     lkps_used = [{"text": t[:300]} for t in lkps_tables]
+    # Audit trail of what was actually picked — catalog entries (no/label/
+    # tier) accepted from the closed set, or the fallback's out-of-catalog
+    # proposals. No more real folder_id references since there's no
+    # per-tenant registry search anymore.
+    candidate_catalog_picks = (
+        [{"no": it["no"], "label": it["label"], "tier": it["tier"]} for it in accepted]
+        if catalog_ok and accepted
+        else [{"custom": True, **it} for it in items]
+    )
 
     rec = create_document_recommendation(
         chapter_draft_id=draft_id,
-        document_query=document_query,
+        document_query=[],
         lkps_needed=needs_lkps,
         lkps_sufficient=lkps_sufficient,
         lkps_evidence_query=lkps_evidence_query or None,
-        candidate_folders=candidates,
+        candidate_folders=candidate_catalog_picks,
         recommendation_text=recommendation_text,
         pedoman_used=pedoman_used,
         rubric_used=rubric_used,

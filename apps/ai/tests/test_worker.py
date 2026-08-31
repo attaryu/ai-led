@@ -157,4 +157,58 @@ def test_build_generasi_prompt_forbids_repeating_chapter_title_as_heading():
 
     prompt = _build_generasi_prompt("Tata Pamong", [], [], [], [], [])
     assert "JANGAN mengulang judul bab" in prompt
-    assert '"Tata Pamong"' in prompt
+
+
+def test_build_assess_and_recommend_prompt_uses_closed_set_catalog():
+    """Port of Dimas's 332ab2f: document picks come from the closed-set
+    catalog, not a per-tenant registry search — the prompt must instruct
+    the LLM accordingly and include the full numbered catalog."""
+    from document_catalog import DOCUMENT_CATALOG
+    from worker import _build_assess_and_recommend_prompt
+
+    prompt = _build_assess_and_recommend_prompt(
+        "Tata Pamong",
+        [{"content_text": "Pedoman contoh."}],
+        [{"description": "Rubrik skor 4 contoh."}],
+        [],
+        False,
+    )
+    assert "CLOSED SET" in prompt
+    assert "Pedoman contoh." in prompt
+    assert "Rubrik skor 4 contoh." in prompt
+    assert f"{len(DOCUMENT_CATALOG)}. " in prompt
+    assert DOCUMENT_CATALOG[0]["label"] in prompt
+    # No leftover reference to the old registry-search inputs.
+    assert "FOLDER KANDIDAT" not in prompt
+    assert "QUERY KEBUTUHAN DOKUMEN" not in prompt
+
+
+def test_build_assess_and_recommend_prompt_flags_missing_pedoman():
+    from worker import _build_assess_and_recommend_prompt
+
+    prompt = _build_assess_and_recommend_prompt("Tata Pamong", [], [], [], False)
+    assert "PEDOMAN PENULISAN: TIDAK TERSEDIA" in prompt
+    assert "JANGAN menebak dokumen dari judul SECTION" in prompt
+
+
+def test_build_assess_and_recommend_prompt_includes_lkps_results_when_needed():
+    from worker import _build_assess_and_recommend_prompt
+
+    prompt = _build_assess_and_recommend_prompt(
+        "Tata Pamong", [], [], ["Tabel 3.a.1: contoh data"], True,
+    )
+    assert "HASIL PENCARIAN LKPS" in prompt
+    assert "Tabel 3.a.1: contoh data" in prompt
+
+
+def test_build_suggest_custom_document_prompt_is_a_fallback_outside_catalog():
+    """Port of Dimas's 332ab2f fallback -- separate prompt so the closed-set
+    rule in the main prompt never softens."""
+    from worker import _build_suggest_custom_document_prompt
+
+    prompt = _build_suggest_custom_document_prompt(
+        "Tata Pamong", [{"content_text": "Pedoman contoh."}], []
+    )
+    assert "TIDAK ADA satu pun entri" in prompt
+    assert "Pedoman contoh." in prompt
+    assert "## SECTION: Tata Pamong" in prompt
