@@ -25,7 +25,7 @@ import { SetStatusBadge } from '../components/set-status-badge';
 import { useAccreditationSet } from '../hooks/use-accreditation-set';
 import { useAccreditationSetPermission } from '../hooks/use-accreditation-set-permission';
 
-const SEMUA_URUTAN_BAB = CHAPTER_TEMPLATE.map((bab) => bab.urutanBab);
+const SEMUA_URUTAN_BAB = CHAPTER_TEMPLATE.map((bab) => bab.chapterOrder);
 
 /**
  * Layar tinjau isi satu set: daftar kriteria beserta level skor dan bab yang

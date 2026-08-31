@@ -217,9 +217,9 @@ async function requireUnlocked(setId: string): Promise<{
 
 	if (!target) throw new Error('Set akreditasi tidak ditemukan');
 
-	const dipakai = ledProjectRepository
-		.findAll()
-		.filter((project) => project.accreditationSetId === setId).length;
+	const dipakai = (await ledProjectRepository.findAll()).filter(
+		(project) => project.accreditationSetId === setId,
+	).length;
 	const lock = deriveSetLock(dipakai);
 
 	if (!lock.terbuka) {
@@ -352,9 +352,8 @@ export const accreditationSetRepository = {
 	 * memperbaruinya sudah cukup membuat set terkunci selamanya tanpa sebab.
 	 */
 	async countUsage(setId: string): Promise<number> {
-		return ledProjectRepository
-			.findAll()
-			.filter((project) => project.accreditationSetId === setId).length;
+		const projects = await ledProjectRepository.findAll();
+		return projects.filter((project) => project.accreditationSetId === setId).length;
 	},
 
 	/**

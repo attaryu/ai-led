@@ -28,12 +28,12 @@ export function ChapterBadgeList({
 			{[...urutanBab]
 				.sort((a, b) => a - b)
 				.map((urutan) => {
-					const bab = CHAPTER_TEMPLATE.find((b) => b.urutanBab === urutan);
+					const bab = CHAPTER_TEMPLATE.find((b) => b.chapterOrder === urutan);
 
 					return (
 						<span
 							key={urutan}
-							title={bab ? `Bab ${urutan} — ${bab.judulBab}` : `Bab ${urutan}`}
+							title={bab ? `Bab ${urutan} — ${bab.chapterTitle}` : `Bab ${urutan}`}
 							className="inline-flex min-w-6 items-center justify-center rounded border border-border bg-muted px-1.5 py-0.5 text-xs font-medium tabular-nums"
 						>
 							{urutan}

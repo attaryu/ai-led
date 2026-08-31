@@ -245,15 +245,15 @@ export function CriterionFormDialog({
 							<FieldLabel>Bab yang Dinilai</FieldLabel>
 							<div className="flex flex-wrap gap-1.5">
 								{CHAPTER_TEMPLATE.map((bab) => {
-									const aktif = babTerpilih.includes(bab.urutanBab);
+									const aktif = babTerpilih.includes(bab.chapterOrder);
 
 									return (
 										<button
-											key={bab.urutanBab}
+											key={bab.chapterOrder}
 											type="button"
-											onClick={() => toggleBab(bab.urutanBab)}
+											onClick={() => toggleBab(bab.chapterOrder)}
 											aria-pressed={aktif}
-											title={`Bab ${bab.urutanBab} — ${bab.judulBab}`}
+											title={`Bab ${bab.chapterOrder} — ${bab.chapterTitle}`}
 											className={cn(
 												'inline-flex size-9 cursor-pointer items-center justify-center rounded-md border text-sm font-medium tabular-nums transition-colors',
 												aktif
@@ -261,7 +261,7 @@ export function CriterionFormDialog({
 													: 'border-input bg-background hover:bg-accent',
 											)}
 										>
-											{bab.urutanBab}
+											{bab.chapterOrder}
 										</button>
 									);
 								})}

@@ -8,6 +8,8 @@ import { useOutletContext } from 'react-router';
 
 import { StatCard } from '~/core/components/ui/stat-card';
 import { formatRelativeTime } from '~/core/lib/format-time';
+import { ProjectAccreditationSetBadge } from '~/features/accreditation-set/presentation/components/project-accreditation-set-badge';
+import { ProjectAccreditationSetCard } from '~/features/accreditation-set/presentation/components/project-accreditation-set-card';
 import { ChapterProgressTable } from '../components/chapter-progress-table';
 import { ProjectAttentionPanel } from '../components/project-attention-panel';
 import { useProjectProgress } from '../hooks/use-project-progress';

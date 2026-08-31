@@ -55,6 +55,10 @@ function toEntity(row: BackendDokumenLed, studyProgramName: string): LedProjectE
 		tahunAkademik: row.academicYear,
 		statusKeseluruhan: row.overallStatus,
 		tenggat: row.deadline,
+		// TODO: backend belum punya kolom ini -- Set Akreditasi masih stub
+		// frontend-only (localStorage). Ganti begitu field ini ada di
+		// BackendDokumenLed.
+		accreditationSetId: null,
 		createdAt: row.createdAt,
 	};
 }
