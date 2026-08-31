@@ -14,6 +14,7 @@ import { BuktiDukungModule } from './bukti-dukung/bukti-dukung.module';
 import { EvidenceFolderModule } from './evidence-folder/evidence-folder.module';
 import { StorageModule } from './storage/storage.module';
 import { AssessmentModule } from './assessment/assessment.module';
+import { AccreditationSetModule } from './accreditation-set/accreditation-set.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { AssessmentModule } from './assessment/assessment.module';
     EvidenceFolderModule,
     StorageModule,
     AssessmentModule,
+    AccreditationSetModule,
   ],
   controllers: [AppController],
   providers: [AppService],
