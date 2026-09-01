@@ -128,6 +128,94 @@ def test_build_eval_samples_uses_supabase_justification():
     assert samples[0].response == "Justifikasi dari session."
 
 
+def test_build_eval_samples_filters_by_session_indicators():
+    """Regression test: when session_id is given, target_rubrics must be the
+    indicators actually present in that session, not blindly the first
+    n_indicators of the full rubric list -- otherwise n_indicators=1 with a
+    session whose only scored indicator is e.g. 31 silently evaluated a
+    synthetic response for indicator 1 instead, mislabeling it in
+    per_indicator output and invalidating the score. Ported from
+    origin/ariel commit 5ecb23d after finding the identical bug here."""
+    from eval.ragas_eval import build_eval_samples
+
+    fake_llm_wrapper = MagicMock()
+    fake_llm_wrapper.langchain_llm.invoke.return_value = MagicMock(content="Referensi.")
+
+    fake_sb = MagicMock()
+    fake_sb.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
+        {"indicator_no": 31, "justification": "Justifikasi indikator 31."}
+    ]
+
+    with (
+        patch("agent.tools.rubric_tool._get_rubrics",
+              return_value=[_fake_rubric(i) for i in range(1, 40)]),
+        patch("vectorstore.pgvector_store.search_led", return_value=_fake_search_results(1)),
+        patch("eval.ragas_eval._build_ragas_llm", return_value=fake_llm_wrapper),
+        patch("db.supabase_client.get_supabase", return_value=fake_sb),
+    ):
+        samples = build_eval_samples(n_indicators=1, session_id="sess-31")
+
+    assert len(samples) == 1
+    assert samples[0].indicator_no == 31
+    assert samples[0].response == "Justifikasi indikator 31."
+
+
+def test_build_eval_samples_includes_evidence_context():
+    """Regression test: RAGAS only ever retrieved LED chunks, never evidence
+    document chunks tagged to the indicator -- so a justification correctly
+    grounded in an uploaded evidence document (not the LED) was scored as
+    unsupported/hallucinated by faithfulness. Ported from origin/ariel
+    commit 5ecb23d, adapted to dev-v1's tenant + accreditation-set scoped
+    pgvector evidence store."""
+    from eval.ragas_eval import build_eval_samples
+
+    fake_llm_wrapper = MagicMock()
+    fake_llm_wrapper.langchain_llm.invoke.return_value = MagicMock(content="Referensi.")
+
+    with (
+        patch("agent.tools.rubric_tool._get_rubrics", return_value=[_fake_rubric(1)]),
+        patch("vectorstore.pgvector_store.search_led", return_value=_fake_search_results(1)),
+        patch("vectorstore.pgvector_evidence_store.list_available_evidence_ids", return_value=["ev-1"]),
+        patch(
+            "vectorstore.pgvector_evidence_store.search_evidence",
+            return_value=[{"text": "Isi dokumen evidence.", "entity": None, "chunk_id": "c1",
+                           "bukti_dukung_id": "ev-1", "confidence": None, "distance": 0.1}],
+        ),
+        patch("eval.ragas_eval._build_ragas_llm", return_value=fake_llm_wrapper),
+    ):
+        samples = build_eval_samples(n_indicators=1)
+
+    assert any("Isi dokumen evidence." in c for c in samples[0].retrieved_contexts)
+
+
+def test_build_eval_samples_includes_lkps_context():
+    """Regression test: indicators whose scoring depends on LKPS data
+    (quantitative/composite score_type) had no LKPS context in
+    retrieved_contexts -- so a justification correctly computed from LKPS
+    numbers looked unsupported to faithfulness. Ported from origin/ariel
+    commit 5ecb23d."""
+    from eval.ragas_eval import build_eval_samples
+
+    fake_llm_wrapper = MagicMock()
+    fake_llm_wrapper.langchain_llm.invoke.return_value = MagicMock(content="Referensi.")
+
+    rubric = _fake_rubric(31)
+    rubric.lkps_table_ref = ["Tabel 4.a. LKPS"]
+
+    with (
+        patch("agent.tools.rubric_tool._get_rubrics", return_value=[rubric]),
+        patch("vectorstore.pgvector_store.search_led", return_value=_fake_search_results(1)),
+        patch("vectorstore.pgvector_evidence_store.list_available_evidence_ids", return_value=[]),
+        patch("agent.tools.lkps_tool.get_lkps_table") as mock_lkps_tool,
+        patch("eval.ragas_eval._build_ragas_llm", return_value=fake_llm_wrapper),
+    ):
+        mock_lkps_tool.invoke.return_value = "| Nama | Sertifikasi |\n|---|---|\n| A | Ya |"
+        samples = build_eval_samples(n_indicators=1)
+
+    assert any("Sertifikasi" in c for c in samples[0].retrieved_contexts)
+    mock_lkps_tool.invoke.assert_called_once_with({"table_reference": "Tabel 4.a. LKPS"})
+
+
 def test_build_eval_samples_uses_actual_reference():
     from eval.ragas_eval import build_eval_samples
 

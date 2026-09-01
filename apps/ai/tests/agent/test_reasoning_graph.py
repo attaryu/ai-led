@@ -270,6 +270,14 @@ def test_reasoning_graph_terminates_when_llm_always_calls_tools():
     Regression test: MAX_ITERATIONS was previously only checked on the
     invalid-JSON / unknown-action branches — a model that keeps validly
     calling a tool had no cap at all.
+
+    Also a regression test for a second bug found while porting from
+    origin/ariel (commit 10f5a53): _force_or_give_up used to set
+    state["error"] directly, but it runs as part of parse_and_dispatch, a
+    conditional-edge ROUTER — LangGraph does not merge state mutations made
+    inside routers back into the graph's real state, only a node's return
+    value. That silently dropped the error message on every give-up path;
+    fixed by routing to a real error_node instead.
     """
     from unittest.mock import MagicMock, patch
 
@@ -294,6 +302,7 @@ def test_reasoning_graph_terminates_when_llm_always_calls_tools():
 
     assert fake_llm.invoke.call_count < 60
     assert "final_score" in result
+    assert result["error"] is not None
 
 
 # ── checklist node ──────────────────────────────────────────────────────────

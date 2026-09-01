@@ -326,6 +326,7 @@ def build_eval_samples(
     # pgvector_store.search_led is scoped per (tenant_id, dokumen_id).
     tenant_id: str = "local",
     dokumen_id: str = "local",
+    accreditation_set_id: str = "local",
     progress_cb=None,
     model: Optional[str] = None,
 ) -> list[EvalSample]:
@@ -376,7 +377,16 @@ def build_eval_samples(
         except Exception as exc:
             logger.warning("Could not load Supabase justifications: %s", exc)
 
-    target_rubrics = rubrics[:n_indicators]
+    # When a session is given, evaluate the indicators actually scored in
+    # that session — not blindly the first n_indicators of the full rubric
+    # list. Without this, a session whose only scored indicator is e.g. 31
+    # would silently evaluate a synthetic response for indicator 1 instead
+    # (since 1 is always first), invalidating the score while still
+    # reporting it as if it were real.
+    if real_justifications:
+        target_rubrics = [r for r in rubrics if r.no in real_justifications][:n_indicators]
+    else:
+        target_rubrics = rubrics[:n_indicators]
     total = len(target_rubrics)
     samples: list[EvalSample] = []
     for idx, rubric in enumerate(target_rubrics):
@@ -399,6 +409,43 @@ def build_eval_samples(
         except Exception as exc:
             logger.warning("LED search failed for indicator %d: %s", rubric.no, exc)
             contexts = []
+
+        # Retrieve evidence document chunks tagged to this indicator too —
+        # without this, a justification correctly grounded in an uploaded
+        # evidence document (not the LED) gets scored as unsupported/
+        # hallucinated by faithfulness, since the metric only ever sees
+        # what's in retrieved_contexts. accreditation_set_id defaults to
+        # the same "local" placeholder as tenant_id/dokumen_id above; if
+        # that set has no tagged evidence, list_available_evidence_ids just
+        # returns [] and search_evidence short-circuits, so this is a no-op
+        # rather than an error for the common case (matrix.json-based
+        # rubrics predate the accreditation-set model, so most eval runs
+        # won't have real tags here).
+        try:
+            from vectorstore.pgvector_evidence_store import list_available_evidence_ids, search_evidence
+
+            evidence_ids = list_available_evidence_ids(tenant_id, accreditation_set_id, rubric.no)
+            evidence_raw = search_evidence(question, tenant_id, evidence_ids, n_results=3)
+            contexts += [r["text"][:1000] for r in evidence_raw]
+        except Exception as exc:
+            logger.warning("Evidence search failed for indicator %d: %s", rubric.no, exc)
+
+        # Retrieve LKPS table data for indicators whose scoring depends on it
+        # (quantitative/composite score_type) — without this, a justification
+        # correctly computed from LKPS numbers (e.g. a percentage) looks
+        # unsupported to faithfulness, since the metric only ever sees LED +
+        # evidence-document text, never the quantitative source data the
+        # agent actually used. Reuses the same tool the agent calls, so the
+        # context matches exactly what was available to it.
+        for table_ref in rubric.lkps_table_ref or []:
+            try:
+                from agent.tools.lkps_tool import get_lkps_table
+
+                contexts.append(get_lkps_table.invoke({"table_reference": table_ref})[:1000])
+            except Exception as exc:
+                logger.warning(
+                    "LKPS lookup failed for indicator %d table %s: %s", rubric.no, table_ref, exc
+                )
 
         # Response: real session OR synthetic
         if rubric.no in real_justifications:

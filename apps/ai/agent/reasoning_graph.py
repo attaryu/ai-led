@@ -266,11 +266,17 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
         finding new ways to avoid finalizing can't loop past
         MAX_ITERATIONS + FORCE_LIMIT turns total, regardless of which branch
         it keeps landing in.
+
+        Does NOT set state["error"] itself — this function runs as part of
+        parse_and_dispatch, a conditional-edge router, and LangGraph does not
+        merge state mutations made inside routers back into the graph's real
+        state (only a node's return value is merged). The "error" routing key
+        leads to error_node, a real node, which sets state["error"] properly.
         """
         forces = state.get("_force_count", 0)
         if forces < FORCE_LIMIT:
             return "force"
-        state["error"] = f"{reason} and force-finalize attempts exhausted."
+        logger.warning("%s and force-finalize attempts exhausted.", reason)
         return "error"
 
     def parse_and_dispatch(state: AssessmentState) -> Literal["tool_call", "finalize", "force", "error"]:
@@ -493,6 +499,16 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
     def route_after_tools(state: AssessmentState) -> Literal["checklist", "agent"]:
         return "agent" if state.get("_checklist_built") else "checklist"
 
+    def error_node(state: AssessmentState) -> AssessmentState:
+        """Reached when FORCE_LIMIT is exhausted without ever producing a
+        valid {"action": "final", ...}. A real node (unlike parse_and_dispatch,
+        a router) so this mutation actually persists — see _force_or_give_up."""
+        state["error"] = (
+            "Model tidak menghasilkan format final yang valid "
+            "setelah batas percobaan force-finalize tercapai."
+        )
+        return state
+
     graph = StateGraph(AssessmentState)
     graph.add_node("agent", agent_node)
     graph.add_node("tools", tool_node)
@@ -500,13 +516,15 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
     graph.add_node("force", force_finalize_node)
     graph.add_node("finalize", finalize_node)
     graph.add_node("judge", judge_node)
+    graph.add_node("error_node", error_node)
 
     graph.set_entry_point("agent")
     graph.add_conditional_edges(
         "agent",
         parse_and_dispatch,
-        {"tool_call": "tools", "finalize": "finalize", "force": "force", "error": END},
+        {"tool_call": "tools", "finalize": "finalize", "force": "force", "error": "error_node"},
     )
+    graph.add_edge("error_node", END)
     graph.add_conditional_edges(
         "tools", route_after_tools, {"checklist": "checklist", "agent": "agent"}
     )

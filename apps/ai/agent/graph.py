@@ -360,9 +360,19 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
 
     def tools_node(state: AssessmentState) -> AssessmentState:
         """Run the real ToolNode, then bump the round counter should_continue
-        checks against MAX_TOOL_CALLS."""
+        checks against MAX_TOOL_CALLS.
+
+        ToolNode.invoke() returns only the NEW ToolMessages it just produced
+        (a delta), not the full accumulated message history. AssessmentState.
+        messages has no reducer (unlike LangGraph's standard MessagesState),
+        so returning that delta as-is for "messages" makes LangGraph's
+        default last-write-wins merge REPLACE the whole conversation with
+        it -- silently dropping the SystemMessage and every earlier turn
+        from this point on. Must reattach the delta onto the existing
+        history before returning."""
         result = tool_node.invoke(state)
         result["_tool_call_count"] = state.get("_tool_call_count", 0) + 1
+        result["messages"] = list(state["messages"]) + result["messages"]
         return result
 
     # ── Node: checklist (runs once, right after the first tool round) ────────
@@ -452,7 +462,7 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
         cleaned = re.sub(r"\*{1,3}|`+|#+\s*", "", content or "")
         has_score = bool(
             re.search(
-                r"(?im)\bskor(?:\s+(?:final|akhir))?\s*[:=]\s*[0-9]+(?:\.[0-9]+)?",
+                r"(?im)^\s*skor(?:\s+(?:final|akhir))?\s*[:=]\s*[0-9]+(?:\.[0-9]+)?",
                 cleaned,
             )
         )
@@ -533,19 +543,33 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
         """Extract score, justification, confidence, and recommendation from the final LLM message.
 
         Permissive parser — handles plain (SKOR: 3), markdown bold (**Skor:** 3),
-        heading (## Skor Akhir: 3), and case variations. Picks the LAST valid
-        score value to avoid grabbing a formula reference like "Skor = (I × 2)…"
-        that may appear earlier in the response.
+        heading (## Skor Akhir: 3), and case variations. The SKOR value is
+        looked up ONLY in the text before the first JUSTIFIKASI/CONFIDENCE/
+        REKOMENDASI label, not the whole message — a stray formula reference
+        like "...skor dihitung memakai rumus Skor = 1 + (6 x PDSK)" inside
+        JUSTIFIKASI's own prose is numerically valid (0-4) and, scanned
+        across the WHOLE message, wins under a naive "take the last valid
+        match" rule whenever it appears after the real "SKOR: 3" line —
+        silently overriding the correct score with a fragment of the
+        formula's own definition (verified against a real production
+        response for a formula-scored indicator).
         """
         last_content = state["messages"][-1].content
         # Strip markdown noise that confuses regex
         cleaned = re.sub(r"\*{1,3}|`+|#+\s*", "", last_content)
 
-        # Find ALL "skor[ final|akhir]: <number>" matches; take the last numeric one
-        # in 0..4 range so a stray "Skor = formula" earlier doesn't win.
+        # Anything from the first JUSTIFIKASI/CONFIDENCE/REKOMENDASI label
+        # onward is that field's own prose, not more SKOR content.
+        other_label = re.search(
+            r"(?im)^\s*(?:justifikasi|confidence|rekomendasi)\s*[:=]", cleaned
+        )
+        skor_section = cleaned[: other_label.start()] if other_label else cleaned
+
+        # Find "skor[ final|akhir]: <number>" lines only (anchored to line
+        # start), within skor_section; take the last numeric one in 0..4 range.
         score_candidates = re.findall(
-            r"(?im)\bskor(?:\s+(?:final|akhir))?\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)",
-            cleaned,
+            r"(?im)^\s*skor(?:\s+(?:final|akhir))?\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)",
+            skor_section,
         )
         score: float | None = None
         for cand in reversed(score_candidates):
