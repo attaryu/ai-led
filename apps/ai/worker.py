@@ -1683,11 +1683,32 @@ def _parse_struktur_dokumen(raw: str) -> list[dict]:
     return result
 
 
-def _extract_pdf_text(path: str) -> str:
+def _extract_pdf_pages(path: str) -> list[str]:
     import pdfplumber
 
     with pdfplumber.open(path) as pdf:
-        return "\n\n".join(page.extract_text() or "" for page in pdf.pages)
+        return [page.extract_text() or "" for page in pdf.pages]
+
+
+_DAFTAR_ISI_RE = re.compile(r"daftar\s+isi", re.IGNORECASE)
+
+
+def _find_daftar_isi_text(pages: list[str]) -> str | None:
+    """Cari halaman Daftar Isi -- pedoman akreditasi (LAM Teknik dkk) hampir
+    selalu punya SATU halaman ringkas yang sudah memuat seluruh struktur
+    BAB/sub-bab dengan leader titik + nomor halaman (mis. "BAB I.
+    PENDAHULUAN....1"), jauh lebih murah & akurat dibaca LLM daripada
+    seluruh dokumen (bisa puluhan-ratusan halaman prosa) -- dikonfirmasi di
+    kedua contoh pedoman LAM Teknik yang ada (PJJ & AV Unggul Internasional),
+    keduanya satu halaman persis. `None` kalau tidak ketemu -- pemanggil
+    fallback ke potongan awal dokumen penuh.
+    ponytail: ambil satu halaman itu saja, tidak antisipasi Daftar Isi yang
+    menyambung ke halaman berikutnya -- upgrade kalau ada pedoman institusi
+    lain yang ternyata butuh itu."""
+    for page in pages:
+        if _DAFTAR_ISI_RE.search(page):
+            return page
+    return None
 
 
 async def _handle_ingestion_struktur_dokumen(job) -> dict:
@@ -1721,7 +1742,13 @@ async def _handle_ingestion_struktur_dokumen(job) -> dict:
         with tempfile.TemporaryDirectory(prefix="struktur_parse_") as tmp:
             local_path = Path(tmp) / Path(file_url).name
             download_to(file_url, local_path)
-            teks_pedoman = _extract_pdf_text(str(local_path))
+            pages = _extract_pdf_pages(str(local_path))
+
+        # Halaman Daftar Isi (kalau ada) sudah memuat struktur BAB/sub-bab
+        # lengkap dalam beberapa baris -- jauh lebih cepat & akurat dibaca
+        # LLM daripada seluruh dokumen. Fallback ke potongan awal dokumen
+        # penuh kalau tidak ketemu halaman Daftar Isi sama sekali.
+        teks_pedoman = _find_daftar_isi_text(pages) or "\n\n".join(pages)
 
         if not teks_pedoman.strip():
             _set_status(

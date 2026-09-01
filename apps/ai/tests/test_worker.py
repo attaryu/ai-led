@@ -263,3 +263,23 @@ def test_compile_chapter_from_sections_skips_ungenerated_and_orders_by_input():
     assert "Belum jadi" not in markdown_text
     assert "## Pelaksanaan" in markdown_text
     assert "<h2>Kebijakan</h2>" in html
+
+
+def test_find_daftar_isi_text_returns_just_that_page():
+    from worker import _find_daftar_isi_text
+
+    pages = ["Sampul", "Kata Pengantar", "DAFTAR ISI\nBAB I....1", "BAB I. PENDAHULUAN"]
+    assert _find_daftar_isi_text(pages) == "DAFTAR ISI\nBAB I....1"
+
+
+def test_find_daftar_isi_text_is_case_insensitive():
+    from worker import _find_daftar_isi_text
+
+    pages = ["Sampul", "daftar   isi\nBAB I....1"]
+    assert _find_daftar_isi_text(pages) is not None
+
+
+def test_find_daftar_isi_text_returns_none_when_no_toc_page():
+    from worker import _find_daftar_isi_text
+
+    assert _find_daftar_isi_text(["Sampul", "BAB I. PENDAHULUAN\nIsi bab."]) is None

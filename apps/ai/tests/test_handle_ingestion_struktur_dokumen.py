@@ -17,14 +17,14 @@ def _fake_job(accreditation_set_id="set-1", file_url="tenant-1/panduan.pdf"):
     return job
 
 
-def _run(job, llm_content, pdf_text="Teks pedoman contoh.", **overrides):
+def _run(job, llm_content, pdf_pages=None, **overrides):
     llm = MagicMock()
     llm.ainvoke = AsyncMock(return_value=MagicMock(content=llm_content))
 
     defaults = dict(
         download_to=MagicMock(),
         replace_chapter_templates_for_set=MagicMock(return_value=1),
-        extract_pdf_text=MagicMock(return_value=pdf_text),
+        extract_pdf_pages=MagicMock(return_value=pdf_pages if pdf_pages is not None else ["Teks pedoman contoh."]),
         status_updates=MagicMock(),
     )
     defaults.update(overrides)
@@ -37,7 +37,7 @@ def _run(job, llm_content, pdf_text="Teks pedoman contoh.", **overrides):
         stack.enter_context(
             patch("db.postgres_client.replace_chapter_templates_for_set", defaults["replace_chapter_templates_for_set"])
         )
-        stack.enter_context(patch("worker._extract_pdf_text", defaults["extract_pdf_text"]))
+        stack.enter_context(patch("worker._extract_pdf_pages", defaults["extract_pdf_pages"]))
 
         fake_cursor = MagicMock()
         fake_cursor.__enter__ = MagicMock(return_value=fake_cursor)
@@ -49,7 +49,7 @@ def _run(job, llm_content, pdf_text="Teks pedoman contoh.", **overrides):
 
         result = asyncio.run(_handle_ingestion_struktur_dokumen(job))
 
-    return result, defaults
+    return result, {**defaults, "llm": llm}
 
 
 def _status_calls(status_updates):
@@ -87,10 +87,33 @@ def test_extracts_structure_and_replaces_templates():
 
 
 def test_empty_pdf_text_marks_gagal_without_calling_llm():
-    result, defaults = _run(_fake_job(), llm_content="{}", pdf_text="   ")
+    result, defaults = _run(_fake_job(), llm_content="{}", pdf_pages=["   "])
     assert result["status"] == "empty"
     assert _status_calls(defaults["status_updates"])[-1][0] == "GAGAL"
     defaults["replace_chapter_templates_for_set"].assert_not_called()
+
+
+def test_uses_only_the_daftar_isi_page_when_found():
+    pages = [
+        "HALAMAN SAMPUL, bukan bagian penting" * 50,
+        "KATA PENGANTAR, juga bukan bagian penting" * 50,
+        "DAFTAR ISI\nBAB I. PENDAHULUAN....1\nBAB II. STRUKTUR LED....5",
+        "BAB I. PENDAHULUAN\nA. Rasional\n" + "isi bab sungguhan " * 500,
+    ]
+    _, defaults = _run(_fake_job(), llm_content='{"bab": []}', pdf_pages=pages)
+
+    prompt = defaults["llm"].ainvoke.call_args.args[0]
+    assert "DAFTAR ISI" in prompt
+    assert "BAB II. STRUKTUR LED" in prompt
+    assert "isi bab sungguhan" not in prompt
+
+
+def test_falls_back_to_whole_document_when_no_daftar_isi_page():
+    pages = ["BAB I. PENDAHULUAN\nA. Rasional\nIsi bab langsung tanpa daftar isi apa pun."]
+    _, defaults = _run(_fake_job(), llm_content='{"bab": []}', pdf_pages=pages)
+
+    prompt = defaults["llm"].ainvoke.call_args.args[0]
+    assert "Isi bab langsung tanpa daftar isi apa pun." in prompt
 
 
 def test_llm_returning_no_bab_marks_gagal():
