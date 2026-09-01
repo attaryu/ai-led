@@ -237,4 +237,20 @@ export const chapterRepository = {
 	async deleteSection(chapterId: string, sectionId: string): Promise<void> {
 		await chapterRemoteSource.deleteSection(chapterId, sectionId);
 	},
+
+	/**
+	 * Autosave kanvas section-view (`use-chapter-autosave.ts`) — jalur
+	 * BEDA dari `updateSection`: cuma nulis `content`, backend tidak
+	 * mereset apa pun. `false` = section terkunci (bab-nya terkunci),
+	 * sama seperti `updateKonten` bab.
+	 */
+	async updateSectionKonten(chapterId: string, sectionId: string, html: string): Promise<boolean> {
+		try {
+			await chapterRemoteSource.updateSection(chapterId, sectionId, { content: toKontenBody(html) });
+			return true;
+		} catch (err) {
+			if (err instanceof ApiError && err.status === 403) return false;
+			throw err;
+		}
+	},
 };

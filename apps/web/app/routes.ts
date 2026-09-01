@@ -7,7 +7,7 @@ import { type RouteConfig, route, index } from "@react-router/dev/routes";
  *   /dashboard                     → level TENANT (semua isinya lintas prodi)
  *   /study-programs/:id            → level PROGRAM_STUDI
  *   /led-projects/:id              → level DOKUMEN_LED
- *   /editor/:projectId/:chapterId  → level BAB_DOKUMEN (Editor Bab)
+ *   /editor/:projectId/:chapterId[/:sectionId]  → level BAB_DOKUMEN (Editor Bab)
  *
  * Konteks prodi sengaja hidup di URL, bukan di session: Pimpinan/Penjamin Mutu
  * memilih prodi lewat navigasi (§5), sehingga tidak bisa diturunkan dari
@@ -77,4 +77,11 @@ export default [
   // yang dipakai sidebar lapis 3, dan langsung meneruskan ke bab default.
   route("editor/:projectId", "routes/editor-default-chapter.tsx"),
   route("editor/:projectId/:chapterId", "routes/editor-chapter.tsx"),
+  // Section-scoped view (klik sub-bab di Daftar Isi) -- komponen SAMA,
+  // `ChapterEditor` baca `sectionId` opsional lewat useParams(). `id`
+  // eksplisit wajib: route-id bawaan diturunkan dari path berkas, dan dua
+  // route() ke berkas yang sama akan bentrok tanpa ini.
+  route("editor/:projectId/:chapterId/:sectionId", "routes/editor-chapter.tsx", {
+    id: "editor-chapter-section",
+  }),
 ] satisfies RouteConfig;

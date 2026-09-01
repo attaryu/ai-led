@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { accreditationSetRepository } from '~/features/accreditation-set/data/repositories/accreditation-set.repository';
 import { type ChapterTemplateEntity } from '~/features/accreditation-set/domain/entities/chapter-template.entity';
 import { rubricCriterionAmiRepository } from '~/features/assessment/data/repositories/rubric-criterion-ami.repository';
+import { chapterRepository } from '../../data/repositories/chapter.repository';
 import { type ChapterEntity } from './chapter.entity';
 import { kelompokkanKriteria } from './guidance-point.entity';
 
@@ -37,10 +38,18 @@ const tocNodeBase = z.object({
 	label: z.string(),
 	/**
 	 * Non-null → simpul ini setara satu `BAB_DOKUMEN`, kliknya mengganti bab yang
-	 * dibuka. `null` → simpul struktural/visual: kliknya tidak boleh keluar dari
-	 * bab yang sedang dibuka (§7.2).
+	 * dibuka (`workingContent` gabungan, tampilan "bab utuh"). `null` → bukan
+	 * navigasi ke bab lain — lihat `sectionId` untuk kemungkinan lain.
 	 */
 	urutanBab: z.number().int().positive().nullable(),
+	/**
+	 * Non-null → simpul ini setara satu `ChapterSection`, kliknya SWITCH ke
+	 * halaman section itu saja (bukan bab utuh) — di bab yang sama dengan
+	 * `urutanBab` induknya terdekat. `null` → dekoratif (kelompok kriteria,
+	 * atau sub-bab referensi `ChapterTemplate` sebelum outline-nya pernah
+	 * di-generate — belum ada konten sungguhan buat dituju).
+	 */
+	sectionId: z.string().nullable(),
 });
 
 export type ChapterTocNode = z.infer<typeof tocNodeBase> & {
@@ -59,24 +68,46 @@ function simpul(
 	label: string,
 	urutanBab: number | null,
 	children: ChapterTocNode[] = [],
+	sectionId: string | null = null,
 ): ChapterTocNode {
-	return { id, label, urutanBab, children };
+	return { id, label, urutanBab, sectionId, children };
+}
+
+/** "BAB I.", "BAB II.", … — plafon 20 cukup, tidak ada dokumen LED sebanyak itu babnya. */
+const ANGKA_ROMAWI = [
+	'',
+	'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X',
+	'XI', 'XII', 'XIII', 'XIV', 'XV', 'XVI', 'XVII', 'XVIII', 'XIX', 'XX',
+];
+function toRomawi(n: number): string {
+	return ANGKA_ROMAWI[n] ?? String(n);
+}
+
+/** ponytail: plafon 26 sub-bab/bab (A-Z), upgrade AA/AB kalau ada yang lebih. */
+function hurufDariUrutan(urutan: number): string {
+	return String.fromCharCode(64 + urutan);
 }
 
 /**
- * Kelompok kriteria akreditasi di bawah BAB II, judulnya diambil dari
+ * Kelompok kriteria akreditasi di bawah bab ini, judulnya diambil dari
  * `kriteria.kriteria` Set Akreditasi dokumen ini — lihat
  * `guidance-point.entity.ts::kelompokkanKriteria` untuk cara pengelompokannya.
  * Nomor urutnya sekuensial (1, 2, 3, …) mengikuti urutan kemunculan, bukan
- * kode "C.N" tetap — set kustom bisa punya jumlah kelompok berapa pun.
+ * kode tetap — set kustom bisa punya jumlah kelompok berapa pun.
+ *
+ * `prefixHuruf` — "C" di pohon fallback (selalu BAB II bagian C). Di pohon
+ * dinamis (`buildDynamicToc`) ini huruf sub-bab "Kriteria Akreditasi" yang
+ * SUNGGUHAN, apa pun urutannya di bab itu — supaya "C.1, C.2…" tidak
+ * menyesatkan kalau posisinya ternyata bukan huruf C.
  */
 function simpulKriteriaUntukBab(
 	semuaKriteria: Awaited<ReturnType<typeof rubricCriterionAmiRepository.findAll>>,
 	urutanBab: number,
+	prefixHuruf: string = 'C',
 ): ChapterTocNode[] {
 	const kriteriaBab = semuaKriteria.filter((k) => k.urutanBab.includes(urutanBab));
 	return kelompokkanKriteria(kriteriaBab).map((kelompok, indeks) =>
-		simpul(`bab-${urutanBab}-kelompok-${indeks + 1}`, `C.${indeks + 1}. ${kelompok.judul}`, null),
+		simpul(`bab-${urutanBab}-kelompok-${indeks + 1}`, `${prefixHuruf}.${indeks + 1}. ${kelompok.judul}`, null),
 	);
 }
 
@@ -113,23 +144,74 @@ function buildFallbackToc(
 	];
 }
 
+/** Sumber sub-bab netral — dari `ChapterSection` (nyata, navigable) ATAU `SubBabTemplate` (referensi, dekoratif). */
+type SubBabItem = { urutan: number; judul: string; sectionId: string | null };
+
+const KRITERIA_RE = /kriteria/i;
+
 /**
- * Bab dari `ChapterTemplate` set ini (worker.py::_handle_ingestion_struktur_dokumen)
- * — anaknya `SubBabTemplate` (referensi resmi pedoman, dekoratif) plus
- * kelompok kriteria akreditasi yang menyebut bab ini, digeneralisasi dari
- * `buildFallbackToc` yang cuma pernah menempelkannya ke bab nomor 2.
+ * Anak-anak satu simpul BAB: sub-bab berhuruf (A, B, C…) plus kelompok
+ * kriteria akreditasi. Kalau salah satu sub-bab judulnya menyebut "kriteria"
+ * (match "C. Kriteria Akreditasi" di kedua contoh pedoman LAM Teknik yang
+ * dicek), kelompok kriteria jadi ANAKNYA (level 3 sungguhan, nomor ikut
+ * huruf induknya) — bukan sibling rata seperti sebelumnya. Gak ketemu yang
+ * cocok → fallback ke sibling rata (perilaku lama, aman buat pedoman
+ * institusi lain yang menamainya beda).
  */
-function buildTocFromTemplates(
-	templates: ChapterTemplateEntity[],
+function bangunAnakBab(
+	urutanBab: number,
+	subItems: SubBabItem[],
 	semuaKriteria: Awaited<ReturnType<typeof rubricCriterionAmiRepository.findAll>>,
 ): ChapterTocNode[] {
-	return templates.map((bab) => {
-		const anakSubBab = bab.subBab.map((sub) =>
-			simpul(`bab-${bab.urutan}-sub-${sub.urutan}`, sub.judul, null),
-		);
-		const anakKriteria = simpulKriteriaUntukBab(semuaKriteria, bab.urutan);
-		return simpul(`bab-${bab.urutan}`, bab.judul, bab.urutan, [...anakSubBab, ...anakKriteria]);
-	});
+	const subNodes = subItems.map((item) =>
+		simpul(
+			`bab-${urutanBab}-sub-${item.urutan}`,
+			`${hurufDariUrutan(item.urutan)}. ${item.judul}`,
+			null,
+			[],
+			item.sectionId,
+		),
+	);
+
+	const indeksKriteria = subItems.findIndex((item) => KRITERIA_RE.test(item.judul));
+	const anakKriteria = simpulKriteriaUntukBab(
+		semuaKriteria,
+		urutanBab,
+		indeksKriteria === -1 ? 'C' : hurufDariUrutan(subItems[indeksKriteria].urutan),
+	);
+	if (anakKriteria.length === 0) return subNodes;
+	if (indeksKriteria === -1) return [...subNodes, ...anakKriteria];
+
+	subNodes[indeksKriteria] = { ...subNodes[indeksKriteria], children: anakKriteria };
+	return subNodes;
+}
+
+/**
+ * Bab dari `ChapterTemplate` set ini (worker.py::_handle_ingestion_struktur_dokumen).
+ * Sub-bab-nya diutamakan dari `ChapterSection` DOKUMEN INI SENDIRI (outline
+ * yang sudah di-generate LLM/manual, `chapterRepository.findSections`) —
+ * itulah konten sungguhan yang bisa dituju klik, jadi navigable. Bab yang
+ * outline-nya belum pernah dibuat fallback ke `SubBabTemplate` set (referensi
+ * resmi pedoman, dekoratif — belum ada konten buat dituju).
+ */
+async function buildDynamicToc(
+	templates: ChapterTemplateEntity[],
+	chapters: ChapterEntity[],
+	semuaKriteria: Awaited<ReturnType<typeof rubricCriterionAmiRepository.findAll>>,
+): Promise<ChapterTocNode[]> {
+	return Promise.all(
+		templates.map(async (bab) => {
+			const chapter = chapters.find((c) => c.urutanBab === bab.urutan);
+			const sections = chapter ? await chapterRepository.findSections(chapter.id) : [];
+			const subItems: SubBabItem[] =
+				sections.length > 0
+					? sections.map((s) => ({ urutan: s.urutan, judul: s.judul, sectionId: s.id }))
+					: bab.subBab.map((s) => ({ urutan: s.urutan, judul: s.judul, sectionId: null }));
+
+			const anak = bangunAnakBab(bab.urutan, subItems, semuaKriteria);
+			return simpul(`bab-${bab.urutan}`, `BAB ${toRomawi(bab.urutan)}. ${bab.judul}`, bab.urutan, anak);
+		}),
+	);
 }
 
 /**
@@ -139,10 +221,13 @@ function buildTocFromTemplates(
  * pernah upload Panduan Penulisan, atau set lama) → fallback ke pohon
  * 4-bab tetap seperti sebelum fitur ini ada. Kelompok kriteria BAB II
  * tetap dari Set Akreditasi yang benar-benar dipilihnya (`accreditationSetId`,
- * dari `ledProjectRepository`).
+ * dari `ledProjectRepository`). `chapters` (bab NYATA dokumen ini) dipakai
+ * cuma di jalur dinamis, buat menautkan tiap `ChapterTemplate` ke
+ * `ChapterSection`-nya.
  */
 export async function buildChapterToc(
 	accreditationSetId: string | null | undefined,
+	chapters: ChapterEntity[],
 ): Promise<ChapterTocNode[]> {
 	const [semuaKriteria, templates] = await Promise.all([
 		rubricCriterionAmiRepository.findAll(accreditationSetId),
@@ -152,7 +237,7 @@ export async function buildChapterToc(
 	]);
 
 	return templates.length > 0
-		? buildTocFromTemplates(templates, semuaKriteria)
+		? buildDynamicToc(templates, chapters, semuaKriteria)
 		: buildFallbackToc(semuaKriteria);
 }
 
@@ -170,18 +255,21 @@ export function findChapterForTocNode(
 }
 
 /**
- * Jalur dari akar ke simpul yang memuat bab tersebut, dipakai sidebar untuk
- * membentangkan cabang yang sedang dibuka. Kosong bila babnya tidak terwakili
- * di pohon, atau `nodes` belum sempat termuat (`buildChapterToc` masih
- * berjalan) — bukan kesalahan, hanya belum ada apa-apa untuk dibentangkan.
+ * Jalur dari akar ke simpul yang memuat bab (atau, kalau `sectionId` diisi,
+ * section) yang sedang dibuka — dipakai sidebar untuk membentangkan cabang
+ * yang sesuai. Kosong bila targetnya tidak terwakili di pohon, atau `nodes`
+ * belum sempat termuat (`buildChapterToc` masih berjalan) — bukan kesalahan,
+ * hanya belum ada apa-apa untuk dibentangkan.
  */
 export function findTocPathForChapter(
 	urutanBab: number,
 	nodes: ChapterTocNode[],
+	sectionId: string | null = null,
 ): ChapterTocNode[] {
 	for (const node of nodes) {
-		if (node.urutanBab === urutanBab) return [node];
-		const jalur = findTocPathForChapter(urutanBab, node.children);
+		const cocok = sectionId ? node.sectionId === sectionId : node.urutanBab === urutanBab;
+		if (cocok) return [node];
+		const jalur = findTocPathForChapter(urutanBab, node.children, sectionId);
 		if (jalur.length > 0) return [node, ...jalur];
 	}
 	return [];

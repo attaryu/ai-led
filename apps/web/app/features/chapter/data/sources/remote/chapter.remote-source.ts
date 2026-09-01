@@ -254,11 +254,16 @@ export const chapterRemoteSource = {
 		});
 	},
 
-	/** Ubah judul/panduan section manual — backend reset status ke PENDING (konten lama basi). */
+	/**
+	 * Ubah section manual. `title`/`guidance` → backend reset status ke PENDING
+	 * (konten lama basi, topiknya ganti). `content` → jalur BEDA (autosave
+	 * kanvas section-view, `use-chapter-autosave.ts`): backend tulis langsung
+	 * jadi `status: GENERATED`, tanpa mereset apa pun.
+	 */
 	updateSection(
 		id: string,
 		sectionId: string,
-		payload: { title?: string; guidance?: string },
+		payload: { title?: string; guidance?: string; content?: { format: 'html'; body: string } },
 	): Promise<BackendChapterSection> {
 		return apiFetch<BackendChapterSection>(`/bab/${id}/sections/${sectionId}`, {
 			method: 'PATCH',

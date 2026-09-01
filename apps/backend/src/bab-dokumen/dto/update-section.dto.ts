@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { IsObject, IsOptional, IsString } from 'class-validator';
 
 export class UpdateSectionDto {
   @ApiPropertyOptional({ example: 'Kebijakan Tata Pamong' })
@@ -11,4 +11,11 @@ export class UpdateSectionDto {
   @IsOptional()
   @IsString()
   guidance?: string;
+
+  // Autosave kanvas section-view (bab-pipeline.service.ts::updateSection) --
+  // jalur BEDA dari title/guidance: tulis langsung, tidak mereset apa pun.
+  @ApiPropertyOptional({ example: { format: 'html', body: '<p>...</p>' } })
+  @IsOptional()
+  @IsObject()
+  content?: Record<string, unknown>;
 }

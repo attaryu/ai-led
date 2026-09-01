@@ -23,12 +23,11 @@ import {
  * Simpul struktural (tanpa bab) tidak punya tujuan, jadi labelnya ikut jadi
  * pemicu buka-tutup — kalau tidak, satu-satunya sasaran kliknya cuma ikon 12 px.
  *
- * Simpul terdalam sengaja belum bisa diklik walau di rancangan ia terlihat
- * seperti bisa: penggulungan ke bagian dalam butuh heading di dalam
- * `kontenKerja` untuk dituju, dan dokumen bab yang baru belum punya satu pun —
- * tautan yang menggulung ke mana-mana lebih buruk daripada teks biasa. Begitu
- * penomoran bagian resmi ada (Pertanyaan Terbuka #2, §16), simpul-simpul itu
- * tinggal diberi anchor.
+ * Simpul ber-`sectionId` (`ChapterSection` yang outline-nya sudah pernah
+ * di-generate) BISA diklik — kliknya SWITCH ke tampilan section itu saja,
+ * bukan menggulung. Simpul dekoratif (kelompok kriteria, atau sub-bab
+ * referensi `ChapterTemplate` sebelum outline pernah dibuat) belum punya
+ * konten sungguhan buat dituju, jadi labelnya cuma pemicu buka-tutup.
  *
  * Status terbentang dipegang halaman editor, bukan komponen ini — alasannya di
  * `chapter-editor.tsx`.
@@ -38,6 +37,7 @@ export function ChapterEditorToc({
 	chapters,
 	chapterToc,
 	chapterAktif,
+	sectionIdAktif,
 	terbentang,
 	onToggle,
 	terbuka,
@@ -48,6 +48,8 @@ export function ChapterEditorToc({
 	/** Dibangun per Set Akreditasi dokumen ini -- lihat `chapter-toc.entity.ts::buildChapterToc`. Kosong selama masih dimuat. */
 	chapterToc: ChapterTocNode[];
 	chapterAktif: ChapterEntity;
+	/** Non-null → kanvas sedang menampilkan section ini, bukan bab utuh. */
+	sectionIdAktif: string | null;
 	terbentang: ReadonlySet<string>;
 	onToggle: (id: string) => void;
 	/** Hanya berlaku di bawah `lg`; di desktop kolomnya selalu menempel. */
@@ -55,7 +57,9 @@ export function ChapterEditorToc({
 	onTutup: () => void;
 }) {
 	const jalurAktif = new Set(
-		findTocPathForChapter(chapterAktif.urutanBab, chapterToc).map((node) => node.id),
+		findTocPathForChapter(chapterAktif.urutanBab, chapterToc, sectionIdAktif).map(
+			(node) => node.id,
+		),
 	);
 
 	return (
@@ -118,8 +122,12 @@ export function ChapterEditorToc({
 						node={node}
 						depth={0}
 						projectId={projectId}
-						chapters={chapters}
+						// Simpul akar selalu setara satu bab (`urutanBab` non-null) —
+						// id-nya jadi dasar tautan seluruh keturunannya, termasuk
+						// simpul section yang `urutanBab`-nya sendiri `null`.
+						chapterIdBab={findChapterForTocNode(node, chapters)?.id}
 						chapterAktifId={chapterAktif.id}
+						sectionIdAktif={sectionIdAktif}
 						jalurAktif={jalurAktif}
 						terbentang={terbentang}
 						onToggle={onToggle}
@@ -134,8 +142,9 @@ function TocNode({
 	node,
 	depth,
 	projectId,
-	chapters,
+	chapterIdBab,
 	chapterAktifId,
+	sectionIdAktif,
 	jalurAktif,
 	terbentang,
 	onToggle,
@@ -143,14 +152,18 @@ function TocNode({
 	node: ChapterTocNode;
 	depth: number;
 	projectId: string;
-	chapters: ChapterEntity[];
+	/** Id bab (nyata) pemilik simpul ini — sama untuk simpul akar dan seluruh keturunannya. */
+	chapterIdBab: string | undefined;
 	chapterAktifId: string;
+	sectionIdAktif: string | null;
 	jalurAktif: Set<string>;
 	terbentang: ReadonlySet<string>;
 	onToggle: (id: string) => void;
 }) {
-	const chapter = findChapterForTocNode(node, chapters);
-	const isAktif = chapter?.id === chapterAktifId;
+	const isChapterNode = node.urutanBab !== null;
+	const isAktif = node.sectionId
+		? node.sectionId === sectionIdAktif
+		: isChapterNode && chapterIdBab === chapterAktifId && sectionIdAktif === null;
 	const diJalurAktif = jalurAktif.has(node.id);
 	const punyaAnak = node.children.length > 0;
 	const terbuka = punyaAnak && terbentang.has(node.id);
@@ -189,9 +202,17 @@ function TocNode({
 					<span className="size-5 shrink-0" aria-hidden />
 				)}
 
-				{chapter ? (
+				{isChapterNode && chapterIdBab ? (
 					<Link
-						to={`/editor/${projectId}/${chapter.id}`}
+						to={`/editor/${projectId}/${chapterIdBab}`}
+						aria-current={isAktif ? 'page' : undefined}
+						className={cn(kelasLabel, 'hover:bg-sidebar-accent')}
+					>
+						{node.label}
+					</Link>
+				) : node.sectionId && chapterIdBab ? (
+					<Link
+						to={`/editor/${projectId}/${chapterIdBab}/${node.sectionId}`}
 						aria-current={isAktif ? 'page' : undefined}
 						className={cn(kelasLabel, 'hover:bg-sidebar-accent')}
 					>
@@ -224,8 +245,9 @@ function TocNode({
 							node={anak}
 							depth={depth + 1}
 							projectId={projectId}
-							chapters={chapters}
+							chapterIdBab={chapterIdBab}
 							chapterAktifId={chapterAktifId}
+							sectionIdAktif={sectionIdAktif}
 							jalurAktif={jalurAktif}
 							terbentang={terbentang}
 							onToggle={onToggle}

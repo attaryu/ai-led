@@ -61,8 +61,20 @@ export class BabPipelineService {
     });
   }
 
-  /** PATCH bab/:id/sections/:sectionId — ubah judul/panduan manual. Konten lama basi begitu topiknya diganti, direset ke PENDING. */
-  async updateSection(id: string, sectionId: string, dto: { title?: string; guidance?: string }) {
+  /**
+   * PATCH bab/:id/sections/:sectionId — dua jalur berbeda lewat dto yang sama:
+   * `title`/`guidance` berubah → topiknya ganti, konten lama basi, direset ke
+   * PENDING. `content` diisi → autosave kanvas section-view
+   * (`use-chapter-autosave.ts`), ditulis apa adanya jadi GENERATED, TANPA
+   * mereset apa pun — dua kasus ini tidak pernah terjadi bersamaan dari UI
+   * yang sama, tapi kalau keduanya ada `content` menang (jalur autosave
+   * lebih sering terjadi, tidak boleh keok oleh reset).
+   */
+  async updateSection(
+    id: string,
+    sectionId: string,
+    dto: { title?: string; guidance?: string; content?: Record<string, unknown> },
+  ) {
     const bab = await this.access.findOneScoped(id);
     if (bab.locked) {
       throw new ForbiddenException('Bab ini sedang terkunci untuk direview');
@@ -72,16 +84,21 @@ export class BabPipelineService {
       throw new NotFoundException('Section tidak ditemukan');
     }
 
-    return this.prisma.chapterSection.update({
+    const gantiTopik = dto.title !== undefined || dto.guidance !== undefined;
+    const updated = await this.prisma.chapterSection.update({
       where: { id: sectionId },
       data: {
         ...(dto.title !== undefined ? { title: dto.title } : {}),
         ...(dto.guidance !== undefined ? { guidance: dto.guidance } : {}),
-        status: 'PENDING',
-        content: Prisma.DbNull,
-        error: null,
+        ...(gantiTopik ? { status: 'PENDING', content: Prisma.DbNull, error: null } : {}),
+        ...(dto.content !== undefined
+          ? { status: 'GENERATED', content: dto.content as Prisma.InputJsonValue, generatedAt: new Date() }
+          : {}),
       },
     });
+
+    if (dto.content !== undefined) await this.recompileChapterContent(id);
+    return updated;
   }
 
   /** DELETE bab/:id/sections/:sectionId — hapus section manual. */
@@ -96,6 +113,39 @@ export class BabPipelineService {
     }
 
     await this.prisma.chapterSection.delete({ where: { id: sectionId } });
+    await this.recompileChapterContent(id);
+  }
+
+  /**
+   * Gabung ulang semua section berstatus GENERATED jadi `DocumentChapter.
+   * workingContent` — re-implementasi TS dari `worker.py::
+   * _compile_chapter_from_sections` (Python), dipanggil dari sana tiap
+   * section selesai di-generate LLM. Duplikasi disengaja: ini murni
+   * string-concat, gak butuh panggil AI service. Beda dari Python: TIDAK
+   * bikin `ChapterDraft` baru (autosave section bisa berjalan tiap
+   * beberapa detik — checkpoint baru tiap ketikan akan membanjiri riwayat
+   * draft), cuma menimpa `workingContent` langsung, sama seperti autosave
+   * bab biasa (`PATCH bab/:id`) yang juga tidak pernah bikin checkpoint.
+   */
+  private async recompileChapterContent(chapterId: string): Promise<void> {
+    const sections = await this.prisma.chapterSection.findMany({
+      where: { chapterId, status: 'GENERATED' },
+      orderBy: { order: 'asc' },
+    });
+
+    let body = '';
+    let markdown = '';
+    for (const section of sections) {
+      const content = section.content as { body?: string; markdown?: string } | null;
+      if (!content?.body) continue;
+      body += `<h2>${section.title}</h2>${content.body}`;
+      markdown += `## ${section.title}\n\n${content.markdown ?? content.body}\n\n`;
+    }
+
+    await this.prisma.documentChapter.update({
+      where: { id: chapterId },
+      data: { workingContent: { format: 'html', body, markdown } as Prisma.InputJsonValue },
+    });
   }
 
   /** Enqueues GENERASI_BAB — apps/ai's worker generate SATU section (RAG pipeline scoped ke section.guidance). `draftId` (recommend->confirm flow) scopes Evidence retrieval to that draft's confirmed recommendation. */

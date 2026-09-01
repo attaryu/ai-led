@@ -54,10 +54,19 @@ export type ChapterAutosave = {
  */
 export function useChapterAutosave({
 	chapterId,
+	sectionId = null,
 	savedAtAwal,
 	enabled,
 }: {
 	chapterId: string;
+	/**
+	 * Non-null → tulis ke SECTION ini (`ChapterSection.content`), bukan
+	 * `kontenKerja` seluruh bab — kanvas sedang menampilkan satu sub-bab
+	 * (`ChapterEditorWorkspace` di-`key` ulang tiap `sectionId` berganti,
+	 * jadi tidak ada isi lintas-target yang bisa bertabrakan, sama seperti
+	 * jaminan `chapterId` di bawah).
+	 */
+	sectionId?: string | null;
 	/** `terakhirDisimpan` bab saat halaman dibuka. */
 	savedAtAwal: string | null;
 	/** `false` saat bab terkunci atau role hanya baca — hook jadi tidak menulis. */
@@ -89,7 +98,7 @@ export function useChapterAutosave({
 	 * dicoba lagi biar ketikan tidak hilang.
 	 */
 	const tulisUntuk = React.useCallback(
-		(idTujuan: string, alasan: 'jeda' | 'flush'): Promise<boolean> => {
+		(idBabTujuan: string, idSectionTujuan: string | null, alasan: 'jeda' | 'flush'): Promise<boolean> => {
 			if (timerRef.current !== null) {
 				window.clearTimeout(timerRef.current);
 				timerRef.current = null;
@@ -98,42 +107,56 @@ export function useChapterAutosave({
 			const konten = kontenRef.current;
 			if (konten === null || !enabledRef.current) return Promise.resolve(true);
 
-			if (idTujuan === chapterId) setStatus('menyimpan');
+			const menujuTargetSaatIni = idBabTujuan === chapterId && idSectionTujuan === sectionId;
+			if (menujuTargetSaatIni) setStatus('menyimpan');
 
-			return chapterRepository.updateKonten(idTujuan, konten).then(
-				(tersimpan) => {
+			// Section: `ChapterSection` tidak punya kolom stempel waktu sendiri —
+			// waktu klien dipakai apa adanya untuk indikator, bukan dibaca balik
+			// dari server seperti bab. Broadcast `notify()` (KPI isi-vs-kosong
+			// dashboard) juga dilewati: itu konsep per-bab, tidak ada padanannya
+			// per-section.
+			const simpan = idSectionTujuan
+				? chapterRepository
+						.updateSectionKonten(idBabTujuan, idSectionTujuan, konten)
+						.then((ok) => (ok ? { savedAt: new Date().toISOString() as string | null, terisi: null } : null))
+				: chapterRepository.updateKonten(idBabTujuan, konten).then((tersimpan) =>
+						tersimpan ? { savedAt: tersimpan.terakhirDisimpan, terisi: hasKonten(tersimpan) } : null,
+					);
+
+			return simpan.then(
+				(hasil) => {
 					kontenRef.current = null;
 					kotorSejakRef.current = null;
 
-					// `undefined` = bab terkunci dari tempat lain. Diamkan, §12.2.
-					if (!tersimpan) return false;
+					// `null` = bab/section terkunci dari tempat lain. Diamkan, §12.2.
+					if (!hasil) return false;
 
-					// Hanya bab yang sedang dilihat yang boleh gerak.
-					if (idTujuan === chapterId) {
-						setSavedAt(tersimpan.terakhirDisimpan);
+					// Hanya target yang sedang dilihat yang boleh gerak.
+					if (menujuTargetSaatIni) {
+						setSavedAt(hasil.savedAt);
 						setStatus('tersimpan');
 					}
 
-					// Siarkan hanya saat kosong<->terisi berubah, atau saat flush.
-					const terisi = hasKonten(tersimpan);
-					if (alasan === 'flush' || terisi !== terisiRef.current) {
-						terisiRef.current = terisi;
+					// Siarkan hanya saat kosong<->terisi berubah, atau saat flush —
+					// tidak berlaku untuk section (lihat catatan `simpan` di atas).
+					if (hasil.terisi !== null && (alasan === 'flush' || hasil.terisi !== terisiRef.current)) {
+						terisiRef.current = hasil.terisi;
 						chapterRepository.notify();
 					}
 					return true;
 				},
 				() => {
 					// Jaringan/backend bermasalah, bukan terkunci — buffer dipegang, coba lagi.
-					if (idTujuan === chapterId) setStatus('gagal');
+					if (menujuTargetSaatIni) setStatus('gagal');
 					timerRef.current = window.setTimeout(
-						() => void tulisRef.current(idTujuan, alasan),
+						() => void tulisRef.current(idBabTujuan, idSectionTujuan, alasan),
 						JEDA_DIAM_MS,
 					);
 					return false;
 				},
 			);
 		},
-		[chapterId],
+		[chapterId, sectionId],
 	);
 
 	const tulisRef = React.useRef(tulisUntuk);
@@ -157,16 +180,16 @@ export function useChapterAutosave({
 			const jeda = Math.max(0, Math.min(JEDA_DIAM_MS, sisaPlafon));
 
 			timerRef.current = window.setTimeout(
-				() => void tulisRef.current(chapterId, 'jeda'),
+				() => void tulisRef.current(chapterId, sectionId, 'jeda'),
 				jeda,
 			);
 		},
-		[chapterId],
+		[chapterId, sectionId],
 	);
 
 	const flush = React.useCallback(
-		() => tulisRef.current(chapterId, 'flush'),
-		[chapterId],
+		() => tulisRef.current(chapterId, sectionId, 'flush'),
+		[chapterId, sectionId],
 	);
 
 	// Harus dipanggil **sinkron** tepat sesudah penulisan generate: tidak ada
@@ -200,12 +223,12 @@ export function useChapterAutosave({
 	 * ditutup bisa memutus request sebelum tuntas. Upgrade: sendBeacon endpoint.
 	 */
 	React.useEffect(() => {
-		const onPageHide = () => void tulisRef.current(chapterId, 'flush');
+		const onPageHide = () => void tulisRef.current(chapterId, sectionId, 'flush');
 		window.addEventListener('pagehide', onPageHide);
 
 		return () => {
 			window.removeEventListener('pagehide', onPageHide);
-			void tulisRef.current(chapterId, 'flush');
+			void tulisRef.current(chapterId, sectionId, 'flush');
 
 			// Buffer dan jadwal milik bab ini tidak boleh menyeberang ke bab
 			// berikutnya. Setelah flush di atas keduanya sudah kosong untuk jalur
@@ -215,15 +238,15 @@ export function useChapterAutosave({
 			kotorSejakRef.current = null;
 			terisiRef.current = null;
 		};
-	}, [chapterId]);
+	}, [chapterId, sectionId]);
 
-	// Bab berganti: indikator ikut menunjukkan stempel milik bab yang baru.
-	// `savedAtAwal` sengaja bukan dependensi — ia ikut berubah tiap kali bab ini
-	// disimpan, dan mengulang reset di situ akan mengedipkan status kembali ke
-	// 'diam' persis sesudah 'tersimpan' muncul.
-	const chapterSebelumnyaRef = React.useRef(chapterId);
-	if (chapterSebelumnyaRef.current !== chapterId) {
-		chapterSebelumnyaRef.current = chapterId;
+	// Bab/section berganti: indikator ikut menunjukkan stempel milik target
+	// yang baru. `savedAtAwal` sengaja bukan dependensi — ia ikut berubah tiap
+	// kali bab ini disimpan, dan mengulang reset di situ akan mengedipkan
+	// status kembali ke 'diam' persis sesudah 'tersimpan' muncul.
+	const chapterSebelumnyaRef = React.useRef(`${chapterId}:${sectionId ?? ''}`);
+	if (chapterSebelumnyaRef.current !== `${chapterId}:${sectionId ?? ''}`) {
+		chapterSebelumnyaRef.current = `${chapterId}:${sectionId ?? ''}`;
 		setSavedAt(savedAtAwal);
 		setStatus('diam');
 	}

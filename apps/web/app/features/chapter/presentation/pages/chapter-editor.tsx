@@ -16,6 +16,7 @@ import { ledProjectRepository } from '~/features/led-project/data/repositories/l
 import { type LedProjectEntity } from '~/features/led-project/domain/entities/led-project.entity';
 import { chapterRepository } from '../../data/repositories/chapter.repository';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
+import { type ChapterSectionEntity } from '../../domain/entities/chapter-section.entity';
 import {
 	buildChapterToc,
 	findTocPathForChapter,
@@ -47,9 +48,10 @@ import { editorExtensions } from '../utils/editor-extensions';
  * address bar.
  */
 export function ChapterEditor() {
-	const { projectId, chapterId } = useParams<{
+	const { projectId, chapterId, sectionId } = useParams<{
 		projectId: string;
 		chapterId: string;
+		sectionId?: string;
 	}>();
 	const session = useSession();
 
@@ -100,18 +102,44 @@ export function ChapterEditor() {
 	 */
 	const [chapterToc, setChapterToc] = React.useState<ChapterTocNode[]>([]);
 	React.useEffect(() => {
-		if (!ledProject) {
+		if (!ledProject || !chapters) {
 			setChapterToc([]);
 			return;
 		}
 		let cancelled = false;
-		buildChapterToc(ledProject.accreditationSetId).then((tree) => {
+		buildChapterToc(ledProject.accreditationSetId, chapters).then((tree) => {
 			if (!cancelled) setChapterToc(tree);
 		});
 		return () => {
 			cancelled = true;
 		};
-	}, [ledProject]);
+	}, [ledProject, chapters]);
+
+	/**
+	 * Section yang sedang dibuka (`sectionId` di URL) — kanvas menampilkan
+	 * ISI SECTION ini saja, bukan `kontenKerja` bab utuh (lihat
+	 * `ChapterEditorWorkspace`). Cuma di-fetch saat memang ada `sectionId`:
+	 * pindah ke tampilan bab utuh (kasus paling umum) tidak perlu request ini
+	 * sama sekali.
+	 */
+	const [sections, setSections] = React.useState<ChapterSectionEntity[] | undefined>(
+		undefined,
+	);
+	React.useEffect(() => {
+		if (!chapter || !sectionId) {
+			setSections(undefined);
+			return;
+		}
+		let cancelled = false;
+		chapterRepository.findSections(chapter.id).then((found) => {
+			if (!cancelled) setSections(found);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [chapter, sectionId]);
+
+	const section = sectionId ? sections?.find((item) => item.id === sectionId) : undefined;
 
 	/**
 	 * Simpul Daftar Isi yang sedang terbentang.
@@ -131,10 +159,13 @@ export function ChapterEditor() {
 	// Digerbang juga oleh `chapterToc.length > 0` supaya percobaan pertama
 	// (sebelum pohonnya termuat) tidak menandai bab ini "sudah ditangani" --
 	// begitu pohonnya termuat, kondisinya masih benar dan jalurnya baru dihitung.
-	const babTerbentangRef = React.useRef<number | null>(null);
-	if (chapter && chapterToc.length > 0 && babTerbentangRef.current !== chapter.urutanBab) {
-		babTerbentangRef.current = chapter.urutanBab;
-		const jalur = findTocPathForChapter(chapter.urutanBab, chapterToc).map((node) => node.id);
+	const babTerbentangRef = React.useRef<string | null>(null);
+	const kunciTerbentang = chapter ? `${chapter.urutanBab}:${sectionId ?? ''}` : null;
+	if (chapter && chapterToc.length > 0 && babTerbentangRef.current !== kunciTerbentang) {
+		babTerbentangRef.current = kunciTerbentang;
+		const jalur = findTocPathForChapter(chapter.urutanBab, chapterToc, sectionId ?? null).map(
+			(node) => node.id,
+		);
 		setTocTerbentang((sebelumnya) =>
 			// Kembalikan yang sama saat tidak ada yang perlu ditambah, supaya
 			// penyetelan saat render ini tidak memicu render berikutnya.
@@ -154,7 +185,8 @@ export function ChapterEditor() {
 
 	// Ditaruh sesudah seluruh hook di atas (Rules of Hooks) — `ledProject`/
 	// `chapters` sekarang datang dari HTTP, jadi ada jeda sebelum keduanya siap.
-	if (ledProject === undefined || chapters === undefined) {
+	// `sections` cuma ikut menggerbang saat `sectionId` memang ada di URL.
+	if (ledProject === undefined || chapters === undefined || (sectionId && sections === undefined)) {
 		return (
 			<div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
 				Memuat…
@@ -212,17 +244,25 @@ export function ChapterEditor() {
 		return <Navigate to={`/editor/${projectId}`} replace />;
 	}
 
+	// `sectionId` ada di URL tapi tidak (lagi) ada section dengan id itu di bab
+	// ini — dihapus dari tempat lain, atau URL diutak-atik. Pulihkan ke
+	// tampilan bab utuh, sama semangatnya dengan pemulihan bab di atas.
+	if (sectionId && !section) {
+		return <Navigate to={`/editor/${projectId}/${chapter.id}`} replace />;
+	}
+
 	// Sisa `pending` hanya mungkin bila session belum terbaca.
 	if (guard.status !== 'allowed') return null;
 
 	return (
 		<ChapterEditorWorkspace
-			key={chapter.id}
+			key={`${chapter.id}:${sectionId ?? 'full'}`}
 			projectId={projectId}
 			judulDokumen={ledProject.judul}
 			studyProgramId={ledProject.studyProgramId}
 			chapter={chapter}
 			chapters={chapters}
+			section={section}
 			chapterToc={chapterToc}
 			tocTerbentang={tocTerbentang}
 			onToggleTocNode={toggleTocNode}
@@ -231,10 +271,11 @@ export function ChapterEditor() {
 }
 
 /**
- * Ruang kerja satu bab. Dipisah dari komponen di atas supaya `key={chapter.id}`
- * bisa memasangnya ulang saat bab berganti: `content` di Tiptap hanya dibaca
- * sekali saat editor dibuat, jadi tanpa pemasangan ulang bab berikutnya akan
- * menampilkan tulisan bab sebelumnya — lalu menyimpannya menimpa bab yang salah.
+ * Ruang kerja satu bab (atau satu section di dalamnya). Dipisah dari komponen
+ * di atas supaya `key={chapter.id}:{sectionId}` bisa memasangnya ulang saat
+ * bab ATAU section berganti: `content` di Tiptap hanya dibaca sekali saat
+ * editor dibuat, jadi tanpa pemasangan ulang target berikutnya akan
+ * menampilkan tulisan lama — lalu menyimpannya menimpa target yang salah.
  */
 function ChapterEditorWorkspace({
 	projectId,
@@ -242,6 +283,7 @@ function ChapterEditorWorkspace({
 	studyProgramId,
 	chapter,
 	chapters,
+	section,
 	chapterToc,
 	tocTerbentang,
 	onToggleTocNode,
@@ -251,6 +293,8 @@ function ChapterEditorWorkspace({
 	studyProgramId: string;
 	chapter: ChapterEntity;
 	chapters: ChapterEntity[];
+	/** Non-undefined → kanvas menampilkan ISI SECTION ini saja, bukan bab utuh. */
+	section: ChapterSectionEntity | undefined;
 	chapterToc: ChapterTocNode[];
 	tocTerbentang: ReadonlySet<string>;
 	onToggleTocNode: (id: string) => void;
@@ -331,7 +375,11 @@ function ChapterEditorWorkspace({
 	const izin = useChapterPermission(babTerkini, studyProgramId);
 	const autosave = useChapterAutosave({
 		chapterId: chapter.id,
-		savedAtAwal: chapter.terakhirDisimpan,
+		sectionId: section?.id ?? null,
+		// `ChapterSection` tidak punya stempel waktu sendiri — lihat catatan
+		// `use-chapter-autosave.ts`, indikatornya mulai kosong dan terisi
+		// begitu autosave pertama section ini selesai.
+		savedAtAwal: section ? null : chapter.terakhirDisimpan,
 		enabled: izin.canEdit,
 	});
 
@@ -346,8 +394,9 @@ function ChapterEditorWorkspace({
 		immediatelyRender: false,
 		// Dibaca sekali di sini dan tidak pernah lagi: editor sengaja tidak
 		// berlangganan `storage-update`, supaya siaran autosave tidak memantul
-		// balik dan menimpa dokumen yang sedang diketik.
-		content: chapter.kontenKerja ?? '',
+		// balik dan menimpa dokumen yang sedang diketik. `section` non-undefined
+		// → isi SECTION ini saja, bukan `kontenKerja` bab utuh.
+		content: (section ? section.konten : chapter.kontenKerja) ?? '',
 		editable: izin.canEdit,
 		editorProps: {
 			attributes: { class: 'tiptap', 'data-slot': 'chapter-editor-content' },
@@ -398,11 +447,16 @@ function ChapterEditorWorkspace({
 	 */
 	const adopsiIsiBaru = React.useCallback(
 		({ html, chapter: diperbarui }: HasilGenerate | HasilPulih) => {
-			editor?.commands.setContent(html, { emitUpdate: false });
+			// Kanvas cuma pegang isi SATU section saat `section` ada — HTML bab
+			// utuh dari sini tidak boleh menimpanya. `babTerkini` tetap
+			// diperbarui (dibaca panel lain), cuma editor yang dilewati; pindah
+			// balik ke tampilan bab utuh sudah cukup untuk melihat hasilnya
+			// (backend sudah menulisnya duluan).
+			if (!section) editor?.commands.setContent(html, { emitUpdate: false });
 			if (diperbarui.terakhirDisimpan) autosave.adopt(diperbarui.terakhirDisimpan);
 			setBabTerkini(diperbarui);
 		},
-		[editor, autosave],
+		[editor, autosave, section],
 	);
 
 	/**
@@ -414,12 +468,19 @@ function ChapterEditorWorkspace({
 	 * flush berarti `undefined`, jangan checkpoint isi yang belum tentu sampai.
 	 */
 	const ambilSnapshot = React.useCallback(async () => {
-		if (!editor) return undefined;
-		const kontenKerja = editor.isEmpty ? '' : editor.getHTML();
 		const tersimpan = await autosave.flush();
 		if (!tersimpan) return undefined;
+
+		// Kanvas cuma pegang isi SATU section — checkpoint butuh `kontenKerja`
+		// BAB UTUH, jadi dibaca ulang dari backend (bukan `editor.getHTML()`).
+		// `recompileChapterContent` (backend, dipicu autosave section di atas)
+		// sudah menimpa `workingContent`-nya begitu `flush()` di atas selesai.
+		if (section) return chapterRepository.refreshFromBackend(chapter.id);
+
+		if (!editor) return undefined;
+		const kontenKerja = editor.isEmpty ? '' : editor.getHTML();
 		return { ...babTerkini, kontenKerja };
-	}, [autosave, editor, babTerkini]);
+	}, [autosave, editor, babTerkini, section, chapter.id]);
 
 	return (
 		<div className="flex h-screen flex-col overflow-hidden bg-background">
@@ -543,6 +604,7 @@ function ChapterEditorWorkspace({
 						chapters={chapters}
 						chapterToc={chapterToc}
 						chapterAktif={chapter}
+						sectionIdAktif={section?.id ?? null}
 						terbentang={tocTerbentang}
 						onToggle={onToggleTocNode}
 						terbuka={laci === 'toc'}
@@ -552,7 +614,7 @@ function ChapterEditorWorkspace({
 					{editor ? (
 						<ChapterEditorCanvas
 							editor={editor}
-							judulBab={chapter.judulBab}
+							judulBab={section ? `${chapter.judulBab} — ${section.judul}` : chapter.judulBab}
 							blockedReason={izin.blockedReason}
 						/>
 					) : (
