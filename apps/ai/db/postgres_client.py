@@ -20,6 +20,8 @@ import logging
 import uuid
 from typing import Any, Optional
 
+import psycopg2.extras
+
 from db.connection import get_conn as _get_conn
 from ingestion.matrix_parser import IndicatorRubric
 
@@ -173,6 +175,8 @@ def log_indicator_result(
     confidence: Optional[float],
     recommendation: Optional[str] = None,
     error: Optional[str] = None,
+    model: Optional[str] = None,
+    sources_used: Optional[dict] = None,
 ) -> None:
     """Upsert a scored indicator into assessment_indicator_results."""
     try:
@@ -181,14 +185,16 @@ def log_indicator_result(
                 """
                 INSERT INTO assessment_indicator_results
                     (id, session_id, indicator_no, score, justification,
-                     confidence, recommendation, error)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                     confidence, recommendation, error, model, sources_used)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (session_id, indicator_no) DO UPDATE SET
                     score = EXCLUDED.score,
                     justification = EXCLUDED.justification,
                     confidence = EXCLUDED.confidence,
                     recommendation = EXCLUDED.recommendation,
-                    error = EXCLUDED.error
+                    error = EXCLUDED.error,
+                    model = EXCLUDED.model,
+                    sources_used = EXCLUDED.sources_used
                 """,
                 (
                     str(uuid.uuid4()),
@@ -199,6 +205,8 @@ def log_indicator_result(
                     confidence,
                     recommendation,
                     error,
+                    model,
+                    psycopg2.extras.Json(sources_used) if sources_used is not None else None,
                 ),
             )
     except Exception:
@@ -212,7 +220,8 @@ def get_indicator_results(session_id: str) -> list[dict]:
     with _get_conn().cursor() as cur:
         cur.execute(
             """
-            SELECT indicator_no, score, justification, confidence, recommendation, error
+            SELECT indicator_no, score, justification, confidence, recommendation, error,
+                   model, sources_used
             FROM assessment_indicator_results WHERE session_id = %s ORDER BY indicator_no
             """,
             (session_id,),

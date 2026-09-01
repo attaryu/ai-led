@@ -96,7 +96,10 @@ def test_session_lifecycle_and_upsert(fixture_ids):
         assert sess["total_indicators"] == 3
 
         pc.log_indicator_result(session_id, indicator_no=1, score=3.5, justification="j1", confidence=0.9)
-        pc.log_indicator_result(session_id, indicator_no=1, score=4.0, justification="j1-updated", confidence=0.95)
+        pc.log_indicator_result(
+            session_id, indicator_no=1, score=4.0, justification="j1-updated", confidence=0.95,
+            model="deepseek-r1:32b", sources_used={"led_chunks": [{"page": 3}], "lkps_tables": [], "evidence_documents": []},
+        )
         pc.log_indicator_result(session_id, indicator_no=2, score=2.0, justification="j2", confidence=0.5)
         pc.log_reasoning_step(session_id, indicator_no=1, step_index=0, content="step0")
 
@@ -106,6 +109,8 @@ def test_session_lifecycle_and_upsert(fixture_ids):
         r1 = next(r for r in results if r["indicator_no"] == 1)
         assert r1["score"] == 4.0, "upsert (ON CONFLICT) should overwrite, not duplicate"
         assert r1["justification"] == "j1-updated"
+        assert r1["model"] == "deepseek-r1:32b"
+        assert r1["sources_used"] == {"led_chunks": [{"page": 3}], "lkps_tables": [], "evidence_documents": []}
 
         pc.update_session_status(session_id, "completed", completed_indicators=2)
         sess2 = pc.get_session(session_id)

@@ -143,6 +143,8 @@ class IndicatorResultItem(BaseModel):
     confidence: Optional[float] = None
     recommendation: Optional[str] = None
     error: Optional[str] = None
+    model: Optional[str] = None
+    sources_used: Optional[dict] = None
 
 
 class SessionResultsResponse(BaseModel):
@@ -495,6 +497,8 @@ async def get_session_results(session_id: str) -> SessionResultsResponse:
             confidence=row.get("confidence"),
             recommendation=row.get("recommendation"),
             error=row.get("error"),
+            model=row.get("model"),
+            sources_used=row.get("sources_used"),
         )
         for row in rows
     ]
@@ -534,6 +538,7 @@ async def _process_single_indicator(
     Returns True on success, False on error (error is logged and stored in Postgres).
     """
     async with semaphore:
+        ollama_client = None
         try:
             ollama_client = create_ollama_client_from_env(model=model)
             logger.info(
@@ -558,6 +563,7 @@ async def _process_single_indicator(
                 "confidence": None,
                 "recommendation": None,
                 "error": None,
+                "sources_used": None,
             }
 
             # run_in_executor doesn't inherit context by default — copy it
@@ -594,6 +600,8 @@ async def _process_single_indicator(
                 confidence=confidence,
                 recommendation=recommendation,
                 error=error,
+                model=ollama_client.model,
+                sources_used=result.get("sources_used"),
             )
             return True
 
@@ -616,6 +624,7 @@ async def _process_single_indicator(
                 confidence=None,
                 recommendation=None,
                 error=f"Gagal dinilai ({type(exc).__name__}) — lihat log server untuk detail.",
+                model=ollama_client.model if ollama_client else model,
             )
             return False
 

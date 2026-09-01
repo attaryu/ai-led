@@ -129,13 +129,7 @@ def test_build_eval_samples_uses_supabase_justification():
 
 
 def test_build_eval_samples_filters_by_session_indicators():
-    """Regression test: when session_id is given, target_rubrics must be the
-    indicators actually present in that session, not blindly the first
-    n_indicators of the full rubric list -- otherwise n_indicators=1 with a
-    session whose only scored indicator is e.g. 31 silently evaluated a
-    synthetic response for indicator 1 instead, mislabeling it in
-    per_indicator output and invalidating the score. Ported from
-    origin/ariel commit 5ecb23d after finding the identical bug here."""
+    """Regression test: target_rubrics must be the indicators actually scored in the session, not the first n (ariel 5ecb23d)."""
     from eval.ragas_eval import build_eval_samples
 
     fake_llm_wrapper = MagicMock()
@@ -161,12 +155,7 @@ def test_build_eval_samples_filters_by_session_indicators():
 
 
 def test_build_eval_samples_includes_evidence_context():
-    """Regression test: RAGAS only ever retrieved LED chunks, never evidence
-    document chunks tagged to the indicator -- so a justification correctly
-    grounded in an uploaded evidence document (not the LED) was scored as
-    unsupported/hallucinated by faithfulness. Ported from origin/ariel
-    commit 5ecb23d, adapted to dev-v1's tenant + accreditation-set scoped
-    pgvector evidence store."""
+    """Regression test: retrieved_contexts must include tagged evidence-document chunks, not just LED (ariel 5ecb23d)."""
     from eval.ragas_eval import build_eval_samples
 
     fake_llm_wrapper = MagicMock()
@@ -189,11 +178,7 @@ def test_build_eval_samples_includes_evidence_context():
 
 
 def test_build_eval_samples_includes_lkps_context():
-    """Regression test: indicators whose scoring depends on LKPS data
-    (quantitative/composite score_type) had no LKPS context in
-    retrieved_contexts -- so a justification correctly computed from LKPS
-    numbers looked unsupported to faithfulness. Ported from origin/ariel
-    commit 5ecb23d."""
+    """Regression test: quantitative/composite indicators must get LKPS table context too (ariel 5ecb23d)."""
     from eval.ragas_eval import build_eval_samples
 
     fake_llm_wrapper = MagicMock()
@@ -455,6 +440,76 @@ def test_run_ragas_evaluation_passes_run_config_with_generous_timeout_and_low_wo
     assert run_config is not None
     assert run_config.timeout >= 300
     assert run_config.max_workers <= 4
+
+
+def test_get_assessor_model_reads_from_indicator_results():
+    """assessor_model — which model(s) actually scored a session — is distinct from the judge model (ariel 88082d7, adapted to dev-v1's per-indicator IndicatorResult.model)."""
+    from eval.ragas_eval import _get_assessor_model
+
+    with patch(
+        "db.postgres_client.get_indicator_results",
+        return_value=[{"indicator_no": 1, "model": "deepseek-r1:32b"}, {"indicator_no": 2, "model": "deepseek-r1:32b"}],
+    ):
+        assert _get_assessor_model("sess-1") == "deepseek-r1:32b"
+
+
+def test_get_assessor_model_joins_distinct_models():
+    from eval.ragas_eval import _get_assessor_model
+
+    with patch(
+        "db.postgres_client.get_indicator_results",
+        return_value=[{"indicator_no": 1, "model": "a"}, {"indicator_no": 2, "model": "b"}],
+    ):
+        assert _get_assessor_model("sess-1") == "a, b"
+
+
+def test_run_ragas_evaluation_looks_up_assessor_model_when_session_given():
+    import pandas as pd
+    from eval.ragas_eval import EvalSample, run_ragas_evaluation
+
+    fake_sample = EvalSample(indicator_no=1, user_input="q?", retrieved_contexts=["ctx"], response="resp", reference="ref")
+    fake_metric = MagicMock()
+    fake_metric.name = "faithfulness"
+    fake_result = MagicMock()
+    fake_result.to_pandas.return_value = pd.DataFrame({"faithfulness": [0.8]})
+
+    with (
+        patch("eval.ragas_eval.build_eval_samples", return_value=[fake_sample]),
+        patch("eval.ragas_eval._build_ragas_llm", return_value=MagicMock()),
+        patch("eval.ragas_eval._build_ragas_embeddings", return_value=MagicMock()),
+        patch("ragas.metrics.Faithfulness", return_value=fake_metric),
+        patch("ragas.dataset_schema.SingleTurnSample", return_value=MagicMock()),
+        patch("ragas.EvaluationDataset", return_value=MagicMock()),
+        patch("ragas.evaluate", return_value=fake_result),
+        patch("db.postgres_client.get_indicator_results", return_value=[{"indicator_no": 1, "model": "deepseek-r1:32b"}]),
+    ):
+        result = run_ragas_evaluation(n_indicators=1, session_id="sess-1", metrics_to_run=["faithfulness"])
+
+    assert result["assessor_model"] == "deepseek-r1:32b"
+
+
+def test_run_ragas_evaluation_assessor_model_none_without_session():
+    import pandas as pd
+    from eval.ragas_eval import EvalSample, run_ragas_evaluation
+
+    fake_sample = EvalSample(indicator_no=1, user_input="q?", retrieved_contexts=["ctx"], response="resp", reference="ref")
+    fake_metric = MagicMock()
+    fake_metric.name = "faithfulness"
+    fake_result = MagicMock()
+    fake_result.to_pandas.return_value = pd.DataFrame({"faithfulness": [0.8]})
+
+    with (
+        patch("eval.ragas_eval.build_eval_samples", return_value=[fake_sample]),
+        patch("eval.ragas_eval._build_ragas_llm", return_value=MagicMock()),
+        patch("eval.ragas_eval._build_ragas_embeddings", return_value=MagicMock()),
+        patch("ragas.metrics.Faithfulness", return_value=fake_metric),
+        patch("ragas.dataset_schema.SingleTurnSample", return_value=MagicMock()),
+        patch("ragas.EvaluationDataset", return_value=MagicMock()),
+        patch("ragas.evaluate", return_value=fake_result),
+    ):
+        result = run_ragas_evaluation(n_indicators=1, metrics_to_run=["faithfulness"])
+
+    assert result["assessor_model"] is None
 
 
 def test_run_evaluation_background_success():

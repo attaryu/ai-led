@@ -271,14 +271,7 @@ def test_reasoning_graph_terminates_when_llm_always_calls_tools():
     invalid-JSON / unknown-action branches — a model that keeps validly
     calling a tool had no cap at all.
 
-    Also a regression test for a second bug found while porting from
-    origin/ariel (commit 10f5a53): _force_or_give_up used to set
-    state["error"] directly, but it runs as part of parse_and_dispatch, a
-    conditional-edge ROUTER — LangGraph does not merge state mutations made
-    inside routers back into the graph's real state, only a node's return
-    value. That silently dropped the error message on every give-up path;
-    fixed by routing to a real error_node instead.
-    """
+    Also covers ariel 10f5a53: state["error"] used to be set from inside a router and never persisted."""
     from unittest.mock import MagicMock, patch
 
     from langchain_core.messages import AIMessage
@@ -393,6 +386,45 @@ def test_checklist_generation_failure_does_not_block_flow():
 
     assert result["checklist"] is None
     assert result["final_score"] == 2.0
+
+
+def test_checklist_node_auto_injects_tagged_evidence():
+    """Tagged evidence must be injected unconditionally, not left to the model's own tool choice (ariel 491a2bb)."""
+    import json
+    from unittest.mock import MagicMock, patch
+
+    from langchain_core.messages import AIMessage
+    from llm.ollama_client import OllamaClient
+    from agent.reasoning_graph import build_reasoning_graph
+
+    rubric_tool_call = AIMessage(
+        content='{"action": "get_indicator_rubric", "args": {"indicator_no": 1}}'
+    )
+    checklist_response = AIMessage(content="- Item satu")
+    final_answer = AIMessage(
+        content=(
+            '{"action": "final", "score": 3, "justification": "Bukti memadai.", '
+            '"confidence": 0.8, "recommendation": "Lengkapi."}'
+        )
+    )
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = [rubric_tool_call, checklist_response, final_answer]
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="deepseek-r1:14b", timeout_seconds=30)
+    evidence_json = json.dumps([{"text": "Isi SK.", "entity": "SK Rektor 123", "relevance_score": 0.9}])
+    fake_evidence_tool = MagicMock()
+    fake_evidence_tool.invoke.return_value = evidence_json
+
+    with (
+        patch("agent.reasoning_graph._build_reasoning_llm", return_value=fake_llm),
+        patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[]),
+        patch("agent.reasoning_graph.search_evidence_documents", fake_evidence_tool),
+    ):
+        graph = build_reasoning_graph(fake_client)
+        result = graph.invoke(_make_state(), config={"recursion_limit": 40})
+
+    assert any("SK Rektor 123" in (getattr(m, "content", "") or "") for m in result["messages"])
+    assert result["sources_used"]["evidence_documents"] == ["SK Rektor 123"]
 
 
 # ── independent judge ───────────────────────────────────────────────────────

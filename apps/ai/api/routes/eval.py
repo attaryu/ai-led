@@ -83,6 +83,7 @@ class EvalResultResponse(BaseModel):
     per_indicator: Optional[list] = None
     provider: Optional[str] = None
     model: Optional[str] = None
+    assessor_model: Optional[str] = None
     started_at: Optional[str] = None
     finished_at: Optional[str] = None
     progress_stage: Optional[str] = None
@@ -160,6 +161,7 @@ def _run_evaluation_background(
                 "per_indicator": result.get("per_indicator"),
                 "provider": result.get("provider"),
                 "model": result.get("model"),
+                "assessor_model": result.get("assessor_model"),
                 "progress_stage": "completed",
                 "progress_current": result.get("n_samples", 0),
                 "progress_total": result.get("n_samples", 0),
@@ -245,15 +247,17 @@ def get_available_models() -> AvailableModelsResponse:
 
 
 @router.get("/config", response_model=EvalConfigResponse)
-def get_eval_config() -> EvalConfigResponse:
+def get_eval_config(session_id: Optional[str] = None) -> EvalConfigResponse:
     """Return the RAGAS judge config + the assessment model (the thing under test)."""
     import os
 
+    from eval.ragas_eval import _get_assessor_model
     from llm.ollama_client import get_available_models
 
     judge = get_judge_llm_config()
     assessment_provider = os.environ.get("LLM_PROVIDER", "ollama").lower()
-    assessment_model = get_available_models()[0]
+    # session_id given -> report the model(s) that actually scored it, not just the configured default
+    assessment_model = (session_id and _get_assessor_model(session_id)) or get_available_models()[0]
 
     return EvalConfigResponse(
         judge_provider=judge["provider"],
@@ -300,6 +304,7 @@ def get_eval_results(eval_id: str) -> EvalResultResponse:
         per_indicator=state.get("per_indicator"),
         provider=state.get("provider"),
         model=state.get("model"),
+        assessor_model=state.get("assessor_model"),
         started_at=state.get("started_at"),
         finished_at=state.get("finished_at"),
         progress_stage=state.get("progress_stage"),

@@ -768,6 +768,8 @@ model IndicatorResult {
   recommendation String?  @db.Text
   model          String?
   error          String?  @db.Text
+  /// LED/LKPS/evidence citations retrieved while scoring, written by apps/ai only
+  sourcesUsed    Json?    @map("sources_used")
   createdAt      DateTime @default(now()) @map("created_at")
 
   session AssessmentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)

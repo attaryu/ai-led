@@ -56,3 +56,6 @@ class AssessmentState(TypedDict):
     # final justification is grounded in evidence actually retrieved this run.
     # {"error": ...} if the judge call itself failed — never blocks the result.
     judge_verdict: Optional[dict]
+
+    # LED/LKPS/evidence citations retrieved this run (graph.py's _accumulate_sources)
+    sources_used: Optional[dict]

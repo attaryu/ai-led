@@ -347,14 +347,45 @@ def test_checklist_generation_failure_does_not_block_flow():
     assert result["final_score"] == 2.0
 
 
+def test_checklist_node_auto_injects_tagged_evidence():
+    """Tagged evidence must be injected unconditionally, not left to the model's own tool choice (ariel 491a2bb)."""
+    import json
+    from langchain_core.messages import AIMessage
+    from llm.ollama_client import OllamaClient
+    from agent.graph import build_graph
+
+    rubric_tool_call = AIMessage(
+        content="",
+        tool_calls=[
+            {"name": "get_indicator_rubric", "args": {"indicator_no": 1}, "id": "call_1"}
+        ],
+    )
+    checklist_response = AIMessage(content="- Item satu")
+    final_answer = AIMessage(
+        content="SKOR: 3\nJUSTIFIKASI: Bukti memadai.\nCONFIDENCE: 0.8\nREKOMENDASI: Lengkapi."
+    )
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = [rubric_tool_call, checklist_response, final_answer]
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
+    evidence_json = json.dumps([{"text": "Isi SK.", "entity": "SK Rektor 123", "relevance_score": 0.9}])
+    fake_evidence_tool = MagicMock()
+    fake_evidence_tool.invoke.return_value = evidence_json
+
+    with (
+        patch("agent.graph._build_llm", return_value=fake_llm),
+        patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[]),
+        patch("agent.graph.search_evidence_documents", fake_evidence_tool),
+    ):
+        graph = build_graph(fake_client)
+        result = graph.invoke(_make_state(), config={"recursion_limit": 40})
+
+    assert any("SK Rektor 123" in (m.content or "") for m in result["messages"])
+    assert result["sources_used"]["evidence_documents"] == ["SK Rektor 123"]
+
+
 def test_tools_node_preserves_message_history():
-    """Regression test: ToolNode.invoke() returns only the NEW ToolMessages
-    it just produced (a delta), not the full accumulated history. Since
-    AssessmentState.messages has no reducer, returning that delta as-is used
-    to make LangGraph's default merge REPLACE the whole conversation with
-    it -- silently dropping the SystemMessage and every earlier turn after
-    the first tool call. Ported from origin/ariel commit 0c10dbb after
-    finding the identical bug here."""
+    """Regression test: tools_node used to drop the SystemMessage/history after the first tool call (ariel 0c10dbb)."""
     from langchain_core.messages import AIMessage, SystemMessage
     from llm.ollama_client import OllamaClient
     from agent.graph import build_graph
@@ -383,12 +414,40 @@ def test_tools_node_preserves_message_history():
         result = graph.invoke(_make_state(), config={"recursion_limit": 40})
 
     assert result["final_score"] == 3.0
-    # The SystemMessage (added once, first in the conversation) must still
-    # be present after a tool round -- the bug dropped it silently.
     assert any(isinstance(m, SystemMessage) for m in result["messages"])
-    # The rubric tool's own ToolMessage must also still be there (not just
-    # whatever the LAST tools_node call happened to return).
     assert any(getattr(m, "tool_call_id", None) == "call_1" for m in result["messages"])
+
+
+# ── source accumulation ─────────────────────────────────────────────────────
+
+
+def test_accumulate_sources_merges_led_lkps_evidence():
+    import json
+    from agent.graph import _accumulate_sources, _EMPTY_SOURCES
+
+    sources = _accumulate_sources(
+        _EMPTY_SOURCES, "search_led_evidence", {},
+        json.dumps([{"page": 3, "section": "Visi"}, {"paragraph": 7}]),
+    )
+    sources = _accumulate_sources(
+        sources, "get_lkps_table", {"table_reference": "Tabel 2.b"}, "| No | Nama |\n|---|---|",
+    )
+    sources = _accumulate_sources(
+        sources, "search_evidence_documents", {}, json.dumps([{"entity": "SK Rektor 123"}]),
+    )
+
+    assert sources["led_chunks"] == [{"page": 3, "section": "Visi"}, {"paragraph": 7}]
+    assert sources["lkps_tables"] == ["Tabel 2.b"]
+    assert sources["evidence_documents"] == ["SK Rektor 123"]
+
+
+def test_accumulate_sources_skips_lkps_error_result():
+    from agent.graph import _accumulate_sources, _EMPTY_SOURCES
+
+    sources = _accumulate_sources(
+        _EMPTY_SOURCES, "get_lkps_table", {"table_reference": "Tabel X"}, '{"error": "not found"}',
+    )
+    assert sources["lkps_tables"] == []
 
 
 # ── score_type scenarios (quantitative / composite, share the same tool loop) ───
@@ -738,15 +797,7 @@ def test_graph_force_retries_when_skor_present_but_no_justifikasi_marker():
 # ── parse_output logic (extracted for unit testing) ───────────────────────────
 
 def _parse_output(content: str) -> dict:
-    """Mirrors the parse_output_node logic for isolated testing.
-
-    Permissive: handles markdown bold, headings, backticks, case variations.
-    The SKOR value is looked up ONLY in the text before the first
-    JUSTIFIKASI/CONFIDENCE/REKOMENDASI label, not the whole message -- a
-    stray formula reference inside JUSTIFIKASI's own prose must not be
-    mistaken for the SKOR value (see test_parse_output_ignores_formula_
-    reference_inside_justifikasi).
-    """
+    """Mirrors parse_output_node's logic for isolated testing (SKOR only searched before JUSTIFIKASI/CONFIDENCE/REKOMENDASI)."""
     cleaned = re.sub(r"\*{1,3}|`+|#+\s*", "", content)
 
     other_label = re.search(
@@ -837,13 +888,7 @@ def test_parse_output_picks_last_score_ignoring_formula():
 
 
 def test_parse_output_ignores_formula_reference_inside_justifikasi():
-    """Regression test: a formula mention inside JUSTIFIKASI's own prose,
-    on its own line (numerically valid, 0-4 range), used to win over the
-    real SKOR line whenever it appeared AFTER it, since the old regex
-    scanned the WHOLE message and took the last match. Verified against a
-    real production response that scored 1 instead of the intended 3.
-    Ported from origin/ariel commit 0ce01fd after finding the identical
-    bug here."""
+    """Regression test: a formula mention inside JUSTIFIKASI used to override the real SKOR line (ariel 0ce01fd)."""
     content = (
         "SKOR: 3\n"
         "JUSTIFIKASI: Rasio dosen dihitung otomatis.\n"

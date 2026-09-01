@@ -28,6 +28,8 @@ from langgraph.graph import END, StateGraph
 from agent.graph import (
     CHECKLIST_PROMPT_TEMPLATE,
     JUDGE_PROMPT_TEMPLATE,
+    _accumulate_sources,
+    _EMPTY_SOURCES,
     build_judge_llm,
     parse_checklist,
     parse_judge_verdict,
@@ -267,12 +269,7 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
         MAX_ITERATIONS + FORCE_LIMIT turns total, regardless of which branch
         it keeps landing in.
 
-        Does NOT set state["error"] itself — this function runs as part of
-        parse_and_dispatch, a conditional-edge router, and LangGraph does not
-        merge state mutations made inside routers back into the graph's real
-        state (only a node's return value is merged). The "error" routing key
-        leads to error_node, a real node, which sets state["error"] properly.
-        """
+        Does NOT set state["error"] itself — routers can't persist state mutations, only a real node's return can; error_node (below) does it."""
         forces = state.get("_force_count", 0)
         if forces < FORCE_LIMIT:
             return "force"
@@ -366,8 +363,13 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
             logger.exception("Tool %s failed", action)
             result = json.dumps({"error": str(exc)}, ensure_ascii=False)
 
-        # Truncate huge results to keep context manageable
-        result_str = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+        result_str_full = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+        state["sources_used"] = _accumulate_sources(
+            state.get("sources_used") or _EMPTY_SOURCES, action, args, result_str_full
+        )
+
+        # Truncate for context, but source extraction above already saw the full result
+        result_str = result_str_full
         if len(result_str) > 4000:
             result_str = result_str[:4000] + "\n…(truncated)"
 
@@ -379,45 +381,71 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
         return state
 
     def checklist_node(state: AssessmentState) -> AssessmentState:
-        """Build an explicit checklist of rubric sub-criteria to check, once
-        per indicator, from whatever the rubric tool returned. Same
-        soft-guidance behavior as agent.graph's checklist_node — never
-        blocks the flow, and a missing checklist item is a valid reason for
-        a conservative score rather than something that must be forced."""
+        """Build a rubric checklist (soft guidance) and auto-inject any tagged evidence for this indicator."""
         state["_checklist_built"] = True
-
-        rubric_text = _find_reasoning_tool_result(state["messages"], "get_indicator_rubric")
-        if not rubric_text:
-            state["checklist"] = None
-            return state
+        indicator = state["indicator_row"]
 
         try:
-            prompt = CHECKLIST_PROMPT_TEMPLATE.format(rubric_text=rubric_text[:2000])
-            response = llm.invoke([HumanMessage(content=prompt)])
-            checklist = parse_checklist(response.content or "")
+            evidence_raw = search_evidence_documents.invoke({"query": indicator.kriteria})
+            evidence_items = json.loads(evidence_raw)
         except Exception:
-            checklist = []
+            evidence_items = []
 
-        state["checklist"] = checklist or None
-
-        if checklist:
-            bullet_list = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(checklist))
+        if evidence_items:
+            entities = sorted({item.get("entity") for item in evidence_items if item.get("entity")})
             state["messages"].append(
                 HumanMessage(
                     content=(
-                        "Checklist kriteria yang WAJIB dicek untuk indikator ini "
-                        "(hasil analisis rubrik):\n"
-                        f"{bullet_list}\n\n"
-                        "Pastikan bukti untuk tiap poin sudah dicari sebelum memberi jawaban "
-                        "final. Jika bukti untuk suatu poin tidak ditemukan, itu sah — "
-                        "sebutkan di justifikasi.\n\n"
+                        f"Ditemukan {len(entities)} dokumen bukti pendukung yang di-tag ke "
+                        f"indikator ini ({', '.join(entities)}). Isi relevan sudah diambil "
+                        f"otomatis:\n\n{evidence_raw}\n\n"
+                        "WAJIB pertimbangkan dokumen ini sebagai bukti independen saat "
+                        "menyusun skor dan justifikasi — JANGAN abaikan hanya karena LED/LKPS "
+                        "terasa sudah cukup.\n\n"
                         "Lanjutkan dengan JSON satu baris seperti biasa."
                     )
                 )
             )
+            state["sources_used"] = _accumulate_sources(
+                state.get("sources_used") or _EMPTY_SOURCES,
+                "search_evidence_documents", {}, evidence_raw,
+            )
+
+        rubric_text = _find_reasoning_tool_result(state["messages"], "get_indicator_rubric")
+        checklist: list = []
+        if rubric_text:
+            try:
+                prompt = CHECKLIST_PROMPT_TEMPLATE.format(rubric_text=rubric_text[:2000])
+                response = llm.invoke([HumanMessage(content=prompt)])
+                checklist = parse_checklist(response.content or "")
+            except Exception:
+                checklist = []
+
+            state["checklist"] = checklist or None
+
+            if checklist:
+                bullet_list = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(checklist))
+                state["messages"].append(
+                    HumanMessage(
+                        content=(
+                            "Checklist kriteria yang WAJIB dicek untuk indikator ini "
+                            "(hasil analisis rubrik):\n"
+                            f"{bullet_list}\n\n"
+                            "Pastikan bukti untuk tiap poin sudah dicari sebelum memberi jawaban "
+                            "final. Jika bukti untuk suatu poin tidak ditemukan, itu sah — "
+                            "sebutkan di justifikasi.\n\n"
+                            "Lanjutkan dengan JSON satu baris seperti biasa."
+                        )
+                    )
+                )
+        else:
+            state["checklist"] = None
 
         steps = state.get("reasoning_steps", [])
-        state["reasoning_steps"] = list(steps) + [{"checklist": checklist}]
+        state["reasoning_steps"] = list(steps) + [
+            {"checklist": checklist},
+            {"evidence_auto_check": evidence_items or None},
+        ]
         return state
 
     def force_finalize_node(state: AssessmentState) -> AssessmentState:
@@ -500,9 +528,7 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
         return "agent" if state.get("_checklist_built") else "checklist"
 
     def error_node(state: AssessmentState) -> AssessmentState:
-        """Reached when FORCE_LIMIT is exhausted without ever producing a
-        valid {"action": "final", ...}. A real node (unlike parse_and_dispatch,
-        a router) so this mutation actually persists — see _force_or_give_up."""
+        """Real node that sets state["error"] once FORCE_LIMIT is exhausted — see _force_or_give_up."""
         state["error"] = (
             "Model tidak menghasilkan format final yang valid "
             "setelah batas percobaan force-finalize tercapai."

@@ -377,12 +377,7 @@ def build_eval_samples(
         except Exception as exc:
             logger.warning("Could not load Supabase justifications: %s", exc)
 
-    # When a session is given, evaluate the indicators actually scored in
-    # that session — not blindly the first n_indicators of the full rubric
-    # list. Without this, a session whose only scored indicator is e.g. 31
-    # would silently evaluate a synthetic response for indicator 1 instead
-    # (since 1 is always first), invalidating the score while still
-    # reporting it as if it were real.
+    # Evaluate the indicators actually scored in the session, not blindly the first n_indicators
     if real_justifications:
         target_rubrics = [r for r in rubrics if r.no in real_justifications][:n_indicators]
     else:
@@ -410,17 +405,7 @@ def build_eval_samples(
             logger.warning("LED search failed for indicator %d: %s", rubric.no, exc)
             contexts = []
 
-        # Retrieve evidence document chunks tagged to this indicator too —
-        # without this, a justification correctly grounded in an uploaded
-        # evidence document (not the LED) gets scored as unsupported/
-        # hallucinated by faithfulness, since the metric only ever sees
-        # what's in retrieved_contexts. accreditation_set_id defaults to
-        # the same "local" placeholder as tenant_id/dokumen_id above; if
-        # that set has no tagged evidence, list_available_evidence_ids just
-        # returns [] and search_evidence short-circuits, so this is a no-op
-        # rather than an error for the common case (matrix.json-based
-        # rubrics predate the accreditation-set model, so most eval runs
-        # won't have real tags here).
+        # Tagged evidence-document chunks too, so faithfulness doesn't see LED-only context
         try:
             from vectorstore.pgvector_evidence_store import list_available_evidence_ids, search_evidence
 
@@ -430,13 +415,7 @@ def build_eval_samples(
         except Exception as exc:
             logger.warning("Evidence search failed for indicator %d: %s", rubric.no, exc)
 
-        # Retrieve LKPS table data for indicators whose scoring depends on it
-        # (quantitative/composite score_type) — without this, a justification
-        # correctly computed from LKPS numbers (e.g. a percentage) looks
-        # unsupported to faithfulness, since the metric only ever sees LED +
-        # evidence-document text, never the quantitative source data the
-        # agent actually used. Reuses the same tool the agent calls, so the
-        # context matches exactly what was available to it.
+        # LKPS table data for quantitative/composite indicators, same reason as evidence above
         for table_ref in rubric.lkps_table_ref or []:
             try:
                 from agent.tools.lkps_tool import get_lkps_table
@@ -604,8 +583,21 @@ def run_ragas_evaluation(
         "session_id": session_id,
         "scores": scores,
         "per_indicator": per_indicator,
+        "assessor_model": _get_assessor_model(session_id) if session_id else None,
         **get_active_llm_config(model=model),
     }
+
+
+def _get_assessor_model(session_id: str) -> Optional[str]:
+    """Which model(s) actually scored this session's indicators, from IndicatorResult.model."""
+    from db.postgres_client import get_indicator_results
+
+    try:
+        models = {r["model"] for r in get_indicator_results(session_id) if r.get("model")}
+    except Exception as exc:
+        logger.warning("Could not look up assessor_model for session %s: %s", session_id, exc)
+        return None
+    return ", ".join(sorted(models)) if models else None
 
 
 def score_single_sample(

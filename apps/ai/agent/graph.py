@@ -11,6 +11,7 @@ parse_output extracts score, justification, confidence, and recommendation.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -37,6 +38,44 @@ TOOLS = [
     get_lkps_table,
     compute_formula_score,
 ]
+
+_EMPTY_SOURCES: dict = {"led_chunks": [], "lkps_tables": [], "evidence_documents": []}
+
+
+def _accumulate_sources(sources: dict, tool_name: str, args: dict, result_content: str) -> dict:
+    """Merge a retrieval tool's own JSON result into `sources` for report traceability; returns a new dict, never raises."""
+    led_chunks = list(sources.get("led_chunks", []))
+    lkps_tables = list(sources.get("lkps_tables", []))
+    evidence_documents = list(sources.get("evidence_documents", []))
+
+    try:
+        if tool_name == "search_led_evidence":
+            for item in json.loads(result_content):
+                entry = {k: item[k] for k in ("page", "paragraph", "section") if item.get(k) is not None}
+                if entry and entry not in led_chunks:
+                    led_chunks.append(entry)
+        elif tool_name == "get_lkps_table":
+            table_ref = args.get("table_reference")
+            try:
+                is_error = "error" in json.loads(result_content)
+            except (json.JSONDecodeError, TypeError):
+                is_error = False  # a markdown table string means success
+            if table_ref and not is_error and table_ref not in lkps_tables:
+                lkps_tables.append(table_ref)
+        elif tool_name == "search_evidence_documents":
+            # entity is the only citation field the tool's JSON exposes (no filename/id)
+            for item in json.loads(result_content):
+                entity = item.get("entity")
+                if entity and entity not in evidence_documents:
+                    evidence_documents.append(entity)
+    except Exception:
+        pass
+
+    return {
+        "led_chunks": led_chunks,
+        "lkps_tables": lkps_tables,
+        "evidence_documents": evidence_documents,
+    }
 
 # Reasoning models that emit <think>...</think> and lack native tool-calling
 # on Ollama. Override per-deployment with REASONING_MODEL_PATTERNS env var
@@ -272,8 +311,6 @@ def parse_judge_verdict(text: str) -> Optional[dict]:
     <think> blocks (reasoning-model judges), code fences, and surrounding
     prose, since the judge is a separate, independently-configured model
     that isn't guaranteed to follow the "JSON only" instruction perfectly."""
-    import json
-
     cleaned = _JUDGE_THINK_RE.sub("", text or "").strip()
 
     fenced = _JUDGE_CODE_FENCE_RE.findall(cleaned)
@@ -359,64 +396,91 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
     tool_node = ToolNode(TOOLS)
 
     def tools_node(state: AssessmentState) -> AssessmentState:
-        """Run the real ToolNode, then bump the round counter should_continue
-        checks against MAX_TOOL_CALLS.
-
-        ToolNode.invoke() returns only the NEW ToolMessages it just produced
-        (a delta), not the full accumulated message history. AssessmentState.
-        messages has no reducer (unlike LangGraph's standard MessagesState),
-        so returning that delta as-is for "messages" makes LangGraph's
-        default last-write-wins merge REPLACE the whole conversation with
-        it -- silently dropping the SystemMessage and every earlier turn
-        from this point on. Must reattach the delta onto the existing
-        history before returning."""
+        """Run ToolNode, reattach its delta onto full history (no reducer, else LangGraph drops it), track sources_used."""
         result = tool_node.invoke(state)
+        new_tool_messages = result["messages"]
         result["_tool_call_count"] = state.get("_tool_call_count", 0) + 1
-        result["messages"] = list(state["messages"]) + result["messages"]
+
+        last_ai_message = state["messages"][-1]
+        tool_calls_by_id = {
+            call.get("id"): call for call in getattr(last_ai_message, "tool_calls", None) or []
+        }
+        sources = state.get("sources_used") or _EMPTY_SOURCES
+        for msg in new_tool_messages:
+            call = tool_calls_by_id.get(getattr(msg, "tool_call_id", None))
+            if call is not None:
+                sources = _accumulate_sources(sources, call["name"], call.get("args") or {}, msg.content)
+        result["sources_used"] = sources
+        result["messages"] = list(state["messages"]) + new_tool_messages
         return result
 
     # ── Node: checklist (runs once, right after the first tool round) ────────
 
     def checklist_node(state: AssessmentState) -> AssessmentState:
-        """Build an explicit checklist of rubric sub-criteria to check, once
-        per indicator, from whatever the rubric tool returned. Injected as
-        guidance, not hard-enforced — a model that genuinely finds no
-        evidence for an item can still score conservatively per the system
-        prompt's "bukti tidak ditemukan" escape hatch. Never blocks the flow:
-        a failed checklist call just skips straight to the agent."""
+        """Build a rubric checklist (soft guidance) and auto-inject any tagged evidence for this indicator."""
         state["_checklist_built"] = True
-
-        rubric_text = find_tool_result(state["messages"], "get_indicator_rubric")
-        if not rubric_text:
-            state["checklist"] = None
-            return state
+        indicator = state["indicator_row"]
 
         try:
-            prompt = CHECKLIST_PROMPT_TEMPLATE.format(rubric_text=rubric_text[:2000])
-            response = llm.invoke([HumanMessage(content=prompt)])
-            checklist = parse_checklist(response.content or "")
+            evidence_raw = search_evidence_documents.invoke({"query": indicator.kriteria})
+            evidence_items = json.loads(evidence_raw)
         except Exception:
-            checklist = []
+            evidence_items = []
 
-        state["checklist"] = checklist or None
-
-        if checklist:
-            bullet_list = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(checklist))
+        if evidence_items:
+            entities = sorted({item.get("entity") for item in evidence_items if item.get("entity")})
             state["messages"].append(
                 HumanMessage(
                     content=(
-                        "Checklist kriteria yang WAJIB dicek untuk indikator ini "
-                        "(hasil analisis rubrik):\n"
-                        f"{bullet_list}\n\n"
-                        "Pastikan bukti untuk tiap poin sudah dicari sebelum memberi skor "
-                        "final. Jika bukti untuk suatu poin tidak ditemukan, itu sah — "
-                        "sebutkan di justifikasi."
+                        f"Ditemukan {len(entities)} dokumen bukti pendukung yang di-tag ke "
+                        f"indikator ini ({', '.join(entities)}). Isi relevan sudah diambil "
+                        f"otomatis:\n\n{evidence_raw}\n\n"
+                        "WAJIB pertimbangkan dokumen ini sebagai bukti independen saat "
+                        "menyusun skor dan justifikasi — JANGAN abaikan hanya karena LED/LKPS "
+                        "terasa sudah cukup."
                     )
                 )
             )
+            # Bypasses the normal tools_node dispatch, so record it into sources_used explicitly
+            state["sources_used"] = _accumulate_sources(
+                state.get("sources_used") or _EMPTY_SOURCES,
+                "search_evidence_documents", {}, evidence_raw,
+            )
+
+        rubric_text = find_tool_result(state["messages"], "get_indicator_rubric")
+        checklist: list = []
+        if rubric_text:
+            try:
+                prompt = CHECKLIST_PROMPT_TEMPLATE.format(rubric_text=rubric_text[:2000])
+                response = llm.invoke([HumanMessage(content=prompt)])
+                checklist = parse_checklist(response.content or "")
+            except Exception:
+                checklist = []
+
+            state["checklist"] = checklist or None
+
+            if checklist:
+                bullet_list = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(checklist))
+                state["messages"].append(
+                    HumanMessage(
+                        content=(
+                            "Checklist kriteria yang WAJIB dicek untuk indikator ini "
+                            "(hasil analisis rubrik):\n"
+                            f"{bullet_list}\n\n"
+                            "Pastikan bukti untuk tiap poin sudah dicari sebelum memberi skor "
+                            "final. Jika bukti untuk suatu poin tidak ditemukan, itu sah — "
+                            "sebutkan di justifikasi."
+                        )
+                    )
+                )
+        else:
+            state["checklist"] = None
 
         steps = state.get("reasoning_steps", [])
-        state["reasoning_steps"] = list(steps) + [{"checklist": checklist}]
+        state["reasoning_steps"] = list(steps) + [
+            {"checklist": checklist},
+            {"evidence_auto_check": evidence_items or None},
+        ]
         return state
 
     # ── Node: agent ──────────────────────────────────────────────────────────
@@ -540,33 +604,17 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
     # ── Node: parse_output ────────────────────────────────────────────────────
 
     def parse_output_node(state: AssessmentState) -> AssessmentState:
-        """Extract score, justification, confidence, and recommendation from the final LLM message.
-
-        Permissive parser — handles plain (SKOR: 3), markdown bold (**Skor:** 3),
-        heading (## Skor Akhir: 3), and case variations. The SKOR value is
-        looked up ONLY in the text before the first JUSTIFIKASI/CONFIDENCE/
-        REKOMENDASI label, not the whole message — a stray formula reference
-        like "...skor dihitung memakai rumus Skor = 1 + (6 x PDSK)" inside
-        JUSTIFIKASI's own prose is numerically valid (0-4) and, scanned
-        across the WHOLE message, wins under a naive "take the last valid
-        match" rule whenever it appears after the real "SKOR: 3" line —
-        silently overriding the correct score with a fragment of the
-        formula's own definition (verified against a real production
-        response for a formula-scored indicator).
-        """
+        """Extract score/justification/confidence/recommendation; SKOR is only searched before the first JUSTIFIKASI/CONFIDENCE/REKOMENDASI label, so a formula mention inside JUSTIFIKASI can't be mistaken for it."""
         last_content = state["messages"][-1].content
         # Strip markdown noise that confuses regex
         cleaned = re.sub(r"\*{1,3}|`+|#+\s*", "", last_content)
 
-        # Anything from the first JUSTIFIKASI/CONFIDENCE/REKOMENDASI label
-        # onward is that field's own prose, not more SKOR content.
+        # Cut off at the first JUSTIFIKASI/CONFIDENCE/REKOMENDASI label
         other_label = re.search(
             r"(?im)^\s*(?:justifikasi|confidence|rekomendasi)\s*[:=]", cleaned
         )
         skor_section = cleaned[: other_label.start()] if other_label else cleaned
 
-        # Find "skor[ final|akhir]: <number>" lines only (anchored to line
-        # start), within skor_section; take the last numeric one in 0..4 range.
         score_candidates = re.findall(
             r"(?im)^\s*skor(?:\s+(?:final|akhir))?\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)",
             skor_section,

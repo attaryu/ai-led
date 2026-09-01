@@ -75,6 +75,7 @@ def _run_one(graph, indicator: _Indicator) -> dict:
         "confidence": None,
         "recommendation": None,
         "error": None,
+        "sources_used": None,
     }
     t0 = time.time()
     try:
