@@ -15,6 +15,7 @@ import { Role } from '@ai-led/db';
 import { requireEnv } from '../config/env';
 import { Protected } from '../tenant/protected.decorator';
 import { AssessmentService } from './assessment.service';
+import { RunEvalDto } from './dto/run-eval.dto';
 import { UpsertVerdictDto } from './dto/upsert-verdict.dto';
 
 const READ_ROLES = [Role.PIMPINAN, Role.PENJAMIN_MUTU, Role.PENYUSUN];
@@ -70,6 +71,50 @@ export class AssessmentController {
     @Query('indicatorNo', ParseIntPipe) indicatorNo: number,
   ) {
     return this.assessmentService.findReasoning(id, indicatorNo);
+  }
+
+  /** Proxy to apps/ai's POST /eval/run — starts a RAGAS quality eval reading real justifications from this session. */
+  @Post('assessment-sessions/:id/eval')
+  @Protected(...READ_ROLES)
+  async runEval(@Param('id') id: string, @Body() dto: RunEvalDto) {
+    const aiServiceUrl = requireEnv('AI_SERVICE_URL');
+
+    let upstream: globalThis.Response;
+    try {
+      upstream = await fetch(`${aiServiceUrl}/eval/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: id, n_indicators: dto.nIndicators }),
+      });
+    } catch {
+      throw new BadGatewayException('AI service tidak dapat dihubungi');
+    }
+
+    if (!upstream.ok) {
+      throw new BadGatewayException('Gagal memulai evaluasi RAGAS');
+    }
+
+    return upstream.json();
+  }
+
+  /** Proxy to apps/ai's GET /eval/{eval_id}/results — poll for RAGAS eval progress/result. */
+  @Get('assessment-eval/:evalId')
+  @Protected(...READ_ROLES)
+  async findEvalResult(@Param('evalId') evalId: string) {
+    const aiServiceUrl = requireEnv('AI_SERVICE_URL');
+
+    let upstream: globalThis.Response;
+    try {
+      upstream = await fetch(`${aiServiceUrl}/eval/${evalId}/results`);
+    } catch {
+      throw new BadGatewayException('AI service tidak dapat dihubungi');
+    }
+
+    if (!upstream.ok) {
+      throw new BadGatewayException('Gagal memuat hasil evaluasi RAGAS');
+    }
+
+    return upstream.json();
   }
 
   @Get('dokumen/:dokumenId/assessment-verdicts')

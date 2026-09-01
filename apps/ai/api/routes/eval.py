@@ -78,6 +78,7 @@ class EvalResultResponse(BaseModel):
     eval_id: str
     status: str                     # pending | running | completed | failed
     n_samples: Optional[int] = None
+    total_chunks: Optional[int] = None
     session_id: Optional[str] = None
     scores: Optional[dict] = None
     per_indicator: Optional[list] = None
@@ -156,6 +157,7 @@ def _run_evaluation_background(
             {
                 "status": "completed",
                 "n_samples": result.get("n_samples"),
+                "total_chunks": result.get("total_chunks"),
                 "session_id": result.get("session_id"),
                 "scores": result.get("scores"),
                 "per_indicator": result.get("per_indicator"),
@@ -299,6 +301,7 @@ def get_eval_results(eval_id: str) -> EvalResultResponse:
         eval_id=eval_id,
         status=state["status"],
         n_samples=state.get("n_samples"),
+        total_chunks=state.get("total_chunks"),
         session_id=state.get("session_id"),
         scores=state.get("scores"),
         per_indicator=state.get("per_indicator"),

@@ -573,6 +573,7 @@ def run_ragas_evaluation(
 
     return {
         "n_samples": len(samples),
+        "total_chunks": sum(len(s.retrieved_contexts) for s in samples),
         "session_id": session_id,
         "scores": scores,
         "per_indicator": per_indicator,

@@ -1,5 +1,6 @@
-import { mapResult, mapSession } from '../backend-mappers';
+import { mapEvalResult, mapResult, mapSession } from '../backend-mappers';
 import { assessmentRemoteSource, type TriggerAssessmentPayload } from '../sources/remote/assessment.remote-source';
+import { type AssessmentQuality } from '../../domain/entities/assessment-quality.entity';
 import { type AssessmentSessionEntity } from '../../domain/entities/assessment-session.entity';
 import { type IndicatorResultEntity } from '../../domain/entities/indicator-result.entity';
 
@@ -35,5 +36,28 @@ export const assessmentSessionRepository = {
 	/** Minta job yang sedang berjalan berhenti — lihat catatan di remote-source. */
 	cancel(jobId: string) {
 		return assessmentRemoteSource.cancel(jobId);
+	},
+
+	/** Mulai evaluasi RAGAS atas sesi ini, balikin id evaluasi untuk dipantau lewat `findEvalResult`. */
+	async runEval(sessionId: string, nIndicators: number): Promise<string> {
+		const { eval_id: evalId } = await assessmentRemoteSource.runEval(
+			sessionId,
+			nIndicators,
+		);
+		return evalId;
+	},
+
+	/** Poll satu evaluasi RAGAS — `kualitas` cuma terisi saat `status === 'completed'`. */
+	async findEvalResult(evalId: string): Promise<{
+		status: 'pending' | 'running' | 'completed' | 'failed';
+		kualitas: AssessmentQuality | null;
+		error: string | null;
+	}> {
+		const row = await assessmentRemoteSource.findEvalResult(evalId);
+		return {
+			status: row.status,
+			kualitas: mapEvalResult(row),
+			error: row.error,
+		};
 	},
 };

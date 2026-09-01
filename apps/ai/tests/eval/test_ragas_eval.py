@@ -482,6 +482,7 @@ def test_run_ragas_evaluation_looks_up_assessor_model_when_session_given():
         result = run_ragas_evaluation(n_indicators=1, session_id="sess-1", metrics_to_run=["faithfulness"])
 
     assert result["assessor_model"] == "deepseek-r1:32b"
+    assert result["total_chunks"] == 1
 
 
 def test_run_ragas_evaluation_assessor_model_none_without_session():

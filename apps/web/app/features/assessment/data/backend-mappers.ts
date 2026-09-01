@@ -1,9 +1,14 @@
+import {
+	type AmiRagasMetrik,
+	type AssessmentQuality,
+} from '../domain/entities/assessment-quality.entity';
 import { type AssessmentSessionEntity } from '../domain/entities/assessment-session.entity';
 import { type AssessmentVerdictEntity } from '../domain/entities/assessment-verdict.entity';
 import { type IndicatorResultEntity } from '../domain/entities/indicator-result.entity';
 import {
 	type BackendAssessmentSession,
 	type BackendAssessmentVerdict,
+	type BackendEvalResult,
 	type BackendIndicatorResult,
 } from './sources/remote/assessment.remote-source';
 
@@ -49,6 +54,40 @@ export function mapResult(row: BackendIndicatorResult): IndicatorResultEntity {
 		rekomendasi: row.recommendation,
 		error: row.error,
 		dinilaiPada: row.createdAt,
+	};
+}
+
+/** RAGAS asli tidak menyertakan alasan per metrik (angkanya murni numerik) — sama seperti chapter/ragas-score, lihat backend-mappers.ts fitur chapter. */
+const ALASAN_RAGAS_PENILAIAN =
+	'Dihitung otomatis oleh evaluasi RAGAS terhadap potongan sumber (LED, LKPS, bukti dukung) yang diambil untuk penilaian ini.';
+
+/** `null` bila evaluasi belum selesai (`status` masih `pending`/`running`) atau gagal. */
+export function mapEvalResult(row: BackendEvalResult): AssessmentQuality | null {
+	if (row.status !== 'completed' || !row.scores || !row.per_indicator || !row.model) {
+		return null;
+	}
+
+	const metrik = (Object.entries(row.scores) as [AmiRagasMetrik, number][]).map(
+		([nama, nilai]) => ({ metrik: nama, nilai, alasan: ALASAN_RAGAS_PENILAIAN }),
+	);
+
+	const perIndikator = row.per_indicator
+		.filter(
+			(item): item is typeof item & { context_recall: number; faithfulness: number } =>
+				item.context_recall !== undefined && item.faithfulness !== undefined,
+		)
+		.map((item) => ({
+			indikatorNo: item.indicator_no,
+			contextRecall: item.context_recall,
+			faithfulness: item.faithfulness,
+		}));
+
+	return {
+		metrik,
+		perIndikator,
+		jumlahChunk: row.total_chunks ?? 0,
+		judgeModel: row.model,
+		dihitungPada: row.finished_at ?? new Date().toISOString(),
 	};
 }
 

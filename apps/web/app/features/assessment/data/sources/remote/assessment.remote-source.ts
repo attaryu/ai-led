@@ -62,6 +62,41 @@ export type BackendJob = {
 	status: 'WAITING' | 'ACTIVE' | 'COMPLETED' | 'FAILED';
 };
 
+export type BackendRunEvalResponse = {
+	eval_id: string;
+	message: string;
+	n_indicators: number;
+};
+
+/** Bentuk mentah `apps/ai`'s `EvalResultResponse` (snake_case, apa adanya dari proxy). */
+export type BackendEvalResult = {
+	eval_id: string;
+	status: 'pending' | 'running' | 'completed' | 'failed';
+	n_samples: number | null;
+	total_chunks: number | null;
+	session_id: string | null;
+	scores: {
+		faithfulness?: number;
+		answer_relevancy?: number;
+		context_precision?: number;
+		context_recall?: number;
+	} | null;
+	per_indicator:
+		| {
+				indicator_no: number;
+				faithfulness?: number;
+				answer_relevancy?: number;
+				context_precision?: number;
+				context_recall?: number;
+		  }[]
+		| null;
+	provider: string | null;
+	model: string | null;
+	assessor_model: string | null;
+	finished_at: string | null;
+	error: string | null;
+};
+
 export type TriggerAssessmentPayload = {
 	indikatorList?: number[];
 	sumberLed?: LedSourceMode;
@@ -154,5 +189,18 @@ export const assessmentRemoteSource = {
 	 * asesmen. */
 	cancel(jobId: string): Promise<void> {
 		return apiFetch<void>(`/jobs/${jobId}/cancel`, { method: 'POST' });
+	},
+
+	/** Mulai evaluasi RAGAS (apps/ai POST /eval/run) atas justifikasi nyata sesi ini. */
+	runEval(sessionId: string, nIndicators: number): Promise<BackendRunEvalResponse> {
+		return apiFetch<BackendRunEvalResponse>(
+			`/assessment-sessions/${sessionId}/eval`,
+			{ method: 'POST', body: { nIndicators } },
+		);
+	},
+
+	/** Poll hasil/progress satu evaluasi RAGAS. */
+	findEvalResult(evalId: string): Promise<BackendEvalResult> {
+		return apiFetch<BackendEvalResult>(`/assessment-eval/${evalId}`);
 	},
 };
