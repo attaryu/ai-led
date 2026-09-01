@@ -197,17 +197,30 @@ LARANGAN KETAT:
 - DILARANG keluar dari loop tanpa SKOR/JUSTIFIKASI/CONFIDENCE/REKOMENDASI final
 - Jika bukti tidak cukup → tetap beri skor 0 atau 1 dengan justifikasi "bukti tidak ditemukan"
 
+ATURAN SKOR UNTUK INDIKATOR QUANTITATIVE/COMPOSITE (score_type dari
+get_indicator_rubric): rubrik jenis ini sudah memberi RUMUS eksplisit
+(mis. "Skor = 1 + (6 x PJP)") yang hasilnya BOLEH dan WAJAR berupa
+desimal — JANGAN dibulatkan ke bilangan bulat. Tulis HASIL PERHITUNGAN
+RUMUS APA ADANYA (mis. 3.6, bukan 4). Aturan ini TIDAK berlaku untuk
+indikator qualitative (skor tetap bilangan bulat 0-4 berdasarkan band
+rubrik paling sesuai).
+
 FORMAT OUTPUT FINAL (WAJIB tepat seperti ini, tanpa markdown apapun):
 
-SKOR: <angka 0-4, contoh: 3 atau 3.5>
+SKOR: <qualitative: bilangan bulat 0-4 sesuai band rubrik. quantitative/composite: hasil rumus apa adanya, boleh desimal>
 JUSTIFIKASI: <2-3 kalimat Bahasa Indonesia tentang dasar penilaian>
 CONFIDENCE: <angka 0.0-1.0, contoh: 0.85>
 REKOMENDASI: <2-3 kalimat Bahasa Indonesia, actionable, spesifik terhadap kekurangan. Jika skor sudah 4, tulis rekomendasi untuk mempertahankan praktik yang sudah baik>
 
-Contoh respons final yang BENAR:
+Contoh respons final yang BENAR (indikator qualitative, skor bulat):
 SKOR: 3
-JUSTIFIKASI: Program studi memiliki dokumen VMTS yang lengkap dan disusun secara partisipatif (LED hal. 30). LKPS menunjukkan 72% DTPS sesuai bidang keilmuan. Bukti memadai namun belum mencapai standar maksimal.
+JUSTIFIKASI: Program studi memiliki dokumen VMTS yang lengkap dan disusun secara partisipatif (LED hal. 30). LKPS menunjukkan 72% DTPS sesuai bidang keilmuan, seluruh kriteria band 3 terpenuhi.
 CONFIDENCE: 0.85
+
+Contoh respons final yang BENAR (indikator quantitative, skor apa adanya dari rumus — JANGAN dibulatkan):
+SKOR: 3.6
+JUSTIFIKASI: PJP = (3450/7950) x 100% = 43,4%. Karena PJP < 50%, Skor = 1 + (6 x 0,434) = 3,6.
+CONFIDENCE: 0.9
 REKOMENDASI: Tingkatkan persentase DTPS yang sesuai bidang keilmuan hingga di atas 80% melalui rekrutmen dosen baru atau penyesuaian penugasan mengajar."""
 
 # ---------------------------------------------------------------------------
@@ -276,6 +289,154 @@ def collect_evidence_text(
         if isinstance(msg, ToolMessage) and getattr(msg, "name", None) in tool_names:
             parts.append(f"[{msg.name}] {msg.content}")
     return "\n\n".join(parts)
+
+
+def has_called_tool(messages: list, tool_name: str) -> bool:
+    """Whether `tool_name` was called anywhere in the conversation so far."""
+    from langchain_core.messages import ToolMessage
+
+    return any(isinstance(m, ToolMessage) and getattr(m, "name", None) == tool_name for m in messages)
+
+
+def requires_formula_tool(rubric_json: Optional[str]) -> bool:
+    """Whether this indicator needs compute_formula_score (quantitative/composite with a formula), not hand-computed."""
+    if not rubric_json:
+        return False
+    try:
+        rubric = json.loads(rubric_json)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return (
+        isinstance(rubric, dict)
+        and rubric.get("score_type") in ("quantitative", "composite")
+        and bool(rubric.get("formula"))
+    )
+
+
+# ---------------------------------------------------------------------------
+# Decimal score refinement — shared by graph.py and reasoning_graph.py
+# ---------------------------------------------------------------------------
+# Two small structured LLM calls (diff two band texts, then verify each
+# extra aspect against evidence), computed in Python -- free-text arithmetic
+# for this was tried and verified unreliable in production.
+
+BAND_DIFF_PROMPT_TEMPLATE = """Bandingkan dua level kriteria penilaian akreditasi yang berurutan.
+
+KRITERIA BAND {base_band} (level tercapai):
+{base_text}
+
+KRITERIA BAND {next_band} (level di atasnya):
+{next_text}
+
+TUGAS: Sebutkan HANYA syarat/aspek baru di BAND {next_band} yang TIDAK ada
+di BAND {base_band}. Jika BAND {next_band} tidak punya tambahan yang jelas
+dibanding BAND {base_band}, jawab array kosong.
+
+Jawab HANYA JSON array of strings (maks 5 item, tiap item maks 15 kata),
+tanpa markdown atau penjelasan lain. Contoh: ["Melibatkan pemangku kepentingan eksternal", "Ditinjau berkala oleh unit penjaminan mutu"]"""
+
+VERIFY_ASPECTS_PROMPT_TEMPLATE = """BUKTI yang terkumpul untuk indikator ini:
+{evidence_text}
+
+RINGKASAN penilaian yang sudah dibuat:
+{justification}
+
+Untuk tiap aspek tambahan di bawah, apakah BUKTI di atas mendukungnya
+(minimal sebagian)?
+{items_list}
+
+Jawab HANYA JSON array of booleans, urutan sama seperti daftar, tanpa
+markdown atau penjelasan lain. Contoh untuk 3 aspek: [true, false, true]"""
+
+_JSON_ARRAY_RE = re.compile(r"\[.*\]", re.DOTALL)
+
+
+def _parse_json_array(text: str) -> Optional[list]:
+    """Best-effort JSON-array extraction, same tolerance as parse_judge_verdict."""
+    cleaned = re.sub(r"<think>.*?</think>", "", text or "", flags=re.DOTALL | re.IGNORECASE).strip()
+    cleaned = re.sub(r"```(?:json)?", "", cleaned).replace("```", "").strip()
+    match = _JSON_ARRAY_RE.search(cleaned)
+    if not match:
+        return None
+    try:
+        parsed = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, list) else None
+
+
+def compute_decimal_score(
+    rubric_json: Optional[str],
+    base_score: Optional[float],
+    evidence_text: str,
+    justification: str,
+    llm,
+) -> tuple[Optional[float], Optional[str]]:
+    """Refine a whole-number qualitative band score into a proportional decimal; (score, justification_suffix), unchanged/None if refinement doesn't apply."""
+    if base_score is None or not rubric_json:
+        return base_score, None
+    try:
+        rubric = json.loads(rubric_json)
+    except (json.JSONDecodeError, TypeError):
+        return base_score, None
+    if not isinstance(rubric, dict) or rubric.get("score_type") != "qualitative":
+        return base_score, None
+
+    base_band = int(base_score)
+    if not (0 <= base_band <= 3):
+        return base_score, None
+
+    score_criteria = rubric.get("score_criteria") or {}
+    base_text = score_criteria.get(str(base_band))
+    next_text = score_criteria.get(str(base_band + 1))
+    if not base_text or not next_text:
+        return base_score, None
+
+    try:
+        diff_prompt = BAND_DIFF_PROMPT_TEMPLATE.format(
+            base_band=base_band, next_band=base_band + 1,
+            base_text=base_text[:800], next_text=next_text[:800],
+        )
+        diff_response = llm.invoke([HumanMessage(content=diff_prompt)])
+        items = _parse_json_array(diff_response.content or "")
+    except Exception as exc:
+        logger.warning("compute_decimal_score: band-diff call failed: %s", exc)
+        return base_score, None
+
+    if not items:
+        return base_score, None
+    items = [str(item)[:200] for item in items if str(item).strip()][:5]
+    n = len(items)
+    if n == 0:
+        return base_score, None
+
+    try:
+        items_list = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(items))
+        verify_prompt = VERIFY_ASPECTS_PROMPT_TEMPLATE.format(
+            evidence_text=evidence_text[:3000] or "(tidak ada bukti tercatat)",
+            justification=(justification or "")[:1000],
+            items_list=items_list,
+        )
+        verify_response = llm.invoke([HumanMessage(content=verify_prompt)])
+        verdicts = _parse_json_array(verify_response.content or "")
+    except Exception as exc:
+        logger.warning("compute_decimal_score: verify call failed: %s", exc)
+        return base_score, None
+
+    if not isinstance(verdicts, list) or len(verdicts) != n:
+        return base_score, None
+
+    met_items = [item for item, verdict in zip(items, verdicts) if verdict is True]
+    m = len(met_items)
+    if m == 0:
+        return float(base_band), None
+    if m == n:
+        # All additional aspects met -- one full band higher, not recursed further against band+2
+        return float(base_band + 1), None
+
+    final_score = round(base_band + m / n, 1)
+    suffix = f" [{m}/{n} aspek tambahan band {base_band + 1} terpenuhi: {'; '.join(met_items)}]"
+    return final_score, suffix
 
 
 # ---------------------------------------------------------------------------
@@ -550,7 +711,15 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
 
         content = getattr(last, "content", "") or ""
         if _looks_like_finalized(content):
-            return "parse_output"
+            # A well-formatted answer without ever calling a tool is fabricated, not grounded
+            if state.get("_tool_call_count", 0) > 0:
+                rubric_json = find_tool_result(state["messages"], "get_indicator_rubric")
+                if requires_formula_tool(rubric_json) and not has_called_tool(
+                    state["messages"], "compute_formula_score"
+                ):
+                    return "force" if forces < FORCE_LIMIT else "give_up"
+                return "parse_output"
+            return "force" if forces < FORCE_LIMIT else "give_up"
 
         return "force" if forces < FORCE_LIMIT else "give_up"
 
@@ -588,17 +757,38 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
 
         forces = state.get("_force_count", 0)
         state["_force_count"] = forces + 1
-        state["messages"].append(
-            HumanMessage(
-                content=(
-                    "STOP. Batas iterasi tool tercapai atau Anda belum memberikan skor final. "
-                    "Output tool sebelumnya dari sistem, bukan user. "
-                    "Sekarang berikan HANYA 4 baris dengan format ini, tanpa pertanyaan balik:\n\n"
-                    "SKOR: <0-4>\nJUSTIFIKASI: <2-3 kalimat>\nCONFIDENCE: <0.0-1.0>\n"
-                    "REKOMENDASI: <2-3 kalimat actionable>"
-                )
-            )
+
+        rubric_json = find_tool_result(state["messages"], "get_indicator_rubric")
+        missing_formula_call = requires_formula_tool(rubric_json) and not has_called_tool(
+            state["messages"], "compute_formula_score"
         )
+
+        if state.get("_tool_call_count", 0) == 0:
+            nudge = (
+                "STOP. Anda mencoba memberi jawaban final tanpa pernah memanggil satu pun tool. "
+                "Jawaban seperti itu tidak berdasar pada bukti nyata. "
+                "WAJIB panggil get_indicator_rubric dan minimal satu tool pencarian bukti "
+                "(search_led_evidence/search_evidence_documents/get_lkps_table) terlebih dahulu "
+                "sebelum memberi skor final."
+            )
+        elif missing_formula_call:
+            nudge = (
+                "STOP. Indikator ini quantitative/composite dengan rumus scoring eksplisit "
+                "dari get_indicator_rubric. WAJIB panggil tool compute_formula_score untuk "
+                "menghitung skornya — JANGAN menghitung manual di kepala, karena rawan salah "
+                "menerapkan cabang rumus (band mana yang berlaku sesuai kondisinya) atau salah "
+                "aritmatika. Ambil variabel yang dibutuhkan dari LKPS/LED yang sudah dicari, "
+                "lalu panggil compute_formula_score sebelum memberi skor final."
+            )
+        else:
+            nudge = (
+                "STOP. Batas iterasi tool tercapai atau Anda belum memberikan skor final. "
+                "Output tool sebelumnya dari sistem, bukan user. "
+                "Sekarang berikan HANYA 4 baris dengan format ini, tanpa pertanyaan balik:\n\n"
+                "SKOR: <0-4>\nJUSTIFIKASI: <2-3 kalimat>\nCONFIDENCE: <0.0-1.0>\n"
+                "REKOMENDASI: <2-3 kalimat actionable>"
+            )
+        state["messages"].append(HumanMessage(content=nudge))
         return state
 
     # ── Node: parse_output ────────────────────────────────────────────────────
@@ -664,6 +854,21 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
 
         return state
 
+    # ── Node: decimal_refine (proportional band interpolation) ───────────────
+
+    def decimal_refine_node(state: AssessmentState) -> AssessmentState:
+        """Refine the agent's whole-number SKOR into a proportional decimal via compute_decimal_score."""
+        rubric_json = find_tool_result(state["messages"], "get_indicator_rubric")
+        evidence_text = collect_evidence_text(state["messages"])
+        refined_score, suffix = compute_decimal_score(
+            rubric_json, state.get("final_score"), evidence_text,
+            state.get("justification") or "", llm,
+        )
+        state["final_score"] = refined_score
+        if suffix:
+            state["justification"] = (state.get("justification") or "") + suffix
+        return state
+
     # ── Node: judge (independent post-hoc grounding check) ───────────────────
 
     def judge_node(state: AssessmentState) -> AssessmentState:
@@ -711,6 +916,7 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
     graph.add_node("checklist", checklist_node)
     graph.add_node("force", force_finalize_node)
     graph.add_node("parse_output", parse_output_node)
+    graph.add_node("decimal_refine", decimal_refine_node)
     graph.add_node("judge", judge_node)
     graph.add_node("give_up", give_up_node)
 
@@ -730,7 +936,8 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
     )
     graph.add_edge("checklist", "agent")
     graph.add_edge("force", "agent")
-    graph.add_edge("parse_output", "judge")
+    graph.add_edge("parse_output", "decimal_refine")
+    graph.add_edge("decimal_refine", "judge")
     graph.add_edge("judge", END)
     graph.add_edge("give_up", END)
 

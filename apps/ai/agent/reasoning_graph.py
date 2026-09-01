@@ -31,8 +31,10 @@ from agent.graph import (
     _accumulate_sources,
     _EMPTY_SOURCES,
     build_judge_llm,
+    compute_decimal_score,
     parse_checklist,
     parse_judge_verdict,
+    requires_formula_tool,
 )
 from agent.state import AssessmentState
 from agent.tools.evidence_tool import search_evidence_documents
@@ -67,7 +69,7 @@ Selesaikan penilaian SAMPAI keluar skor final.
 PROTOKOL: setiap respons HARUS berupa JSON satu baris. Pilih salah satu:
 
   {"action": "<tool_name>", "args": {<arguments>}}    ← panggil tool
-  {"action": "final", "score": <0-4>, "justification": "<2-3 kalimat>", "confidence": <0.0-1.0>, "recommendation": "<2-3 kalimat actionable, spesifik terhadap kekurangan. Jika skor sudah 4, tulis rekomendasi untuk mempertahankan praktik yang sudah baik>"}    ← skor final
+  {"action": "final", "score": <qualitative: bilangan bulat 0-4 sesuai band rubrik. quantitative/composite: hasil rumus apa adanya, BOLEH desimal, JANGAN dibulatkan>, "justification": "<2-3 kalimat>", "confidence": <0.0-1.0>, "recommendation": "<2-3 kalimat actionable, spesifik terhadap kekurangan. Jika skor sudah 4, tulis rekomendasi untuk mempertahankan praktik yang sudah baik>"}    ← skor final
 
 Tool yang tersedia:
 
@@ -86,6 +88,12 @@ ALUR WAJIB:
 4. (Opsional) get_lkps_table jika rubrik merujuk tabel LKPS
 5. (Opsional) compute_formula_score jika rubrik berbasis formula
 6. SELESAI dengan {"action": "final", ...}
+
+Contoh {"action": "final", ...} yang BENAR (indikator qualitative, skor bulat):
+{"action": "final", "score": 3, "justification": "Seluruh kriteria band 3 terpenuhi (dokumen VMTS lengkap, LED hal. 30; LKPS 72% DTPS sesuai bidang).", "confidence": 0.85, "recommendation": "Tingkatkan persentase DTPS yang sesuai bidang keilmuan hingga di atas 80% melalui rekrutmen dosen baru atau penyesuaian penugasan mengajar."}
+
+Contoh {"action": "final", ...} yang BENAR (indikator quantitative, skor apa adanya dari rumus — JANGAN dibulatkan):
+{"action": "final", "score": 3.6, "justification": "PJP = (3450/7950) x 100% = 43,4%. Karena PJP < 50%, Skor = 1 + (6 x 0,434) = 3,6.", "confidence": 0.9, "recommendation": "Tingkatkan proporsi jam pembelajaran praktik hingga mencapai 50-70% dari total jam pembelajaran."}
 
 LARANGAN KETAT:
 - DILARANG output teks selain JSON (tidak ada penjelasan, tidak ada markdown ```json)
@@ -298,6 +306,18 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
 
         action = parsed.get("action")
         if action == "final":
+            # A well-formatted final answer without ever calling a tool is fabricated, not grounded
+            has_called_a_tool = any(
+                isinstance(step, str) and step.startswith("tool:") for step in iters
+            )
+            if not has_called_a_tool:
+                return _force_or_give_up(state, "Tried to finalize without calling any tool")
+
+            rubric_json = _find_reasoning_tool_result(state["messages"], "get_indicator_rubric")
+            if requires_formula_tool(rubric_json) and "tool:compute_formula_score" not in iters:
+                return _force_or_give_up(
+                    state, "Quantitative/composite indicator finalized without calling compute_formula_score"
+                )
             return "finalize"
 
         if action in _TOOL_REGISTRY:
@@ -453,16 +473,44 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
         whatever evidence it already gathered, instead of giving up outright."""
         forces = state.get("_force_count", 0)
         state["_force_count"] = forces + 1
-        state["messages"].append(
-            HumanMessage(
-                content=(
-                    "STOP. Batas iterasi tercapai. Berikan HANYA satu baris JSON final "
-                    "sekarang, berdasarkan bukti yang sudah terkumpul:\n"
-                    '{"action": "final", "score": <0-4>, "justification": "<2-3 kalimat>", '
-                    '"confidence": <0.0-1.0>, "recommendation": "<2-3 kalimat actionable>"}'
-                )
-            )
+
+        iters = state.get("reasoning_steps", [])
+        has_called_a_tool = any(
+            isinstance(step, str) and step.startswith("tool:") for step in iters
         )
+        rubric_json = _find_reasoning_tool_result(state["messages"], "get_indicator_rubric")
+        missing_formula_call = (
+            has_called_a_tool
+            and requires_formula_tool(rubric_json)
+            and "tool:compute_formula_score" not in iters
+        )
+
+        if not has_called_a_tool:
+            nudge = (
+                "STOP. Anda mencoba menyelesaikan tanpa memanggil tool apapun. "
+                "Jawaban seperti itu tidak berdasar pada bukti nyata. "
+                "WAJIB panggil get_indicator_rubric dan minimal satu tool pencarian bukti "
+                "(search_led_evidence/search_evidence_documents/get_lkps_table) dulu, misal:\n"
+                '{"action": "get_indicator_rubric", "args": {"indicator_no": '
+                + str(state["indicator_row"].indicator_no) + "}}"
+            )
+        elif missing_formula_call:
+            nudge = (
+                "STOP. Indikator ini quantitative/composite dengan rumus scoring eksplisit "
+                "dari get_indicator_rubric. WAJIB panggil tool compute_formula_score untuk "
+                "menghitung skornya — JANGAN menghitung manual di kepala, karena rawan salah "
+                "menerapkan cabang rumus (band mana yang berlaku sesuai kondisinya) atau salah "
+                "aritmatika. Ambil variabel yang dibutuhkan dari LKPS/LED yang sudah dicari, "
+                "lalu panggil compute_formula_score sebelum memberi skor final."
+            )
+        else:
+            nudge = (
+                "STOP. Batas iterasi tercapai. Berikan HANYA satu baris JSON final "
+                "sekarang, berdasarkan bukti yang sudah terkumpul:\n"
+                '{"action": "final", "score": <0-4>, "justification": "<2-3 kalimat>", '
+                '"confidence": <0.0-1.0>, "recommendation": "<2-3 kalimat actionable>"}'
+            )
+        state["messages"].append(HumanMessage(content=nudge))
         return state
 
     def finalize_node(state: AssessmentState) -> AssessmentState:
@@ -489,6 +537,19 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
         state["justification"] = str(parsed.get("justification", ""))[:2000]
         state["confidence"] = conf_f
         state["recommendation"] = str(recommendation)[:500] if recommendation else None
+        return state
+
+    def decimal_refine_node(state: AssessmentState) -> AssessmentState:
+        """Refine the agent's whole-number score into a proportional decimal via compute_decimal_score."""
+        rubric_json = _find_reasoning_tool_result(state["messages"], "get_indicator_rubric")
+        evidence_text = _collect_reasoning_evidence_text(state["messages"])
+        refined_score, suffix = compute_decimal_score(
+            rubric_json, state.get("final_score"), evidence_text,
+            state.get("justification") or "", llm,
+        )
+        state["final_score"] = refined_score
+        if suffix:
+            state["justification"] = (state.get("justification") or "") + suffix
         return state
 
     def judge_node(state: AssessmentState) -> AssessmentState:
@@ -541,6 +602,7 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
     graph.add_node("checklist", checklist_node)
     graph.add_node("force", force_finalize_node)
     graph.add_node("finalize", finalize_node)
+    graph.add_node("decimal_refine", decimal_refine_node)
     graph.add_node("judge", judge_node)
     graph.add_node("error_node", error_node)
 
@@ -556,7 +618,8 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
     )
     graph.add_edge("checklist", "agent")
     graph.add_edge("force", "agent")
-    graph.add_edge("finalize", "judge")
+    graph.add_edge("finalize", "decimal_refine")
+    graph.add_edge("decimal_refine", "judge")
     graph.add_edge("judge", END)
 
     return graph.compile()

@@ -427,6 +427,95 @@ def test_checklist_node_auto_injects_tagged_evidence():
     assert result["sources_used"]["evidence_documents"] == ["SK Rektor 123"]
 
 
+def test_reasoning_graph_rejects_quantitative_finalize_without_formula_tool():
+    """A quantitative indicator finalized without calling compute_formula_score must be force-retried, not accepted (ariel 10f5a53)."""
+    from unittest.mock import MagicMock, patch
+
+    from langchain_core.messages import AIMessage
+    from llm.ollama_client import OllamaClient
+    from agent.reasoning_graph import build_reasoning_graph
+
+    rubric_tool_call = AIMessage(
+        content='{"action": "get_indicator_rubric", "args": {"indicator_no": 1}}'
+    )
+    checklist_response = AIMessage(content="- Item satu")
+    hand_computed_final = AIMessage(
+        content='{"action": "final", "score": 3.6, "justification": "Dihitung manual.", "confidence": 0.7, "recommendation": "-"}'
+    )
+    formula_tool_call = AIMessage(
+        content='{"action": "compute_formula_score", "args": {"formula_expression": "BOP / 5000000", "variables": {"BOP": 18000000}}}'
+    )
+    proper_final = AIMessage(
+        content='{"action": "final", "score": 3.6, "justification": "Dihitung via tool.", "confidence": 0.9, "recommendation": "-"}'
+    )
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = [
+        rubric_tool_call, checklist_response, hand_computed_final, formula_tool_call, proper_final,
+    ]
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="deepseek-r1:14b", timeout_seconds=30)
+
+    with (
+        patch("agent.reasoning_graph._build_reasoning_llm", return_value=fake_llm),
+        patch("agent.tools.rubric_tool._get_rubrics_for_set") as mock_rubrics,
+    ):
+        mock_rubrics.return_value = [
+            MagicMock(
+                no=1, kriteria="Pembiayaan", indikator="...", score_type="quantitative",
+                score_criteria={}, formula="BOP / 5000000", lkps_table_ref=["Tabel 2.b"],
+                sub_score_formula=None,
+            )
+        ]
+        graph = build_reasoning_graph(fake_client)
+        result = graph.invoke(_make_state(), config={"recursion_limit": 40})
+
+    assert result["final_score"] == 3.6
+    assert "tool:compute_formula_score" in result["reasoning_steps"]
+
+
+def test_reasoning_graph_qualitative_score_gets_decimal_refined():
+    from unittest.mock import MagicMock, patch
+
+    from langchain_core.messages import AIMessage
+    from llm.ollama_client import OllamaClient
+    from agent.reasoning_graph import build_reasoning_graph
+
+    rubric_tool_call = AIMessage(
+        content='{"action": "get_indicator_rubric", "args": {"indicator_no": 1}}'
+    )
+    checklist_response = AIMessage(content="- Item satu")
+    final_answer = AIMessage(
+        content='{"action": "final", "score": 3, "justification": "Bukti memadai.", "confidence": 0.8, "recommendation": "Lengkapi."}'
+    )
+    band_diff_response = AIMessage(content='["Aspek A", "Aspek B"]')
+    verify_response = AIMessage(content="[true, false]")
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = [
+        rubric_tool_call, checklist_response, final_answer, band_diff_response, verify_response,
+    ]
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="deepseek-r1:14b", timeout_seconds=30)
+
+    with (
+        patch("agent.reasoning_graph._build_reasoning_llm", return_value=fake_llm),
+        patch("agent.tools.rubric_tool._get_rubrics_for_set") as mock_rubrics,
+    ):
+        mock_rubrics.return_value = [
+            MagicMock(
+                no=1, kriteria="VMTS", indikator="...", score_type="qualitative",
+                score_criteria={"3": "Kriteria band 3.", "4": "Kriteria band 4."},
+                formula=None, lkps_table_ref=None, sub_score_formula=None,
+            )
+        ]
+        graph = build_reasoning_graph(fake_client)
+        result = graph.invoke(_make_state(), config={"recursion_limit": 40})
+
+    assert result["final_score"] == 3.5
+    assert "aspek tambahan" in result["justification"]
+
+
 # ── independent judge ───────────────────────────────────────────────────────
 
 

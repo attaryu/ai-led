@@ -450,6 +450,176 @@ def test_accumulate_sources_skips_lkps_error_result():
     assert sources["lkps_tables"] == []
 
 
+# ── decimal score refinement ────────────────────────────────────────────────
+
+
+def _decimal_rubric_json(score_type="qualitative"):
+    import json
+    return json.dumps({
+        "score_type": score_type,
+        "score_criteria": {"3": "Kriteria band 3.", "4": "Kriteria band 4."},
+        "formula": None,
+    })
+
+
+def test_compute_decimal_score_no_additional_aspects_keeps_whole_score():
+    from langchain_core.messages import AIMessage
+    from agent.graph import compute_decimal_score
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = AIMessage(content="[]")
+
+    score, suffix = compute_decimal_score(_decimal_rubric_json(), 3.0, "bukti", "justifikasi", fake_llm)
+    assert score == 3.0
+    assert suffix is None
+
+
+def test_compute_decimal_score_all_aspects_met_bumps_full_band():
+    from langchain_core.messages import AIMessage
+    from agent.graph import compute_decimal_score
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = [
+        AIMessage(content='["Aspek A", "Aspek B"]'),
+        AIMessage(content="[true, true]"),
+    ]
+
+    score, suffix = compute_decimal_score(_decimal_rubric_json(), 3.0, "bukti", "justifikasi", fake_llm)
+    assert score == 4.0
+    assert suffix is None
+
+
+def test_compute_decimal_score_partial_aspects_met_gives_proportional_decimal():
+    from langchain_core.messages import AIMessage
+    from agent.graph import compute_decimal_score
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = [
+        AIMessage(content='["Aspek A", "Aspek B"]'),
+        AIMessage(content="[true, false]"),
+    ]
+
+    score, suffix = compute_decimal_score(_decimal_rubric_json(), 3.0, "bukti", "justifikasi", fake_llm)
+    assert score == 3.5
+    assert "1/2" in suffix
+
+
+def test_compute_decimal_score_skips_quantitative_indicators():
+    from agent.graph import compute_decimal_score
+
+    fake_llm = MagicMock()
+    score, suffix = compute_decimal_score(
+        _decimal_rubric_json("quantitative"), 3.6, "bukti", "justifikasi", fake_llm
+    )
+    assert score == 3.6
+    assert suffix is None
+    fake_llm.invoke.assert_not_called()
+
+
+def test_compute_decimal_score_skips_when_already_at_band_4():
+    from agent.graph import compute_decimal_score
+
+    fake_llm = MagicMock()
+    score, suffix = compute_decimal_score(_decimal_rubric_json(), 4.0, "bukti", "justifikasi", fake_llm)
+    assert score == 4.0
+    assert suffix is None
+    fake_llm.invoke.assert_not_called()
+
+
+def test_graph_rejects_quantitative_finalize_without_formula_tool():
+    """A quantitative indicator finalized without calling compute_formula_score must be force-retried, not accepted (ariel 10f5a53)."""
+    from langchain_core.messages import AIMessage
+    from llm.ollama_client import OllamaClient
+    from agent.graph import build_graph
+
+    rubric_tool_call = AIMessage(
+        content="",
+        tool_calls=[{"name": "get_indicator_rubric", "args": {"indicator_no": 1}, "id": "call_1"}],
+    )
+    checklist_response = AIMessage(content="- Item satu")
+    hand_computed_final = AIMessage(
+        content="SKOR: 3.6\nJUSTIFIKASI: Dihitung manual.\nCONFIDENCE: 0.7\nREKOMENDASI: -"
+    )
+    formula_tool_call = AIMessage(
+        content="",
+        tool_calls=[{
+            "name": "compute_formula_score",
+            "args": {"formula_expression": "BOP / 5000000", "variables": {"BOP": 18000000}},
+            "id": "call_2",
+        }],
+    )
+    proper_final = AIMessage(
+        content="SKOR: 3.6\nJUSTIFIKASI: Dihitung via tool.\nCONFIDENCE: 0.9\nREKOMENDASI: -"
+    )
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = [
+        rubric_tool_call, checklist_response, hand_computed_final, formula_tool_call, proper_final,
+    ]
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
+
+    with (
+        patch("agent.graph._build_llm", return_value=fake_llm),
+        patch("agent.tools.rubric_tool._get_rubrics_for_set") as mock_rubrics,
+    ):
+        mock_rubrics.return_value = [
+            MagicMock(
+                no=1, kriteria="Pembiayaan", indikator="...", score_type="quantitative",
+                score_criteria={}, formula="BOP / 5000000", lkps_table_ref=["Tabel 2.b"],
+                sub_score_formula=None,
+            )
+        ]
+        graph = build_graph(fake_client)
+        result = graph.invoke(_make_state(), config={"recursion_limit": 40})
+
+    assert result["final_score"] == 3.6
+    formula_calls = [m for m in result["messages"] if getattr(m, "name", None) == "compute_formula_score"]
+    assert len(formula_calls) == 1
+
+
+def test_graph_qualitative_score_gets_decimal_refined():
+    """A qualitative indicator's whole-band SKOR is refined into a proportional decimal end-to-end."""
+    from langchain_core.messages import AIMessage
+    from llm.ollama_client import OllamaClient
+    from agent.graph import build_graph
+
+    rubric_tool_call = AIMessage(
+        content="",
+        tool_calls=[{"name": "get_indicator_rubric", "args": {"indicator_no": 1}, "id": "call_1"}],
+    )
+    checklist_response = AIMessage(content="- Item satu")
+    final_answer = AIMessage(
+        content="SKOR: 3\nJUSTIFIKASI: Bukti memadai.\nCONFIDENCE: 0.8\nREKOMENDASI: Lengkapi."
+    )
+    band_diff_response = AIMessage(content='["Melibatkan pemangku kepentingan eksternal", "Ditinjau berkala"]')
+    verify_response = AIMessage(content="[true, false]")
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = [
+        rubric_tool_call, checklist_response, final_answer, band_diff_response, verify_response,
+    ]
+
+    fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
+
+    with (
+        patch("agent.graph._build_llm", return_value=fake_llm),
+        patch("agent.tools.rubric_tool._get_rubrics_for_set") as mock_rubrics,
+    ):
+        mock_rubrics.return_value = [
+            MagicMock(
+                no=1, kriteria="VMTS", indikator="...", score_type="qualitative",
+                score_criteria={"3": "Kriteria band 3.", "4": "Kriteria band 4."},
+                formula=None, lkps_table_ref=None, sub_score_formula=None,
+            )
+        ]
+        graph = build_graph(fake_client)
+        result = graph.invoke(_make_state(), config={"recursion_limit": 40})
+
+    assert result["final_score"] == 3.5
+    assert "aspek tambahan" in result["justification"]
+
+
 # ── score_type scenarios (quantitative / composite, share the same tool loop) ───
 
 
@@ -761,6 +931,13 @@ def test_graph_force_retries_when_skor_present_but_no_justifikasi_marker():
     from llm.ollama_client import OllamaClient
     from agent.graph import build_graph
 
+    rubric_tool_call = AIMessage(
+        content="",
+        tool_calls=[
+            {"name": "get_indicator_rubric", "args": {"indicator_no": 1}, "id": "call_1"}
+        ],
+    )
+    checklist_response = AIMessage(content="- Item satu")
     garbled = AIMessage(content=(
         "## Evaluasi Indikator\n\n| Komponen | Keterangan |\n"
         "| --- | --- |\n| Skor: 4 | Melampaui target |\n\n---\n\n"
@@ -770,7 +947,7 @@ def test_graph_force_retries_when_skor_present_but_no_justifikasi_marker():
         content="SKOR: 4\nJUSTIFIKASI: Bukti lengkap dan valid.\nCONFIDENCE: 0.9"
     )
     fake_llm = MagicMock()
-    fake_llm.invoke.side_effect = [garbled, clean]
+    fake_llm.invoke.side_effect = [rubric_tool_call, checklist_response, garbled, clean]
 
     fake_judge_llm = MagicMock()
     fake_judge_llm.invoke.return_value = AIMessage(
@@ -784,11 +961,12 @@ def test_graph_force_retries_when_skor_present_but_no_justifikasi_marker():
     with (
         patch("agent.graph._build_llm", return_value=fake_llm),
         patch("agent.graph.build_judge_llm", return_value=fake_judge_llm),
+        patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[]),
     ):
         graph = build_graph(fake_client)
         result = graph.invoke(_make_state(), config={"recursion_limit": 40})
 
-    assert fake_llm.invoke.call_count == 2
+    assert fake_llm.invoke.call_count == 4
     assert result["final_score"] == 4.0
     assert result["justification"] == "Bukti lengkap dan valid."
     assert "Komponen" not in (result["justification"] or "")
