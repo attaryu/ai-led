@@ -7,7 +7,8 @@ import {
 } from '../../domain/entities/accreditation-set.entity';
 import { type CreateAccreditationSetDto } from '../../domain/dtos/create-accreditation-set.dto';
 import { type UpdateAccreditationSetDto } from '../../domain/dtos/update-accreditation-set.dto';
-import { mapCriterion, toCriterionPayload, toEntity, toListEntity } from '../backend-mappers';
+import { type ChapterTemplateEntity } from '../../domain/entities/chapter-template.entity';
+import { mapChapterTemplate, mapCriterion, toCriterionPayload, toEntity, toListEntity } from '../backend-mappers';
 import {
 	accreditationSetRemoteSource,
 	type BackendDocumentType,
@@ -236,5 +237,11 @@ export const accreditationSetRepository = {
 	async duplicate(setId: string): Promise<AccreditationSetEntity> {
 		const row = await accreditationSetRemoteSource.duplicate(setId);
 		return toEntity(row);
+	},
+
+	/** Struktur bab/sub-bab resmi set ini, terurut -- kosong kalau belum pernah diekstrak. */
+	async findChapterTemplates(setId: string): Promise<ChapterTemplateEntity[]> {
+		const rows = await accreditationSetRemoteSource.findChapterTemplates(setId);
+		return rows.map(mapChapterTemplate).sort((a, b) => a.urutan - b.urutan);
 	},
 };

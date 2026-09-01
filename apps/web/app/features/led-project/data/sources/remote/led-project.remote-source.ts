@@ -18,6 +18,7 @@ export type DokumenLedCreatePayload = {
 	title: string;
 	academicYear: string;
 	deadline?: string;
+	accreditationSetId?: string;
 };
 
 export type DokumenLedUpdatePayload = Partial<DokumenLedCreatePayload> & {

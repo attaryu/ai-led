@@ -131,6 +131,18 @@ export function ChapterGenerationPanel({
 		await sections.refetch();
 	}
 
+	async function handleCreateSection(title: string, guidance: string) {
+		await sections.createSection(title, guidance);
+	}
+
+	async function handleUpdateSection(sectionId: string, title: string, guidance: string) {
+		await sections.updateSection(sectionId, { title, guidance });
+	}
+
+	async function handleDeleteSection(sectionId: string) {
+		await sections.deleteSection(sectionId);
+	}
+
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
 			<div className="shrink-0 space-y-2 px-5 pt-4 pb-2">
@@ -357,11 +369,15 @@ export function ChapterGenerationPanel({
 							</div>
 						)}
 
-						{sections.dimuat && sections.sections.length > 0 && (
+						{sections.dimuat && (
 							<ChapterSectionList
 								sections={sections.sections}
-								dimatikan={sedangBerjalan || terpilih.size === 0 || menungguKonfirmasi}
+								dimatikanEdit={sedangBerjalan}
+								dimatikanGenerate={sedangBerjalan || terpilih.size === 0 || menungguKonfirmasi}
 								onGenerate={handleGenerateSection}
+								onCreate={handleCreateSection}
+								onUpdate={handleUpdateSection}
+								onDelete={handleDeleteSection}
 							/>
 						)}
 

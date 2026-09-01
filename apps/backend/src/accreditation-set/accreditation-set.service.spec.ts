@@ -77,6 +77,9 @@ function makeService(tenantId = 't1') {
       create: jest.fn(),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
+    chapterTemplate: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     $transaction: jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(prisma)),
   };
   const tenantContext: Pick<TenantContextService, 'getOrThrow'> = {
@@ -272,7 +275,7 @@ describe('AccreditationSetService.attachDocument', () => {
     });
   });
 
-  it('does not enqueue anything for PANDUAN_LAM/TEMPLATE_LKPS', async () => {
+  it('enqueues INGESTION_STRUKTUR_DOKUMEN and marks structureParseStatus DIPROSES for PANDUAN_LAM', async () => {
     const { service, prisma, jobsService } = makeService();
     prisma.accreditationSet.findFirst.mockResolvedValue(makeSet());
     prisma.ledDocument.count.mockResolvedValue(0);
@@ -282,6 +285,28 @@ describe('AccreditationSetService.attachDocument', () => {
     await service.attachDocument('s1', TipePanduan.PANDUAN_LAM, {
       fileKey: 'tenant/s1/panduan.pdf',
       title: 'Panduan LAM',
+    });
+
+    expect(prisma.accreditationSet.update).toHaveBeenCalledWith({
+      where: { id: 's1' },
+      data: { structureParseStatus: 'DIPROSES', structureParseError: null },
+    });
+    expect(jobsService.enqueue).toHaveBeenCalledWith('INGESTION_STRUKTUR_DOKUMEN', {
+      accreditationSetId: 's1',
+      fileUrl: 'tenant/s1/panduan.pdf',
+    });
+  });
+
+  it('does not enqueue anything for TEMPLATE_LKPS', async () => {
+    const { service, prisma, jobsService } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet());
+    prisma.ledDocument.count.mockResolvedValue(0);
+    prisma.referenceGuide.findFirst.mockResolvedValue(null);
+    prisma.referenceGuide.create.mockResolvedValue({ id: 'rg1' });
+
+    await service.attachDocument('s1', TipePanduan.TEMPLATE_LKPS, {
+      fileKey: 'tenant/s1/lkps.xlsx',
+      title: 'Template LKPS',
     });
 
     expect(jobsService.enqueue).not.toHaveBeenCalled();
@@ -314,5 +339,31 @@ describe('AccreditationSetService.markReady', () => {
     });
 
     await expect(service.markReady('s1')).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('AccreditationSetService.findChapterTemplates', () => {
+  it('returns the ordered chapter/sub-bab structure for this set', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet());
+    prisma.chapterTemplate.findMany.mockResolvedValue([
+      { id: 'ct1', order: 1, title: 'Pendahuluan', subBab: [] },
+    ]);
+
+    const result = await service.findChapterTemplates('s1');
+
+    expect(prisma.chapterTemplate.findMany).toHaveBeenCalledWith({
+      where: { accreditationSetId: 's1' },
+      orderBy: { order: 'asc' },
+      include: { subBab: { orderBy: { order: 'asc' } } },
+    });
+    expect(result).toEqual([{ id: 'ct1', order: 1, title: 'Pendahuluan', subBab: [] }]);
+  });
+
+  it('rejects when the set does not exist for this tenant', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(null);
+
+    await expect(service.findChapterTemplates('s1')).rejects.toThrow(NotFoundException);
   });
 });

@@ -72,5 +72,41 @@ export function useChapterSections(chapterId: string) {
 		[chapterId, status, refetch],
 	);
 
-	return { sections, dimuat, status, pesanGagal, generateOutline, refetch };
+	/** Tambah section manual, langsung di akhir daftar. Tanpa LLM/job. */
+	const createSection = React.useCallback(
+		async (title: string, guidance: string) => {
+			await chapterRepository.createSection(chapterId, title, guidance);
+			await refetch();
+		},
+		[chapterId, refetch],
+	);
+
+	/** Ubah judul/panduan section manual — backend reset status ke PENDING. */
+	const updateSection = React.useCallback(
+		async (sectionId: string, payload: { title?: string; guidance?: string }) => {
+			await chapterRepository.updateSection(chapterId, sectionId, payload);
+			await refetch();
+		},
+		[chapterId, refetch],
+	);
+
+	const deleteSection = React.useCallback(
+		async (sectionId: string) => {
+			await chapterRepository.deleteSection(chapterId, sectionId);
+			await refetch();
+		},
+		[chapterId, refetch],
+	);
+
+	return {
+		sections,
+		dimuat,
+		status,
+		pesanGagal,
+		generateOutline,
+		refetch,
+		createSection,
+		updateSection,
+		deleteSection,
+	};
 }

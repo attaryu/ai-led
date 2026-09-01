@@ -91,4 +91,10 @@ export class AccreditationSetController {
   removeDocument(@Param('id') id: string, @Param('type') type: TipePanduan) {
     return this.accreditationSetService.removeDocument(id, type);
   }
+
+  @Get(':id/chapter-templates')
+  @Protected(...READ_ROLES)
+  findChapterTemplates(@Param('id') id: string) {
+    return this.accreditationSetService.findChapterTemplates(id);
+  }
 }

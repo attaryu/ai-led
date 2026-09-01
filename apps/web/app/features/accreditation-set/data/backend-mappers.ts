@@ -7,11 +7,13 @@ import {
 	type AccreditationSetEntity,
 	type SetDocumentType,
 } from '../domain/entities/accreditation-set.entity';
+import { type ChapterTemplateEntity } from '../domain/entities/chapter-template.entity';
 import {
 	type BackendAccreditationSet,
 	type BackendAccreditationSetDetail,
 	type BackendAccreditationSetListItem,
 	type BackendAccreditationSetWithCriteria,
+	type BackendChapterTemplate,
 	type BackendDocumentType,
 	type BackendReferenceGuide,
 	type BackendRubricCriterion,
@@ -112,6 +114,8 @@ export function toEntity(row: AnyBackendSet): AccreditationSetEntity {
 		kriteria: criteria.map(mapCriterion),
 		criteriaParseStatus: row.criteriaParseStatus,
 		criteriaParseError: row.criteriaParseError,
+		structureParseStatus: row.structureParseStatus,
+		structureParseError: row.structureParseError,
 		createdAt: row.createdAt,
 	};
 }
@@ -146,7 +150,23 @@ export function toListEntity(row: BackendAccreditationSetListItem): Accreditatio
 		kriteria: new Array(row._count.criteria) as RubricCriterion[],
 		criteriaParseStatus: row.criteriaParseStatus,
 		criteriaParseError: row.criteriaParseError,
+		structureParseStatus: row.structureParseStatus,
+		structureParseError: row.structureParseError,
 		createdAt: row.createdAt,
+	};
+}
+
+export function mapChapterTemplate(row: BackendChapterTemplate): ChapterTemplateEntity {
+	return {
+		id: row.id,
+		urutan: row.order,
+		judul: row.title,
+		subBab: row.subBab.map((s) => ({
+			id: s.id,
+			urutan: s.order,
+			judul: s.title,
+			panduan: s.guidance,
+		})),
 	};
 }
 

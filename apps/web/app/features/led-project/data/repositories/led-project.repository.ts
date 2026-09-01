@@ -1,4 +1,5 @@
 import { ApiError } from '~/core/lib/api-client';
+import { accreditationSetRepository } from '~/features/accreditation-set/data/repositories/accreditation-set.repository';
 import { CHAPTER_TEMPLATE } from '~/features/chapter/data/repositories/chapter.repository';
 import { chapterRemoteSource } from '~/features/chapter/data/sources/remote/chapter.remote-source';
 import { studyProgramRepository } from '~/features/study-program/data/repositories/study-program.repository';
@@ -90,27 +91,44 @@ export const ledProjectRepository = {
 	},
 
 	/**
-	 * Satu-satunya jalan membuat Dokumen LED — backend tidak membuat 14 bab
+	 * Satu-satunya jalan membuat Dokumen LED — backend tidak membuat bab
 	 * standar otomatis, jadi dipateraikan di sini. Tiap bab dibuat kosong
 	 * (cuma struktur judul + urutan); isinya diisi Penyusun lewat editor.
+	 *
+	 * Struktur bab ikut Set Akreditasi yang dipilih (`ChapterTemplate`,
+	 * worker.py::_handle_ingestion_struktur_dokumen) kalau set itu sudah
+	 * pernah diekstrak strukturnya; `CHAPTER_TEMPLATE` (4 bab tetap) tetap
+	 * jadi fallback untuk set yang belum/tidak pernah upload Panduan
+	 * Penulisan — set lama tidak wajib migrasi.
 	 */
 	async create(data: {
 		studyProgramId: string;
 		judul: string;
 		tahunAkademik: string;
 		tenggat: string | null;
+		accreditationSetId: string;
 	}): Promise<LedProjectEntity> {
 		const dokumen = await ledProjectRemoteSource.create(data.studyProgramId, {
 			title: data.judul,
 			academicYear: data.tahunAkademik,
 			deadline: data.tenggat ?? undefined,
+			accreditationSetId: data.accreditationSetId,
 		});
 
-		const program = await studyProgramRepository.findById(data.studyProgramId);
+		const [program, templates] = await Promise.all([
+			studyProgramRepository.findById(data.studyProgramId),
+			dokumen.accreditationSetId
+				? accreditationSetRepository.findChapterTemplates(dokumen.accreditationSetId)
+				: Promise.resolve([]),
+		]);
 		const prodi = program?.studyProgramName ?? '(Prodi tidak diketahui)';
 
+		const babUntukDistempel =
+			templates.length > 0
+				? templates.map((t) => ({ chapterOrder: t.urutan, chapterTitle: t.judul }))
+				: CHAPTER_TEMPLATE;
 		await Promise.all(
-			CHAPTER_TEMPLATE.map((bab) => chapterRemoteSource.create(dokumen.id, bab)),
+			babUntukDistempel.map((bab) => chapterRemoteSource.create(dokumen.id, bab)),
 		);
 
 		window.dispatchEvent(new Event('storage-update'));

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { accreditationSetRepository } from '~/features/accreditation-set/data/repositories/accreditation-set.repository';
+import { type ChapterTemplateEntity } from '~/features/accreditation-set/domain/entities/chapter-template.entity';
 import { rubricCriterionAmiRepository } from '~/features/assessment/data/repositories/rubric-criterion-ami.repository';
 import { type ChapterEntity } from './chapter.entity';
 import { kelompokkanKriteria } from './guidance-point.entity';
@@ -79,16 +81,13 @@ function simpulKriteriaUntukBab(
 }
 
 /**
- * Bangun pohon Daftar Isi lengkap untuk satu dokumen, mengambil kelompok
- * kriteria BAB II dari Set Akreditasi yang benar-benar dipilihnya
- * (`accreditationSetId`, dari `ledProjectRepository`) — bukan lagi konstanta
- * modul statis. Async untuk alasan yang sama dengan `findPanduanForBab`.
+ * Pohon 4-bab tetap (LAM Teknik) — fallback untuk set yang belum/tidak
+ * pernah upload+ekstrak Panduan Penulisan (`ChapterTemplate` kosong).
+ * Kelompok kriteria BAB II tetap dari Set Akreditasi dokumen ini.
  */
-export async function buildChapterToc(
-	accreditationSetId: string | null | undefined,
-): Promise<ChapterTocNode[]> {
-	const semuaKriteria = await rubricCriterionAmiRepository.findAll(accreditationSetId);
-
+function buildFallbackToc(
+	semuaKriteria: Awaited<ReturnType<typeof rubricCriterionAmiRepository.findAll>>,
+): ChapterTocNode[] {
 	return [
 		simpul('bab-1', 'BAB I. PENDAHULUAN', 1),
 		simpul('bab-2', 'BAB II. STRUKTUR LAPORAN EVALUASI DIRI', 2, [
@@ -112,6 +111,49 @@ export async function buildChapterToc(
 		simpul('bab-3', 'BAB III. PROGRAM PENGEMBANGAN BERKELANJUTAN', 3),
 		simpul('bab-4', 'BAB IV. PENUTUP', 4),
 	];
+}
+
+/**
+ * Bab dari `ChapterTemplate` set ini (worker.py::_handle_ingestion_struktur_dokumen)
+ * — anaknya `SubBabTemplate` (referensi resmi pedoman, dekoratif) plus
+ * kelompok kriteria akreditasi yang menyebut bab ini, digeneralisasi dari
+ * `buildFallbackToc` yang cuma pernah menempelkannya ke bab nomor 2.
+ */
+function buildTocFromTemplates(
+	templates: ChapterTemplateEntity[],
+	semuaKriteria: Awaited<ReturnType<typeof rubricCriterionAmiRepository.findAll>>,
+): ChapterTocNode[] {
+	return templates.map((bab) => {
+		const anakSubBab = bab.subBab.map((sub) =>
+			simpul(`bab-${bab.urutan}-sub-${sub.urutan}`, sub.judul, null),
+		);
+		const anakKriteria = simpulKriteriaUntukBab(semuaKriteria, bab.urutan);
+		return simpul(`bab-${bab.urutan}`, bab.judul, bab.urutan, [...anakSubBab, ...anakKriteria]);
+	});
+}
+
+/**
+ * Bangun pohon Daftar Isi lengkap untuk satu dokumen. Mengambil struktur
+ * bab dari `ChapterTemplate` set ini kalau sudah pernah diekstrak
+ * (`accreditationSetRepository.findChapterTemplates`); kosong (belum
+ * pernah upload Panduan Penulisan, atau set lama) → fallback ke pohon
+ * 4-bab tetap seperti sebelum fitur ini ada. Kelompok kriteria BAB II
+ * tetap dari Set Akreditasi yang benar-benar dipilihnya (`accreditationSetId`,
+ * dari `ledProjectRepository`).
+ */
+export async function buildChapterToc(
+	accreditationSetId: string | null | undefined,
+): Promise<ChapterTocNode[]> {
+	const [semuaKriteria, templates] = await Promise.all([
+		rubricCriterionAmiRepository.findAll(accreditationSetId),
+		accreditationSetId
+			? accreditationSetRepository.findChapterTemplates(accreditationSetId)
+			: Promise.resolve([]),
+	]);
+
+	return templates.length > 0
+		? buildTocFromTemplates(templates, semuaKriteria)
+		: buildFallbackToc(semuaKriteria);
 }
 
 /**

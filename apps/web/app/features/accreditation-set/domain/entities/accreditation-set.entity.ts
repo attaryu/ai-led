@@ -110,6 +110,9 @@ export const accreditationSetSchema = z.object({
 	 */
 	criteriaParseStatus: evidenceStatusEnum,
 	criteriaParseError: z.string().nullable(),
+	/** Status ekstraksi struktur bab/sub-bab dari PANDUAN_LAM terakhir yang diunggah — worker.py::_handle_ingestion_struktur_dokumen. */
+	structureParseStatus: evidenceStatusEnum,
+	structureParseError: z.string().nullable(),
 	createdAt: z.string(),
 });
 

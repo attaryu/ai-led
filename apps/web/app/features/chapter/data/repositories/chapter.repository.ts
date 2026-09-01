@@ -217,4 +217,24 @@ export const chapterRepository = {
 		const rows = await chapterRemoteSource.findSections(chapterId);
 		return rows.map(mapChapterSection).sort((a, b) => a.urutan - b.urutan);
 	},
+
+	/** Tambah section manual — lihat `useChapterSections`. */
+	async createSection(chapterId: string, title: string, guidance: string): Promise<ChapterSectionEntity> {
+		const row = await chapterRemoteSource.createSection(chapterId, { title, guidance });
+		return mapChapterSection(row);
+	},
+
+	/** Ubah judul/panduan section manual. */
+	async updateSection(
+		chapterId: string,
+		sectionId: string,
+		payload: { title?: string; guidance?: string },
+	): Promise<ChapterSectionEntity> {
+		const row = await chapterRemoteSource.updateSection(chapterId, sectionId, payload);
+		return mapChapterSection(row);
+	},
+
+	async deleteSection(chapterId: string, sectionId: string): Promise<void> {
+		await chapterRemoteSource.deleteSection(chapterId, sectionId);
+	},
 };

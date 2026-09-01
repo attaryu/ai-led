@@ -246,6 +246,30 @@ export const chapterRemoteSource = {
 		});
 	},
 
+	/** Tambah section manual, langsung di akhir daftar. Tanpa LLM/job. */
+	createSection(id: string, payload: { title: string; guidance: string }): Promise<BackendChapterSection> {
+		return apiFetch<BackendChapterSection>(`/bab/${id}/sections`, {
+			method: 'POST',
+			body: payload,
+		});
+	},
+
+	/** Ubah judul/panduan section manual — backend reset status ke PENDING (konten lama basi). */
+	updateSection(
+		id: string,
+		sectionId: string,
+		payload: { title?: string; guidance?: string },
+	): Promise<BackendChapterSection> {
+		return apiFetch<BackendChapterSection>(`/bab/${id}/sections/${sectionId}`, {
+			method: 'PATCH',
+			body: payload,
+		});
+	},
+
+	deleteSection(id: string, sectionId: string): Promise<void> {
+		return apiFetch<void>(`/bab/${id}/sections/${sectionId}`, { method: 'DELETE' });
+	},
+
 	/** Memicu REKOMENDASI_DOKUMEN. `draftId` = "Rekomendasikan Ulang", memakai ulang draft kosong yang sama. */
 	recommendDocuments(id: string, draftId?: string): Promise<BackendJob> {
 		return apiFetch<BackendJob>(`/bab/${id}/recommend-documents`, {

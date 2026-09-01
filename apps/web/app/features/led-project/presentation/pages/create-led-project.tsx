@@ -143,6 +143,7 @@ export function CreateLedProject() {
 				judul: data.judul,
 				tahunAkademik,
 				tenggat: fromDateInputValue(data.tenggat),
+				accreditationSetId: data.accreditationSetId,
 			});
 			navigate(returnTo);
 		} catch (e) {

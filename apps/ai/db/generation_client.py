@@ -28,18 +28,23 @@ def get_user_nama(user_id: str) -> str:
 
 def get_bab_dokumen(bab_id: str) -> Optional[dict]:
     """Return {id, document_id, chapter_order, chapter_title, working_content,
-    tenant_id, study_program_id, study_program_name, university_name}, or None.
+    tenant_id, study_program_id, study_program_name, university_name,
+    accreditation_set_id}, or None.
 
     study_program_name/university_name (port of Dimas's 766de26 institution
     context) let the checklist/generate prompts know which prodi/university
     this LED is for instead of writing fully generic narration.
+
+    accreditation_set_id (nullable — LedDocument may not have picked a set)
+    scopes get_rubrik_for_bab/get_chapter_template_subbab to THIS document's
+    own set, not whichever set happens to share the same chapter_order.
     """
     with get_conn().cursor() as cur:
         cur.execute(
             """
             SELECT bd.id, bd.document_id, bd.chapter_order, bd.chapter_title, bd.working_content,
                    ps.tenant_id, ps.id AS study_program_id, ps.name AS study_program_name,
-                   t.university_name
+                   t.university_name, dl.accreditation_set_id
             FROM writing_document_chapters bd
             JOIN writing_led_documents dl ON dl.id = bd.document_id
             JOIN org_study_programs ps ON ps.id = dl.study_program_id
@@ -73,22 +78,53 @@ def get_pedoman_for_bab(urutan_bab: int) -> list[dict]:
         return [dict(r) for r in cur.fetchall()]
 
 
-def get_rubrik_for_bab(urutan_bab: int) -> list[dict]:
-    """Scoring rubric criteria relevant to this chapter number.
+def get_rubrik_for_bab(urutan_bab: int, accreditation_set_id: Optional[str]) -> list[dict]:
+    """Scoring rubric criteria relevant to this chapter number, SCOPED to one
+    AccreditationSet — chapter_order (1, 2, 3...) is only unique WITHIN a
+    set, not across a tenant's sets, so this must always be filtered by
+    accreditation_set_id or a tenant with 2+ sets sharing a chapter number
+    gets both sets' criteria mixed together (a real bug found while wiring
+    per-set dynamic chapter structures — see plan). `accreditation_set_id`
+    None (LedDocument hasn't picked a set) -> no criteria, same as before.
 
     `criterion_group` is included for _handle_generasi_outline_bab's grouping
     (padanan Python dari apps/web's kelompokkanKriteria) — existing callers
     (checklist/generate/judge prompts) simply ignore the extra key.
     """
+    if not accreditation_set_id:
+        return []
     with get_conn().cursor() as cur:
         cur.execute(
             """
             SELECT rc.id, rc.criterion_code, rc.criterion_group, rc.description
             FROM rubric_criterion_chapters rcc
             JOIN rubric_criteria rc ON rc.id = rcc.criterion_id
-            WHERE rcc.chapter_order = %s
+            WHERE rcc.chapter_order = %s AND rc.accreditation_set_id = %s
             """,
-            (urutan_bab,),
+            (urutan_bab, accreditation_set_id),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+
+def get_chapter_template_subbab(accreditation_set_id: Optional[str], urutan_bab: int) -> list[dict]:
+    """Sub-bab resmi dari struktur pedoman yang di-extract LLM untuk bab ini
+    (worker.py::_handle_ingestion_struktur_dokumen) — dipakai sebagai konteks
+    TAMBAHAN di _build_outline_prompt, bukan pengganti kelompok kriteria.
+    Kosong kalau dokumen belum punya set, atau set-nya belum pernah
+    diekstrak strukturnya (fallback diam-diam, sama seperti sebelum fitur
+    ini ada — outline tetap jalan tanpa blok ini)."""
+    if not accreditation_set_id:
+        return []
+    with get_conn().cursor() as cur:
+        cur.execute(
+            """
+            SELECT sbt.title, sbt.guidance
+            FROM sub_bab_templates sbt
+            JOIN chapter_templates ct ON ct.id = sbt.chapter_template_id
+            WHERE ct.accreditation_set_id = %s AND ct."order" = %s
+            ORDER BY sbt."order"
+            """,
+            (accreditation_set_id, urutan_bab),
         )
         return [dict(r) for r in cur.fetchall()]
 

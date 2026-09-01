@@ -102,6 +102,7 @@ enum JobType {
   REKOMENDASI_DOKUMEN
   INGESTION_RUBRIK_DOKUMEN
   GENERASI_OUTLINE_BAB
+  INGESTION_STRUKTUR_DOKUMEN
 }
 
 enum JobStatus {
@@ -517,17 +518,53 @@ model AccreditationSet {
   /// supaya set lama/isi-manual tidak tampak "belum diproses" selamanya.
   criteriaParseStatus StatusEkstraksi        @default(SIAP) @map("criteria_parse_status")
   criteriaParseError  String?                @map("criteria_parse_error") @db.Text
+  /// Status ekstraksi struktur bab/sub-bab dari dokumen PANDUAN_LAM yang
+  /// diunggah (worker.py::_handle_ingestion_struktur_dokumen). Default SIAP,
+  /// sama alasannya dengan criteriaParseStatus.
+  structureParseStatus StatusEkstraksi       @default(SIAP) @map("structure_parse_status")
+  structureParseError  String?               @map("structure_parse_error") @db.Text
   createdAt           DateTime               @default(now()) @map("created_at")
   updatedAt           DateTime               @updatedAt @map("updated_at")
 
-  tenant         Tenant                 @relation(fields: [tenantId], references: [id])
-  criteria       RubricCriterion[]
-  documents      ReferenceGuide[]
-  documentsUsing LedDocument[]
-  evidenceTags   EvidenceIndicatorTag[]
+  tenant           Tenant                 @relation(fields: [tenantId], references: [id])
+  criteria         RubricCriterion[]
+  documents        ReferenceGuide[]
+  documentsUsing   LedDocument[]
+  evidenceTags     EvidenceIndicatorTag[]
+  chapterTemplates ChapterTemplate[]
 
   @@index([tenantId])
   @@map("accreditation_sets")
+}
+
+/// Struktur BAB resmi diekstrak LLM dari dokumen PANDUAN_LAM (worker.py::
+/// _handle_ingestion_struktur_dokumen) — dipakai menstempel DocumentChapter
+/// dokumen LED baru di bawah set ini (menggantikan CHAPTER_TEMPLATE fallback
+/// 4-bab) dan sebagai konteks outline (_build_outline_prompt).
+model ChapterTemplate {
+  id                 String @id @default(cuid())
+  accreditationSetId String @map("accreditation_set_id")
+  order              Int
+  title              String
+
+  accreditationSet AccreditationSet @relation(fields: [accreditationSetId], references: [id], onDelete: Cascade)
+  subBab           SubBabTemplate[]
+
+  @@unique([accreditationSetId, order])
+  @@map("chapter_templates")
+}
+
+model SubBabTemplate {
+  id                String @id @default(cuid())
+  chapterTemplateId String @map("chapter_template_id")
+  order             Int
+  title             String
+  guidance          String @db.Text
+
+  chapterTemplate ChapterTemplate @relation(fields: [chapterTemplateId], references: [id], onDelete: Cascade)
+
+  @@unique([chapterTemplateId, order])
+  @@map("sub_bab_templates")
 }
 
 enum AccreditationSetStatus {

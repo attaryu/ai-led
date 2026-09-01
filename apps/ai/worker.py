@@ -79,6 +79,8 @@ async def process_job(job, token: str):
         result = await _handle_ingestion_bukti_dukung(job)
     elif job.name == "INGESTION_RUBRIK_DOKUMEN":
         result = await _handle_ingestion_rubrik_dokumen(job)
+    elif job.name == "INGESTION_STRUKTUR_DOKUMEN":
+        result = await _handle_ingestion_struktur_dokumen(job)
     else:
         logger.warning("job type tidak dikenal, diselesaikan tanpa aksi: %s", job.name)
         result = {"status": "skipped", "reason": f"unknown job type {job.name}"}
@@ -695,8 +697,21 @@ def _group_rubric_by_criterion_group(rubric: list[dict]) -> list[dict]:
     return [{"name": g, "criteria": groups[g]} for g in order]
 
 
-def _build_outline_prompt(judul_bab: str, kelompok_kriteria: list[dict], pedoman: list[dict]) -> str:
+def _build_outline_prompt(
+    judul_bab: str,
+    kelompok_kriteria: list[dict],
+    pedoman: list[dict],
+    struktur_referensi: list[dict] | None = None,
+) -> str:
     parts = [_SYSTEM_OUTLINE, "", f"## BAB: {judul_bab}", ""]
+    if struktur_referensi:
+        parts.append(
+            "## STRUKTUR RESMI DARI PEDOMAN (referensi kuat dari dokumen yang "
+            "diupload institusi ini, boleh disesuaikan bila memang perlu):"
+        )
+        for s in struktur_referensi:
+            parts.append(f"- {s['title']}: {(s.get('guidance') or '')[:300]}")
+        parts.append("")
     if pedoman:
         parts.append("## PEDOMAN PENULISAN:")
         for p in pedoman[:10]:
@@ -734,6 +749,7 @@ async def _handle_generasi_outline_bab(job) -> dict:
     from db.generation_client import (
         create_chapter_sections,
         get_bab_dokumen,
+        get_chapter_template_subbab,
         get_pedoman_for_bab,
         get_rubrik_for_bab,
     )
@@ -747,13 +763,17 @@ async def _handle_generasi_outline_bab(job) -> dict:
     if bab is None:
         return {"status": "error", "error": f"BabDokumen {bab_id} tidak ditemukan"}
 
+    accreditation_set_id = bab.get("accreditation_set_id")
     pedoman = get_pedoman_for_bab(bab["chapter_order"])
-    rubric = get_rubrik_for_bab(bab["chapter_order"])
+    rubric = get_rubrik_for_bab(bab["chapter_order"], accreditation_set_id)
     kelompok = _group_rubric_by_criterion_group(rubric)
+    struktur_referensi = get_chapter_template_subbab(accreditation_set_id, bab["chapter_order"])
 
     llm = build_plain_llm()
     try:
-        raw = await llm.ainvoke(_build_outline_prompt(bab["chapter_title"], kelompok, pedoman))
+        raw = await llm.ainvoke(
+            _build_outline_prompt(bab["chapter_title"], kelompok, pedoman, struktur_referensi)
+        )
         sections = _parse_outline(raw.content)
     except Exception:
         logger.exception("Outline LLM gagal untuk bab %s", bab_id)
@@ -922,7 +942,7 @@ async def _handle_generasi_bab(job) -> dict:
     # sama seperti sebelumnya — checklist/judge di bawah tetap butuh konteks
     # rubrik/pedoman satu bab penuh, bukan cuma section ini).
     pedoman = get_pedoman_for_bab(bab["chapter_order"])
-    rubric = get_rubrik_for_bab(bab["chapter_order"])
+    rubric = get_rubrik_for_bab(bab["chapter_order"], bab.get("accreditation_set_id"))
 
     llm = build_plain_llm()
 
@@ -1107,7 +1127,7 @@ async def _handle_rekomendasi_dokumen(job) -> dict:
 
     # 1. Pedoman & rubrik — same relational lookup as GENERASI_BAB.
     pedoman = get_pedoman_for_bab(bab["chapter_order"])
-    rubric = get_rubrik_for_bab(bab["chapter_order"])
+    rubric = get_rubrik_for_bab(bab["chapter_order"], bab.get("accreditation_set_id"))
 
     # 2. needs_lkps — same regex gate as GENERASI_BAB (definitive both ways,
     # no LLM guess needed: pedoman LAM Teknik always spells out explicit
@@ -1307,7 +1327,7 @@ async def _handle_simulasi_skor(job) -> dict:
     if not konten.strip():
         return {"status": "error", "error": "Belum ada tulisan yang bisa dinilai untuk lingkup yang dipilih"}
 
-    kriteria = get_rubrik_for_bab(bab["chapter_order"])
+    kriteria = get_rubrik_for_bab(bab["chapter_order"], bab.get("accreditation_set_id"))
     if not kriteria:
         return {"status": "error", "error": f"Bab {bab['chapter_order']} tidak dinilai kriteria rubrik apa pun"}
 
@@ -1588,6 +1608,142 @@ async def _handle_ingestion_rubrik_dokumen(job) -> dict:
         return {"status": "in_use", "accreditationSetId": accreditation_set_id, "reason": str(e)}
     except Exception as e:
         logger.exception("Parsing rubrik gagal untuk set %s", accreditation_set_id)
+        _set_status("GAGAL", str(e)[:500])
+        return {"status": "error", "accreditationSetId": accreditation_set_id, "reason": str(e)}
+
+    _set_status("SIAP", None)
+    return {"status": "completed", "accreditationSetId": accreditation_set_id, "count": count}
+
+
+# ──────────────────────────────────────────────────────────────────────
+# INGESTION_STRUKTUR_DOKUMEN (LLM-based document structure extraction) --
+# mirrors INGESTION_RUBRIK_DOKUMEN above (same download-parse-replace-status
+# shape), triggered by attachDocument on the PANDUAN_LAM slot instead of
+# DOKUMEN_RUBRIK. Extracts BAB + sub-bab titles/guidance from an arbitrary
+# uploaded writing-guideline PDF via one LLM call (not a font-heuristic
+# parser like scripts/parse_ledps_guide.py, which is tuned to one specific
+# PDF and only ever ran manually/offline) -- see plan for why this needs to
+# be LLM-based: different tenants upload different institutions' guides.
+# ──────────────────────────────────────────────────────────────────────
+
+_SYSTEM_STRUKTUR_DOKUMEN = """
+Anda adalah asesor akreditasi program studi di Indonesia yang membaca dokumen
+Panduan Penulisan Laporan Evaluasi Diri (LED) institusi/lembaga akreditasi
+tertentu, dan menyusun STRUKTUR RESMI dokumen LED yang harus diikuti
+berdasarkan panduan itu.
+
+TUGAS: identifikasi urutan BAB (bab utama) dokumen LED, dan untuk tiap BAB,
+daftar sub-bab (bagian) yang harus ada di dalamnya sesuai panduan.
+
+ATURAN:
+- "judul" BAB dan sub-bab disalin/dirangkum dari judul asli di panduan,
+  Bahasa Indonesia, tanpa nomor/kode di depannya.
+- "panduan" tiap sub-bab adalah 1-2 kalimat ringkasan apa yang harus dibahas
+  bagian itu menurut teks panduan -- konkret, bukan generik.
+- Urutkan BAB dan sub-bab sesuai urutan kemunculan di panduan.
+- Kalau teks panduan tidak menyebutkan struktur bab yang jelas, kembalikan
+  bab: [] -- jangan mengarang struktur yang tidak ada di teks.
+
+OUTPUT HARUS JSON VALID SAJA (no explanation outside JSON):
+{"bab": [{"urutan": 1, "judul": "...", "subbab": [{"urutan": 1, "judul": "...", "panduan": "..."}]}]}
+"""
+
+
+def _build_struktur_dokumen_prompt(teks_pedoman: str) -> str:
+    # ponytail: potong ke ~30000 karakter pertama, satu LLM call -- upgrade
+    # ke map-reduce per halaman kalau ada pedoman yang kepotong di sini.
+    return f"{_SYSTEM_STRUKTUR_DOKUMEN}\n\n## TEKS PANDUAN:\n{teks_pedoman[:30000]}\n\nOutput HANYA JSON:"
+
+
+def _parse_struktur_dokumen(raw: str) -> list[dict]:
+    """Parses {"bab":[{"urutan","judul","subbab":[{"urutan","judul","panduan"}]}]}
+    into [{"order","title","subbab":[{"order","title","guidance"}]}], dropping
+    any bab/subbab missing a title."""
+    data = _parse_llm_json(_strip_think(raw))
+    result: list[dict] = []
+    for bab in data.get("bab") or []:
+        if not isinstance(bab, dict):
+            continue
+        title = (bab.get("judul") or "").strip()
+        if not title:
+            continue
+        subbab: list[dict] = []
+        for sub in bab.get("subbab") or []:
+            if not isinstance(sub, dict):
+                continue
+            sub_title = (sub.get("judul") or "").strip()
+            if not sub_title:
+                continue
+            subbab.append({
+                "order": len(subbab) + 1,
+                "title": sub_title,
+                "guidance": (sub.get("panduan") or "").strip(),
+            })
+        result.append({"order": len(result) + 1, "title": title, "subbab": subbab})
+    return result
+
+
+def _extract_pdf_text(path: str) -> str:
+    import pdfplumber
+
+    with pdfplumber.open(path) as pdf:
+        return "\n\n".join(page.extract_text() or "" for page in pdf.pages)
+
+
+async def _handle_ingestion_struktur_dokumen(job) -> dict:
+    """Download the PANDUAN_LAM PDF from R2, extract its plain text, ask an
+    LLM to identify the official BAB/sub-bab structure, and replace this
+    AccreditationSet's chapter_templates/sub_bab_templates wholesale.
+
+    Same discipline as _handle_ingestion_rubrik_dokumen: catch everything,
+    always end SIAP/GAGAL on accreditation_sets.structure_parse_status,
+    never leave it stuck on DIPROSES.
+    """
+    import tempfile
+    from pathlib import Path
+
+    from db.connection import get_conn
+    from db.postgres_client import replace_chapter_templates_for_set
+    from db.r2_client import download_to
+    from llm.chat_model import build_plain_llm
+
+    accreditation_set_id = job.data["accreditationSetId"]
+    file_url = job.data["fileUrl"]
+
+    def _set_status(status: str, catatan: str | None) -> None:
+        with get_conn().cursor() as cur:
+            cur.execute(
+                "UPDATE accreditation_sets SET structure_parse_status = %s, structure_parse_error = %s WHERE id = %s",
+                (status, catatan, accreditation_set_id),
+            )
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="struktur_parse_") as tmp:
+            local_path = Path(tmp) / Path(file_url).name
+            download_to(file_url, local_path)
+            teks_pedoman = _extract_pdf_text(str(local_path))
+
+        if not teks_pedoman.strip():
+            _set_status(
+                "GAGAL",
+                "Tidak ada teks yang bisa diekstrak dari PDF ini — pastikan bukan hasil scan tanpa OCR.",
+            )
+            return {"status": "empty", "accreditationSetId": accreditation_set_id}
+
+        llm = build_plain_llm()
+        raw = await llm.ainvoke(_build_struktur_dokumen_prompt(teks_pedoman))
+        bab_list = _parse_struktur_dokumen(raw.content)
+
+        if not bab_list:
+            _set_status(
+                "GAGAL",
+                "LLM tidak menemukan struktur bab yang jelas dari panduan ini.",
+            )
+            return {"status": "empty", "accreditationSetId": accreditation_set_id}
+
+        count = replace_chapter_templates_for_set(accreditation_set_id, bab_list)
+    except Exception as e:
+        logger.exception("Ekstraksi struktur dokumen gagal untuk set %s", accreditation_set_id)
         _set_status("GAGAL", str(e)[:500])
         return {"status": "error", "accreditationSetId": accreditation_set_id, "reason": str(e)}
 

@@ -1,6 +1,17 @@
-import { CheckCircleIcon, SparkleIcon, SpinnerGapIcon, WarningCircleIcon } from '@phosphor-icons/react';
+import * as React from 'react';
+import {
+	CheckCircleIcon,
+	PencilSimpleIcon,
+	PlusIcon,
+	SparkleIcon,
+	SpinnerGapIcon,
+	TrashIcon,
+	WarningCircleIcon,
+} from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
+import { Input } from '~/core/components/ui/input';
+import { Textarea } from '~/core/components/ui/textarea';
 import {
 	chapterSectionStatusLabels,
 	type ChapterSectionEntity,
@@ -13,21 +24,95 @@ const IKON_STATUS = {
 	ERROR: <WarningCircleIcon className="size-3.5 shrink-0 text-destructive" weight="fill" />,
 } as const;
 
-/** Daftar section (outline) satu bab, tiap baris punya tombol generate sendiri — lihat `useChapterSections`. */
+/** Form inline judul + panduan, dipakai baik untuk tambah maupun edit section manual. */
+function FormSection({
+	judulAwal = '',
+	panduanAwal = '',
+	onSimpan,
+	onBatal,
+}: {
+	judulAwal?: string;
+	panduanAwal?: string;
+	onSimpan: (judul: string, panduan: string) => void;
+	onBatal: () => void;
+}) {
+	const [judul, setJudul] = React.useState(judulAwal);
+	const [panduan, setPanduan] = React.useState(panduanAwal);
+	const bolehSimpan = judul.trim().length > 0 && panduan.trim().length > 0;
+
+	return (
+		<li className="space-y-1.5 rounded px-1.5 py-1.5">
+			<Input
+				value={judul}
+				onChange={(e) => setJudul(e.target.value)}
+				placeholder="Judul sub-bab"
+				aria-label="Judul sub-bab"
+				className="h-7 text-xs"
+				autoFocus
+			/>
+			<Textarea
+				value={panduan}
+				onChange={(e) => setPanduan(e.target.value)}
+				placeholder="Arahan topik apa yang harus dibahas sub-bab ini"
+				aria-label="Panduan sub-bab"
+				rows={2}
+				className="min-h-12 resize-none text-xs"
+			/>
+			<div className="flex justify-end gap-1.5">
+				<Button type="button" size="xs" variant="ghost" onClick={onBatal}>
+					Batal
+				</Button>
+				<Button
+					type="button"
+					size="xs"
+					disabled={!bolehSimpan}
+					onClick={() => onSimpan(judul.trim(), panduan.trim())}
+				>
+					Simpan
+				</Button>
+			</div>
+		</li>
+	);
+}
+
+/** Daftar section (outline) satu bab — generate per baris (LLM) plus tambah/edit/hapus manual. */
 export function ChapterSectionList({
 	sections,
-	dimatikan,
+	/** Mengunci tambah/ubah/hapus manual — cuma perlu bab tidak sedang diproses, tidak butuh bukti dukung terpilih. */
+	dimatikanEdit,
+	/** Mengunci tombol Generate per baris — bab tidak terkunci, ada bukti dukung terpilih, rekomendasi dokumen sudah dikonfirmasi. */
+	dimatikanGenerate,
 	onGenerate,
+	onCreate,
+	onUpdate,
+	onDelete,
 }: {
 	sections: ChapterSectionEntity[];
-	dimatikan: boolean;
+	dimatikanEdit: boolean;
+	dimatikanGenerate: boolean;
 	onGenerate: (sectionId: string) => void;
+	onCreate: (title: string, guidance: string) => void;
+	onUpdate: (sectionId: string, title: string, guidance: string) => void;
+	onDelete: (sectionId: string) => void;
 }) {
+	const [sedangTambah, setSedangTambah] = React.useState(false);
+	const [sedangEdit, setSedangEdit] = React.useState<string | null>(null);
+
 	return (
 		<ul className="space-y-1 rounded-md border border-border p-1.5">
-			{sections.map((section) => {
-				const sedangJalan = section.status === 'GENERATING';
-				return (
+			{sections.map((section) =>
+				sedangEdit === section.id ? (
+					<FormSection
+						key={section.id}
+						judulAwal={section.judul}
+						panduanAwal={section.panduan}
+						onBatal={() => setSedangEdit(null)}
+						onSimpan={(judul, panduan) => {
+							onUpdate(section.id, judul, panduan);
+							setSedangEdit(null);
+						}}
+					/>
+				) : (
 					<li
 						key={section.id}
 						className="flex items-start justify-between gap-2 rounded px-1.5 py-1"
@@ -47,20 +132,67 @@ export function ChapterSectionList({
 							)}
 						</div>
 
-						<Button
-							type="button"
-							size="xs"
-							variant={section.status === 'GENERATED' ? 'outline' : 'default'}
-							onClick={() => onGenerate(section.id)}
-							disabled={dimatikan || sedangJalan}
-							className="shrink-0"
-						>
-							<SparkleIcon />
-							{section.status === 'GENERATED' ? 'Ulang' : 'Generate'}
-						</Button>
+						<div className="flex shrink-0 items-center gap-1">
+							<Button
+								type="button"
+								size="xs"
+								variant="ghost"
+								title="Ubah sub-bab ini"
+								disabled={dimatikanEdit}
+								onClick={() => setSedangEdit(section.id)}
+							>
+								<PencilSimpleIcon />
+							</Button>
+							<Button
+								type="button"
+								size="xs"
+								variant="ghost"
+								title="Hapus sub-bab ini"
+								disabled={dimatikanEdit}
+								onClick={() => {
+									if (window.confirm(`Hapus sub-bab "${section.judul}"?`)) onDelete(section.id);
+								}}
+							>
+								<TrashIcon />
+							</Button>
+							<Button
+								type="button"
+								size="xs"
+								variant={section.status === 'GENERATED' ? 'outline' : 'default'}
+								onClick={() => onGenerate(section.id)}
+								disabled={dimatikanGenerate || section.status === 'GENERATING'}
+							>
+								<SparkleIcon />
+								{section.status === 'GENERATED' ? 'Ulang' : 'Generate'}
+							</Button>
+						</div>
 					</li>
-				);
-			})}
+				),
+			)}
+
+			{sedangTambah ? (
+				<FormSection
+					onBatal={() => setSedangTambah(false)}
+					onSimpan={(judul, panduan) => {
+						onCreate(judul, panduan);
+						setSedangTambah(false);
+					}}
+				/>
+			) : (
+				<li>
+					<Button
+						type="button"
+						size="xs"
+						variant="ghost"
+						disabled={dimatikanEdit}
+						onClick={() => setSedangTambah(true)}
+						className="w-full justify-start text-muted-foreground"
+					>
+						<PlusIcon />
+						Tambah Sub-bab
+					</Button>
+				</li>
+			)}
 		</ul>
 	);
 }

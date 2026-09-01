@@ -24,8 +24,10 @@ import { ChatMessageDto } from './dto/chat-message.dto';
 import { ConfirmRecommendationDto } from './dto/confirm-recommendation.dto';
 import { CreateBabDokumenDto } from './dto/create-bab-dokumen.dto';
 import { CreateBabDraftDto } from './dto/create-bab-draft.dto';
+import { CreateSectionDto } from './dto/create-section.dto';
 import { GenerateBabDto } from './dto/generate-bab.dto';
 import { GenerateOutlineDto } from './dto/generate-outline.dto';
+import { UpdateSectionDto } from './dto/update-section.dto';
 import { RecommendDocumentsDto } from './dto/recommend-documents.dto';
 import { SimulateScoreDto } from './dto/simulate-score.dto';
 import { UpdateBabDokumenDto } from './dto/update-bab-dokumen.dto';
@@ -109,6 +111,29 @@ export class BabDokumenController {
     @Body() dto: GenerateBabDto,
   ) {
     return this.babPipelineService.triggerGenerate(id, sectionId, dto.prompt, dto.draftId);
+  }
+
+  @Post('bab/:id/sections')
+  @Protected(...WRITE_ROLES)
+  createSection(@Param('id') id: string, @Body() dto: CreateSectionDto) {
+    return this.babPipelineService.createSection(id, dto);
+  }
+
+  @Patch('bab/:id/sections/:sectionId')
+  @Protected(...WRITE_ROLES)
+  updateSection(
+    @Param('id') id: string,
+    @Param('sectionId') sectionId: string,
+    @Body() dto: UpdateSectionDto,
+  ) {
+    return this.babPipelineService.updateSection(id, sectionId, dto);
+  }
+
+  @Delete('bab/:id/sections/:sectionId')
+  @Protected(...WRITE_ROLES)
+  @HttpCode(204)
+  deleteSection(@Param('id') id: string, @Param('sectionId') sectionId: string) {
+    return this.babPipelineService.deleteSection(id, sectionId);
   }
 
   @Post('bab/:id/recommend-documents')

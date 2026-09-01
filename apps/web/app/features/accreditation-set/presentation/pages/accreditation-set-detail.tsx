@@ -213,6 +213,9 @@ export function AccreditationSetDetail() {
 							{(set.criteriaParseStatus === 'DIPROSES' || set.criteriaParseStatus === 'GAGAL') && (
 								<EvidenceStatusBadge status={set.criteriaParseStatus} />
 							)}
+							{(set.structureParseStatus === 'DIPROSES' || set.structureParseStatus === 'GAGAL') && (
+								<EvidenceStatusBadge status={set.structureParseStatus} />
+							)}
 						</div>
 						{/* Jumlah kriteria ikut di sini, bukan di kartu tersendiri di dasar
 						    halaman: ia keterangan tentang set ini, sama seperti lembaga dan
@@ -276,6 +279,21 @@ export function AccreditationSetDetail() {
 				<div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
 					Ekstraksi kriteria otomatis gagal: {set.criteriaParseError ?? 'penyebab tidak diketahui'}. Isi
 					kriteria manual lewat "Tinjau dan Koreksi Isi", atau unggah ulang Dokumen Rubrik.
+				</div>
+			)}
+
+			{set.structureParseStatus === 'DIPROSES' && (
+				<div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+					Memproses ekstraksi struktur bab dari berkas Panduan Penulisan yang baru diunggah — halaman ini
+					akan memperbarui diri begitu selesai.
+				</div>
+			)}
+
+			{set.structureParseStatus === 'GAGAL' && (
+				<div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+					Ekstraksi struktur bab otomatis gagal: {set.structureParseError ?? 'penyebab tidak diketahui'}.
+					Dokumen LED baru dari set ini tetap memakai struktur bab standar — unggah ulang Panduan
+					Penulisan untuk mencoba lagi.
 				</div>
 			)}
 

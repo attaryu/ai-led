@@ -62,8 +62,29 @@ export type BackendAccreditationSet = {
 	status: BackendSetStatus;
 	criteriaParseStatus: BackendCriteriaParseStatus;
 	criteriaParseError: string | null;
+	/** Status ekstraksi struktur bab/sub-bab dari PANDUAN_LAM -- worker.py::_handle_ingestion_struktur_dokumen. */
+	structureParseStatus: BackendCriteriaParseStatus;
+	structureParseError: string | null;
 	createdAt: string;
 	updatedAt: string;
+};
+
+/** Baris Prisma `SubBabTemplate`. */
+export type BackendSubBabTemplate = {
+	id: string;
+	chapterTemplateId: string;
+	order: number;
+	title: string;
+	guidance: string;
+};
+
+/** Baris Prisma `ChapterTemplate`, dengan `subBab` disertakan -- `GET /accreditation-sets/:id/chapter-templates`. */
+export type BackendChapterTemplate = {
+	id: string;
+	accreditationSetId: string;
+	order: number;
+	title: string;
+	subBab: BackendSubBabTemplate[];
 };
 
 /** `GET /accreditation-sets` -- documents dipangkas ke `type`, criteria ke hitungannya (accreditation-set.service.ts::findAll). */
@@ -188,5 +209,10 @@ export const accreditationSetRemoteSource = {
 		return apiFetch<void>(`/accreditation-sets/${id}/documents/${type}`, {
 			method: 'DELETE',
 		});
+	},
+
+	/** Struktur bab/sub-bab resmi set ini -- kosong kalau belum pernah diekstrak. */
+	findChapterTemplates(id: string): Promise<BackendChapterTemplate[]> {
+		return apiFetch<BackendChapterTemplate[]>(`/accreditation-sets/${id}/chapter-templates`);
 	},
 };

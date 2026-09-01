@@ -434,3 +434,57 @@ def replace_rubric_criteria_for_set(accreditation_set_id: str, rubrics: list[Ind
             cur.execute("COMMIT")
 
     return len(rubrics)
+
+
+def replace_chapter_templates_for_set(accreditation_set_id: str, bab_list: list[dict]) -> int:
+    """Wipe and rewrite every chapter_templates(+sub_bab_templates) row for
+    this set from a freshly parsed PANDUAN_LAM PDF
+    (worker.py::_handle_ingestion_struktur_dokumen).
+
+    `bab_list`: [{"order": int, "title": str, "subbab": [{"order": int,
+    "title": str, "guidance": str}]}], already normalized from the LLM's
+    Indonesian JSON keys by worker.py::_parse_struktur_dokumen.
+
+    No "in use" guard like replace_rubric_criteria_for_set -- a document's
+    DocumentChapter rows are stamped ONCE at creation time from whatever
+    templates exist then (apps/web's ledProjectRepository.create());
+    re-extracting only changes the template for documents created
+    AFTERWARD, never retroactively touches existing ones.
+    """
+    with _get_conn().cursor() as cur:
+        cur.execute("BEGIN")
+        try:
+            cur.execute(
+                "DELETE FROM sub_bab_templates WHERE chapter_template_id IN "
+                "(SELECT id FROM chapter_templates WHERE accreditation_set_id = %s)",
+                (accreditation_set_id,),
+            )
+            cur.execute(
+                "DELETE FROM chapter_templates WHERE accreditation_set_id = %s",
+                (accreditation_set_id,),
+            )
+
+            for bab in bab_list:
+                chapter_template_id = str(uuid.uuid4())
+                cur.execute(
+                    """
+                    INSERT INTO chapter_templates (id, accreditation_set_id, "order", title)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (chapter_template_id, accreditation_set_id, bab["order"], bab["title"]),
+                )
+                for sub in bab.get("subbab", []):
+                    cur.execute(
+                        """
+                        INSERT INTO sub_bab_templates (id, chapter_template_id, "order", title, guidance)
+                        VALUES (%s, %s, %s, %s, %s)
+                        """,
+                        (str(uuid.uuid4()), chapter_template_id, sub["order"], sub["title"], sub["guidance"]),
+                    )
+        except Exception:
+            cur.execute("ROLLBACK")
+            raise
+        else:
+            cur.execute("COMMIT")
+
+    return len(bab_list)

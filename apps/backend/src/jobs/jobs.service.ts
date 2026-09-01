@@ -52,6 +52,7 @@ export class JobsService implements OnModuleDestroy {
         return this.assessmentQueue;
       case JobType.INGESTION_BUKTI_DUKUNG:
       case JobType.INGESTION_RUBRIK_DOKUMEN:
+      case JobType.INGESTION_STRUKTUR_DOKUMEN:
         return this.ingestionQueue;
     }
   }

@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { JobType, type Prisma, StatusEkstraksi, StatusRekomendasi } from '@ai-led/db';
+import { JobType, Prisma, StatusEkstraksi, StatusRekomendasi } from '@ai-led/db';
 import { PrismaService } from '../database/prisma.service';
 import { JobsService } from '../jobs/jobs.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
@@ -36,6 +36,66 @@ export class BabPipelineService {
   async findSections(id: string) {
     await this.access.findOneScoped(id);
     return this.prisma.chapterSection.findMany({ where: { chapterId: id }, orderBy: { order: 'asc' } });
+  }
+
+  /** POST bab/:id/sections — tambah section manual, langsung di akhir daftar. Tanpa LLM/job. */
+  async createSection(id: string, dto: { title: string; guidance: string }) {
+    const bab = await this.access.findOneScoped(id);
+    if (bab.locked) {
+      throw new ForbiddenException('Bab ini sedang terkunci untuk direview');
+    }
+
+    const terakhir = await this.prisma.chapterSection.aggregate({
+      where: { chapterId: id },
+      _max: { order: true },
+    });
+
+    return this.prisma.chapterSection.create({
+      data: {
+        chapterId: id,
+        order: (terakhir._max.order ?? 0) + 1,
+        title: dto.title,
+        guidance: dto.guidance,
+        status: 'PENDING',
+      },
+    });
+  }
+
+  /** PATCH bab/:id/sections/:sectionId — ubah judul/panduan manual. Konten lama basi begitu topiknya diganti, direset ke PENDING. */
+  async updateSection(id: string, sectionId: string, dto: { title?: string; guidance?: string }) {
+    const bab = await this.access.findOneScoped(id);
+    if (bab.locked) {
+      throw new ForbiddenException('Bab ini sedang terkunci untuk direview');
+    }
+    const section = await this.prisma.chapterSection.findFirst({ where: { id: sectionId, chapterId: id } });
+    if (!section) {
+      throw new NotFoundException('Section tidak ditemukan');
+    }
+
+    return this.prisma.chapterSection.update({
+      where: { id: sectionId },
+      data: {
+        ...(dto.title !== undefined ? { title: dto.title } : {}),
+        ...(dto.guidance !== undefined ? { guidance: dto.guidance } : {}),
+        status: 'PENDING',
+        content: Prisma.DbNull,
+        error: null,
+      },
+    });
+  }
+
+  /** DELETE bab/:id/sections/:sectionId — hapus section manual. */
+  async deleteSection(id: string, sectionId: string) {
+    const bab = await this.access.findOneScoped(id);
+    if (bab.locked) {
+      throw new ForbiddenException('Bab ini sedang terkunci untuk direview');
+    }
+    const section = await this.prisma.chapterSection.findFirst({ where: { id: sectionId, chapterId: id } });
+    if (!section) {
+      throw new NotFoundException('Section tidak ditemukan');
+    }
+
+    await this.prisma.chapterSection.delete({ where: { id: sectionId } });
   }
 
   /** Enqueues GENERASI_BAB — apps/ai's worker generate SATU section (RAG pipeline scoped ke section.guidance). `draftId` (recommend->confirm flow) scopes Evidence retrieval to that draft's confirmed recommendation. */

@@ -343,8 +343,8 @@ export class AccreditationSetService {
           },
         });
 
-    // DOKUMEN_RUBRIK saja yang jadi sumber kriteria -- PANDUAN_LAM/TEMPLATE_LKPS
-    // cuma dokumen acuan, disimpan apa adanya di atas tanpa ekstraksi apapun.
+    // DOKUMEN_RUBRIK saja yang jadi sumber kriteria -- TEMPLATE_LKPS cuma
+    // dokumen acuan, disimpan apa adanya di atas tanpa ekstraksi apapun.
     if (type === TipePanduan.DOKUMEN_RUBRIK) {
       await this.prisma.accreditationSet.update({
         where: { id },
@@ -356,6 +356,33 @@ export class AccreditationSetService {
       });
     }
 
+    // PANDUAN_LAM = dokumen Panduan Penulisan LED -- sumber struktur bab/sub-bab
+    // resmi (worker.py::_handle_ingestion_struktur_dokumen), dipakai menstempel
+    // DocumentChapter dokumen LED baru + konteks tambahan outline section.
+    if (type === TipePanduan.PANDUAN_LAM) {
+      await this.prisma.accreditationSet.update({
+        where: { id },
+        data: { structureParseStatus: StatusEkstraksi.DIPROSES, structureParseError: null },
+      });
+      await this.jobsService.enqueue(JobType.INGESTION_STRUKTUR_DOKUMEN, {
+        accreditationSetId: id,
+        fileUrl: dto.fileKey,
+      });
+    }
+
     return saved;
+  }
+
+  /** Struktur bab/sub-bab resmi set ini (worker.py::_handle_ingestion_struktur_dokumen) -- kosong kalau belum pernah diekstrak. */
+  async findChapterTemplates(id: string) {
+    const { tenantId } = this.tenantContext.getOrThrow();
+    const set = await this.prisma.accreditationSet.findFirst({ where: { id, tenantId } });
+    if (!set) throw new NotFoundException('Set akreditasi tidak ditemukan');
+
+    return this.prisma.chapterTemplate.findMany({
+      where: { accreditationSetId: id },
+      orderBy: { order: 'asc' },
+      include: { subBab: { orderBy: { order: 'asc' } } },
+    });
   }
 }

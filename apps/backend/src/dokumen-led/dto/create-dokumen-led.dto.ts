@@ -24,4 +24,11 @@ export class CreateDokumenLedDto {
   @IsOptional()
   @IsDateString()
   deadline?: string;
+
+  // Menentukan struktur bab yang distempel ledProjectRepository.create() --
+  // lihat ChapterTemplate (packages/db/prisma/schema.prisma).
+  @ApiPropertyOptional({ example: 'clx1a2b3c4d5e6f7g8h9i0j1' })
+  @IsOptional()
+  @IsString()
+  accreditationSetId?: string;
 }
