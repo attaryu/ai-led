@@ -121,6 +121,16 @@ def index_led_chunks(chunks: list[LEDChunk], tenant_id: str, dokumen_id: str) ->
     )
 
 
+def get_led_chunk_count(tenant_id: str, dokumen_id: str) -> int:
+    """Chunks already indexed for this document — used to recover led_index_state after a restart."""
+    with _conn().cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM writing_led_chunk_embeddings WHERE tenant_id = %s AND document_id = %s",
+            (tenant_id, dokumen_id),
+        )
+        return cur.fetchone()["count"]
+
+
 def search_led(
     query: str,
     tenant_id: str,

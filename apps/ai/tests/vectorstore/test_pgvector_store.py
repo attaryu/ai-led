@@ -142,6 +142,17 @@ def test_search_returns_empty_for_never_indexed_document(fixture_ids):
     assert search_led("anything", a["tenant_id"], a["dokumen_id"]) == []
 
 
+def test_get_led_chunk_count_matches_indexed_chunks(fixture_ids):
+    """Used by /upload/status to recover led_index_state after a restart (ariel 8d81bb0)."""
+    from vectorstore.pgvector_store import get_led_chunk_count, index_led_chunks
+
+    a = fixture_ids["a"]
+    assert get_led_chunk_count(a["tenant_id"], a["dokumen_id"]) == 0
+
+    index_led_chunks([_chunk("c1", "one"), _chunk("c2", "two")], a["tenant_id"], a["dokumen_id"])
+    assert get_led_chunk_count(a["tenant_id"], a["dokumen_id"]) == 2
+
+
 def test_reindex_replaces_not_duplicates(fixture_ids):
     from vectorstore.pgvector_store import index_led_chunks, search_led
 

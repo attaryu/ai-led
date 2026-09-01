@@ -61,6 +61,15 @@ def _led_filename(original_filename: str) -> str:
     return f"led{ext}"
 
 
+def _existing_led_path(tenant_id: str, dokumen_id: str) -> str | None:
+    """Find a previously-uploaded LED file on disk for this document, regardless of extension."""
+    for ext in LED_EXTENSIONS:
+        p = os.path.join(_doc_dir(tenant_id, dokumen_id), f"led{ext}")
+        if os.path.exists(p):
+            return p
+    return None
+
+
 # ── In-process state (prototype-grade; resets on restart), keyed per document ──
 
 _led_index_status: dict[DocKey, dict] = {}
@@ -192,6 +201,37 @@ def get_upload_status(tenant_id: str, dokumen_id: str) -> UploadStatusResponse:
 
     doc_state = _doc_state(key)
     led_status = _led_status(key)
+
+    # Auto-detect LED from disk: the file and its pgvector index both
+    # survive a restart even though the in-process status dicts don't.
+    if not doc_state["led"]:
+        led_path = _existing_led_path(*key)
+        if led_path:
+            doc_state["led"] = True
+            if led_status["state"] == "idle":
+                try:
+                    from vectorstore.pgvector_store import get_led_chunk_count
+
+                    count = get_led_chunk_count(*key)
+                    if count > 0:
+                        led_status["state"] = "ready"
+                        led_status["chunk_count"] = count
+                except Exception:
+                    pass
+
+    # Auto-detect LKPS from disk: the LKPSRegistry only lives in an
+    # in-process singleton (agent.tools.lkps_tool), lost on restart.
+    if not doc_state["lkps"]:
+        lkps_path = os.path.join(_doc_dir(*key), "lkps.xlsx")
+        if os.path.exists(lkps_path):
+            try:
+                from agent.tools.lkps_tool import set_lkps_registry
+                from ingestion.lkps_loader import load_lkps
+
+                set_lkps_registry(*key, load_lkps(lkps_path))
+                doc_state["lkps"] = True
+            except Exception:
+                pass
 
     return UploadStatusResponse(
         matrix_uploaded=_matrix_status["rubric_count"] > 0,

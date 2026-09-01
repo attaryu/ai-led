@@ -99,6 +99,75 @@ def test_status_is_isolated_per_document(client):
     assert resp_b.json()["led_chunk_count"] == 0
 
 
+def test_status_auto_detects_led_from_disk_after_restart(client, tmp_path):
+    """Regression: in-process state resets on restart, but the LED file and its pgvector index both survive (ariel 8d81bb0)."""
+    doc_dir = tmp_path / DOC_A["tenant_id"] / DOC_A["dokumen_id"]
+    doc_dir.mkdir(parents=True)
+    (doc_dir / "led.pdf").write_bytes(_pdf_bytes())
+
+    with (
+        patch("api.routes.upload.UPLOAD_DIR", str(tmp_path)),
+        patch("vectorstore.pgvector_store.get_led_chunk_count", return_value=42),
+    ):
+        resp = client.get("/upload/status", params=DOC_A)
+
+    data = resp.json()
+    assert data["led_uploaded"] is True
+    assert data["led_index_state"] == "ready"
+    assert data["led_chunk_count"] == 42
+
+
+def test_status_led_file_present_but_not_yet_indexed(client, tmp_path):
+    doc_dir = tmp_path / DOC_A["tenant_id"] / DOC_A["dokumen_id"]
+    doc_dir.mkdir(parents=True)
+    (doc_dir / "led.pdf").write_bytes(_pdf_bytes())
+
+    with (
+        patch("api.routes.upload.UPLOAD_DIR", str(tmp_path)),
+        patch("vectorstore.pgvector_store.get_led_chunk_count", return_value=0),
+    ):
+        resp = client.get("/upload/status", params=DOC_A)
+
+    data = resp.json()
+    assert data["led_uploaded"] is True
+    assert data["led_index_state"] == "idle"
+
+
+def test_status_auto_detects_lkps_from_disk_after_restart(client, tmp_path):
+    """LKPSRegistry only lives in an in-process singleton, lost on restart even though lkps.xlsx persists (ariel 8d81bb0)."""
+    doc_dir = tmp_path / DOC_A["tenant_id"] / DOC_A["dokumen_id"]
+    doc_dir.mkdir(parents=True)
+    (doc_dir / "lkps.xlsx").write_bytes(_xlsx_bytes())
+
+    fake_registry = MagicMock()
+    set_registry_mock = MagicMock()
+
+    with (
+        patch("api.routes.upload.UPLOAD_DIR", str(tmp_path)),
+        patch("ingestion.lkps_loader.load_lkps", return_value=fake_registry) as load_mock,
+        patch("agent.tools.lkps_tool.set_lkps_registry", set_registry_mock),
+    ):
+        resp = client.get("/upload/status", params=DOC_A)
+
+    assert resp.json()["lkps_uploaded"] is True
+    load_mock.assert_called_once()
+    set_registry_mock.assert_called_once_with(DOC_A["tenant_id"], DOC_A["dokumen_id"], fake_registry)
+
+
+def test_status_lkps_load_failure_does_not_mark_uploaded(client, tmp_path):
+    doc_dir = tmp_path / DOC_A["tenant_id"] / DOC_A["dokumen_id"]
+    doc_dir.mkdir(parents=True)
+    (doc_dir / "lkps.xlsx").write_bytes(_xlsx_bytes())
+
+    with (
+        patch("api.routes.upload.UPLOAD_DIR", str(tmp_path)),
+        patch("ingestion.lkps_loader.load_lkps", side_effect=ValueError("corrupt file")),
+    ):
+        resp = client.get("/upload/status", params=DOC_A)
+
+    assert resp.json()["lkps_uploaded"] is False
+
+
 # ── POST /upload/matrix (shared, not tenant-scoped) ────────────────────────────
 
 
