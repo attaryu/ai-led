@@ -101,6 +101,7 @@ enum JobType {
   SIMULASI_SKOR
   REKOMENDASI_DOKUMEN
   INGESTION_RUBRIK_DOKUMEN
+  GENERASI_OUTLINE_BAB
 }
 
 enum JobStatus {
@@ -239,9 +240,40 @@ model DocumentChapter {
   hasilSkorKriteria CriterionScoreResult[]
   ragasScores       RagasScore[]
   chatMessages      ChatMessage[]
+  sections          ChapterSection[]
 
   @@unique([documentId, chapterOrder])
   @@map("writing_document_chapters")
+}
+
+/// Outline yang di-generate LLM (bukan JSON statis) — daftar sub-bab per bab,
+/// dituntun oleh kriteria rubrik tenant itu sendiri. Tiap section digenerate
+/// detail satu-satu (worker.py::_handle_generasi_bab), hasilnya digabung
+/// otomatis jadi DocumentChapter.workingContent lewat ChapterDraft checkpoint
+/// baru — RAGAS/export/review/chat tetap baca dari sana, tidak berubah.
+model ChapterSection {
+  id          String               @id @default(cuid())
+  chapterId   String               @map("chapter_id")
+  order       Int
+  title       String
+  guidance    String               @db.Text
+  status      ChapterSectionStatus @default(PENDING)
+  content     Json?
+  model       String?
+  error       String?              @db.Text
+  generatedAt DateTime?            @map("generated_at")
+
+  chapter DocumentChapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@unique([chapterId, order])
+  @@map("writing_chapter_sections")
+}
+
+enum ChapterSectionStatus {
+  PENDING
+  GENERATING
+  GENERATED
+  ERROR
 }
 
 /// docs/database.md §6

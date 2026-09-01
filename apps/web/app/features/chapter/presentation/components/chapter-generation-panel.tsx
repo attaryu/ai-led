@@ -30,7 +30,9 @@ import {
 	type HasilGenerate,
 } from '../hooks/use-chapter-generation';
 import { useChapterRecommendation } from '../hooks/use-chapter-recommendation';
+import { useChapterSections } from '../hooks/use-chapter-sections';
 import { ChapterDocumentRecommendation } from './chapter-document-recommendation';
+import { ChapterSectionList } from './chapter-section-list';
 
 /**
  * Isi tab "Generasi" (docs/application_flow.md §12.1): memilih bukti dukung yang
@@ -57,6 +59,7 @@ export function ChapterGenerationPanel({
 }) {
 	const generasi = useChapterGeneration({ chapter, studyProgramId, izin, onGenerated });
 	const rekomendasiDokumen = useChapterRecommendation({ chapter, izin });
+	const sections = useChapterSections(chapter.id);
 
 	const {
 		daftar,
@@ -85,7 +88,7 @@ export function ChapterGenerationPanel({
 		simpanSebagaiDraft,
 	} = generasi;
 
-	const sedangBerjalan = status === 'berjalan';
+	const sedangBerjalan = status === 'berjalan' || sections.status === 'berjalan';
 
 	/**
 	 * Hak unggah dibaca terpisah dari `izin`, dan sengaja **tidak** diikat ke
@@ -120,10 +123,12 @@ export function ChapterGenerationPanel({
 	// (lihat JSDoc `onGenerated` di sana) supaya jalur menyambung ulang job
 	// lama setelah refresh juga mendorong hasilnya ke editor, bukan cuma
 	// jalur klik manual ini.
-	async function handleGenerate() {
+	async function handleGenerateSection(sectionId: string) {
 		await jalankanGenerate(
+			sectionId,
 			rekomendasi?.status === 'DIKONFIRMASI' ? rekomendasi.chapterDraftId : undefined,
 		);
+		await sections.refetch();
 	}
 
 	return (
@@ -314,31 +319,50 @@ export function ChapterGenerationPanel({
 								</span>
 							</button>
 
-							<Button
-								type="button"
-								size="sm"
-								onClick={handleGenerate}
-								disabled={sedangBerjalan || terpilih.size === 0 || menungguKonfirmasi}
-								className="shrink-0"
-							>
-								{sedangBerjalan ? (
-									<>
-										<SpinnerGapIcon className="animate-spin" />
-										Menyusun…
-									</>
-								) : (
-									<>
-										<SparkleIcon />
-										Generate
-									</>
-								)}
-							</Button>
+							{sections.dimuat && sections.sections.length === 0 && (
+								<Button
+									type="button"
+									size="sm"
+									onClick={() => sections.generateOutline()}
+									disabled={sedangBerjalan || terpilih.size === 0 || menungguKonfirmasi}
+									className="shrink-0"
+								>
+									{sections.status === 'berjalan' ? (
+										<>
+											<SpinnerGapIcon className="animate-spin" />
+											Menyusun outline…
+										</>
+									) : (
+										<>
+											<SparkleIcon />
+											Buat Outline
+										</>
+									)}
+								</Button>
+							)}
 						</div>
 
 						{menungguKonfirmasi && (
 							<p className="text-xs leading-relaxed text-muted-foreground">
 								Konfirmasi rekomendasi dokumen di atas dulu sebelum generate.
 							</p>
+						)}
+
+						{sections.status === 'gagal' && sections.pesanGagal && (
+							<div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-2.5">
+								<WarningCircleIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
+								<p className="text-xs leading-relaxed text-destructive">
+									{sections.pesanGagal}
+								</p>
+							</div>
+						)}
+
+						{sections.dimuat && sections.sections.length > 0 && (
+							<ChapterSectionList
+								sections={sections.sections}
+								dimatikan={sedangBerjalan || terpilih.size === 0 || menungguKonfirmasi}
+								onGenerate={handleGenerateSection}
+							/>
 						)}
 
 						{/*

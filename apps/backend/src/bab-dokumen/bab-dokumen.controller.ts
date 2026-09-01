@@ -25,6 +25,7 @@ import { ConfirmRecommendationDto } from './dto/confirm-recommendation.dto';
 import { CreateBabDokumenDto } from './dto/create-bab-dokumen.dto';
 import { CreateBabDraftDto } from './dto/create-bab-draft.dto';
 import { GenerateBabDto } from './dto/generate-bab.dto';
+import { GenerateOutlineDto } from './dto/generate-outline.dto';
 import { RecommendDocumentsDto } from './dto/recommend-documents.dto';
 import { SimulateScoreDto } from './dto/simulate-score.dto';
 import { UpdateBabDokumenDto } from './dto/update-bab-dokumen.dto';
@@ -80,14 +81,34 @@ export class BabDokumenController {
     return this.babDokumenService.update(id, dto);
   }
 
-  @Post('bab/:id/generate')
+  @Post('bab/:id/outline')
   @Protected(...WRITE_ROLES)
   @HttpCode(202)
   @ApiOperation({
-    summary: 'Trigger generasi konten AI untuk bab (Producer GENERASI_BAB)',
+    summary: 'Trigger penyusunan outline (daftar section) untuk bab (Producer GENERASI_OUTLINE_BAB)',
   })
-  generate(@Param('id') id: string, @Body() dto: GenerateBabDto) {
-    return this.babPipelineService.triggerGenerate(id, dto.prompt, dto.draftId);
+  generateOutline(@Param('id') id: string, @Body() dto: GenerateOutlineDto) {
+    return this.babPipelineService.triggerGenerateOutline(id, dto.overwrite);
+  }
+
+  @Get('bab/:id/sections')
+  @Protected(...READ_ROLES)
+  findSections(@Param('id') id: string) {
+    return this.babPipelineService.findSections(id);
+  }
+
+  @Post('bab/:id/sections/:sectionId/generate')
+  @Protected(...WRITE_ROLES)
+  @HttpCode(202)
+  @ApiOperation({
+    summary: 'Trigger generasi konten AI untuk satu section (Producer GENERASI_BAB)',
+  })
+  generateSection(
+    @Param('id') id: string,
+    @Param('sectionId') sectionId: string,
+    @Body() dto: GenerateBabDto,
+  ) {
+    return this.babPipelineService.triggerGenerate(id, sectionId, dto.prompt, dto.draftId);
   }
 
   @Post('bab/:id/recommend-documents')

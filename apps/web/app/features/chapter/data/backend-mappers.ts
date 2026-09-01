@@ -1,10 +1,12 @@
 import { type BuktiDukungRef } from '../domain/entities/bukti-dukung-ref.entity';
 import { type ChapterScoreEntity } from '../domain/entities/chapter-score.entity';
+import { type ChapterSectionEntity } from '../domain/entities/chapter-section.entity';
 import { type DocumentRecommendationEntity } from '../domain/entities/document-recommendation.entity';
 import { type RagasMetrik, type RagasScore } from '../domain/entities/ragas-score.entity';
 import {
 	type BackendBuktiDukungBab,
 	type BackendBuktiDukungDraft,
+	type BackendChapterSection,
 	type BackendDocumentRecommendation,
 	type BackendHasilSkorKriteria,
 	type BackendRagasScore,
@@ -112,4 +114,17 @@ export function mapHasilSkor(rows: BackendHasilSkorKriteria[] | undefined): Chap
 		dijalankanOlehNama: row.runByName,
 		dijalankanPada: row.runAt,
 	}));
+}
+
+export function mapChapterSection(row: BackendChapterSection): ChapterSectionEntity {
+	return {
+		id: row.id,
+		chapterId: row.chapterId,
+		urutan: row.order,
+		judul: row.title,
+		panduan: row.guidance,
+		status: row.status,
+		konten: mapKontenBody(row.content),
+		error: row.error,
+	};
 }

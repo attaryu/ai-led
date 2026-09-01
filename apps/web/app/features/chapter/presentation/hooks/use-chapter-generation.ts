@@ -450,15 +450,14 @@ export function useChapterGeneration({
 	}, [chapter.id]);
 
 	/**
-	 * Memicu GENERASI_BAB sungguhan (Producer NestJS -> Worker FastAPI) lalu
-	 * menunggu selesainya lewat `tunggu` di atas. Bukan lagi
-	 * `generateChapterContent` (mock) + `chapterRepository.applyGenerate`
-	 * (localStorage) — `chapter.id` di sini adalah id `BabDokumen` sungguhan,
-	 * dan `applyGenerate` hanya menulis ke larik data contoh yang tidak
-	 * memuatnya sama sekali (lihat catatan migrasi di `chapter.repository.ts`).
+	 * Memicu GENERASI_BAB sungguhan untuk SATU section (Producer NestJS ->
+	 * Worker FastAPI) lalu menunggu selesainya lewat `tunggu` di atas.
+	 * `sectionId` wajib — outline (daftar section) dikelola `use-chapter-sections.ts`,
+	 * hook ini hanya menjalankan generate-nya memakai evidence/prompt yang
+	 * sama untuk section mana pun yang dipilih pemanggil.
 	 *
 	 * Pemilihan bukti dukung & prompt tambahan: prompt sudah ikut terkirim ke
-	 * worker (lihat `worker.py::_build_generasi_prompt`), tapi pemilihan bukti
+	 * worker (lihat `worker.py::_build_section_prompt`), tapi pemilihan bukti
 	 * dukung **belum** — worker menjalankan pencarian bukti LED sendiri lewat
 	 * pgvector, bukan menyaring dari `terpilih`. Daftarnya tetap ditampilkan
 	 * sebagai konteks yang relevan buat penyusun, bukan kontrol yang benar-benar
@@ -471,15 +470,16 @@ export function useChapterGeneration({
 	 * rekomendasi memanggil ini tanpa argumen, tidak berubah dari sebelumnya.
 	 */
 	const jalankanGenerate =
-		React.useCallback(async (draftId?: string): Promise<HasilGenerate | null> => {
+		React.useCallback(async (sectionId: string, draftId?: string): Promise<HasilGenerate | null> => {
 			if (!enabled || status === 'berjalan' || terpilih.size === 0) return null;
 
 			setStatus('berjalan');
 			setPesanGagal(null);
 
 			try {
-				const job = await chapterRemoteSource.generate(
+				const job = await chapterRemoteSource.generateSection(
 					chapter.id,
+					sectionId,
 					prompt.trim() || undefined,
 					draftId,
 				);

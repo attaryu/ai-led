@@ -216,11 +216,12 @@ Upload dokumen Bukti Dukung **tidak** lewat sini — itu jalur NestJS
 
 ## Worker (`worker.py`)
 
-Konsumen BullMQ, 3 antrean (`QUEUE_NAMES`), 6 job handler:
+Konsumen BullMQ, 3 antrean (`QUEUE_NAMES`), 7 job handler:
 
 | Queue | Job Type | Handler |
 |---|---|---|
-| `generation-queue` | `GENERASI_BAB` | `_handle_generasi_bab` — generate narasi bab |
+| `generation-queue` | `GENERASI_OUTLINE_BAB` | `_handle_generasi_outline_bab` — LLM menyusun daftar section (sub-bab) per bab, dituntun kelompok kriteria rubrik |
+| `generation-queue` | `GENERASI_BAB` | `_handle_generasi_bab` — generate narasi SATU section (payload wajib `sectionId`); hasil semua section GENERATED digabung otomatis jadi checkpoint bab |
 | `generation-queue` | rekomendasi dokumen | `_handle_rekomendasi_dokumen` |
 | `generation-queue` | simulasi skor rubrik | `_handle_simulasi_skor` |
 | `assessment-queue` | `ASSESSMENT_AMI` | `_handle_assessment_ami` — jalankan pipeline penilaian penuh |

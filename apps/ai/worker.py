@@ -67,6 +67,8 @@ async def process_job(job, token: str):
 
     if job.name == "GENERASI_BAB":
         result = await _handle_generasi_bab(job)
+    elif job.name == "GENERASI_OUTLINE_BAB":
+        result = await _handle_generasi_outline_bab(job)
     elif job.name == "REKOMENDASI_DOKUMEN":
         result = await _handle_rekomendasi_dokumen(job)
     elif job.name == "SIMULASI_SKOR":
@@ -644,8 +646,149 @@ def _parse_judge_json(raw: str) -> dict:
     return {"raw": raw, "parse_error": "could not extract any metric"}
 
 
-def _build_generasi_prompt(
+# ──────────────────────────────────────────────────────────────────────
+# Outline generation (GENERASI_OUTLINE_BAB) — LLM menyusun daftar section
+# per bab, dituntun kelompok kriteria rubrik tenant itu sendiri (bukan JSON
+# statis ala AI-LED-dimas, bukan pula kelompokkanKriteria dipakai apa
+# adanya sebagai daftar section). Tiap section lalu digenerate detail satu-
+# satu lewat _handle_generasi_bab di bawah.
+# ──────────────────────────────────────────────────────────────────────
+
+_SYSTEM_OUTLINE = """
+Anda adalah asesor akreditasi program studi di Indonesia yang menyusun
+DAFTAR ISI (outline) untuk satu bab Laporan Evaluasi Diri (LED).
+
+Tugas Anda: pecah bab ini menjadi beberapa section (sub-bab) yang berurutan
+dan logis, supaya tiap section bisa ditulis detail secara terpisah.
+
+ATURAN WAJIB:
+- Setiap section HARUS jelas berkaitan dengan minimal satu KELOMPOK KRITERIA
+  yang diberikan di bawah — JANGAN mengarang struktur di luar kelompok itu.
+- Section boleh lebih detail dari sekadar nama kelompok kriteria (mis. satu
+  kelompok besar boleh dipecah jadi beberapa section) kalau memang membantu
+  kedalaman pembahasan, tapi jangan berlebihan (target 3-8 section per bab).
+- "judul" singkat (maks 10 kata), Bahasa Indonesia.
+- "panduan" adalah 1-2 kalimat arahan topik apa yang harus dibahas section
+  ini — ini akan dipakai sebagai query pencarian bukti, jadi harus konkret
+  dan spesifik, BUKAN sekadar mengulang judul.
+- Urutkan section secara logis (mis. dasar/kebijakan dulu, baru pelaksanaan,
+  baru evaluasi/hasil).
+
+OUTPUT HARUS JSON VALID SAJA (no explanation outside JSON):
+{"sections": [{"judul": "...", "panduan": "..."}]}
+"""
+
+
+def _group_rubric_by_criterion_group(rubric: list[dict]) -> list[dict]:
+    """Groups rubric criteria by criterion_group, preserving first-seen
+    order — Python equivalent of apps/web's kelompokkanKriteria, used here
+    as grounding CONTEXT for the outline LLM call, not as the section list
+    itself (see module note above)."""
+    groups: dict[str, list[dict]] = {}
+    order: list[str] = []
+    for r in rubric:
+        group = r.get("criterion_group") or "Umum"
+        if group not in groups:
+            groups[group] = []
+            order.append(group)
+        groups[group].append(r)
+    return [{"name": g, "criteria": groups[g]} for g in order]
+
+
+def _build_outline_prompt(judul_bab: str, kelompok_kriteria: list[dict], pedoman: list[dict]) -> str:
+    parts = [_SYSTEM_OUTLINE, "", f"## BAB: {judul_bab}", ""]
+    if pedoman:
+        parts.append("## PEDOMAN PENULISAN:")
+        for p in pedoman[:10]:
+            parts.append(f"- {(p.get('content_text') or '')[:400]}")
+        parts.append("")
+    parts.append("## KELOMPOK KRITERIA:")
+    for g in kelompok_kriteria:
+        parts.append(f"- {g['name']}:")
+        for c in g["criteria"][:6]:
+            parts.append(f"  - {c['criterion_code']}: {(c.get('description') or '')[:250]}")
+    parts.append("")
+    parts.append("Output HANYA JSON:")
+    return "\n".join(parts)
+
+
+def _parse_outline(raw: str) -> list[dict]:
+    """Parses {"sections":[{"judul","panduan"}]} into [{"title","guidance"}],
+    dropping any item missing either field."""
+    data = _parse_llm_json(_strip_think(raw))
+    result: list[dict] = []
+    for item in data.get("sections") or []:
+        if not isinstance(item, dict):
+            continue
+        title = (item.get("judul") or item.get("title") or "").strip()
+        guidance = (item.get("panduan") or item.get("guidance") or "").strip()
+        if title and guidance:
+            result.append({"title": title, "guidance": guidance})
+    return result
+
+
+async def _handle_generasi_outline_bab(job) -> dict:
+    """Satu LLM call -> daftar ChapterSection (status PENDING). Menolak
+    menimpa outline yang sudah ada kecuali payload `overwrite=true` (lihat
+    db/generation_client.py::create_chapter_sections)."""
+    from db.generation_client import (
+        create_chapter_sections,
+        get_bab_dokumen,
+        get_pedoman_for_bab,
+        get_rubrik_for_bab,
+    )
+    from llm.chat_model import build_plain_llm
+
+    payload = job.data
+    bab_id = payload["babDokumenId"]
+    overwrite = bool(payload.get("overwrite"))
+
+    bab = get_bab_dokumen(bab_id)
+    if bab is None:
+        return {"status": "error", "error": f"BabDokumen {bab_id} tidak ditemukan"}
+
+    pedoman = get_pedoman_for_bab(bab["chapter_order"])
+    rubric = get_rubrik_for_bab(bab["chapter_order"])
+    kelompok = _group_rubric_by_criterion_group(rubric)
+
+    llm = build_plain_llm()
+    try:
+        raw = await llm.ainvoke(_build_outline_prompt(bab["chapter_title"], kelompok, pedoman))
+        sections = _parse_outline(raw.content)
+    except Exception:
+        logger.exception("Outline LLM gagal untuk bab %s", bab_id)
+        sections = []
+
+    if not sections:
+        return {"status": "error", "error": "LLM gagal menyusun outline yang valid untuk bab ini"}
+
+    try:
+        created = create_chapter_sections(bab_id, sections, overwrite=overwrite)
+    except ValueError as e:
+        return {"status": "error", "error": str(e)}
+
+    return {"status": "completed", "sectionCount": len(created)}
+
+
+def _compile_chapter_from_sections(sections: list[dict]) -> tuple[str, str]:
+    """Gabung semua section berstatus GENERATED (sudah terurut `order`) jadi
+    satu markdown/HTML — tiap section jadi heading `## judul` + isinya.
+    Section yang belum digenerate diabaikan (bukan placeholder kosong)."""
+    import markdown as md_lib
+
+    parts = []
+    for s in sections:
+        if s["status"] != "GENERATED" or not s.get("content"):
+            continue
+        body_markdown = (s["content"] or {}).get("markdown") or ""
+        parts.append(f"## {s['title']}\n\n{body_markdown}")
+    markdown_text = "\n\n".join(parts)
+    return markdown_text, md_lib.markdown(markdown_text)
+
+
+def _build_section_prompt(
     judul_bab: str,
+    chapter_title: str,
     pedoman: list[dict],
     rubric: list[dict],
     checklist: list[str],
@@ -679,7 +822,7 @@ def _build_generasi_prompt(
     ))
     institution_block = f"{institution_block}\n" if institution_block else ""
 
-    return f"""Anda menulis draf Bab "{judul_bab}" untuk Laporan Evaluasi Diri (LED) akreditasi program studi di Indonesia.
+    return f"""Anda menulis SATU SECTION (sub-bab) "{judul_bab}" dari Bab "{chapter_title}" untuk Laporan Evaluasi Diri (LED) akreditasi program studi di Indonesia.
 {institution_block}
 
 PEDOMAN:
@@ -704,16 +847,20 @@ ATURAN WAJIB:
 1. WAJIB Bahasa Indonesia 100% — dilarang menulis paragraf berbahasa Inggris (akronim teknis seperti LED/SK/SKS/IPK boleh tetap dipakai).
 2. Setiap klaim faktual harus diikuti penanda sumber: "(sumber: LABEL)" untuk BUKTI (LED atau Evidence) — LABEL adalah teks PERSIS di dalam tanda kurung "(sumber: ...)" pada bukti yang dikutip, bisa berupa nama file ATAU nama folder, ikuti apa adanya, JANGAN diubah/disingkat — atau "(sumber: LKPS <referensi tabel>)" untuk DATA KUANTITATIF. Penanda HANYA boleh dipakai kalau nama/referensi itu BENAR-BENAR muncul literal di bagian BUKTI/DATA KUANTITATIF di atas — dilarang menebak atau mengarang nama sumber.
 3. Jika BUKTI dan DATA KUANTITATIF sama-sama kosong/minim, tulis narasi singkat dan umum berdasarkan PEDOMAN/RUBRIK saja tanpa klaim faktual bersitasi — jangan dipaksakan panjang dengan fakta karangan.
-4. OUTPUT MURNI NARASI SAJA dalam format Markdown (heading/paragraf/daftar poin sesuai kebutuhan) — dilarang menambahkan catatan, disclaimer, atau ringkasan proses di luar narasi.
-5. JANGAN mengulang judul bab ("{judul_bab}") sebagai heading/baris pembuka — langsung mulai dari isi narasi. Heading lain boleh dipakai untuk menyusun sub-bagian kalau memang membantu, asal bukan duplikasi judul bab itu sendiri."""
+4. OUTPUT MURNI NARASI SAJA dalam format Markdown, TANPA heading/judul apapun (section ini sendiri sudah jadi satu unit heading di dokumen akhir) — dilarang menambahkan catatan, disclaimer, atau ringkasan proses di luar narasi.
+5. Tulis 3-5 paragraf yang FOKUS pada topik section ini saja ("{judul_bab}") — jangan melebar membahas topik section lain dalam bab yang sama, dan jangan mengulang judul section sebagai baris pembuka."""
 
 
 async def _handle_generasi_bab(job) -> dict:
-    """5-step RAG pipeline: pedoman+rubric -> checklist(LLM)+LED/Evidence/LKPS
-    facts -> LLM synthesis+MD-to-HTML -> judge(LLM) -> RAGAS.
+    """5-step RAG pipeline for ONE section: pedoman+rubric -> checklist(LLM)
+    + LED/Evidence/LKPS facts (query = section.guidance, bukan judul bab) ->
+    LLM synthesis+MD-to-HTML -> judge(LLM) -> RAGAS.
 
-    Persists BabDraft (sumber=AI) + overwrites BabDokumen's active state +
-    GenerationRun + RagasScore(BAB_AKTIF) — packages/db/prisma/schema.prisma.
+    Persists ChapterSection.content (status GENERATED) -> compiles SEMUA
+    section GENERATED milik bab ini jadi satu BabDraft checkpoint + overwrite
+    BabDokumen.workingContent (_compile_chapter_from_sections), supaya RAGAS
+    level-bab, export PDF, review, dan chat tetap baca dari tempat yang sama
+    seperti sebelum section ada — lihat catatan desain di plan.
 
     `draftId` in the payload is optional — when the chapter went through
     REKOMENDASI_DOKUMEN -> confirm first, it names the draft whose confirmed
@@ -729,6 +876,8 @@ async def _handle_generasi_bab(job) -> dict:
         create_generation_run,
         create_ragas_score,
         get_bab_dokumen,
+        get_chapter_section,
+        get_chapter_sections,
         get_confirmed_recommendation,
         get_evidence_citation_labels,
         get_pedoman_for_bab,
@@ -736,6 +885,7 @@ async def _handle_generasi_bab(job) -> dict:
         get_user_nama,
         link_evidence_to_chapter_and_draft,
         update_bab_dokumen_aktif,
+        update_chapter_section,
     )
     from eval.ragas_eval import score_single_sample
     from llm.chat_model import build_judge_llm, build_plain_llm
@@ -746,10 +896,17 @@ async def _handle_generasi_bab(job) -> dict:
     bab_id = payload["babDokumenId"]
     user_id = payload["createdByUserId"]
     draft_id = payload.get("draftId")
+    section_id = payload["sectionId"]
 
     bab = get_bab_dokumen(bab_id)
     if bab is None:
         return {"status": "error", "error": f"BabDokumen {bab_id} tidak ditemukan"}
+
+    section = get_chapter_section(section_id)
+    if section is None or section["chapter_id"] != bab_id:
+        return {"status": "error", "error": f"Section {section_id} tidak ditemukan pada bab {bab_id}"}
+
+    update_chapter_section(section_id, status="GENERATING")
 
     # Port of Dimas's 766de26 institution context — lets the checklist and
     # generate prompts know which prodi/university this LED is for, instead
@@ -761,8 +918,9 @@ async def _handle_generasi_bab(job) -> dict:
 
     t0 = time.time()
 
-    # 1. Pedoman & rubrik — relational lookup by chapter number, not vector
-    # search (see db/generation_client.py's own note on why).
+    # 1. Pedoman & rubrik — relational lookup by chapter number (whole bab,
+    # sama seperti sebelumnya — checklist/judge di bawah tetap butuh konteks
+    # rubrik/pedoman satu bab penuh, bukan cuma section ini).
     pedoman = get_pedoman_for_bab(bab["chapter_order"])
     rubric = get_rubrik_for_bab(bab["chapter_order"])
 
@@ -777,88 +935,100 @@ async def _handle_generasi_bab(job) -> dict:
     selected_ids: list[str] = (confirmed or {}).get("selected_evidence_ids") or []
     evidence_labels: dict[str, str] = get_evidence_citation_labels(selected_ids) if selected_ids else {}
 
-    # 2. Checklist — real LLM call (port of SYSTEM_CHECKLIST), same fallback
-    # safety net as the old pedoman-titles stub for empty pedoman/LLM failure.
-    checklist_prompt = _build_checklist_prompt(
-        bab["chapter_title"], pedoman, rubric, institution_context,
-        list(evidence_labels.values()),
-    )
     try:
-        checklist_raw = await llm.ainvoke(checklist_prompt)
-        checklist = _parse_checklist(checklist_raw.content)
-    except Exception:
-        logger.exception("Checklist LLM gagal untuk bab %s, pakai fallback", bab_id)
-        checklist = []
-    checklist = checklist or [f"Poin kunci untuk {bab['chapter_title']}"]
-
-    # 2a. LED self-reference chunks (existing behavior, unchanged).
-    query = f"{bab['chapter_title']}: " + " ".join(checklist[:5])
-    # search_led is synchronous (psycopg2 + blocking SentenceTransformer.encode) —
-    # off the event loop, or it blocks BullMQ's lock-renewal long enough to stall.
-    chunks = await asyncio.to_thread(search_led, query, bab["tenant_id"], bab["document_id"], n_results=5)
-
-    # 2b. LKPS tables the pedoman explicitly references — only when it does
-    # (see _lkps_refs_in_pedoman), so bab yang murni naratif tidak ikut
-    # menyeret data LKPS yang tidak relevan ke prompt.
-    lkps_refs = _lkps_refs_in_pedoman(pedoman)
-    lkps_tables = _load_lkps_tables(bab, lkps_refs)
-
-    # 2c. Bukti Dukung evidence chunks for the selected ids above.
-    evidence_chunks: list[dict] = []
-    if selected_ids:
-        seen_chunks: set[str] = set()
-        for item in checklist:
-            hits = await asyncio.to_thread(search_evidence, item, bab["tenant_id"], selected_ids, 2)
-            for h in hits:
-                if h["chunk_id"] in seen_chunks:
-                    continue
-                seen_chunks.add(h["chunk_id"])
-                evidence_chunks.append(h)
-
-    # 3. LLM call, then Markdown -> HTML.
-    prompt = _build_generasi_prompt(
-        bab["chapter_title"], pedoman, rubric, checklist, chunks, lkps_tables,
-        evidence_chunks, evidence_labels, payload.get("prompt"), institution_context,
-    )
-    response = await llm.ainvoke(prompt)
-    markdown_text = response.content
-    html = md_lib.markdown(markdown_text)
-    latency_sec = time.time() - t0
-
-    # 4a. RAGAS: faithfulness / answer_relevancy / context_precision.
-    try:
-        ragas_scores = score_single_sample(
-            question=bab["chapter_title"],
-            answer=markdown_text,
-            contexts=[c["text"] for c in chunks],
+        # 2. Checklist — real LLM call (port of SYSTEM_CHECKLIST), scoped to
+        # this section's title (bukan judul bab) — same fallback safety net
+        # as the old pedoman-titles stub for empty pedoman/LLM failure.
+        checklist_prompt = _build_checklist_prompt(
+            section["title"], pedoman, rubric, institution_context,
+            list(evidence_labels.values()),
         )
-    except Exception:
-        logger.exception("RAGAS scoring gagal untuk bab %s, lanjut tanpa skor", bab_id)
-        ragas_scores = {}
+        try:
+            checklist_raw = await llm.ainvoke(checklist_prompt)
+            checklist = _parse_checklist(checklist_raw.content)
+        except Exception:
+            logger.exception("Checklist LLM gagal untuk section %s, pakai fallback", section_id)
+            checklist = []
+        checklist = checklist or [f"Poin kunci untuk {section['title']}"]
 
-    # 4b. LLM-as-judge (port of SYSTEM_JUDGE) — separate model
-    # (llm/chat_model.py::build_judge_llm), degrades to {"error": ...} rather
-    # than crashing the job, same style as the RAGAS try/except above.
-    judge_facts = (
-        [{"text": c["text"], "filename": _led_citation_label(c)} for c in chunks]
-        + [{"text": c["text"], "filename": _evidence_citation_label(c, evidence_labels)} for c in evidence_chunks]
-        + [{"text": t, "filename": "LKPS"} for t in lkps_tables]
-    )
-    try:
-        judge_llm = build_judge_llm()
-        judge_raw = await judge_llm.ainvoke(
-            _build_judge_prompt(bab["chapter_title"], markdown_text, rubric, judge_facts)
+        # 2a. LED self-reference chunks — query = panduan outline section ini,
+        # bukan judul bab (lihat plan: retrieval query per-section).
+        query = f"{section['title']}: {section['guidance']}"
+        # search_led is synchronous (psycopg2 + blocking SentenceTransformer.encode) —
+        # off the event loop, or it blocks BullMQ's lock-renewal long enough to stall.
+        chunks = await asyncio.to_thread(search_led, query, bab["tenant_id"], bab["document_id"], n_results=5)
+
+        # 2b. LKPS tables the pedoman explicitly references — only when it does
+        # (see _lkps_refs_in_pedoman), so section yang murni naratif tidak ikut
+        # menyeret data LKPS yang tidak relevan ke prompt.
+        lkps_refs = _lkps_refs_in_pedoman(pedoman)
+        lkps_tables = _load_lkps_tables(bab, lkps_refs)
+
+        # 2c. Bukti Dukung evidence chunks for the selected ids above.
+        evidence_chunks: list[dict] = []
+        if selected_ids:
+            seen_chunks: set[str] = set()
+            for item in checklist:
+                hits = await asyncio.to_thread(search_evidence, item, bab["tenant_id"], selected_ids, 2)
+                for h in hits:
+                    if h["chunk_id"] in seen_chunks:
+                        continue
+                    seen_chunks.add(h["chunk_id"])
+                    evidence_chunks.append(h)
+
+        # 3. LLM call, then Markdown -> HTML.
+        prompt = _build_section_prompt(
+            section["title"], bab["chapter_title"], pedoman, rubric, checklist, chunks, lkps_tables,
+            evidence_chunks, evidence_labels, payload.get("prompt"), institution_context,
         )
-        judge_result = _parse_judge_json(judge_raw.content)
+        response = await llm.ainvoke(prompt)
+        markdown_text = response.content
+        html = md_lib.markdown(markdown_text)
+        latency_sec = time.time() - t0
+
+        # 4a. RAGAS: faithfulness / answer_relevancy / context_precision.
+        try:
+            ragas_scores = score_single_sample(
+                question=section["title"],
+                answer=markdown_text,
+                contexts=[c["text"] for c in chunks],
+            )
+        except Exception:
+            logger.exception("RAGAS scoring gagal untuk section %s, lanjut tanpa skor", section_id)
+            ragas_scores = {}
+
+        # 4b. LLM-as-judge (port of SYSTEM_JUDGE) — separate model
+        # (llm/chat_model.py::build_judge_llm), degrades to {"error": ...} rather
+        # than crashing the job, same style as the RAGAS try/except above.
+        judge_facts = (
+            [{"text": c["text"], "filename": _led_citation_label(c)} for c in chunks]
+            + [{"text": c["text"], "filename": _evidence_citation_label(c, evidence_labels)} for c in evidence_chunks]
+            + [{"text": t, "filename": "LKPS"} for t in lkps_tables]
+        )
+        try:
+            judge_llm = build_judge_llm()
+            judge_raw = await judge_llm.ainvoke(
+                _build_judge_prompt(section["title"], markdown_text, rubric, judge_facts)
+            )
+            judge_result = _parse_judge_json(judge_raw.content)
+        except Exception as e:
+            logger.exception("Judge LLM gagal untuk section %s, lanjut tanpa skor judge", section_id)
+            judge_result = {"error": str(e)}
+
+        model_name = getattr(llm, "model", getattr(llm, "model_name", "unknown"))
+        section_konten = {"format": "html", "body": html, "markdown": markdown_text}
+        update_chapter_section(section_id, status="GENERATED", content=section_konten, model=model_name)
     except Exception as e:
-        logger.exception("Judge LLM gagal untuk bab %s, lanjut tanpa skor judge", bab_id)
-        judge_result = {"error": str(e)}
+        logger.exception("Generate section %s gagal", section_id)
+        update_chapter_section(section_id, status="ERROR", error=str(e))
+        raise
 
-    # Persist: BabDraft (checkpoint) -> overwrite BabDokumen active state.
-    # kontenKerja uses {format:'html', body} — the shape apps/web's
-    # chapterRepository.toEntityFromBackend already expects; `markdown` rides
-    # along for chat.py's context building, which the frontend ignores.
-    konten = {"format": "html", "body": html, "markdown": markdown_text}
+    # Compile: gabung SEMUA section GENERATED milik bab ini jadi satu
+    # checkpoint bab, sama seperti sebelum section ada — lihat
+    # _compile_chapter_from_sections.
+    all_sections = get_chapter_sections(bab_id)
+    compiled_markdown, compiled_html = _compile_chapter_from_sections(all_sections)
+    konten = {"format": "html", "body": compiled_html, "markdown": compiled_markdown}
     user_nama = get_user_nama(user_id)
     draft = create_bab_draft(
         bab_id,
@@ -869,15 +1039,11 @@ async def _handle_generasi_bab(job) -> dict:
     )
     # Records which confirmed Bukti Dukung actually backed this generate —
     # no-op if selected_ids is empty (manual generate, no recommendation).
-    # This never happened at all before, silently: apps/web reads these rows
-    # for chapter.buktiDukung (the count shown after generate, and the
-    # checkbox baseline restored on reload), so it always read 0/empty
-    # regardless of whether evidence was actually retrieved for the prompt.
     link_evidence_to_chapter_and_draft(bab_id, draft["id"], selected_ids)
     update_bab_dokumen_aktif(bab_id, konten, draft["id"])
     create_generation_run(
         bab_draft_id=draft["id"],
-        model=getattr(llm, "model", getattr(llm, "model_name", "unknown")),
+        model=model_name,
         pedoman_used=pedoman,
         rubric_used=rubric,
         checklist=checklist,
@@ -892,6 +1058,7 @@ async def _handle_generasi_bab(job) -> dict:
 
     return {
         "status": "completed",
+        "sectionId": section_id,
         "babDraftId": draft["id"],
         "versi": draft["version"],
         "ragasScores": ragas_scores,

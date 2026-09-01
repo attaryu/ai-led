@@ -1,8 +1,10 @@
 import { ApiError } from '~/core/lib/api-client';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
+import { type ChapterSectionEntity } from '../../domain/entities/chapter-section.entity';
 import { type DocumentRecommendationEntity } from '../../domain/entities/document-recommendation.entity';
 import {
 	mapBuktiDukungRef,
+	mapChapterSection,
 	mapDocumentRecommendation,
 	mapHasilSkor,
 	mapKontenBody,
@@ -203,5 +205,16 @@ export const chapterRepository = {
 		payload: { recommendationId: string; selectedEvidenceIds: string[] },
 	): Promise<void> {
 		await chapterRemoteSource.confirmRecommendation(chapterId, payload);
+	},
+
+	/** Memicu GENERASI_OUTLINE_BAB — lihat `useChapterSections`. */
+	async triggerGenerateOutline(chapterId: string, overwrite?: boolean) {
+		return chapterRemoteSource.generateOutline(chapterId, overwrite);
+	},
+
+	/** `GET bab/:id/sections`, terurut. */
+	async findSections(chapterId: string): Promise<ChapterSectionEntity[]> {
+		const rows = await chapterRemoteSource.findSections(chapterId);
+		return rows.map(mapChapterSection).sort((a, b) => a.urutan - b.urutan);
 	},
 };

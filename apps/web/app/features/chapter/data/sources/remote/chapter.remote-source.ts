@@ -125,13 +125,35 @@ export type BackendJob = {
 	status: 'WAITING' | 'ACTIVE' | 'COMPLETED' | 'FAILED';
 };
 
-/** Hasil job GENERASI_BAB yang sudah selesai — lihat `worker.py::_handle_generasi_bab`. */
+/** Hasil job GENERASI_BAB (sekarang satu section) yang sudah selesai — lihat `worker.py::_handle_generasi_bab`. */
 export type GenerasiBabResult = {
 	status: 'completed' | 'error';
+	sectionId?: string;
 	babDraftId?: string;
 	versi?: number;
 	ragasScores?: Record<string, number>;
 	error?: string;
+};
+
+/** Hasil job GENERASI_OUTLINE_BAB — lihat `worker.py::_handle_generasi_outline_bab`. */
+export type GenerasiOutlineBabResult = {
+	status: 'completed' | 'error';
+	sectionCount?: number;
+	error?: string;
+};
+
+/** Baris Prisma `ChapterSection` — outline (daftar section) yang di-generate LLM, dikembalikan `GET bab/:id/sections`. */
+export type BackendChapterSection = {
+	id: string;
+	chapterId: string;
+	order: number;
+	title: string;
+	guidance: string;
+	status: 'PENDING' | 'GENERATING' | 'GENERATED' | 'ERROR';
+	content: { format: string; body: string; markdown: string } | null;
+	model: string | null;
+	error: string | null;
+	generatedAt: string | null;
 };
 
 /** Hasil job REKOMENDASI_DOKUMEN — lihat `worker.py::_handle_rekomendasi_dokumen`. */
@@ -191,13 +213,31 @@ export const chapterRemoteSource = {
 	},
 
 	/**
-	 * Memicu GENERASI_BAB (Producer NestJS -> Worker FastAPI). `draftId` menamai
-	 * checkpoint kosong dari alur rekomendasi yang sudah dikonfirmasi — worker
-	 * lalu membatasi pencarian bukti dukungnya ke `selectedEvidenceIds` milik
-	 * rekomendasi itu. Tanpa `draftId`, generate berjalan seperti biasa.
+	 * Memicu GENERASI_OUTLINE_BAB (Producer NestJS -> Worker FastAPI) — LLM
+	 * menyusun daftar section (sub-bab), dituntun kelompok kriteria rubrik bab
+	 * ini. `overwrite` mereset section yang sudah ada (v1: tanpa merge pintar).
 	 */
-	generate(id: string, prompt?: string, draftId?: string): Promise<BackendJob> {
-		return apiFetch<BackendJob>(`/bab/${id}/generate`, {
+	generateOutline(id: string, overwrite?: boolean): Promise<BackendJob> {
+		return apiFetch<BackendJob>(`/bab/${id}/outline`, {
+			method: 'POST',
+			body: overwrite ? { overwrite: true } : {},
+		});
+	},
+
+	/** Daftar section (outline) bab ini, terurut — kosong berarti outline belum pernah digenerate. */
+	findSections(id: string): Promise<BackendChapterSection[]> {
+		return apiFetch<BackendChapterSection[]>(`/bab/${id}/sections`);
+	},
+
+	/**
+	 * Memicu GENERASI_BAB (Producer NestJS -> Worker FastAPI) untuk SATU section.
+	 * `draftId` menamai checkpoint kosong dari alur rekomendasi yang sudah
+	 * dikonfirmasi — worker lalu membatasi pencarian bukti dukungnya ke
+	 * `selectedEvidenceIds` milik rekomendasi itu. Tanpa `draftId`, generate
+	 * berjalan seperti biasa.
+	 */
+	generateSection(id: string, sectionId: string, prompt?: string, draftId?: string): Promise<BackendJob> {
+		return apiFetch<BackendJob>(`/bab/${id}/sections/${sectionId}/generate`, {
 			method: 'POST',
 			body: {
 				...(prompt ? { prompt } : {}),

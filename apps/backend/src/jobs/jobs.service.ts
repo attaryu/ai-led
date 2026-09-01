@@ -44,6 +44,7 @@ export class JobsService implements OnModuleDestroy {
   private queueFor(type: JobType): Queue {
     switch (type) {
       case JobType.GENERASI_BAB:
+      case JobType.GENERASI_OUTLINE_BAB:
       case JobType.SIMULASI_SKOR:
       case JobType.REKOMENDASI_DOKUMEN:
         return this.generationQueue;

@@ -6,7 +6,7 @@ import { TenantContextService } from '../tenant/tenant-context.service';
 import { BabAccessService } from './bab-access.service';
 import { ConfirmRecommendationDto } from './dto/confirm-recommendation.dto';
 
-/** GENERASI_BAB / SIMULASI_SKOR / REKOMENDASI_DOKUMEN job triggers, the recommend->confirm flow, and the chat-proxy access check. */
+/** GENERASI_OUTLINE_BAB / GENERASI_BAB / SIMULASI_SKOR / REKOMENDASI_DOKUMEN job triggers, the recommend->confirm flow, and the chat-proxy access check. */
 @Injectable()
 export class BabPipelineService {
   constructor(
@@ -16,16 +16,43 @@ export class BabPipelineService {
     private readonly access: BabAccessService,
   ) {}
 
-  /** Enqueues GENERASI_BAB — apps/ai's worker does the actual RAG pipeline. `draftId` (recommend->confirm flow) scopes Evidence retrieval to that draft's confirmed recommendation. */
-  async triggerGenerate(id: string, prompt?: string, draftId?: string) {
+  /** Enqueues GENERASI_OUTLINE_BAB — apps/ai's worker menyusun daftar section (LLM), dituntun kelompok kriteria rubrik bab ini. */
+  async triggerGenerateOutline(id: string, overwrite?: boolean) {
     const { tenantId, userId } = this.tenantContext.getOrThrow();
     const bab = await this.access.findOneScoped(id);
     if (bab.locked) {
       throw new ForbiddenException('Bab ini sedang terkunci untuk direview');
     }
 
+    return this.jobsService.enqueue(JobType.GENERASI_OUTLINE_BAB, {
+      babDokumenId: bab.id,
+      tenantId,
+      createdByUserId: userId,
+      ...(overwrite ? { overwrite: true } : {}),
+    });
+  }
+
+  /** GET bab/:id/sections — daftar outline section, terurut. */
+  async findSections(id: string) {
+    await this.access.findOneScoped(id);
+    return this.prisma.chapterSection.findMany({ where: { chapterId: id }, orderBy: { order: 'asc' } });
+  }
+
+  /** Enqueues GENERASI_BAB — apps/ai's worker generate SATU section (RAG pipeline scoped ke section.guidance). `draftId` (recommend->confirm flow) scopes Evidence retrieval to that draft's confirmed recommendation. */
+  async triggerGenerate(id: string, sectionId: string, prompt?: string, draftId?: string) {
+    const { tenantId, userId } = this.tenantContext.getOrThrow();
+    const bab = await this.access.findOneScoped(id);
+    if (bab.locked) {
+      throw new ForbiddenException('Bab ini sedang terkunci untuk direview');
+    }
+    const section = await this.prisma.chapterSection.findFirst({ where: { id: sectionId, chapterId: id } });
+    if (!section) {
+      throw new NotFoundException('Section tidak ditemukan');
+    }
+
     return this.jobsService.enqueue(JobType.GENERASI_BAB, {
       babDokumenId: bab.id,
+      sectionId,
       tenantId,
       createdByUserId: userId,
       ...(prompt ? { prompt } : {}),

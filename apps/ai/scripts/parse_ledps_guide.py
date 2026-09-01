@@ -4,7 +4,7 @@ Not a general-purpose module like matrix_parser.py — this document's heading
 levels (numbered / lettered / lower-roman / upper-roman / bullets, depth
 varies per section) don't share one consistent numbering scheme the way the
 scoring matrix's table columns do. Reconstructing that exact nesting isn't
-needed anyway: _build_generasi_prompt (worker.py) only ever renders
+needed anyway: _build_section_prompt (worker.py) only ever renders
 point_title + content_text as a flat list, never point_code's hierarchy.
 
 So headings are detected by **boldness** (Arial-BoldMT / Arial-BoldItalicMT),

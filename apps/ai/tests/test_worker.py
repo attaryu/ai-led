@@ -150,13 +150,14 @@ def test_build_checklist_prompt_omits_selected_documents_block_when_none():
     assert "DOKUMEN YANG SUDAH DIPILIH USER" not in prompt
 
 
-def test_build_generasi_prompt_forbids_repeating_chapter_title_as_heading():
-    """Port of Dimas's 332ab2f: the LLM shouldn't restate the chapter title
-    as its opening heading — that's already rendered by the editor."""
-    from worker import _build_generasi_prompt
+def test_build_section_prompt_forbids_any_heading():
+    """Section content is inserted under its own `## judul` heading by
+    _compile_chapter_from_sections — the LLM must not add its own."""
+    from worker import _build_section_prompt
 
-    prompt = _build_generasi_prompt("Tata Pamong", [], [], [], [], [])
-    assert "JANGAN mengulang judul bab" in prompt
+    prompt = _build_section_prompt("Kebijakan Tata Pamong", "Tata Pamong", [], [], [], [], [])
+    assert "TANPA heading/judul apapun" in prompt
+    assert "3-5 paragraf" in prompt
 
 
 def test_build_assess_and_recommend_prompt_uses_closed_set_catalog():
@@ -211,4 +212,54 @@ def test_build_suggest_custom_document_prompt_is_a_fallback_outside_catalog():
     )
     assert "TIDAK ADA satu pun entri" in prompt
     assert "Pedoman contoh." in prompt
-    assert "## SECTION: Tata Pamong" in prompt
+
+
+def test_group_rubric_by_criterion_group_preserves_first_seen_order():
+    from worker import _group_rubric_by_criterion_group
+
+    rubric = [
+        {"criterion_code": "1.1", "criterion_group": "Tata Pamong", "description": "a"},
+        {"criterion_code": "2.1", "criterion_group": "Kerjasama", "description": "b"},
+        {"criterion_code": "1.2", "criterion_group": "Tata Pamong", "description": "c"},
+    ]
+    grouped = _group_rubric_by_criterion_group(rubric)
+    assert [g["name"] for g in grouped] == ["Tata Pamong", "Kerjasama"]
+    assert len(grouped[0]["criteria"]) == 2
+
+
+def test_build_outline_prompt_grounds_in_criterion_groups():
+    from worker import _build_outline_prompt
+
+    kelompok = [{"name": "Tata Pamong", "criteria": [{"criterion_code": "1.1", "description": "desc"}]}]
+    prompt = _build_outline_prompt("Tata Pamong", kelompok, [])
+    assert "KELOMPOK KRITERIA" in prompt
+    assert "Tata Pamong" in prompt
+    assert "1.1: desc" in prompt
+
+
+def test_parse_outline_drops_items_missing_title_or_guidance():
+    from worker import _parse_outline
+
+    raw = """{"sections": [
+        {"judul": "Kebijakan", "panduan": "Bahas dasar hukum"},
+        {"judul": "", "panduan": "kosong judul"},
+        {"judul": "Tanpa panduan"}
+    ]}"""
+    sections = _parse_outline(raw)
+    assert sections == [{"title": "Kebijakan", "guidance": "Bahas dasar hukum"}]
+
+
+def test_compile_chapter_from_sections_skips_ungenerated_and_orders_by_input():
+    from worker import _compile_chapter_from_sections
+
+    sections = [
+        {"title": "Kebijakan", "status": "GENERATED", "content": {"markdown": "Isi kebijakan."}},
+        {"title": "Belum jadi", "status": "PENDING", "content": None},
+        {"title": "Pelaksanaan", "status": "GENERATED", "content": {"markdown": "Isi pelaksanaan."}},
+    ]
+    markdown_text, html = _compile_chapter_from_sections(sections)
+    assert "## Kebijakan" in markdown_text
+    assert "Isi kebijakan." in markdown_text
+    assert "Belum jadi" not in markdown_text
+    assert "## Pelaksanaan" in markdown_text
+    assert "<h2>Kebijakan</h2>" in html

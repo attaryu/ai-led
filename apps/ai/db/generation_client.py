@@ -74,11 +74,16 @@ def get_pedoman_for_bab(urutan_bab: int) -> list[dict]:
 
 
 def get_rubrik_for_bab(urutan_bab: int) -> list[dict]:
-    """Scoring rubric criteria relevant to this chapter number."""
+    """Scoring rubric criteria relevant to this chapter number.
+
+    `criterion_group` is included for _handle_generasi_outline_bab's grouping
+    (padanan Python dari apps/web's kelompokkanKriteria) — existing callers
+    (checklist/generate/judge prompts) simply ignore the extra key.
+    """
     with get_conn().cursor() as cur:
         cur.execute(
             """
-            SELECT rc.id, rc.criterion_code, rc.description
+            SELECT rc.id, rc.criterion_code, rc.criterion_group, rc.description
             FROM rubric_criterion_chapters rcc
             JOIN rubric_criteria rc ON rc.id = rcc.criterion_id
             WHERE rcc.chapter_order = %s
@@ -226,6 +231,87 @@ def update_bab_dokumen_aktif(bab_id: str, konten_kerja: dict, checkpoint_aktif_i
             WHERE id = %s
             """,
             (json.dumps(konten_kerja), checkpoint_aktif_id, bab_id),
+        )
+
+
+def get_chapter_sections(chapter_id: str) -> list[dict]:
+    """Outline rows for one bab, in display order — empty list means no
+    outline has been generated yet."""
+    with get_conn().cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, chapter_id, "order", title, guidance, status, content, model, error, generated_at
+            FROM writing_chapter_sections
+            WHERE chapter_id = %s
+            ORDER BY "order" ASC
+            """,
+            (chapter_id,),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+
+def get_chapter_section(section_id: str) -> Optional[dict]:
+    with get_conn().cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, chapter_id, "order", title, guidance, status, content, model, error, generated_at
+            FROM writing_chapter_sections
+            WHERE id = %s
+            """,
+            (section_id,),
+        )
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def create_chapter_sections(chapter_id: str, sections: list[dict], overwrite: bool = False) -> list[dict]:
+    """Writes the LLM-generated outline as ordered PENDING rows.
+
+    Raises ValueError if the chapter already has sections and `overwrite` is
+    not set (v1 rule — see plan: outline regenerate resets everything, no
+    smart merge) rather than silently appending duplicates.
+    """
+    with get_conn().cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) AS n FROM writing_chapter_sections WHERE chapter_id = %s", (chapter_id,)
+        )
+        existing = cur.fetchone()["n"]
+        if existing and not overwrite:
+            raise ValueError(f"Bab {chapter_id} sudah punya {existing} section — pakai overwrite=true untuk mengganti")
+        if existing:
+            cur.execute("DELETE FROM writing_chapter_sections WHERE chapter_id = %s", (chapter_id,))
+
+        created: list[dict] = []
+        for i, s in enumerate(sections, start=1):
+            section_id = str(uuid.uuid4())
+            cur.execute(
+                """
+                INSERT INTO writing_chapter_sections (id, chapter_id, "order", title, guidance, status)
+                VALUES (%s, %s, %s, %s, %s, 'PENDING')
+                RETURNING id, chapter_id, "order", title, guidance, status, content, model, error, generated_at
+                """,
+                (section_id, chapter_id, i, s["title"], s["guidance"]),
+            )
+            created.append(dict(cur.fetchone()))
+        return created
+
+
+def update_chapter_section(
+    section_id: str,
+    status: str,
+    content: Optional[dict] = None,
+    model: Optional[str] = None,
+    error: Optional[str] = None,
+) -> None:
+    with get_conn().cursor() as cur:
+        cur.execute(
+            """
+            UPDATE writing_chapter_sections
+            SET status = %s, content = %s, model = %s, error = %s,
+                generated_at = CASE WHEN %s = 'GENERATED' THEN NOW() ELSE generated_at END
+            WHERE id = %s
+            """,
+            (status, json.dumps(content) if content is not None else None, model, error, status, section_id),
         )
 
 
