@@ -13,7 +13,7 @@ Workflow
    a. Form a natural-language question from the indicator description.
    b. Retrieve LED chunks via search_led_evidence (real RAG pipeline).
    c. Source the agent's justification:
-        - If session_id provided → read from Supabase indicator_results.
+        - If session_id provided → read from Postgres assessment_indicator_results.
         - Otherwise → generate synthetically with the LLM.
    d. Generate a reference (ground truth) answer with the LLM from the chunks.
 2. Build RAGAS EvaluationDataset and run evaluate().
@@ -331,11 +331,11 @@ def build_eval_samples(
     model: Optional[str] = None,
 ) -> list[EvalSample]:
     """Build EvalSample list by retrieving real LED chunks and optionally
-    reading actual agent justifications from a Supabase session.
+    reading actual agent justifications from a real assessment session.
 
     Args:
         n_indicators: How many indicators to evaluate (default 5 for speed).
-        session_id:   If provided, read agent justifications from Supabase.
+        session_id:   If provided, read agent justifications from Postgres.
         reference_path: Path to a JSON file with actual ground-truth references.
             Format: [{"indicator_no": int, "reference": str}, ...].
             Falls back to synthetic generation for missing indicators.
@@ -358,24 +358,17 @@ def build_eval_samples(
         except Exception as exc:
             logger.warning("Could not load references from %s: %s", reference_path, exc)
 
-    # Optionally load real justifications from Supabase
+    # Optionally load real justifications from Postgres
     real_justifications: dict[int, str] = {}
     if session_id:
         try:
-            from db.supabase_client import get_supabase  # noqa: PLC0415
+            from db.postgres_client import get_indicator_results  # noqa: PLC0415
 
-            resp = (
-                get_supabase()
-                .table("indicator_results")
-                .select("indicator_no, justification")
-                .eq("session_id", session_id)
-                .execute()
-            )
-            for row in resp.data or []:
+            for row in get_indicator_results(session_id):
                 if row.get("justification"):
                     real_justifications[row["indicator_no"]] = row["justification"]
         except Exception as exc:
-            logger.warning("Could not load Supabase justifications: %s", exc)
+            logger.warning("Could not load real justifications: %s", exc)
 
     # Evaluate the indicators actually scored in the session, not blindly the first n_indicators
     if real_justifications:
@@ -469,7 +462,7 @@ def run_ragas_evaluation(
 
     Args:
         n_indicators:    Number of indicators to evaluate.
-        session_id:      Optional Supabase session to read real justifications from.
+        session_id:      Optional assessment session to read real justifications from.
         metrics_to_run:  Subset of ALL_METRICS to run (default: all four).
         reference_path:  Path to JSON file with actual ground-truth references.
 

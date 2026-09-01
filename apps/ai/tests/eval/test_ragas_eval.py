@@ -1,6 +1,6 @@
 """Unit tests for eval/ragas_eval.py and /eval/* endpoints.
 
-All LLM calls, pgvector, and Supabase I/O are mocked.
+All LLM calls, pgvector, and Postgres I/O are mocked.
 """
 
 from __future__ import annotations
@@ -106,22 +106,20 @@ def test_build_eval_samples_returns_correct_count():
     assert len(samples) == 3
 
 
-def test_build_eval_samples_uses_supabase_justification():
+def test_build_eval_samples_uses_real_session_justification():
     from eval.ragas_eval import build_eval_samples
 
     fake_llm_wrapper = MagicMock()
     fake_llm_wrapper.langchain_llm.invoke.return_value = MagicMock(content="Referensi.")
 
-    fake_sb = MagicMock()
-    fake_sb.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
-        {"indicator_no": 1, "justification": "Justifikasi dari session."}
-    ]
-
     with (
         patch("agent.tools.rubric_tool._get_rubrics", return_value=[_fake_rubric(1)]),
         patch("vectorstore.pgvector_store.search_led", return_value=_fake_search_results(1)),
         patch("eval.ragas_eval._build_ragas_llm", return_value=fake_llm_wrapper),
-        patch("db.supabase_client.get_supabase", return_value=fake_sb),
+        patch(
+            "db.postgres_client.get_indicator_results",
+            return_value=[{"indicator_no": 1, "justification": "Justifikasi dari session."}],
+        ),
     ):
         samples = build_eval_samples(n_indicators=1, session_id="sess-123")
 
@@ -135,17 +133,15 @@ def test_build_eval_samples_filters_by_session_indicators():
     fake_llm_wrapper = MagicMock()
     fake_llm_wrapper.langchain_llm.invoke.return_value = MagicMock(content="Referensi.")
 
-    fake_sb = MagicMock()
-    fake_sb.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [
-        {"indicator_no": 31, "justification": "Justifikasi indikator 31."}
-    ]
-
     with (
         patch("agent.tools.rubric_tool._get_rubrics",
               return_value=[_fake_rubric(i) for i in range(1, 40)]),
         patch("vectorstore.pgvector_store.search_led", return_value=_fake_search_results(1)),
         patch("eval.ragas_eval._build_ragas_llm", return_value=fake_llm_wrapper),
-        patch("db.supabase_client.get_supabase", return_value=fake_sb),
+        patch(
+            "db.postgres_client.get_indicator_results",
+            return_value=[{"indicator_no": 31, "justification": "Justifikasi indikator 31."}],
+        ),
     ):
         samples = build_eval_samples(n_indicators=1, session_id="sess-31")
 

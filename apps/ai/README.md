@@ -26,7 +26,7 @@ dari sana, disesuaikan ke skema/stack `dev-v1` yang sebenarnya.
 | **Vector DB** | pgvector (Postgres, `packages/db`) — bukan ChromaDB. Dua tabel: `writing_led_chunk_embeddings` (LED) dan `evidence_chunk_embeddings` (bukti dukung), isolasi lewat `WHERE tenant_id = ... AND document_id = ...` biasa, bukan collection-per-dokumen |
 | **Embedding** | Sentence-Transformers multilingual (`paraphrase-multilingual-MiniLM-L12-v2`) — di-cache di volume `hf_cache` (lihat `docker-compose.yml`) |
 | **Ekstraksi PDF** | pdfplumber (Matriks/LED) · MinerU (evidence PDF → Markdown, butuh `poppler-utils`+`libgl1`, sudah dibake di `Dockerfile`) |
-| **State DB** | Postgres via Prisma (`packages/db/prisma/schema.prisma`) — `apps/ai` menulis langsung lewat `db/postgres_client.py`, **bukan** lewat NestJS. `db/supabase_client.py` masih ada tapi legacy — lihat catatan di bawah |
+| **State DB** | Postgres via Prisma (`packages/db/prisma/schema.prisma`) — `apps/ai` menulis langsung lewat `db/postgres_client.py`, **bukan** lewat NestJS. Tidak ada Supabase lagi — sisa arsitektur ariel sudah dibuang sepenuhnya |
 | **LLM assessment** | Ollama (self-hosted) atau OpenRouter — `OLLAMA_BASE_URL` bisa daftar beberapa endpoint dipisah koma (1 alamat = 1 GPU), round-robin per panggilan |
 | **LLM judge (RAGAS)** | Dikonfigurasi independen dari model assessment (`RAGAS_*` env), sengaja dipisah untuk benchmark yang adil |
 | **Evaluasi kualitas** | RAGAS — faithfulness, answer relevancy, context precision, context recall |
@@ -50,8 +50,6 @@ apps/ai/
 │   │                              indicator_results/reasoning_steps, dipakai jalur assessment
 │   ├── generation_client.py     # akses Postgres untuk jalur GENERASI_BAB (worker.py)
 │   ├── r2_client.py             # download berkas Bukti Dukung dari Cloudflare R2
-│   ├── supabase_client.py       # LEGACY — sisa arsitektur ariel, cuma dipanggil live oleh
-│   │                              eval/ragas_eval.py (lihat catatan di bawah)
 │   └── connection.py             # koneksi Postgres bersama (psycopg2)
 ├── eval/ragas_eval.py           # build_eval_samples + run_ragas_evaluation
 ├── ingestion/                    # matrix_parser, led_chunker, led_docx_chunker, lkps_loader,
@@ -108,7 +106,6 @@ API: <http://localhost:8000> · Scalar API reference: `/reference` · Swagger UI
 | `MAX_PARALLEL_INDICATORS` | Batas concurrency (`asyncio.Semaphore`) untuk menilai banyak indikator sekaligus |
 | `RUBRIC_CACHE_PATH` / `UPLOAD_DIR` | Path state on-disk di bawah `data/` |
 | `HF_TOKEN` | Opsional, mempercepat download model embedding saat build image |
-| `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` | **Legacy** — lihat catatan di bawah |
 
 ---
 
@@ -161,18 +158,12 @@ punya migrasi sendiri, hanya baca/tulis lewat `db/postgres_client.py`:
   per indikator (checklist, evidence auto-check, judge verdict, dst.),
   untuk debugging/transparansi
 
-### Catatan: `db/supabase_client.py` legacy tapi masih dipanggil live
-
-Sisa arsitektur `ariel` — Supabase project terpisah yang **tidak lagi
-ditulisi** oleh jalur assessment live (`api/routes/assessment.py` seluruhnya
-lewat `db/postgres_client.py`). Tapi `eval/ragas_eval.py::build_eval_samples`
-masih memanggil `db.supabase_client.get_supabase()` untuk baca justifikasi
-nyata saat `session_id` diberikan — karena tidak ada yang menulis ke
-Supabase lagi, pencarian ini kemungkinan besar selalu kosong dan diam-diam
-jatuh ke justifikasi sintetis (di-tangkap `try/except`, tidak error). Belum
-diperbaiki di sesi ini — kalau mau evaluasi RAGAS pakai justifikasi sesi
-asesmen yang benar-benar dijalankan, `build_eval_samples` perlu dialihkan
-ke `db.postgres_client.get_indicator_results(session_id)`.
+Tidak ada Supabase — `eval/ragas_eval.py::build_eval_samples` juga baca
+justifikasi nyata (`session_id`) dari `db.postgres_client.get_indicator_
+results()`, tabel yang sama dengan jalur assessment live. Sisa arsitektur
+`ariel` (`db/supabase_client.py`, `db/migrate.py`, `db/verify_schema.py`,
+migrasi SQL lama) sudah dihapus sepenuhnya — DDL cuma lewat Prisma di
+`packages/db`.
 
 ---
 
@@ -208,7 +199,7 @@ Upload dokumen Bukti Dukung **tidak** lewat sini — itu jalur NestJS
 
 | Method | Path | Keterangan |
 |---|---|---|
-| POST | `/eval/run` | Mulai evaluasi RAGAS (background task); `session_id` opsional untuk pakai justifikasi nyata (lihat catatan Supabase di atas) |
+| POST | `/eval/run` | Mulai evaluasi RAGAS (background task); `session_id` opsional untuk pakai justifikasi nyata dari sesi assessment tersebut |
 | GET | `/eval/models` | Model judge yang tersedia |
 | GET | `/eval/config?session_id=` | Config judge + model assessment aktif — kalau `session_id` diisi, `assessment_model` diambil dari model yang beneran menilai sesi itu (`IndicatorResult.model`) |
 | GET | `/eval/list` | Riwayat semua run RAGAS di proses ini |
@@ -273,8 +264,6 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5434/ai_led?schema=public
   tool-calling untuk model reasoning terbukti kurang reliable dibanding
   protokol JSON manual (`reasoning_graph.py`) — jangan paksa native tanpa
   uji ulang.
-- **Evaluasi RAGAS dengan `session_id` selalu jatuh ke justifikasi
-  sintetis** — lihat catatan `db/supabase_client.py` legacy di atas.
 - **`GET /assessment/indicators` vs Postgres** — endpoint ini sengaja tetap
   baca `matrix.json`, bukan `RubricCriterion` per-set — itu bootstrap source
   `seed-rubric-criteria.ts`, mengalihkannya bikin seed script sirkular.

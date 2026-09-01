@@ -23,7 +23,7 @@ class AssessmentState(TypedDict):
     # ── Message history (LangGraph / LangChain format) ───────────────────────
     messages: list
 
-    # ── Reasoning log (persisted to Supabase) ────────────────────────────────
+    # ── Reasoning log (persisted to Postgres) ────────────────────────────────
     reasoning_steps: list       # list[dict]
 
     # ── Output ───────────────────────────────────────────────────────────────
