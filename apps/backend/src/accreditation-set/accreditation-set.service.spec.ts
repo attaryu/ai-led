@@ -81,9 +81,11 @@ function makeService(tenantId = 't1') {
       findMany: jest.fn().mockResolvedValue([]),
     },
     $transaction: jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(prisma)),
+    $executeRaw: jest.fn().mockResolvedValue(undefined),
   };
-  const tenantContext: Pick<TenantContextService, 'getOrThrow'> = {
+  const tenantContext: Pick<TenantContextService, 'getOrThrow' | 'runInManagedTransaction'> = {
     getOrThrow: jest.fn().mockReturnValue({ tenantId, userId: 'u1', role: 'PENJAMIN_MUTU', studyProgramId: null }),
+    runInManagedTransaction: jest.fn().mockImplementation((fn: () => unknown) => fn()),
   };
   const storage: Pick<StorageService, 'headObject' | 'deleteObject'> = {
     headObject: jest.fn().mockResolvedValue({ sizeBytes: 1, contentType: 'application/pdf' }),
@@ -355,7 +357,13 @@ describe('AccreditationSetService.findChapterTemplates', () => {
     expect(prisma.chapterTemplate.findMany).toHaveBeenCalledWith({
       where: { accreditationSetId: 's1' },
       orderBy: { order: 'asc' },
-      include: { subBab: { orderBy: { order: 'asc' } } },
+      include: {
+        subBab: {
+          where: { parentId: null },
+          orderBy: { order: 'asc' },
+          include: { children: { orderBy: { order: 'asc' } } },
+        },
+      },
     });
     expect(result).toEqual([{ id: 'ct1', order: 1, title: 'Pendahuluan', subBab: [] }]);
   });

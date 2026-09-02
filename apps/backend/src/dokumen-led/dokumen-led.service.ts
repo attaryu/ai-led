@@ -76,7 +76,9 @@ export class DokumenLedService {
     return this.prisma.ledDocument.findMany({
       where: {
         studyProgram: { tenantId },
-        ...(role === Role.PENYUSUN ? { studyProgramId: studyProgramId ?? undefined } : {}),
+        ...(role === Role.PENYUSUN
+          ? { studyProgramId: studyProgramId ?? undefined }
+          : {}),
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -107,53 +109,73 @@ export class DokumenLedService {
    */
   async remove(id: string) {
     await this.findOne(id);
+    const { tenantId } = this.tenantContext.getOrThrow();
 
     try {
       await this.prisma.$transaction(async (tx) => {
-        const chapterIds = (
-          await tx.documentChapter.findMany({
-            where: { documentId: id },
-            select: { id: true },
-          })
-        ).map((c) => c.id);
+        await this.tenantContext.runInManagedTransaction(async () => {
+          await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+          const chapterIds = (
+            await tx.documentChapter.findMany({
+              where: { documentId: id },
+              select: { id: true },
+            })
+          ).map((c) => c.id);
 
-        const draftIds = (
-          await tx.chapterDraft.findMany({
+          const draftIds = (
+            await tx.chapterDraft.findMany({
+              where: { chapterId: { in: chapterIds } },
+              select: { id: true },
+            })
+          ).map((d) => d.id);
+
+          await tx.documentChapter.updateMany({
+            where: { id: { in: chapterIds } },
+            data: { activeCheckpointId: null },
+          });
+
+          await tx.evalResult.deleteMany({
+            where: { generationRun: { chapterDraftId: { in: draftIds } } },
+          });
+          await tx.generationRun.deleteMany({
+            where: { chapterDraftId: { in: draftIds } },
+          });
+          await tx.evidenceDraftLink.deleteMany({
+            where: { draftId: { in: draftIds } },
+          });
+          await tx.criterionScoreResult.deleteMany({
+            where: {
+              OR: [
+                { chapterId: { in: chapterIds } },
+                { draftId: { in: draftIds } },
+              ],
+            },
+          });
+          await tx.ragasScore.deleteMany({
+            where: {
+              OR: [
+                { chapterId: { in: chapterIds } },
+                { chapterDraftId: { in: draftIds } },
+              ],
+            },
+          });
+          await tx.chatMessage.deleteMany({
             where: { chapterId: { in: chapterIds } },
-            select: { id: true },
-          })
-        ).map((d) => d.id);
+          });
+          await tx.evidenceChapterLink.deleteMany({
+            where: { chapterId: { in: chapterIds } },
+          });
 
-        await tx.documentChapter.updateMany({
-          where: { id: { in: chapterIds } },
-          data: { activeCheckpointId: null },
-        });
+          // writing_document_recommendations + writing_recommendation_items ikut
+          // lewat ON DELETE CASCADE di DB saat draft-nya dihapus di bawah ini.
+          await tx.chapterDraft.deleteMany({ where: { id: { in: draftIds } } });
+          await tx.documentChapter.deleteMany({ where: { documentId: id } });
 
-        await tx.evalResult.deleteMany({
-          where: { generationRun: { chapterDraftId: { in: draftIds } } },
+          await tx.assessmentVerdict.deleteMany({ where: { documentId: id } });
+          await tx.assessmentSession.deleteMany({ where: { documentId: id } });
+          await tx.ledChunkEmbedding.deleteMany({ where: { documentId: id } });
+          await tx.ledDocument.delete({ where: { id } });
         });
-        await tx.generationRun.deleteMany({ where: { chapterDraftId: { in: draftIds } } });
-        await tx.evidenceDraftLink.deleteMany({ where: { draftId: { in: draftIds } } });
-        await tx.criterionScoreResult.deleteMany({
-          where: { OR: [{ chapterId: { in: chapterIds } }, { draftId: { in: draftIds } }] },
-        });
-        await tx.ragasScore.deleteMany({
-          where: {
-            OR: [{ chapterId: { in: chapterIds } }, { chapterDraftId: { in: draftIds } }],
-          },
-        });
-        await tx.chatMessage.deleteMany({ where: { chapterId: { in: chapterIds } } });
-        await tx.evidenceChapterLink.deleteMany({ where: { chapterId: { in: chapterIds } } });
-
-        // writing_document_recommendations + writing_recommendation_items ikut
-        // lewat ON DELETE CASCADE di DB saat draft-nya dihapus di bawah ini.
-        await tx.chapterDraft.deleteMany({ where: { id: { in: draftIds } } });
-        await tx.documentChapter.deleteMany({ where: { documentId: id } });
-
-        await tx.assessmentVerdict.deleteMany({ where: { documentId: id } });
-        await tx.assessmentSession.deleteMany({ where: { documentId: id } });
-        await tx.ledChunkEmbedding.deleteMany({ where: { documentId: id } });
-        await tx.ledDocument.delete({ where: { id } });
       });
     } catch (err) {
       if (
@@ -180,8 +202,12 @@ export class DokumenLedService {
       indikatorList: dto?.indikatorList, // omitted (not []) means "assess all"
       ...(dto?.sumberLed ? { sumberLed: dto.sumberLed } : {}),
       ...(dto?.ledFileName ? { ledFileName: dto.ledFileName } : {}),
-      ...(dto?.lkpsBuktiDukungId ? { lkpsBuktiDukungId: dto.lkpsBuktiDukungId } : {}),
-      ...(dto?.laporanBuktiDukungId ? { laporanBuktiDukungId: dto.laporanBuktiDukungId } : {}),
+      ...(dto?.lkpsBuktiDukungId
+        ? { lkpsBuktiDukungId: dto.lkpsBuktiDukungId }
+        : {}),
+      ...(dto?.laporanBuktiDukungId
+        ? { laporanBuktiDukungId: dto.laporanBuktiDukungId }
+        : {}),
     });
   }
 
@@ -196,10 +222,14 @@ export class DokumenLedService {
 
     const fileName = extractFileNameFromKey(dto.fileKey);
     if (!LED_EXTENSIONS.some((ext) => fileName.toLowerCase().endsWith(ext))) {
-      throw new ConflictException('Berkas LED harus PDF (.pdf) atau Word (.docx)');
+      throw new ConflictException(
+        'Berkas LED harus PDF (.pdf) atau Word (.docx)',
+      );
     }
 
-    const { bytes, contentType } = await this.storage.getObjectBytes(dto.fileKey);
+    const { bytes, contentType } = await this.storage.getObjectBytes(
+      dto.fileKey,
+    );
 
     const aiServiceUrl = requireEnv('AI_SERVICE_URL');
     const form = new FormData();
@@ -208,13 +238,18 @@ export class DokumenLedService {
     form.append(
       // Buffer's ArrayBufferLike isn't a valid BlobPart; Uint8Array copies it into one that is.
       'file',
-      new Blob([new Uint8Array(bytes)], { type: contentType ?? 'application/octet-stream' }),
+      new Blob([new Uint8Array(bytes)], {
+        type: contentType ?? 'application/octet-stream',
+      }),
       fileName,
     );
 
     let upstream: globalThis.Response;
     try {
-      upstream = await fetch(`${aiServiceUrl}/upload/led`, { method: 'POST', body: form });
+      upstream = await fetch(`${aiServiceUrl}/upload/led`, {
+        method: 'POST',
+        body: form,
+      });
     } catch {
       throw new BadGatewayException('AI service tidak dapat dihubungi');
     }
@@ -224,4 +259,3 @@ export class DokumenLedService {
     return upstream.json();
   }
 }
-

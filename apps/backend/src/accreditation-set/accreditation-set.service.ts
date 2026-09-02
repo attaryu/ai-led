@@ -4,7 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AccreditationSetStatus, JobType, StatusEkstraksi, TipePanduan } from '@ai-led/db';
+import {
+  AccreditationSetStatus,
+  JobType,
+  StatusEkstraksi,
+  TipePanduan,
+} from '@ai-led/db';
 import { PrismaService } from '../database/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { JobsService } from '../jobs/jobs.service';
@@ -19,7 +24,10 @@ import { AttachSetDocumentDto } from './dto/attach-set-document.dto';
 const MIN_KRITERIA_SIAP = 1;
 /// Set Akreditasi cukup Matriks Penilaian + Pedoman Penyusunan -- TipePanduan.TEMPLATE_LKPS
 /// (nilai ketiga di enum Prisma) sengaja tidak dipakai di sini.
-const SET_DOCUMENT_TYPES: TipePanduan[] = [TipePanduan.DOKUMEN_RUBRIK, TipePanduan.PANDUAN_LAM];
+const SET_DOCUMENT_TYPES: TipePanduan[] = [
+  TipePanduan.DOKUMEN_RUBRIK,
+  TipePanduan.PANDUAN_LAM,
+];
 
 const CRITERION_INCLUDE = {
   levels: { orderBy: { score: 'desc' as const } },
@@ -48,13 +56,21 @@ export class AccreditationSetService {
   private findRaw(id: string, tenantId: string) {
     return this.prisma.accreditationSet.findFirstOrThrow({
       where: { id, tenantId },
-      include: { criteria: { include: CRITERION_INCLUDE, orderBy: { indicatorNo: 'asc' } }, documents: true },
+      include: {
+        criteria: {
+          include: CRITERION_INCLUDE,
+          orderBy: { indicatorNo: 'asc' },
+        },
+        documents: true,
+      },
     });
   }
 
   /** dipakaiProyek > 0 -- lihat accreditation-set.entity.ts::deriveSetLock. Mengunci ISI (kriteria+dokumen), bukan identitas set. */
   private async requireUnlocked(id: string, tenantId: string) {
-    const set = await this.prisma.accreditationSet.findFirst({ where: { id, tenantId } });
+    const set = await this.prisma.accreditationSet.findFirst({
+      where: { id, tenantId },
+    });
     if (!set) throw new NotFoundException('Set akreditasi tidak ditemukan');
 
     const dipakaiProyek = await this.prisma.ledDocument.count({
@@ -110,8 +126,11 @@ export class AccreditationSetService {
    */
   async update(id: string, dto: UpdateAccreditationSetDto) {
     const { tenantId } = this.tenantContext.getOrThrow();
-    const existing = await this.prisma.accreditationSet.findFirst({ where: { id, tenantId } });
-    if (!existing) throw new NotFoundException('Set akreditasi tidak ditemukan');
+    const existing = await this.prisma.accreditationSet.findFirst({
+      where: { id, tenantId },
+    });
+    if (!existing)
+      throw new NotFoundException('Set akreditasi tidak ditemukan');
 
     return this.prisma.accreditationSet.update({
       where: { id },
@@ -163,7 +182,9 @@ export class AccreditationSetService {
   /** Ditolak bila masih dipakai -- accreditation-set.repository.ts::delete. */
   async remove(id: string) {
     const { tenantId } = this.tenantContext.getOrThrow();
-    const set = await this.prisma.accreditationSet.findFirst({ where: { id, tenantId } });
+    const set = await this.prisma.accreditationSet.findFirst({
+      where: { id, tenantId },
+    });
     if (!set) throw new NotFoundException('Set akreditasi tidak ditemukan');
 
     const dipakaiProyek = await this.prisma.ledDocument.count({
@@ -190,9 +211,12 @@ export class AccreditationSetService {
 
     const namaDasar = `${source.nama} (salinan)`;
     const namaTerpakai = new Set(
-      (await this.prisma.accreditationSet.findMany({ where: { tenantId }, select: { nama: true } })).map(
-        (s) => s.nama,
-      ),
+      (
+        await this.prisma.accreditationSet.findMany({
+          where: { tenantId },
+          select: { nama: true },
+        })
+      ).map((s) => s.nama),
     );
     let nama = namaDasar;
     let urutan = 2;
@@ -226,9 +250,16 @@ export class AccreditationSetService {
             lkpsTableRefs: c.lkpsTableRefs,
             formula: c.formula,
             subScoreFormula: c.subScoreFormula,
-            levels: { create: c.levels.map((l) => ({ score: l.score, description: l.description })) },
+            levels: {
+              create: c.levels.map((l) => ({
+                score: l.score,
+                description: l.description,
+              })),
+            },
             criterionChapters: {
-              create: c.criterionChapters.map((cc) => ({ chapterOrder: cc.chapterOrder })),
+              create: c.criterionChapters.map((cc) => ({
+                chapterOrder: cc.chapterOrder,
+              })),
             },
           })),
         },
@@ -259,29 +290,46 @@ export class AccreditationSetService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.rubricCriterion.deleteMany({ where: { accreditationSetId: id } });
-      for (const k of dto.criteria) {
-        await tx.rubricCriterion.create({
-          data: {
-            accreditationSetId: id,
-            indicatorNo: k.indicatorNo,
-            criterionCode: k.criterionCode,
-            criterionGroup: k.criterionGroup,
-            description: k.description,
-            scoreType: k.scoreType,
-            lkpsTableRefs: k.lkpsTableRefs,
-            formula: k.formula ?? null,
-            subScoreFormula: k.subScoreFormula ?? null,
-            levels: { create: k.levels.map((l) => ({ score: l.score, description: l.description })) },
-            criterionChapters: {
-              create: k.chapterOrders.map((chapterOrder) => ({ chapterOrder })),
+      return this.tenantContext.runInManagedTransaction(async () => {
+        await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+        await tx.rubricCriterion.deleteMany({
+          where: { accreditationSetId: id },
+        });
+        for (const k of dto.criteria) {
+          await tx.rubricCriterion.create({
+            data: {
+              accreditationSetId: id,
+              indicatorNo: k.indicatorNo,
+              criterionCode: k.criterionCode,
+              criterionGroup: k.criterionGroup,
+              description: k.description,
+              scoreType: k.scoreType,
+              lkpsTableRefs: k.lkpsTableRefs,
+              formula: k.formula ?? null,
+              subScoreFormula: k.subScoreFormula ?? null,
+              levels: {
+                create: k.levels.map((l) => ({
+                  score: l.score,
+                  description: l.description,
+                })),
+              },
+              criterionChapters: {
+                create: k.chapterOrders.map((chapterOrder) => ({
+                  chapterOrder,
+                })),
+              },
+            },
+          });
+        }
+        return tx.accreditationSet.findFirstOrThrow({
+          where: { id },
+          include: {
+            criteria: {
+              include: CRITERION_INCLUDE,
+              orderBy: { indicatorNo: 'asc' },
             },
           },
         });
-      }
-      return tx.accreditationSet.findFirstOrThrow({
-        where: { id },
-        include: { criteria: { include: CRITERION_INCLUDE, orderBy: { indicatorNo: 'asc' } } },
       });
     });
   }
@@ -313,9 +361,15 @@ export class AccreditationSetService {
    * DOKUMEN_RUBRIK) ke ReferenceGuide -- fileKey sudah sampai di R2 lewat
    * presigned PUT sebelum ini dipanggil, sama seperti BuktiDukungService.create.
    */
-  async attachDocument(id: string, type: TipePanduan, dto: AttachSetDocumentDto) {
+  async attachDocument(
+    id: string,
+    type: TipePanduan,
+    dto: AttachSetDocumentDto,
+  ) {
     const { tenantId } = this.tenantContext.getOrThrow();
-    const set = await this.prisma.accreditationSet.findFirst({ where: { id, tenantId } });
+    const set = await this.prisma.accreditationSet.findFirst({
+      where: { id, tenantId },
+    });
     if (!set) throw new NotFoundException('Set akreditasi tidak ditemukan');
 
     await this.requireUnlocked(id, tenantId);
@@ -348,7 +402,10 @@ export class AccreditationSetService {
     if (type === TipePanduan.DOKUMEN_RUBRIK) {
       await this.prisma.accreditationSet.update({
         where: { id },
-        data: { criteriaParseStatus: StatusEkstraksi.DIPROSES, criteriaParseError: null },
+        data: {
+          criteriaParseStatus: StatusEkstraksi.DIPROSES,
+          criteriaParseError: null,
+        },
       });
       await this.jobsService.enqueue(JobType.INGESTION_RUBRIK_DOKUMEN, {
         accreditationSetId: id,
@@ -362,7 +419,10 @@ export class AccreditationSetService {
     if (type === TipePanduan.PANDUAN_LAM) {
       await this.prisma.accreditationSet.update({
         where: { id },
-        data: { structureParseStatus: StatusEkstraksi.DIPROSES, structureParseError: null },
+        data: {
+          structureParseStatus: StatusEkstraksi.DIPROSES,
+          structureParseError: null,
+        },
       });
       await this.jobsService.enqueue(JobType.INGESTION_STRUKTUR_DOKUMEN, {
         accreditationSetId: id,
@@ -376,13 +436,23 @@ export class AccreditationSetService {
   /** Struktur bab/sub-bab resmi set ini (worker.py::_handle_ingestion_struktur_dokumen) -- kosong kalau belum pernah diekstrak. */
   async findChapterTemplates(id: string) {
     const { tenantId } = this.tenantContext.getOrThrow();
-    const set = await this.prisma.accreditationSet.findFirst({ where: { id, tenantId } });
+    const set = await this.prisma.accreditationSet.findFirst({
+      where: { id, tenantId },
+    });
     if (!set) throw new NotFoundException('Set akreditasi tidak ditemukan');
 
     return this.prisma.chapterTemplate.findMany({
       where: { accreditationSetId: id },
       orderBy: { order: 'asc' },
-      include: { subBab: { orderBy: { order: 'asc' } } },
+      include: {
+        // Cuma sub-bab teratas (parentId null) di sini -- anaknya (sub-sub-bab)
+        // ikut lewat `children`, satu tingkat, sama seperti schema.prisma.
+        subBab: {
+          where: { parentId: null },
+          orderBy: { order: 'asc' },
+          include: { children: { orderBy: { order: 'asc' } } },
+        },
+      },
     });
   }
 }

@@ -32,7 +32,9 @@ services:
       - "3000:3000"
     env_file: apps/backend/.env
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_led?schema=public
+      # app_runtime, not postgres -- RLS-restricted role, see
+      # packages/db/prisma/migrations/..._tenant_row_level_security.
+      DATABASE_URL: postgresql://app_runtime:app_runtime_dev_pw@postgres:5432/ai_led?schema=public
       REDIS_URL: redis://redis:6379
       AI_SERVICE_URL: http://ai:8000
     depends_on:
@@ -64,7 +66,9 @@ services:
       SENTENCE_TRANSFORMERS_HOME: /root/.cache/huggingface/sentence-transformers
       HF_HUB_DISABLE_XET: "1"
       REDIS_URL: redis://redis:6379
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_led?schema=public
+      # app_ai_worker, not postgres -- BYPASSRLS role, see
+      # packages/db/prisma/migrations/..._tenant_row_level_security.
+      DATABASE_URL: postgresql://app_ai_worker:app_ai_worker_dev_pw@postgres:5432/ai_led?schema=public
     depends_on:
       - postgres
       - redis
@@ -88,7 +92,9 @@ services:
       SENTENCE_TRANSFORMERS_HOME: /root/.cache/huggingface/sentence-transformers
       HF_HUB_DISABLE_XET: "1"
       REDIS_URL: redis://redis:6379
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_led?schema=public
+      # app_ai_worker, not postgres -- BYPASSRLS role, see
+      # packages/db/prisma/migrations/..._tenant_row_level_security.
+      DATABASE_URL: postgresql://app_ai_worker:app_ai_worker_dev_pw@postgres:5432/ai_led?schema=public
     depends_on:
       - postgres
       - redis
