@@ -230,6 +230,10 @@ def _build_reasoning_llm(ollama_client: OllamaClient):
         "model": ollama_client.model,
         "temperature": 0.1,
         "client_kwargs": {"timeout": int(os.environ.get("OLLAMA_TIMEOUT_SECONDS", "300"))},
+        # Same runaway-generation risk as agent.graph._build_llm. Looser cap
+        # than the native tool-calling path since reasoning models emit a
+        # lot of <think> tokens.
+        "num_predict": 8192,
     }
     api_key = os.environ.get("OLLAMA_API_KEY")
     if api_key and not api_key.startswith("<"):

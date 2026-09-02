@@ -213,6 +213,11 @@ def _build_ragas_llm(model: Optional[str] = None):
             "model": cfg["model"],
             "temperature": 0.1,
             "client_kwargs": {"timeout": int(os.environ.get("OLLAMA_TIMEOUT_SECONDS", "300"))},
+            # Same runaway-generation guard as agent.graph._build_llm. RAGAS's
+            # per-call outputs (claim lists, yes/no verdicts, candidate
+            # questions) are always short and structured, so this only bites
+            # a degenerate generation.
+            "num_predict": 4096,
         }
         api_key = os.environ.get(
             "RAGAS_OLLAMA_API_KEY",

@@ -157,6 +157,11 @@ def _build_llm(ollama_client: OllamaClient):
         # raises -- it just waits forever, leaving that indicator's task
         # stuck with the GPU idle until someone manually triggers a resume.
         "client_kwargs": {"timeout": int(os.environ.get("OLLAMA_TIMEOUT_SECONDS", "300"))},
+        # A degenerate/repetition generation can run away to the full
+        # context window (262144 tokens, 20+ min) instead of naturally
+        # emitting a stop token — confirmed via Ollama server logs. Cap it
+        # to fail fast instead.
+        "num_predict": 4096,
     }
     api_key = os.environ.get("OLLAMA_API_KEY")
     if api_key and not api_key.startswith("<"):
@@ -539,6 +544,9 @@ def build_judge_llm():
         "model": cfg["model"],
         "temperature": 0.0,
         "client_kwargs": {"timeout": int(os.environ.get("OLLAMA_TIMEOUT_SECONDS", "300"))},
+        # temperature=0.0 (fully greedy) is the most repetition-loop-prone
+        # setting there is — same runaway-generation risk as _build_llm above.
+        "num_predict": 2048,
     }
     api_key = os.environ.get("RAGAS_OLLAMA_API_KEY", os.environ.get("OLLAMA_API_KEY"))
     if api_key and not api_key.startswith("<"):
