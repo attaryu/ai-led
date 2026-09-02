@@ -38,21 +38,37 @@ export class BabPipelineService {
     return this.prisma.chapterSection.findMany({ where: { chapterId: id }, orderBy: { order: 'asc' } });
   }
 
-  /** POST bab/:id/sections — tambah section manual, langsung di akhir daftar. Tanpa LLM/job. */
-  async createSection(id: string, dto: { title: string; guidance: string }) {
+  /**
+   * POST bab/:id/sections — tambah section manual, langsung di akhir daftar
+   * SAUDARANYA (parentId sama). `dto.parentId` diisi → jadi sub-sub-bab
+   * anak section itu (satu tingkat, harus section yang sudah ada & di bab
+   * yang sama — sama seperti findFirst di updateSection/deleteSection).
+   * Tanpa LLM/job.
+   */
+  async createSection(id: string, dto: { title: string; guidance: string; parentId?: string }) {
     const bab = await this.access.findOneScoped(id);
     if (bab.locked) {
       throw new ForbiddenException('Bab ini sedang terkunci untuk direview');
     }
+    if (dto.parentId) {
+      const parent = await this.prisma.chapterSection.findFirst({
+        where: { id: dto.parentId, chapterId: id },
+      });
+      if (!parent) throw new NotFoundException('Section induk tidak ditemukan');
+      if (parent.parentId) {
+        throw new ForbiddenException('Section cuma boleh bersarang satu tingkat (sub-sub-bab)');
+      }
+    }
 
     const terakhir = await this.prisma.chapterSection.aggregate({
-      where: { chapterId: id },
+      where: { chapterId: id, parentId: dto.parentId ?? null },
       _max: { order: true },
     });
 
     return this.prisma.chapterSection.create({
       data: {
         chapterId: id,
+        parentId: dto.parentId ?? null,
         order: (terakhir._max.order ?? 0) + 1,
         title: dto.title,
         guidance: dto.guidance,
@@ -128,19 +144,31 @@ export class BabPipelineService {
    * bab biasa (`PATCH bab/:id`) yang juga tidak pernah bikin checkpoint.
    */
   private async recompileChapterContent(chapterId: string): Promise<void> {
-    const sections = await this.prisma.chapterSection.findMany({
-      where: { chapterId, status: 'GENERATED' },
+    // Semua section (bukan cuma GENERATED) -- `order` sekarang bersaing per
+    // parent, jadi urutan yang benar cuma didapat dengan menyusuri pohonnya
+    // sendiri (top-level dulu, lalu anak tiap top-level), bukan satu
+    // `orderBy` global.
+    const all = await this.prisma.chapterSection.findMany({
+      where: { chapterId },
       orderBy: { order: 'asc' },
     });
+    const anakDari = new Map<string, typeof all>();
+    for (const s of all) {
+      if (!s.parentId) continue;
+      anakDari.set(s.parentId, [...(anakDari.get(s.parentId) ?? []), s]);
+    }
 
     let body = '';
     let markdown = '';
-    for (const section of sections) {
+    const tulis = (section: (typeof all)[number], level: 2 | 3) => {
       const content = section.content as { body?: string; markdown?: string } | null;
-      if (!content?.body) continue;
-      body += `<h2>${section.title}</h2>${content.body}`;
-      markdown += `## ${section.title}\n\n${content.markdown ?? content.body}\n\n`;
-    }
+      if (section.status === 'GENERATED' && content?.body) {
+        body += `<h${level}>${section.title}</h${level}>${content.body}`;
+        markdown += `${'#'.repeat(level)} ${section.title}\n\n${content.markdown ?? content.body}\n\n`;
+      }
+      for (const anak of anakDari.get(section.id) ?? []) tulis(anak, 3);
+    };
+    for (const top of all.filter((s) => !s.parentId)) tulis(top, 2);
 
     await this.prisma.documentChapter.update({
       where: { id: chapterId },

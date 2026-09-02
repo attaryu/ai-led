@@ -669,6 +669,13 @@ ATURAN WAJIB:
 - Section boleh lebih detail dari sekadar nama kelompok kriteria (mis. satu
   kelompok besar boleh dipecah jadi beberapa section) kalau memang membantu
   kedalaman pembahasan, tapi jangan berlebihan (target 3-8 section per bab).
+- Kalau STRUKTUR RESMI DARI PEDOMAN di bawah menunjukkan satu sub-bab
+  punya beberapa sub-sub-bab bernomor sendiri (mis. "Kriteria Akreditasi"
+  berisi "Diferensiasi Misi", "Akuntabilitas", dst), pecah section itu jadi
+  section-section anak lewat "subseksi" — JANGAN daftar sub-sub-bab itu
+  sebagai section sejajar terpisah dari induknya.
+- "subseksi" cuma satu tingkat (section anak tidak boleh punya "subseksi"
+  sendiri lagi).
 - "judul" singkat (maks 10 kata), Bahasa Indonesia.
 - "panduan" adalah 1-2 kalimat arahan topik apa yang harus dibahas section
   ini — ini akan dipakai sebagai query pencarian bukti, jadi harus konkret
@@ -677,7 +684,7 @@ ATURAN WAJIB:
   baru evaluasi/hasil).
 
 OUTPUT HARUS JSON VALID SAJA (no explanation outside JSON):
-{"sections": [{"judul": "...", "panduan": "..."}]}
+{"sections": [{"judul": "...", "panduan": "...", "subseksi": [{"judul": "...", "panduan": "..."}]}]}
 """
 
 
@@ -707,10 +714,14 @@ def _build_outline_prompt(
     if struktur_referensi:
         parts.append(
             "## STRUKTUR RESMI DARI PEDOMAN (referensi kuat dari dokumen yang "
-            "diupload institusi ini, boleh disesuaikan bila memang perlu):"
+            "diupload institusi ini, boleh disesuaikan bila memang perlu; sub-sub-bab "
+            "menjorok berarti anak sub-bab di atasnya -- jadikan \"subseksi\", bukan "
+            "section sejajar sendiri):"
         )
         for s in struktur_referensi:
             parts.append(f"- {s['title']}: {(s.get('guidance') or '')[:300]}")
+            for anak in s.get("children") or []:
+                parts.append(f"  - {anak['title']}: {(anak.get('guidance') or '')[:300]}")
         parts.append("")
     if pedoman:
         parts.append("## PEDOMAN PENULISAN:")
@@ -727,19 +738,29 @@ def _build_outline_prompt(
     return "\n".join(parts)
 
 
-def _parse_outline(raw: str) -> list[dict]:
-    """Parses {"sections":[{"judul","panduan"}]} into [{"title","guidance"}],
-    dropping any item missing either field."""
-    data = _parse_llm_json(_strip_think(raw))
+def _parse_outline_list(raw_items: object, kedalaman: int = 0) -> list[dict]:
+    """Recursive helper for _parse_outline -- satu tingkat rekursi lagi buat
+    "subseksi" (kedalaman=1), berhenti di situ (maks 3 tingkat total
+    termasuk BAB), sesuai batas yang diminta prompt-nya sendiri."""
     result: list[dict] = []
-    for item in data.get("sections") or []:
+    for item in raw_items or []:
         if not isinstance(item, dict):
             continue
         title = (item.get("judul") or item.get("title") or "").strip()
         guidance = (item.get("panduan") or item.get("guidance") or "").strip()
-        if title and guidance:
-            result.append({"title": title, "guidance": guidance})
+        if not (title and guidance):
+            continue
+        anak = _parse_outline_list(item.get("subseksi"), kedalaman + 1) if kedalaman == 0 else []
+        result.append({"title": title, "guidance": guidance, "subseksi": anak})
     return result
+
+
+def _parse_outline(raw: str) -> list[dict]:
+    """Parses {"sections":[{"judul","panduan","subseksi":[...]}]} into
+    [{"title","guidance","subseksi":[...]}] (subseksi nested one level deep),
+    dropping any item missing title or guidance."""
+    data = _parse_llm_json(_strip_think(raw))
+    return _parse_outline_list(data.get("sections"))
 
 
 async def _handle_generasi_outline_bab(job) -> dict:
@@ -791,17 +812,33 @@ async def _handle_generasi_outline_bab(job) -> dict:
 
 
 def _compile_chapter_from_sections(sections: list[dict]) -> tuple[str, str]:
-    """Gabung semua section berstatus GENERATED (sudah terurut `order`) jadi
-    satu markdown/HTML — tiap section jadi heading `## judul` + isinya.
-    Section yang belum digenerate diabaikan (bukan placeholder kosong)."""
+    """Gabung semua section berstatus GENERATED jadi satu markdown/HTML --
+    tiap section jadi heading + isinya, `##` untuk section teratas dan `###`
+    untuk sub-sub-bab-nya (`parent_id` non-null) -- disusuri sebagai pohon
+    (top-level dulu urut `order`, lalu anak tiap top-level urut `order`),
+    BUKAN `order` global (order sekarang bersaing per parent, lihat
+    ChapterSection.parentId di schema.prisma). Section yang belum
+    digenerate diabaikan (bukan placeholder kosong)."""
     import markdown as md_lib
 
-    parts = []
+    anak_dari: dict[str, list[dict]] = {}
     for s in sections:
-        if s["status"] != "GENERATED" or not s.get("content"):
-            continue
-        body_markdown = (s["content"] or {}).get("markdown") or ""
-        parts.append(f"## {s['title']}\n\n{body_markdown}")
+        if s.get("parent_id"):
+            anak_dari.setdefault(s["parent_id"], []).append(s)
+
+    parts: list[str] = []
+
+    def tulis(s: dict, level: int) -> None:
+        if s["status"] == "GENERATED" and s.get("content"):
+            body_markdown = (s["content"] or {}).get("markdown") or ""
+            parts.append(f"{'#' * level} {s['title']}\n\n{body_markdown}")
+        for anak in anak_dari.get(s["id"], []):
+            tulis(anak, 3)
+
+    for s in sections:
+        if not s.get("parent_id"):
+            tulis(s, 2)
+
     markdown_text = "\n\n".join(parts)
     return markdown_text, md_lib.markdown(markdown_text)
 
@@ -1633,19 +1670,29 @@ tertentu, dan menyusun STRUKTUR RESMI dokumen LED yang harus diikuti
 berdasarkan panduan itu.
 
 TUGAS: identifikasi urutan BAB (bab utama) dokumen LED, dan untuk tiap BAB,
-daftar sub-bab (bagian) yang harus ada di dalamnya sesuai panduan.
+daftar sub-bab (bagian) yang harus ada di dalamnya sesuai panduan. Sub-bab
+BOLEH punya sub-sub-bab sendiri (mis. "C. Kriteria Akreditasi" berisi
+"C.1 Diferensiasi Misi", "C.2 Akuntabilitas", dst) -- itu masuk field
+"subbab" milik sub-bab induknya, BUKAN didaftar rata sejajar sub-bab lain.
 
 ATURAN:
-- "judul" BAB dan sub-bab disalin/dirangkum dari judul asli di panduan,
-  Bahasa Indonesia, tanpa nomor/kode di depannya.
-- "panduan" tiap sub-bab adalah 1-2 kalimat ringkasan apa yang harus dibahas
-  bagian itu menurut teks panduan -- konkret, bukan generik.
-- Urutkan BAB dan sub-bab sesuai urutan kemunculan di panduan.
+- "judul" BAB, sub-bab, dan sub-sub-bab disalin/dirangkum dari judul asli di
+  panduan, Bahasa Indonesia, tanpa nomor/kode di depannya.
+- "panduan" tiap sub-bab/sub-sub-bab adalah 1-2 kalimat ringkasan apa yang
+  harus dibahas bagian itu menurut teks panduan -- konkret, bukan generik.
+- Urutkan BAB, sub-bab, dan sub-sub-bab sesuai urutan kemunculan di panduan.
+- Maksimal 3 tingkat (BAB > sub-bab > sub-sub-bab) -- kalau panduan punya
+  tingkat lebih dalam lagi, gabungkan ke tingkat sub-sub-bab, jangan bikin
+  tingkat ke-4.
+- Kalau BAB yang sama muncul dua kali di teks (mis. ringkasan daftar isi di
+  awal, lalu rincian lengkap sub-babnya lagi di bagian lain), itu SATU BAB
+  -- gabungkan jadi satu entri "bab" pakai versi paling rinci, JANGAN
+  didaftar dua kali dengan judul yang sama.
 - Kalau teks panduan tidak menyebutkan struktur bab yang jelas, kembalikan
   bab: [] -- jangan mengarang struktur yang tidak ada di teks.
 
 OUTPUT HARUS JSON VALID SAJA (no explanation outside JSON):
-{"bab": [{"urutan": 1, "judul": "...", "subbab": [{"urutan": 1, "judul": "...", "panduan": "..."}]}]}
+{"bab": [{"urutan": 1, "judul": "...", "subbab": [{"urutan": 1, "judul": "...", "panduan": "...", "subbab": [{"urutan": 1, "judul": "...", "panduan": "..."}]}]}]}
 """
 
 
@@ -1655,10 +1702,58 @@ def _build_struktur_dokumen_prompt(teks_pedoman: str) -> str:
     return f"{_SYSTEM_STRUKTUR_DOKUMEN}\n\n## TEKS PANDUAN:\n{teks_pedoman[:30000]}\n\nOutput HANYA JSON:"
 
 
+def _gabung_duplikat_judul(items: list[dict]) -> list[dict]:
+    """Gabung entri (bab ATAU subbab) yang judulnya sama (case-insensitive)
+    jadi satu -- ditemukan dari data produksi: LLM kadang mendaftar BAB yang
+    sama dua kali (ringkasan daftar isi di awal teks, lalu rincian lengkap
+    sub-babnya lagi di bagian lain -- satu pedoman LAM Teknik nyata
+    menghasilkan "BAB II. LAPORAN EVALUASI DIRI" dua kali persis, satu
+    versi rata tanpa sub-sub-bab, satu lagi dengan C.1-C.7 lengkap).
+    Urutan pertama-kali-muncul dipertahankan; kalau kedua kemunculan
+    punya "subbab" sendiri-sendiri, DIGABUNG rekursif (bukan cuma pilih
+    satu) supaya rincian dari keduanya tidak hilang."""
+    by_title: dict[str, dict] = {}
+    order: list[str] = []
+    for item in items:
+        key = item["title"].strip().lower()
+        if key not in by_title:
+            by_title[key] = item
+            order.append(key)
+            continue
+        existing = by_title[key]
+        gabungan_subbab = _gabung_duplikat_judul([*existing.get("subbab", []), *item.get("subbab", [])])
+        lebih_detail = len(item.get("guidance") or "") > len(existing.get("guidance") or "")
+        by_title[key] = {**(item if lebih_detail else existing), "subbab": gabungan_subbab}
+    return [{**by_title[k], "order": i + 1} for i, k in enumerate(order)]
+
+
+def _parse_subbab_list(raw_subbab: object, kedalaman: int = 0) -> list[dict]:
+    """Recursive helper for _parse_struktur_dokumen -- satu tingkat rekursi
+    lagi buat sub-sub-bab (kedalaman=1), berhenti di situ (maks 3 tingkat
+    total termasuk BAB), sesuai batas yang diminta prompt-nya sendiri."""
+    result: list[dict] = []
+    for sub in raw_subbab or []:
+        if not isinstance(sub, dict):
+            continue
+        sub_title = (sub.get("judul") or "").strip()
+        if not sub_title:
+            continue
+        anak = _parse_subbab_list(sub.get("subbab"), kedalaman + 1) if kedalaman == 0 else []
+        result.append({
+            "order": len(result) + 1,
+            "title": sub_title,
+            "guidance": (sub.get("panduan") or "").strip(),
+            "subbab": anak,
+        })
+    return _gabung_duplikat_judul(result)
+
+
 def _parse_struktur_dokumen(raw: str) -> list[dict]:
-    """Parses {"bab":[{"urutan","judul","subbab":[{"urutan","judul","panduan"}]}]}
-    into [{"order","title","subbab":[{"order","title","guidance"}]}], dropping
-    any bab/subbab missing a title."""
+    """Parses {"bab":[{"urutan","judul","subbab":[{"urutan","judul","panduan","subbab":[...]}]}]}
+    into [{"order","title","subbab":[{"order","title","guidance","subbab":[...]}]}]
+    (subbab nested one level deep, sub-sub-bab), dropping any bab/subbab
+    missing a title. Duplicate bab titles (see _gabung_duplikat_judul) are
+    merged, not listed twice."""
     data = _parse_llm_json(_strip_think(raw))
     result: list[dict] = []
     for bab in data.get("bab") or []:
@@ -1667,20 +1762,9 @@ def _parse_struktur_dokumen(raw: str) -> list[dict]:
         title = (bab.get("judul") or "").strip()
         if not title:
             continue
-        subbab: list[dict] = []
-        for sub in bab.get("subbab") or []:
-            if not isinstance(sub, dict):
-                continue
-            sub_title = (sub.get("judul") or "").strip()
-            if not sub_title:
-                continue
-            subbab.append({
-                "order": len(subbab) + 1,
-                "title": sub_title,
-                "guidance": (sub.get("panduan") or "").strip(),
-            })
+        subbab = _parse_subbab_list(bab.get("subbab"))
         result.append({"order": len(result) + 1, "title": title, "subbab": subbab})
-    return result
+    return _gabung_duplikat_judul(result)
 
 
 def _extract_pdf_pages(path: str) -> list[str]:

@@ -120,6 +120,7 @@ export function mapChapterSection(row: BackendChapterSection): ChapterSectionEnt
 	return {
 		id: row.id,
 		chapterId: row.chapterId,
+		parentId: row.parentId,
 		urutan: row.order,
 		judul: row.title,
 		panduan: row.guidance,

@@ -112,13 +112,17 @@ def get_chapter_template_subbab(accreditation_set_id: Optional[str], urutan_bab:
     TAMBAHAN di _build_outline_prompt, bukan pengganti kelompok kriteria.
     Kosong kalau dokumen belum punya set, atau set-nya belum pernah
     diekstrak strukturnya (fallback diam-diam, sama seperti sebelum fitur
-    ini ada — outline tetap jalan tanpa blok ini)."""
+    ini ada — outline tetap jalan tanpa blok ini).
+
+    Cuma sub-bab teratas yang dibalikin, tiap satu bawa `children` (list
+    dict serupa) buat sub-sub-bab-nya -- satu tingkat, sama seperti
+    SubBabTemplate.parentId di schema.prisma."""
     if not accreditation_set_id:
         return []
     with get_conn().cursor() as cur:
         cur.execute(
             """
-            SELECT sbt.title, sbt.guidance
+            SELECT sbt.id, sbt.parent_id, sbt.title, sbt.guidance
             FROM sub_bab_templates sbt
             JOIN chapter_templates ct ON ct.id = sbt.chapter_template_id
             WHERE ct.accreditation_set_id = %s AND ct."order" = %s
@@ -126,7 +130,15 @@ def get_chapter_template_subbab(accreditation_set_id: Optional[str], urutan_bab:
             """,
             (accreditation_set_id, urutan_bab),
         )
-        return [dict(r) for r in cur.fetchall()]
+        rows = [dict(r) for r in cur.fetchall()]
+
+    anak_dari: dict[str, list[dict]] = {}
+    for r in rows:
+        if r["parent_id"]:
+            anak_dari.setdefault(r["parent_id"], []).append(r)
+    for r in rows:
+        r["children"] = anak_dari.get(r["id"], [])
+    return [r for r in rows if not r["parent_id"]]
 
 
 def get_rubrik_levels(kriteria_ids: list[str]) -> dict[str, list[dict]]:
@@ -276,7 +288,7 @@ def get_chapter_sections(chapter_id: str) -> list[dict]:
     with get_conn().cursor() as cur:
         cur.execute(
             """
-            SELECT id, chapter_id, "order", title, guidance, status, content, model, error, generated_at
+            SELECT id, chapter_id, parent_id, "order", title, guidance, status, content, model, error, generated_at
             FROM writing_chapter_sections
             WHERE chapter_id = %s
             ORDER BY "order" ASC
@@ -300,8 +312,29 @@ def get_chapter_section(section_id: str) -> Optional[dict]:
     return dict(row) if row else None
 
 
+def _insert_chapter_section(cur, chapter_id: str, parent_id: str | None, order: int, s: dict) -> list[dict]:
+    """Insert satu writing_chapter_sections row, lalu anak-anaknya (satu
+    tingkat sub-sub-bab, `s["subseksi"]`) dengan parent_id mengarah ke row
+    ini. Balikan: [row ini, *semua anaknya] (flat, buat dikumpulkan pemanggil)."""
+    section_id = str(uuid.uuid4())
+    cur.execute(
+        """
+        INSERT INTO writing_chapter_sections (id, chapter_id, parent_id, "order", title, guidance, status)
+        VALUES (%s, %s, %s, %s, %s, %s, 'PENDING')
+        RETURNING id, chapter_id, parent_id, "order", title, guidance, status, content, model, error, generated_at
+        """,
+        (section_id, chapter_id, parent_id, order, s["title"], s["guidance"]),
+    )
+    created = [dict(cur.fetchone())]
+    for i, anak in enumerate(s.get("subseksi") or [], start=1):
+        created += _insert_chapter_section(cur, chapter_id, section_id, i, anak)
+    return created
+
+
 def create_chapter_sections(chapter_id: str, sections: list[dict], overwrite: bool = False) -> list[dict]:
-    """Writes the LLM-generated outline as ordered PENDING rows.
+    """Writes the LLM-generated outline as ordered PENDING rows. `sections`
+    items may carry `subseksi` (one level of nested sub-sub-bab sections,
+    mis. C.1/C.2 di bawah "Kriteria Akreditasi") -- worker.py::_parse_outline.
 
     Raises ValueError if the chapter already has sections and `overwrite` is
     not set (v1 rule — see plan: outline regenerate resets everything, no
@@ -319,16 +352,7 @@ def create_chapter_sections(chapter_id: str, sections: list[dict], overwrite: bo
 
         created: list[dict] = []
         for i, s in enumerate(sections, start=1):
-            section_id = str(uuid.uuid4())
-            cur.execute(
-                """
-                INSERT INTO writing_chapter_sections (id, chapter_id, "order", title, guidance, status)
-                VALUES (%s, %s, %s, %s, %s, 'PENDING')
-                RETURNING id, chapter_id, "order", title, guidance, status, content, model, error, generated_at
-                """,
-                (section_id, chapter_id, i, s["title"], s["guidance"]),
-            )
-            created.append(dict(cur.fetchone()))
+            created += _insert_chapter_section(cur, chapter_id, None, i, s)
         return created
 
 

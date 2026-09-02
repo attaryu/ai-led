@@ -131,8 +131,8 @@ export function ChapterGenerationPanel({
 		await sections.refetch();
 	}
 
-	async function handleCreateSection(title: string, guidance: string) {
-		await sections.createSection(title, guidance);
+	async function handleCreateSection(title: string, guidance: string, parentId?: string) {
+		await sections.createSection(title, guidance, parentId);
 	}
 
 	async function handleUpdateSection(sectionId: string, title: string, guidance: string) {

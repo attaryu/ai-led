@@ -7,6 +7,8 @@ export type ChapterSectionStatus = z.infer<typeof chapterSectionStatusEnum>;
 export const chapterSectionSchema = z.object({
 	id: z.string(),
 	chapterId: z.string(),
+	/** Non-null → ini sub-sub-bab (mis. C.1), anak section ini di bab yang sama. Satu tingkat. */
+	parentId: z.string().nullable(),
 	urutan: z.number().int().positive(),
 	judul: z.string(),
 	panduan: z.string(),

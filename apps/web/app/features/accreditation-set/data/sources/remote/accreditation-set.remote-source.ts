@@ -73,9 +73,12 @@ export type BackendAccreditationSet = {
 export type BackendSubBabTemplate = {
 	id: string;
 	chapterTemplateId: string;
+	parentId: string | null;
 	order: number;
 	title: string;
 	guidance: string;
+	/** Cuma ada di sub-bab teratas (`parentId: null`) -- lihat accreditation-set.service.ts::findChapterTemplates. */
+	children?: BackendSubBabTemplate[];
 };
 
 /** Baris Prisma `ChapterTemplate`, dengan `subBab` disertakan -- `GET /accreditation-sets/:id/chapter-templates`. */

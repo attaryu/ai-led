@@ -18,6 +18,7 @@ import {
 	type BackendReferenceGuide,
 	type BackendRubricCriterion,
 	type BackendScoreType,
+	type BackendSubBabTemplate,
 	type UpsertCriterionPayload,
 } from './sources/remote/accreditation-set.remote-source';
 
@@ -161,12 +162,17 @@ export function mapChapterTemplate(row: BackendChapterTemplate): ChapterTemplate
 		id: row.id,
 		urutan: row.order,
 		judul: row.title,
-		subBab: row.subBab.map((s) => ({
-			id: s.id,
-			urutan: s.order,
-			judul: s.title,
-			panduan: s.guidance,
-		})),
+		subBab: row.subBab.map(mapSubBabTemplate),
+	};
+}
+
+function mapSubBabTemplate(s: BackendSubBabTemplate): ChapterTemplateEntity['subBab'][number] {
+	return {
+		id: s.id,
+		urutan: s.order,
+		judul: s.title,
+		panduan: s.guidance,
+		anak: (s.children ?? []).map(mapSubBabTemplate),
 	};
 }
 

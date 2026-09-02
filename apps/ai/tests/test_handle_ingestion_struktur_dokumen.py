@@ -78,12 +78,79 @@ def test_extracts_structure_and_replaces_templates():
             {
                 "order": 1,
                 "title": "Pendahuluan",
-                "subbab": [{"order": 1, "title": "Latar Belakang", "guidance": "Jelaskan konteks institusi"}],
+                "subbab": [
+                    {
+                        "order": 1,
+                        "title": "Latar Belakang",
+                        "guidance": "Jelaskan konteks institusi",
+                        "subbab": [],
+                    }
+                ],
             },
             {"order": 2, "title": "Struktur LED", "subbab": []},
         ],
     )
     assert _status_calls(defaults["status_updates"])[-1] == ("SIAP", None)
+
+
+def test_nested_subsubbab_is_kept_one_level_deep_and_capped_below_that():
+    raw = """{"bab": [
+        {"urutan": 1, "judul": "Laporan Evaluasi Diri", "subbab": [
+            {"urutan": 1, "judul": "Kriteria Akreditasi", "panduan": "...", "subbab": [
+                {"urutan": 1, "judul": "Diferensiasi Misi", "panduan": "...", "subbab": [
+                    {"urutan": 1, "judul": "Harusnya tidak muncul (tingkat ke-4)", "panduan": "..."}
+                ]},
+                {"urutan": 2, "judul": "Akuntabilitas", "panduan": "..."}
+            ]}
+        ]}
+    ]}"""
+    result, defaults = _run(_fake_job(), raw)
+
+    assert result["status"] == "completed"
+    ((_set_id, bab_list),) = [
+        call.args for call in defaults["replace_chapter_templates_for_set"].call_args_list
+    ]
+    kriteria = bab_list[0]["subbab"][0]
+    assert kriteria["title"] == "Kriteria Akreditasi"
+    assert [s["title"] for s in kriteria["subbab"]] == ["Diferensiasi Misi", "Akuntabilitas"]
+    # Tingkat ke-4 (anak dari sub-sub-bab) tidak diekstrak sama sekali.
+    assert kriteria["subbab"][0]["subbab"] == []
+
+
+def test_duplicate_bab_title_is_merged_not_listed_twice():
+    """Reproduces a real production case: the LLM listed "BAB II. LAPORAN
+    EVALUASI DIRI" twice -- once flat (compact daftar-isi overview), once
+    with real C.1-C.7 nesting (detailed breakdown further in the source
+    text) -- instead of recognizing both as the same chapter."""
+    raw = """{"bab": [
+        {"urutan": 1, "judul": "Pendahuluan", "subbab": []},
+        {"urutan": 2, "judul": "Laporan Evaluasi Diri", "subbab": [
+            {"urutan": 1, "judul": "Struktur Tim Penyusun", "panduan": "..."},
+            {"urutan": 2, "judul": "Kriteria Akreditasi", "panduan": "..."}
+        ]},
+        {"urutan": 3, "judul": "Laporan Evaluasi Diri", "subbab": [
+            {"urutan": 1, "judul": "Struktur Tim Penyusun", "panduan": "..."},
+            {"urutan": 2, "judul": "Kriteria Akreditasi", "panduan": "lebih rinci", "subbab": [
+                {"urutan": 1, "judul": "Diferensiasi Misi", "panduan": "..."},
+                {"urutan": 2, "judul": "Akuntabilitas", "panduan": "..."}
+            ]}
+        ]},
+        {"urutan": 4, "judul": "Penutup", "subbab": []}
+    ]}"""
+    result, defaults = _run(_fake_job(), raw)
+
+    assert result["status"] == "completed"
+    ((_set_id, bab_list),) = [
+        call.args for call in defaults["replace_chapter_templates_for_set"].call_args_list
+    ]
+    titles = [b["title"] for b in bab_list]
+    assert titles == ["Pendahuluan", "Laporan Evaluasi Diri", "Penutup"]
+    assert [b["order"] for b in bab_list] == [1, 2, 3]
+
+    ler = bab_list[1]
+    assert [s["title"] for s in ler["subbab"]] == ["Struktur Tim Penyusun", "Kriteria Akreditasi"]
+    kriteria = ler["subbab"][1]
+    assert [s["title"] for s in kriteria["subbab"]] == ["Diferensiasi Misi", "Akuntabilitas"]
 
 
 def test_empty_pdf_text_marks_gagal_without_calling_llm():

@@ -72,10 +72,10 @@ export function useChapterSections(chapterId: string) {
 		[chapterId, status, refetch],
 	);
 
-	/** Tambah section manual, langsung di akhir daftar. Tanpa LLM/job. */
+	/** Tambah section manual, langsung di akhir daftar saudaranya. `parentId` diisi → jadi sub-sub-bab. Tanpa LLM/job. */
 	const createSection = React.useCallback(
-		async (title: string, guidance: string) => {
-			await chapterRepository.createSection(chapterId, title, guidance);
+		async (title: string, guidance: string, parentId?: string) => {
+			await chapterRepository.createSection(chapterId, title, guidance, parentId);
 			await refetch();
 		},
 		[chapterId, refetch],

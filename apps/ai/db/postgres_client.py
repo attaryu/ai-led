@@ -436,14 +436,32 @@ def replace_rubric_criteria_for_set(accreditation_set_id: str, rubrics: list[Ind
     return len(rubrics)
 
 
+def _insert_sub_bab_template(cur, chapter_template_id: str, parent_id: str | None, sub: dict) -> None:
+    """Insert satu sub_bab_templates row, lalu anak-anaknya (satu tingkat
+    sub-sub-bab, `sub["subbab"]`) dengan `parent_id` mengarah ke row ini."""
+    sub_bab_id = str(uuid.uuid4())
+    cur.execute(
+        """
+        INSERT INTO sub_bab_templates (id, chapter_template_id, parent_id, "order", title, guidance)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        """,
+        (sub_bab_id, chapter_template_id, parent_id, sub["order"], sub["title"], sub["guidance"]),
+    )
+    for anak in sub.get("subbab", []):
+        _insert_sub_bab_template(cur, chapter_template_id, sub_bab_id, anak)
+
+
 def replace_chapter_templates_for_set(accreditation_set_id: str, bab_list: list[dict]) -> int:
     """Wipe and rewrite every chapter_templates(+sub_bab_templates) row for
     this set from a freshly parsed PANDUAN_LAM PDF
     (worker.py::_handle_ingestion_struktur_dokumen).
 
     `bab_list`: [{"order": int, "title": str, "subbab": [{"order": int,
-    "title": str, "guidance": str}]}], already normalized from the LLM's
-    Indonesian JSON keys by worker.py::_parse_struktur_dokumen.
+    "title": str, "guidance": str, "subbab": [...]}]}], already normalized
+    from the LLM's Indonesian JSON keys by worker.py::_parse_struktur_dokumen.
+    Nested "subbab" (sub-sub-bab, mis. "C.1" di bawah "C. Kriteria
+    Akreditasi") cuma satu tingkat -- lihat SubBabTemplate.parentId di
+    schema.prisma.
 
     No "in use" guard like replace_rubric_criteria_for_set -- a document's
     DocumentChapter rows are stamped ONCE at creation time from whatever
@@ -474,13 +492,7 @@ def replace_chapter_templates_for_set(accreditation_set_id: str, bab_list: list[
                     (chapter_template_id, accreditation_set_id, bab["order"], bab["title"]),
                 )
                 for sub in bab.get("subbab", []):
-                    cur.execute(
-                        """
-                        INSERT INTO sub_bab_templates (id, chapter_template_id, "order", title, guidance)
-                        VALUES (%s, %s, %s, %s, %s)
-                        """,
-                        (str(uuid.uuid4()), chapter_template_id, sub["order"], sub["title"], sub["guidance"]),
-                    )
+                    _insert_sub_bab_template(cur, chapter_template_id, None, sub)
         except Exception:
             cur.execute("ROLLBACK")
             raise

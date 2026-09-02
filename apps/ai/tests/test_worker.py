@@ -246,16 +246,29 @@ def test_parse_outline_drops_items_missing_title_or_guidance():
         {"judul": "Tanpa panduan"}
     ]}"""
     sections = _parse_outline(raw)
-    assert sections == [{"title": "Kebijakan", "guidance": "Bahas dasar hukum"}]
+    assert sections == [{"title": "Kebijakan", "guidance": "Bahas dasar hukum", "subseksi": []}]
+
+
+def test_parse_outline_nests_subseksi_one_level():
+    from worker import _parse_outline
+
+    raw = """{"sections": [
+        {"judul": "Kriteria Akreditasi", "panduan": "Bahas kriteria", "subseksi": [
+            {"judul": "Diferensiasi Misi", "panduan": "Bahas VMTS"},
+            {"judul": "Akuntabilitas", "panduan": "Bahas akuntabilitas"}
+        ]}
+    ]}"""
+    sections = _parse_outline(raw)
+    assert [s["title"] for s in sections[0]["subseksi"]] == ["Diferensiasi Misi", "Akuntabilitas"]
 
 
 def test_compile_chapter_from_sections_skips_ungenerated_and_orders_by_input():
     from worker import _compile_chapter_from_sections
 
     sections = [
-        {"title": "Kebijakan", "status": "GENERATED", "content": {"markdown": "Isi kebijakan."}},
-        {"title": "Belum jadi", "status": "PENDING", "content": None},
-        {"title": "Pelaksanaan", "status": "GENERATED", "content": {"markdown": "Isi pelaksanaan."}},
+        {"id": "s1", "parent_id": None, "title": "Kebijakan", "status": "GENERATED", "content": {"markdown": "Isi kebijakan."}},
+        {"id": "s2", "parent_id": None, "title": "Belum jadi", "status": "PENDING", "content": None},
+        {"id": "s3", "parent_id": None, "title": "Pelaksanaan", "status": "GENERATED", "content": {"markdown": "Isi pelaksanaan."}},
     ]
     markdown_text, html = _compile_chapter_from_sections(sections)
     assert "## Kebijakan" in markdown_text
@@ -263,6 +276,25 @@ def test_compile_chapter_from_sections_skips_ungenerated_and_orders_by_input():
     assert "Belum jadi" not in markdown_text
     assert "## Pelaksanaan" in markdown_text
     assert "<h2>Kebijakan</h2>" in html
+
+
+def test_compile_chapter_from_sections_nests_children_as_h3():
+    from worker import _compile_chapter_from_sections
+
+    sections = [
+        {"id": "top", "parent_id": None, "title": "Kriteria Akreditasi", "status": "PENDING", "content": None},
+        {
+            "id": "child",
+            "parent_id": "top",
+            "title": "Diferensiasi Misi",
+            "status": "GENERATED",
+            "content": {"markdown": "Isi VMTS."},
+        },
+    ]
+    markdown_text, html = _compile_chapter_from_sections(sections)
+    assert "### Diferensiasi Misi" in markdown_text
+    assert "Isi VMTS." in markdown_text
+    assert "<h3>Diferensiasi Misi</h3>" in html
 
 
 def test_find_daftar_isi_text_returns_just_that_page():

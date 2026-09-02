@@ -39,6 +39,7 @@ describe('BabPipelineService manual section CRUD', () => {
       expect(prisma.chapterSection.create).toHaveBeenCalledWith({
         data: {
           chapterId: 'bab-1',
+          parentId: null,
           order: 3,
           title: 'Kebijakan',
           guidance: 'Bahas dasar hukum',
@@ -63,6 +64,40 @@ describe('BabPipelineService manual section CRUD', () => {
       await expect(
         service.createSection('bab-1', { title: 'A', guidance: 'B' }),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('nests under parentId, ordering among siblings of that parent (not global)', async () => {
+      const { service, prisma } = makeService();
+      prisma.chapterSection.findFirst.mockResolvedValue({ id: 'top-1', chapterId: 'bab-1', parentId: null });
+
+      await service.createSection('bab-1', { title: 'C.1', guidance: 'B', parentId: 'top-1' });
+
+      expect(prisma.chapterSection.aggregate).toHaveBeenCalledWith({
+        where: { chapterId: 'bab-1', parentId: 'top-1' },
+        _max: { order: true },
+      });
+      expect(prisma.chapterSection.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ parentId: 'top-1' }) }),
+      );
+    });
+
+    it('rejects nesting under a section that is already a sub-sub-bab (max one level deep)', async () => {
+      const { service, prisma } = makeService();
+      prisma.chapterSection.findFirst.mockResolvedValue({ id: 'child-1', chapterId: 'bab-1', parentId: 'top-1' });
+
+      await expect(
+        service.createSection('bab-1', { title: 'X', guidance: 'B', parentId: 'child-1' }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prisma.chapterSection.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects when parentId does not belong to this chapter', async () => {
+      const { service, prisma } = makeService();
+      prisma.chapterSection.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.createSection('bab-1', { title: 'X', guidance: 'B', parentId: 'not-here' }),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -111,7 +146,7 @@ describe('BabPipelineService manual section CRUD', () => {
         data: { status: 'GENERATED', content, generatedAt: expect.any(Date) },
       });
       expect(prisma.chapterSection.findMany).toHaveBeenCalledWith({
-        where: { chapterId: 'bab-1', status: 'GENERATED' },
+        where: { chapterId: 'bab-1' },
         orderBy: { order: 'asc' },
       });
       expect(prisma.documentChapter.update).toHaveBeenCalledWith({
@@ -125,9 +160,21 @@ describe('BabPipelineService manual section CRUD', () => {
     it('joins every GENERATED section, skips ones without a body, in order', async () => {
       const { service, prisma } = makeService();
       prisma.chapterSection.findMany.mockResolvedValue([
-        { title: 'Kebijakan', content: { body: '<p>Isi kebijakan.</p>', markdown: 'Isi kebijakan.' } },
-        { title: 'Belum jadi', content: null },
-        { title: 'Pelaksanaan', content: { body: '<p>Isi pelaksanaan.</p>' } },
+        {
+          id: 's1',
+          parentId: null,
+          status: 'GENERATED',
+          title: 'Kebijakan',
+          content: { body: '<p>Isi kebijakan.</p>', markdown: 'Isi kebijakan.' },
+        },
+        { id: 's2', parentId: null, status: 'PENDING', title: 'Belum jadi', content: null },
+        {
+          id: 's3',
+          parentId: null,
+          status: 'GENERATED',
+          title: 'Pelaksanaan',
+          content: { body: '<p>Isi pelaksanaan.</p>' },
+        },
       ]);
 
       await service.updateSection('bab-1', 'sec-1', { content: { format: 'html', body: '<p>x</p>' } });
@@ -136,6 +183,26 @@ describe('BabPipelineService manual section CRUD', () => {
       expect(workingContent.body).toBe('<h2>Kebijakan</h2><p>Isi kebijakan.</p><h2>Pelaksanaan</h2><p>Isi pelaksanaan.</p>');
       // Section tanpa `markdown` (ditulis langsung dari kanvas, bukan LLM) fallback ke `body` (HTML) apa adanya.
       expect(workingContent.markdown).toContain('<p>Isi pelaksanaan.</p>');
+    });
+
+    it('renders a child (parentId set) as h3 nested under its parent, not flattened to h2', async () => {
+      const { service, prisma } = makeService();
+      prisma.chapterSection.findMany.mockResolvedValue([
+        { id: 'top', parentId: null, status: 'PENDING', title: 'Kriteria Akreditasi', content: null },
+        {
+          id: 'child',
+          parentId: 'top',
+          status: 'GENERATED',
+          title: 'Diferensiasi Misi',
+          content: { body: '<p>Isi VMTS.</p>', markdown: 'Isi VMTS.' },
+        },
+      ]);
+
+      await service.updateSection('bab-1', 'sec-1', { content: { format: 'html', body: '<p>x</p>' } });
+
+      const { workingContent } = prisma.documentChapter.update.mock.calls[0][0].data;
+      expect(workingContent.body).toBe('<h3>Diferensiasi Misi</h3><p>Isi VMTS.</p>');
+      expect(workingContent.markdown).toContain('### Diferensiasi Misi');
     });
   });
 

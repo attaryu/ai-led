@@ -5,6 +5,7 @@ import { type ChapterTemplateEntity } from '~/features/accreditation-set/domain/
 import { rubricCriterionAmiRepository } from '~/features/assessment/data/repositories/rubric-criterion-ami.repository';
 import { chapterRepository } from '../../data/repositories/chapter.repository';
 import { type ChapterEntity } from './chapter.entity';
+import { type ChapterSectionEntity } from './chapter-section.entity';
 import { kelompokkanKriteria } from './guidance-point.entity';
 
 /**
@@ -144,36 +145,47 @@ function buildFallbackToc(
 	];
 }
 
-/** Sumber sub-bab netral — dari `ChapterSection` (nyata, navigable) ATAU `SubBabTemplate` (referensi, dekoratif). */
-type SubBabItem = { urutan: number; judul: string; sectionId: string | null };
+/**
+ * Sumber sub-bab netral — dari `ChapterSection` (nyata, navigable) ATAU
+ * `SubBabTemplate` (referensi, dekoratif). `anak` — sub-sub-bab nyata hasil
+ * ekstraksi/outline (mis. "C.1" di bawah "C. Kriteria Akreditasi"), satu
+ * tingkat, lihat `ChapterSection.parentId`/`SubBabTemplate.parentId` di
+ * schema.prisma.
+ */
+type SubBabItem = { urutan: number; judul: string; sectionId: string | null; anak: SubBabItem[] };
 
 const KRITERIA_RE = /kriteria/i;
 
+/** Simpul satu sub-bab beserta anak sub-sub-babnya, label mengikuti jalur (mis. "C" lalu "C.1", "C.2"). */
+function simpulSubBab(urutanBab: number, item: SubBabItem, jalurLabel: string): ChapterTocNode {
+	const anak = item.anak.map((a) => simpulSubBab(urutanBab, a, `${jalurLabel}.${a.urutan}`));
+	return simpul(`bab-${urutanBab}-sub-${jalurLabel}`, `${jalurLabel}. ${item.judul}`, null, anak, item.sectionId);
+}
+
 /**
- * Anak-anak satu simpul BAB: sub-bab berhuruf (A, B, C…) plus kelompok
- * kriteria akreditasi. Kalau salah satu sub-bab judulnya menyebut "kriteria"
- * (match "C. Kriteria Akreditasi" di kedua contoh pedoman LAM Teknik yang
- * dicek), kelompok kriteria jadi ANAKNYA (level 3 sungguhan, nomor ikut
- * huruf induknya) — bukan sibling rata seperti sebelumnya. Gak ketemu yang
- * cocok → fallback ke sibling rata (perilaku lama, aman buat pedoman
- * institusi lain yang menamainya beda).
+ * Anak-anak satu simpul BAB: sub-bab berhuruf (A, B, C…), tiap satu bawa
+ * sub-sub-bab NYATA-nya sendiri kalau ekstraksi/outline memang punya
+ * (`item.anak`, lihat {@link simpulSubBab}).
+ *
+ * Kelompok kriteria akreditasi sintetis (dari `rubric_criterion_chapters`,
+ * beda tabel dari ekstraksi Panduan — {@link simpulKriteriaUntukBab}) cuma
+ * dipasang kalau sub-bab yang judulnya menyebut "kriteria" itu BELUM punya
+ * anak nyata sendiri — kalau sudah (C.1, C.2 hasil ekstraksi 3-tingkat),
+ * dobel-nya justru bikin bug "C.X nyampur sama C" yang dilaporkan.
+ * Gak ada sub-bab yang cocok sama sekali → tetap fallback ke sibling rata
+ * (perilaku lama, buat pedoman institusi yang tidak menamainya "Kriteria
+ * Akreditasi" tapi kriterianya sudah di-assign manual ke bab ini).
  */
 function bangunAnakBab(
 	urutanBab: number,
 	subItems: SubBabItem[],
 	semuaKriteria: Awaited<ReturnType<typeof rubricCriterionAmiRepository.findAll>>,
 ): ChapterTocNode[] {
-	const subNodes = subItems.map((item) =>
-		simpul(
-			`bab-${urutanBab}-sub-${item.urutan}`,
-			`${hurufDariUrutan(item.urutan)}. ${item.judul}`,
-			null,
-			[],
-			item.sectionId,
-		),
-	);
+	const subNodes = subItems.map((item) => simpulSubBab(urutanBab, item, hurufDariUrutan(item.urutan)));
 
-	const indeksKriteria = subItems.findIndex((item) => KRITERIA_RE.test(item.judul));
+	const indeksKriteria = subItems.findIndex(
+		(item) => KRITERIA_RE.test(item.judul) && item.anak.length === 0,
+	);
 	const anakKriteria = simpulKriteriaUntukBab(
 		semuaKriteria,
 		urutanBab,
@@ -184,6 +196,33 @@ function bangunAnakBab(
 
 	subNodes[indeksKriteria] = { ...subNodes[indeksKriteria], children: anakKriteria };
 	return subNodes;
+}
+
+/** `ChapterSection` flat (`chapterRepository.findSections`) → pohon `SubBabItem`, dikelompokkan lewat `parentId`. */
+function pohonDariSections(sections: ChapterSectionEntity[]): SubBabItem[] {
+	const anakDari = new Map<string, typeof sections>();
+	for (const s of sections) {
+		if (!s.parentId) continue;
+		anakDari.set(s.parentId, [...(anakDari.get(s.parentId) ?? []), s]);
+	}
+	const keItem = (s: (typeof sections)[number]): SubBabItem => ({
+		urutan: s.urutan,
+		judul: s.judul,
+		sectionId: s.id,
+		anak: (anakDari.get(s.id) ?? []).map(keItem),
+	});
+	return sections.filter((s) => !s.parentId).map(keItem);
+}
+
+/** `ChapterTemplate.subBab` (sudah nested lewat `anak`, `chapter-template.entity.ts`) → pohon `SubBabItem` dekoratif. */
+function pohonDariTemplate(subBab: ChapterTemplateEntity['subBab']): SubBabItem[] {
+	const keItem = (s: ChapterTemplateEntity['subBab'][number]): SubBabItem => ({
+		urutan: s.urutan,
+		judul: s.judul,
+		sectionId: null,
+		anak: s.anak.map(keItem),
+	});
+	return subBab.map(keItem);
 }
 
 /**
@@ -204,9 +243,7 @@ async function buildDynamicToc(
 			const chapter = chapters.find((c) => c.urutanBab === bab.urutan);
 			const sections = chapter ? await chapterRepository.findSections(chapter.id) : [];
 			const subItems: SubBabItem[] =
-				sections.length > 0
-					? sections.map((s) => ({ urutan: s.urutan, judul: s.judul, sectionId: s.id }))
-					: bab.subBab.map((s) => ({ urutan: s.urutan, judul: s.judul, sectionId: null }));
+				sections.length > 0 ? pohonDariSections(sections) : pohonDariTemplate(bab.subBab);
 
 			const anak = bangunAnakBab(bab.urutan, subItems, semuaKriteria);
 			return simpul(`bab-${bab.urutan}`, `BAB ${toRomawi(bab.urutan)}. ${bab.judul}`, bab.urutan, anak);

@@ -218,9 +218,14 @@ export const chapterRepository = {
 		return rows.map(mapChapterSection).sort((a, b) => a.urutan - b.urutan);
 	},
 
-	/** Tambah section manual — lihat `useChapterSections`. */
-	async createSection(chapterId: string, title: string, guidance: string): Promise<ChapterSectionEntity> {
-		const row = await chapterRemoteSource.createSection(chapterId, { title, guidance });
+	/** Tambah section manual — lihat `useChapterSections`. `parentId` diisi → jadi sub-sub-bab section itu. */
+	async createSection(
+		chapterId: string,
+		title: string,
+		guidance: string,
+		parentId?: string,
+	): Promise<ChapterSectionEntity> {
+		const row = await chapterRemoteSource.createSection(chapterId, { title, guidance, parentId });
 		return mapChapterSection(row);
 	},
 

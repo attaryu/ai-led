@@ -255,6 +255,10 @@ model DocumentChapter {
 model ChapterSection {
   id          String               @id @default(cuid())
   chapterId   String               @map("chapter_id")
+  /// Non-null → ini sub-sub-bab (mis. C.1), anak section ini di `chapterId`
+  /// yang sama. Cuma satu tingkat kedalaman (tidak ada cucu) — cukup untuk
+  /// pola "sub-bab → kriteria bernomor" yang ada di pedoman LAM Teknik dkk.
+  parentId    String?              @map("parent_id")
   order       Int
   title       String
   guidance    String               @db.Text
@@ -264,9 +268,16 @@ model ChapterSection {
   error       String?              @db.Text
   generatedAt DateTime?            @map("generated_at")
 
-  chapter DocumentChapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  chapter  DocumentChapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  parent   ChapterSection?  @relation("ChapterSectionChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children ChapterSection[] @relation("ChapterSectionChildren")
 
-  @@unique([chapterId, order])
+  // Bukan @@unique([chapterId, order]) lagi: order sekarang bersaing per
+  // parent (tiap sub-bab hitung C.1, C.2… dari 1 lagi), dan constraint unik
+  // dengan kolom nullable (parentId) tidak benar-benar menjaga itu di
+  // Postgres (NULL != NULL). Dijaga di application layer (create_chapter_sections
+  // menomori sequential per parent), bukan DB.
+  @@index([chapterId, parentId])
   @@map("writing_chapter_sections")
 }
 
@@ -391,7 +402,7 @@ model EvidenceIndicatorTag {
   indicatorNo        Int    @map("indicator_no")
 
   evidence         Evidence         @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
-  accreditationSet AccreditationSet @relation(fields: [accreditationSetId], references: [id])
+  accreditationSet AccreditationSet @relation(fields: [accreditationSetId], references: [id], onDelete: Cascade)
 
   @@unique([evidenceId, accreditationSetId, indicatorNo])
   @@index([accreditationSetId, indicatorNo])
@@ -557,13 +568,22 @@ model ChapterTemplate {
 model SubBabTemplate {
   id                String @id @default(cuid())
   chapterTemplateId String @map("chapter_template_id")
+  /// Non-null → ini sub-sub-bab (mis. "C.1"), anak sub-bab lain di
+  /// `chapterTemplateId` yang sama. Satu tingkat kedalaman saja, sama
+  /// seperti ChapterSection.parentId di atas.
+  parentId          String? @map("parent_id")
   order             Int
   title             String
   guidance          String @db.Text
 
-  chapterTemplate ChapterTemplate @relation(fields: [chapterTemplateId], references: [id], onDelete: Cascade)
+  chapterTemplate ChapterTemplate  @relation(fields: [chapterTemplateId], references: [id], onDelete: Cascade)
+  parent          SubBabTemplate?  @relation("SubBabTemplateChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children        SubBabTemplate[] @relation("SubBabTemplateChildren")
 
-  @@unique([chapterTemplateId, order])
+  // Lihat komentar ChapterSection di atas: bukan @@unique lagi karena
+  // order sekarang bersaing per parent, dan NULL parentId membuat constraint
+  // unik tidak benar-benar menjaga level teratas di Postgres.
+  @@index([chapterTemplateId, parentId])
   @@map("sub_bab_templates")
 }
 
@@ -589,7 +609,7 @@ model RubricCriterion {
   formula            String?         @db.Text
   subScoreFormula    String?         @map("sub_score_formula") @db.Text
 
-  accreditationSet  AccreditationSet         @relation(fields: [accreditationSetId], references: [id])
+  accreditationSet  AccreditationSet         @relation(fields: [accreditationSetId], references: [id], onDelete: Cascade)
   levels            RubricLevel[]
   criterionChapters RubricCriterionChapter[]
   scoreResults      CriterionScoreResult[]
@@ -611,7 +631,7 @@ model RubricLevel {
   score       Int
   description String @db.Text
 
-  criterion RubricCriterion @relation(fields: [criterionId], references: [id])
+  criterion RubricCriterion @relation(fields: [criterionId], references: [id], onDelete: Cascade)
 
   @@unique([criterionId, score])
   @@map("rubric_levels")
@@ -623,7 +643,7 @@ model RubricCriterionChapter {
   criterionId  String @map("criterion_id")
   chapterOrder Int    @map("chapter_order")
 
-  criterion RubricCriterion @relation(fields: [criterionId], references: [id])
+  criterion RubricCriterion @relation(fields: [criterionId], references: [id], onDelete: Cascade)
 
   @@unique([criterionId, chapterOrder])
   @@map("rubric_criterion_chapters")
@@ -642,7 +662,7 @@ model CriterionScoreResult {
   runByName     String     @map("run_by_name")
   runAt         DateTime   @default(now()) @map("run_at")
 
-  criterion RubricCriterion  @relation(fields: [criterionId], references: [id])
+  criterion RubricCriterion  @relation(fields: [criterionId], references: [id], onDelete: Cascade)
   chapter   DocumentChapter? @relation(fields: [chapterId], references: [id])
   draft     ChapterDraft?    @relation(fields: [draftId], references: [id])
   runBy     User             @relation("HasilSkorDijalankanOleh", fields: [runByUserId], references: [id])
@@ -665,7 +685,7 @@ model ReferenceGuide {
   accreditationSetId String?     @map("accreditation_set_id")
   createdAt          DateTime    @default(now()) @map("created_at")
 
-  accreditationSet AccreditationSet? @relation(fields: [accreditationSetId], references: [id])
+  accreditationSet AccreditationSet? @relation(fields: [accreditationSetId], references: [id], onDelete: Cascade)
   details          GuideDetail[]
 
   @@index([accreditationSetId])
@@ -680,7 +700,7 @@ model GuideDetail {
   pointTitle  String @map("point_title")
   contentText String @map("content_text") @db.Text
 
-  guide          ReferenceGuide       @relation(fields: [guideId], references: [id])
+  guide          ReferenceGuide       @relation(fields: [guideId], references: [id], onDelete: Cascade)
   detailChapters GuideDetailChapter[]
 
   @@map("guide_details")
@@ -692,7 +712,7 @@ model GuideDetailChapter {
   guideDetailId String @map("guide_detail_id")
   chapterOrder  Int    @map("chapter_order")
 
-  guideDetail GuideDetail @relation(fields: [guideDetailId], references: [id])
+  guideDetail GuideDetail @relation(fields: [guideDetailId], references: [id], onDelete: Cascade)
 
   @@map("guide_detail_chapters")
 }

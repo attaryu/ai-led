@@ -72,8 +72,8 @@ def test_parses_valid_outline_and_persists_sections():
     args, kwargs = create_sections.call_args
     assert args[0] == "bab-1"
     assert args[1] == [
-        {"title": "Kebijakan Tata Pamong", "guidance": "Bahas dasar hukum penetapan tata pamong"},
-        {"title": "Pelaksanaan", "guidance": "Bahas praktik tata pamong sehari-hari"},
+        {"title": "Kebijakan Tata Pamong", "guidance": "Bahas dasar hukum penetapan tata pamong", "subseksi": []},
+        {"title": "Pelaksanaan", "guidance": "Bahas praktik tata pamong sehari-hari", "subseksi": []},
     ]
     assert kwargs["overwrite"] is False
 

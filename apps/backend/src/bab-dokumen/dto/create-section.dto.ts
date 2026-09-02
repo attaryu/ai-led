@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateSectionDto {
   @ApiProperty({ example: 'Kebijakan Tata Pamong' })
@@ -11,4 +11,9 @@ export class CreateSectionDto {
   @IsString()
   @IsNotEmpty()
   guidance!: string;
+
+  @ApiPropertyOptional({ description: 'Id ChapterSection induk -- diisi berarti section ini sub-sub-bab.' })
+  @IsOptional()
+  @IsString()
+  parentId?: string;
 }

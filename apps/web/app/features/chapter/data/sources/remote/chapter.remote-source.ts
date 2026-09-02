@@ -146,6 +146,7 @@ export type GenerasiOutlineBabResult = {
 export type BackendChapterSection = {
 	id: string;
 	chapterId: string;
+	parentId: string | null;
 	order: number;
 	title: string;
 	guidance: string;
@@ -246,8 +247,14 @@ export const chapterRemoteSource = {
 		});
 	},
 
-	/** Tambah section manual, langsung di akhir daftar. Tanpa LLM/job. */
-	createSection(id: string, payload: { title: string; guidance: string }): Promise<BackendChapterSection> {
+	/**
+	 * Tambah section manual, langsung di akhir daftar (akhir sub-bab induknya
+	 * kalau `parentId` diisi — jadi sub-sub-bab). Tanpa LLM/job.
+	 */
+	createSection(
+		id: string,
+		payload: { title: string; guidance: string; parentId?: string },
+	): Promise<BackendChapterSection> {
 		return apiFetch<BackendChapterSection>(`/bab/${id}/sections`, {
 			method: 'POST',
 			body: payload,
