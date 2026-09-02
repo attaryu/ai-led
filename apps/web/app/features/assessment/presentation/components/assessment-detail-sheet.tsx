@@ -259,13 +259,13 @@ export function AssessmentDetailSheet({
 								)}
 								<span
 									className={cn(
-										'mt-px flex size-4 shrink-0 items-center justify-center rounded text-[10px] font-semibold tabular-nums',
+										'mt-px flex h-4 min-w-9 shrink-0 items-center justify-center rounded px-1 text-[10px] font-semibold tabular-nums',
 										terpilih
 											? 'bg-primary text-primary-foreground'
 											: 'bg-muted text-muted-foreground',
 									)}
 								>
-									{level.skor}
+									{formatSkor(level.skor)}
 								</span>
 								<span className="flex min-w-0 flex-col gap-0.5">
 									<span

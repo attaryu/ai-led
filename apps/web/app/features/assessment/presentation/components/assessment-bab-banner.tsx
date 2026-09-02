@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 
 import { formatRelativeTimeLong } from '~/core/lib/format-time';
 import { useAssessmentBabSummary } from '../hooks/use-assessment-bab-summary';
+import { formatSkor } from '../utils/assessment-format';
 
 /**
  * Pita "skor final AMI untuk bab ini" di tab Review Editor Bab.
@@ -48,7 +49,7 @@ export function AssessmentBabBanner({
 			<p className="mt-1 text-xs leading-relaxed">
 				Skor final bab ini{' '}
 				<span className="font-semibold tabular-nums">
-					{ringkasan.rataRata.toFixed(2)}
+					{formatSkor(ringkasan.rataRata)}
 				</span>{' '}
 				rata-rata ({ringkasan.persen}% dari maksimal)
 				{ringkasan.jumlahDikoreksi > 0 &&

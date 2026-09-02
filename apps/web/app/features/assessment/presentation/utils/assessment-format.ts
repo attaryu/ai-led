@@ -7,22 +7,29 @@
  */
 
 /**
- * Skor: **desimal hanya ditulis kalau memang ada.**
+ * Skor: **selalu dua angka di belakang koma.**
  *
- * Skor indikator praktis selalu bulat — rubriknya berjenjang 0–4 — sehingga
- * "3,0" cuma menambah satu karakter yang tidak menerangkan apa pun, dan pada
- * delapan belas baris berjajar ia jadi derau yang harus dilewati mata tiap kali.
+ * Sebelumnya desimal hanya ditulis kalau memang ada, dengan alasan "3" lebih
+ * tenang dibaca daripada "3,00" pada delapan belas baris berjajar. Aturan itu
+ * dibalik 2026-09-02: yang dicari pembacanya justru ke mana sebuah angka
+ * condong. Skor komposit dihitung dari rumus seperti `((I x 2) + II) / 3` dan
+ * jarang jatuh tepat di bilangan bulat, jadi 2,67 dan 3,00 adalah dua hal yang
+ * berbeda — menulis yang kedua sebagai "3" menyembunyikan bahwa ia memang bulat
+ * dan bukan hasil pembulatan. Lebar yang seragam juga membuat kolomnya berbaris
+ * rapi di bawah `tabular-nums`.
  *
- * Tapi aturannya bukan "selalu bulatkan", dan bedanya penting: indikator komposit
- * dihitung dari rumus seperti `((I x 2) + II) / 3` yang jarang jatuh tepat di
- * bilangan bulat, dan `IndicatorResult.score` di Prisma bertipe `Decimal(5,2)`
- * justru untuk itu. Rata-rata dokumen pun pecahan. Membulatkan semuanya akan
- * diam-diam menampilkan 2,67 sebagai 3 — kesalahan yang tidak akan pernah
- * terlihat oleh siapa pun yang membacanya.
+ * **Dua angka, bukan tiga**, karena dua itulah yang benar-benar tersimpan:
+ * `IndicatorResult.score` bertipe `Decimal(5,2)`. Digit ketiga akan selamanya
+ * nol, dan angka yang selalu nol adalah janji presisi yang datanya tidak punya.
+ *
+ * Pemisahnya koma, mengikuti cara orang Indonesia menulis angka. Dipasang lewat
+ * `replace`, bukan `toLocaleString('id-ID')`: yang terakhir bergantung pada data
+ * ICU milik runtime — hasilnya bisa berbeda antar peramban dan bisa menyelipkan
+ * pemisah ribuan yang tidak pernah diminta.
  */
 export function formatSkor(nilai: number | null): string {
 	if (nilai === null) return '—';
-	return Number.isInteger(nilai) ? String(nilai) : nilai.toFixed(2);
+	return nilai.toFixed(2).replace('.', ',');
 }
 
 /**
