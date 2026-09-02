@@ -39,19 +39,33 @@ function nada(skor: number | null, maksimal: number): string {
 	return 'bg-red-100 text-red-800 border-red-200/60 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800/40';
 }
 
+/**
+ * Dua ukuran, dipilih lewat tempatnya berdiri — bukan lewat `className` dari
+ * pemanggil. Baris daftar dan panel detail memakai komponen yang sama; kalau
+ * salah satunya ditambal dari luar, keduanya perlahan menyimpang tanpa ada yang
+ * menyadari sampai keduanya terlihat berdampingan.
+ */
+const UKURAN = {
+	baris: 'px-2 py-1 text-base',
+	panel: 'px-2.5 py-1.5 text-xl',
+} as const;
+
 export function AssessmentScoreChip({
 	skor,
 	maksimal,
+	ukuran = 'baris',
 	className,
 }: {
 	skor: number | null;
 	maksimal: number;
+	ukuran?: keyof typeof UKURAN;
 	className?: string;
 }) {
 	return (
 		<span
 			className={cn(
-				'inline-flex shrink-0 items-center rounded-md border px-2 py-1 font-heading text-base font-bold tabular-nums',
+				'inline-flex shrink-0 items-center rounded-md border font-heading font-bold tabular-nums',
+				UKURAN[ukuran],
 				nada(skor, maksimal),
 				className,
 			)}
