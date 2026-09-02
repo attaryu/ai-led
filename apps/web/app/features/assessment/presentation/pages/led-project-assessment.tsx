@@ -113,6 +113,23 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 	const { baris, ringkasan, simpanKeputusan, cabutKeputusan } =
 		useAssessmentResults({ projectId: ledProject.id, sesi: sesiAktif, izin });
 
+	/**
+	 * Skala penilaian yang berlaku, untuk disebut sekali di kartu Skor Rata-rata.
+	 *
+	 * Chip skor tidak lagi menulis "/4" di tiap baris — pembagi yang sama diulang
+	 * delapan belas kali tidak menambah apa pun. Tapi skalanya tidak boleh hilang
+	 * sama sekali dari layar, dan sejak rubrik diunggah per set akreditasi ia
+	 * bukan konstanta yang boleh ditulis mati di sini.
+	 *
+	 * `null` bila indikatornya ternyata memakai skala berbeda-beda: satu angka
+	 * yang mengaku berlaku untuk semuanya lebih menyesatkan daripada tidak
+	 * menyebut angka sama sekali.
+	 */
+	const skalaMaksimal = React.useMemo(() => {
+		const skala = new Set(baris.map((row) => row.skorMaksimal));
+		return skala.size === 1 ? [...skala][0] : null;
+	}, [baris]);
+
 	const kualitas = useAssessmentQuality({
 		sesi: sesiAktif,
 		izin,
@@ -207,7 +224,9 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 					progress={sesiAktif ? ringkasan.persen : undefined}
 					hint={
 						sesiAktif
-							? `${ringkasan.persen}% dari skor maksimal`
+							? skalaMaksimal !== null
+								? `${ringkasan.persen}% dari skala 0–${skalaMaksimal}`
+								: `${ringkasan.persen}% dari skor maksimal`
 							: 'Belum pernah dinilai'
 					}
 				/>

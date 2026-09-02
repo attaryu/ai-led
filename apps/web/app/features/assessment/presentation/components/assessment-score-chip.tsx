@@ -13,6 +13,12 @@ import { formatSkor } from '../utils/assessment-format';
  * Nadanya mengikuti **skor final** — yang berlaku setelah keputusan Penjamin
  * Mutu, bukan angka AI. Baris ini menjawab "berapa nilai indikator ini",
  * bukan "berapa tebakan AI-nya".
+ *
+ * `maksimal` tetap diterima walau angkanya tidak lagi ditulis. Akhiran "/4"
+ * dibuang 2026-09-02: pembagi yang sama diulang delapan belas kali tidak
+ * menambah apa pun. Tapi skalanya masih menentukan warna chip ini, dan sejak
+ * rubrik diunggah per set akreditasi ia bukan konstanta yang boleh ditebak di
+ * sini. Skala itu kini disebut sekali saja, di kartu Skor Rata-rata.
  */
 function nada(skor: number | null, maksimal: number): string {
 	if (skor === null) {
@@ -45,13 +51,12 @@ export function AssessmentScoreChip({
 	return (
 		<span
 			className={cn(
-				'inline-flex shrink-0 items-baseline gap-0.5 rounded-md border px-2 py-1 font-heading text-base font-bold tabular-nums',
+				'inline-flex shrink-0 items-center rounded-md border px-2 py-1 font-heading text-base font-bold tabular-nums',
 				nada(skor, maksimal),
 				className,
 			)}
 		>
 			{formatSkor(skor)}
-			<span className="text-[10px] font-medium opacity-70">/{maksimal}</span>
 		</span>
 	);
 }
