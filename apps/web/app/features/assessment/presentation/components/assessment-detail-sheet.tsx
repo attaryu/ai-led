@@ -146,12 +146,13 @@ export function AssessmentDetailSheet({
 						<AssessmentScoreChip
 							skor={row.skorFinal}
 							maksimal={row.skorMaksimal}
+							ukuran="panel"
 						/>
 						<div className="min-w-0">
-							<h3 className="font-heading text-sm font-semibold">
+							<h3 className="font-heading text-base font-semibold">
 								Indikator {kriteria.no} · {kriteria.kodeKriteria}
 							</h3>
-							<p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+							<p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">
 								{kriteria.deskripsi}
 							</p>
 						</div>
@@ -163,7 +164,7 @@ export function AssessmentDetailSheet({
 				{hasil?.error && (
 					<div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-2.5">
 						<WarningCircleIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
-						<p className="text-xs leading-relaxed text-destructive">
+						<p className="text-sm leading-relaxed text-destructive">
 							{hasil.error}
 						</p>
 					</div>
@@ -179,7 +180,7 @@ export function AssessmentDetailSheet({
 							 * menjelaskan angka milik AI — dan label tanpa penyebut skor akan
 							 * terbaca seolah ia membenarkan skor yang berlaku sekarang.
 							 */}
-							<p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+							<p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
 								Justifikasi AI · skor {formatSkor(row.skorMesin)}
 							</p>
 							{/*
@@ -191,22 +192,22 @@ export function AssessmentDetailSheet({
 							 */}
 							<AssessmentConfidenceBadge nilai={hasil.confidence} />
 						</div>
-						<p className="mt-1 text-xs leading-relaxed">{hasil.justifikasi}</p>
+						<p className="mt-1 text-sm leading-relaxed">{hasil.justifikasi}</p>
 					</div>
 				)}
 
 				{hasil?.rekomendasi && (
 					<div className="rounded-md border border-border p-2.5">
-						<p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+						<p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
 							Rekomendasi AI
 						</p>
-						<p className="mt-1 text-xs leading-relaxed">{hasil.rekomendasi}</p>
+						<p className="mt-1 text-sm leading-relaxed">{hasil.rekomendasi}</p>
 					</div>
 				)}
 
 				{row.statusTinjau === 'TINJAU_ULANG' && row.keputusan && (
 					<div className="rounded-md border border-amber-300/60 bg-amber-50 p-2.5 dark:border-amber-800/40 dark:bg-amber-950/30">
-						<p className="text-xs leading-relaxed text-amber-800 dark:text-amber-300">
+						<p className="text-sm leading-relaxed text-amber-800 dark:text-amber-300">
 							Keputusan ini dibuat saat AI menilai{' '}
 							{formatSkor(row.keputusan.skorMesinSaatDitinjau)}; penilaian
 							terbaru memberi {formatSkor(row.skorMesin)}. Skor yang berlaku
@@ -217,7 +218,7 @@ export function AssessmentDetailSheet({
 				)}
 
 				<div className="flex flex-col gap-1.5">
-					<p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+					<p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
 						Tingkat penilaian · {rubricScoreTypeLabels[kriteria.tipeSkor]}
 						{kriteria.tabelLkps.length > 0 &&
 							` · ${kriteria.tabelLkps.join(', ')}`}
@@ -258,7 +259,7 @@ export function AssessmentDetailSheet({
 								)}
 								<span
 									className={cn(
-										'mt-px flex h-4 min-w-9 shrink-0 items-center justify-center rounded px-1 text-[10px] font-semibold tabular-nums',
+										'mt-px flex h-5 min-w-11 shrink-0 items-center justify-center rounded px-1 text-xs font-semibold tabular-nums',
 										terpilih
 											? 'bg-primary text-primary-foreground'
 											: 'bg-muted text-muted-foreground',
@@ -269,7 +270,7 @@ export function AssessmentDetailSheet({
 								<span className="flex min-w-0 flex-col gap-0.5">
 									<span
 										className={cn(
-											'text-xs leading-relaxed',
+											'text-sm leading-relaxed',
 											terpilih ? 'text-foreground' : 'text-muted-foreground',
 										)}
 									>
@@ -281,7 +282,7 @@ export function AssessmentDetailSheet({
 									 * penggunanya — ia tahu persis sejauh apa ia menyimpang.
 									 */}
 									{dariMesin && (
-										<span className="text-[10px] text-muted-foreground">
+										<span className="text-xs text-muted-foreground">
 											hitungan AI
 										</span>
 									)}
@@ -293,7 +294,7 @@ export function AssessmentDetailSheet({
 
 				{bolehMemutuskan ? (
 					<div className="flex flex-col gap-1.5">
-						<label htmlFor="catatan-tinjau" className="text-xs font-medium">
+						<label htmlFor="catatan-tinjau" className="text-sm font-medium">
 							Alasan {mengoreksi ? '(wajib)' : '(opsional)'}
 						</label>
 						<Textarea
@@ -311,9 +312,9 @@ export function AssessmentDetailSheet({
 							}
 						/>
 						{galat ? (
-							<p className="text-xs text-destructive">{galat}</p>
+							<p className="text-sm text-destructive">{galat}</p>
 						) : (
-							<p className="text-xs leading-relaxed text-muted-foreground">
+							<p className="text-sm leading-relaxed text-muted-foreground">
 								Tersimpan bersama nama Anda dan skor AI yang berlaku saat
 								peninjauan.
 							</p>
@@ -322,10 +323,10 @@ export function AssessmentDetailSheet({
 				) : (
 					row.keputusan?.catatan && (
 						<div className="rounded-md border border-primary/20 bg-primary/5 p-2.5">
-							<p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+							<p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
 								Catatan Penjamin Mutu
 							</p>
-							<p className="mt-1 text-xs leading-relaxed">
+							<p className="mt-1 text-sm leading-relaxed">
 								{row.keputusan.catatan}
 							</p>
 						</div>
@@ -333,7 +334,7 @@ export function AssessmentDetailSheet({
 				)}
 
 				{row.keputusan && (
-					<p className="text-xs text-muted-foreground">
+					<p className="text-sm text-muted-foreground">
 						Ditinjau {row.keputusan.ditinjauOlehNama} ·{' '}
 						{formatRelativeTimeLong(row.keputusan.ditinjauPada)}
 					</p>
