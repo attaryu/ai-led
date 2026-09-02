@@ -10,6 +10,7 @@ import {
 	type BackendAssessmentVerdict,
 	type BackendEvalResult,
 	type BackendIndicatorResult,
+	type BackendSessionQuality,
 } from './sources/remote/assessment.remote-source';
 
 /** Prisma Decimal datang lewat JSON sebagai string — `null`/`''` tetap `null`. */
@@ -37,9 +38,7 @@ export function mapSession(row: BackendAssessmentSession): AssessmentSessionEnti
 		dijalankanOlehNama: row.createdBy.fullName,
 		createdAt: row.createdAt,
 		updatedAt: row.updatedAt,
-		// RAGAS di level sesi (docs §12b) belum ada backing-nya sama sekali —
-		// bukan "belum dihitung", tapi genuinely tidak ada kolomnya di Postgres.
-		kualitas: null,
+		kualitas: row.kualitas ? buildAssessmentQuality(row.kualitas) : null,
 	};
 }
 
@@ -61,17 +60,17 @@ export function mapResult(row: BackendIndicatorResult): IndicatorResultEntity {
 const ALASAN_RAGAS_PENILAIAN =
 	'Dihitung otomatis oleh evaluasi RAGAS terhadap potongan sumber (LED, LKPS, bukti dukung) yang diambil untuk penilaian ini.';
 
-/** `null` bila evaluasi belum selesai (`status` masih `pending`/`running`) atau gagal. */
-export function mapEvalResult(row: BackendEvalResult): AssessmentQuality | null {
-	if (row.status !== 'completed' || !row.scores || !row.per_indicator || !row.model) {
-		return null;
-	}
-
-	const metrik = (Object.entries(row.scores) as [AmiRagasMetrik, number][]).map(
+/**
+ * Dipakai baik untuk hasil `POST /eval/run` yang baru selesai (`mapEvalResult`)
+ * maupun untuk `AssessmentSession.kualitas` yang sudah tersimpan (`mapSession`)
+ * — keduanya persis bentuk `BackendSessionQuality`, jadi satu konversi cukup.
+ */
+function buildAssessmentQuality(quality: BackendSessionQuality): AssessmentQuality {
+	const metrik = (Object.entries(quality.scores) as [AmiRagasMetrik, number][]).map(
 		([nama, nilai]) => ({ metrik: nama, nilai, alasan: ALASAN_RAGAS_PENILAIAN }),
 	);
 
-	const perIndikator = row.per_indicator
+	const perIndikator = quality.per_indicator
 		.filter(
 			(item): item is typeof item & { context_recall: number; faithfulness: number } =>
 				item.context_recall !== undefined && item.faithfulness !== undefined,
@@ -85,10 +84,25 @@ export function mapEvalResult(row: BackendEvalResult): AssessmentQuality | null 
 	return {
 		metrik,
 		perIndikator,
-		jumlahChunk: row.total_chunks ?? 0,
-		judgeModel: row.model,
-		dihitungPada: row.finished_at ?? new Date().toISOString(),
+		jumlahChunk: quality.total_chunks ?? 0,
+		judgeModel: quality.model,
+		dihitungPada: quality.finished_at,
 	};
+}
+
+/** `null` bila evaluasi belum selesai (`status` masih `pending`/`running`) atau gagal. */
+export function mapEvalResult(row: BackendEvalResult): AssessmentQuality | null {
+	if (row.status !== 'completed' || !row.scores || !row.per_indicator || !row.model) {
+		return null;
+	}
+
+	return buildAssessmentQuality({
+		scores: row.scores,
+		per_indicator: row.per_indicator,
+		total_chunks: row.total_chunks,
+		model: row.model,
+		finished_at: row.finished_at ?? new Date().toISOString(),
+	});
 }
 
 export function mapVerdict(row: BackendAssessmentVerdict): AssessmentVerdictEntity {

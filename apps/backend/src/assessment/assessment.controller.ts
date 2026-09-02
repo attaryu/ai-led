@@ -73,28 +73,10 @@ export class AssessmentController {
     return this.assessmentService.findReasoning(id, indicatorNo);
   }
 
-  /** Proxy to apps/ai's POST /eval/run — starts a RAGAS quality eval reading real justifications from this session. */
   @Post('assessment-sessions/:id/eval')
   @Protected(...READ_ROLES)
-  async runEval(@Param('id') id: string, @Body() dto: RunEvalDto) {
-    const aiServiceUrl = requireEnv('AI_SERVICE_URL');
-
-    let upstream: globalThis.Response;
-    try {
-      upstream = await fetch(`${aiServiceUrl}/eval/run`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: id, n_indicators: dto.nIndicators }),
-      });
-    } catch {
-      throw new BadGatewayException('AI service tidak dapat dihubungi');
-    }
-
-    if (!upstream.ok) {
-      throw new BadGatewayException('Gagal memulai evaluasi RAGAS');
-    }
-
-    return upstream.json();
+  runEval(@Param('id') id: string, @Body() dto: RunEvalDto) {
+    return this.assessmentService.runEval(id, dto);
   }
 
   /** Proxy to apps/ai's GET /eval/{eval_id}/results — poll for RAGAS eval progress/result. */

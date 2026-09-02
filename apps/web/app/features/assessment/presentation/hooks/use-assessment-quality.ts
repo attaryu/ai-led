@@ -16,11 +16,9 @@ const JEDA_POLL_MS = 2000;
  *
  * **Dipicu manual, bukan otomatis** — beda dari RAGAS per-bab di Editor Bab
  * yang dihitung `worker.py::_handle_generasi_bab` sebagai efek samping
- * generate. Evaluasi sesi AMI baru berjalan saat "Jalankan Evaluasi" ditekan:
- * tidak ada job/kolom Postgres yang menyimpannya (docs §12b, lihat juga
- * `assessment-session.entity.ts::kualitas`), jadi hasilnya cuma hidup di
- * state hook ini selama komponennya terpasang — refresh halaman
- * menghilangkannya, dan itu keadaan yang sah, bukan bug.
+ * generate. Hasilnya ditimpa (bukan riwayat) di kolom `AssessmentSession.kualitas`
+ * tiap "Jalankan Evaluasi" ditekan (docs §12b(3)) — state di sini cuma seeded
+ * dari situ saat sesi dibuka/berganti, refresh halaman TIDAK menghilangkannya.
  */
 export function useAssessmentQuality({
 	sesi,
@@ -29,7 +27,9 @@ export function useAssessmentQuality({
 	sesi: AssessmentSessionEntity | undefined;
 	izin: AssessmentPermission;
 }) {
-	const [kualitas, setKualitas] = React.useState<AssessmentQuality | null>(null);
+	const [kualitas, setKualitas] = React.useState<AssessmentQuality | null>(
+		sesi?.kualitas ?? null,
+	);
 	const [status, setStatus] = React.useState<StatusEvaluasi>('diam');
 	const [pesanGagal, setPesanGagal] = React.useState<string | null>(null);
 
@@ -91,12 +91,23 @@ export function useAssessmentQuality({
 	}, [bolehMengevaluasi, sesi]);
 
 	// Pindah sesi (atau sesi hilang) membatalkan polling yang sedang berjalan dan
-	// mengembalikan panel ke keadaan diam — hasil sesi lama tidak relevan lagi.
+	// mengembalikan panel ke keadaan diam, di-seed dari kualitas TERSIMPAN sesi
+	// baru itu (bisa null = belum pernah dievaluasi) — bukan selalu null begitu
+	// saja, supaya sesi yang sudah dievaluasi sebelumnya tetap menampilkan
+	// hasilnya begitu dibuka lagi.
+	//
+	// Sengaja cuma bergantung ke `sesi?.id`, bukan `sesi?.kualitas` juga:
+	// objeknya berganti referensi tiap `sesi` di-refetch (mis. polling status
+	// lain berjalan bersamaan), dan mengikutkannya di sini akan mereset status
+	// 'berjalan'/'gagal' ke 'diam' di tengah evaluasi yang justru sedang
+	// dijalankan hook ini sendiri. Perubahan kualitas untuk sesi yang SAMA
+	// selalu datang dari `jalankanEvaluasi` di bawah, bukan dari luar.
 	React.useEffect(() => {
 		sesiIdBerjalanRef.current = null;
-		setKualitas(null);
+		setKualitas(sesi?.kualitas ?? null);
 		setStatus('diam');
 		setPesanGagal(null);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [sesi?.id]);
 
 	return {

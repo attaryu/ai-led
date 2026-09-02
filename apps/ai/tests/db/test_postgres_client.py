@@ -117,6 +117,18 @@ def test_session_lifecycle_and_upsert(fixture_ids):
         assert sess2["status"] == "completed"
         assert sess2["completed_indicators"] == 2
 
+        quality = {
+            "scores": {"faithfulness": 0.9, "context_recall": 0.5},
+            "per_indicator": [{"indicator_no": 1, "context_recall": 0.5, "faithfulness": 0.9}],
+            "total_chunks": 4,
+            "model": "deepseek-r1:32b",
+            "finished_at": "2026-09-02T00:00:00+00:00",
+        }
+        pc.save_session_quality(session_id, quality)
+        with pc._get_conn().cursor() as cur:
+            cur.execute("SELECT kualitas FROM assessment_sessions WHERE id = %s", (session_id,))
+            assert cur.fetchone()["kualitas"] == quality, "overwritten in place, not appended"
+
         sessions = pc.list_sessions(limit=50)
         found = next(s for s in sessions if s["session_id"] == session_id)
         assert found["avg_score"] == 3.0  # (4.0 + 2.0) / 2

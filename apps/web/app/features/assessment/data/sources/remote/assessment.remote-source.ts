@@ -1,6 +1,31 @@
 import { apiFetch } from '~/core/lib/api-client';
 import { type LedSourceMode } from '../../../domain/entities/assessment-source.entity';
 
+/**
+ * Bentuk `kualitas` jsonb pada `AssessmentSession` (docs/database.md §12b(3))
+ * — subset `BackendEvalResult` yang benar-benar disimpan
+ * (`apps/ai/api/routes/eval.py::_run_evaluation_background`), dipakai juga
+ * sebagai hasil `POST /eval/run` yang sudah `completed`.
+ */
+export type BackendSessionQuality = {
+	scores: {
+		faithfulness?: number;
+		answer_relevancy?: number;
+		context_precision?: number;
+		context_recall?: number;
+	};
+	per_indicator: {
+		indicator_no: number;
+		faithfulness?: number;
+		answer_relevancy?: number;
+		context_precision?: number;
+		context_recall?: number;
+	}[];
+	total_chunks: number | null;
+	model: string;
+	finished_at: string;
+};
+
 /** Baris Prisma `AssessmentSession`, dengan `createdBy.fullName` di-include. */
 export type BackendAssessmentSession = {
 	id: string;
@@ -17,6 +42,8 @@ export type BackendAssessmentSession = {
 	createdAt: string;
 	updatedAt: string;
 	createdBy: { fullName: string };
+	/** `null` = sesi ini belum pernah dievaluasi RAGAS. */
+	kualitas: BackendSessionQuality | null;
 };
 
 /** Baris Prisma `IndicatorResult` — `score`/`confidence` Decimal datang sebagai string. */

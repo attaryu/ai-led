@@ -120,6 +120,25 @@ def update_session_status(
         logger.exception("Failed to update session %s status to %s", session_id, status)
 
 
+def save_session_quality(session_id: str, quality: dict) -> None:
+    """Persist a session's RAGAS quality result (docs/database.md §12b(3)).
+
+    Overwritten on every re-run, same policy as IndicatorResult — not an
+    append-only log. `quality` is stored as-is (the same
+    scores/per_indicator/total_chunks/model/finished_at shape
+    api/routes/eval.py's EvalResultResponse already returns), so the caller
+    doesn't need a second shape just for persistence.
+    """
+    try:
+        with _get_conn().cursor() as cur:
+            cur.execute(
+                "UPDATE assessment_sessions SET kualitas = %s WHERE id = %s",
+                (psycopg2.extras.Json(quality), session_id),
+            )
+    except Exception:
+        logger.exception("Failed to save session %s quality", session_id)
+
+
 def get_session(session_id: str) -> Optional[dict]:
     """Return the assessment_sessions row for session_id, or None if missing."""
     with _get_conn().cursor() as cur:

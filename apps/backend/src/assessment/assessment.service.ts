@@ -1,7 +1,14 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { requireEnv } from '../config/env';
 import { PrismaService } from '../database/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { DokumenLedService } from '../dokumen-led/dokumen-led.service';
+import { RunEvalDto } from './dto/run-eval.dto';
 import { UpsertVerdictDto } from './dto/upsert-verdict.dto';
 
 /** AMI assessment reads (session/results/reasoning) + Penjamin Mutu verdicts — the trigger itself stays in DokumenLedService. */
@@ -57,6 +64,35 @@ export class AssessmentService {
       where: { sessionId, indicatorNo },
       orderBy: { stepIndex: 'asc' },
     });
+  }
+
+  /**
+   * Proxy to apps/ai's `POST /eval/run` — starts a RAGAS quality eval reading
+   * real justifications from this session. `findSessionScoped` first, unlike
+   * the raw `fetch` this replaced: without it, any authenticated user could
+   * trigger (and burn LLM-judge time on) an eval for a session id belonging
+   * to another tenant, since apps/ai itself has no tenant concept to check.
+   */
+  async runEval(id: string, dto: RunEvalDto) {
+    await this.findSessionScoped(id);
+    const aiServiceUrl = requireEnv('AI_SERVICE_URL');
+
+    let upstream: globalThis.Response;
+    try {
+      upstream = await fetch(`${aiServiceUrl}/eval/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: id, n_indicators: dto.nIndicators }),
+      });
+    } catch {
+      throw new BadGatewayException('AI service tidak dapat dihubungi');
+    }
+
+    if (!upstream.ok) {
+      throw new BadGatewayException('Gagal memulai evaluasi RAGAS');
+    }
+
+    return upstream.json();
   }
 
   async findVerdicts(dokumenId: string) {

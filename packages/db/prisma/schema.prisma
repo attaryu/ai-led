@@ -827,6 +827,11 @@ model AssessmentSession {
   completedIndicators Int              @default(0) @map("completed_indicators")
   status              AssessmentStatus @default(RUNNING)
   error               String?          @db.Text
+  /// RAGAS level-sesi (docs/database.md §12b(3)) — apps/ai/eval/ragas_eval.py's
+  /// `scores`/`per_indicator`/`total_chunks`/`model`/`finished_at`, ditimpa tiap
+  /// "Jalankan Evaluasi" ditekan ulang (sama seperti IndicatorResult, bukan
+  /// riwayat berlapis). `null` = belum pernah dievaluasi.
+  kualitas            Json?
   createdAt           DateTime         @default(now()) @map("created_at")
   updatedAt           DateTime         @updatedAt @map("updated_at")
 

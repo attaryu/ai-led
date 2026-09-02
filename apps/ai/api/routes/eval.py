@@ -17,6 +17,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+from db.postgres_client import save_session_quality
 from eval.ragas_eval import (
     ALL_METRICS,
     get_available_judge_models,
@@ -153,6 +154,7 @@ def _run_evaluation_background(
             progress_cb=_on_progress,
             model=model,
         )
+        finished_at = datetime.now(timezone.utc).isoformat()
         _eval_results[eval_id].update(
             {
                 "status": "completed",
@@ -167,7 +169,7 @@ def _run_evaluation_background(
                 "progress_stage": "completed",
                 "progress_current": result.get("n_samples", 0),
                 "progress_total": result.get("n_samples", 0),
-                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "finished_at": finished_at,
                 "error": result.get("error"),
             }
         )
@@ -175,6 +177,23 @@ def _run_evaluation_background(
             "RAGAS eval %s completed — model=%s scores=%s",
             eval_id, result.get("model"), result.get("scores"),
         )
+
+        # Session-scoped eval (not the synthetic/reference_path modes below
+        # `session_id`) survives past this process's memory — docs/database.md
+        # §12b(3), tracker "Wiring tab Kualitas Penilaian ke evaluasi RAGAS
+        # sungguhan". _eval_results above stays the poll source of truth for
+        # THIS run; this is what makes the result still there after a refresh.
+        if session_id is not None and result.get("scores") and result.get("per_indicator"):
+            save_session_quality(
+                session_id,
+                {
+                    "scores": result.get("scores"),
+                    "per_indicator": result.get("per_indicator"),
+                    "total_chunks": result.get("total_chunks"),
+                    "model": result.get("model"),
+                    "finished_at": finished_at,
+                },
+            )
     except Exception as exc:
         logger.exception("RAGAS eval %s failed", eval_id)
         _eval_results[eval_id].update(
