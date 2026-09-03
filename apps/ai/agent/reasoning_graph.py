@@ -234,6 +234,7 @@ def _build_reasoning_llm(ollama_client: OllamaClient):
         # than the native tool-calling path since reasoning models emit a
         # lot of <think> tokens.
         "num_predict": 8192,
+        "keep_alive": os.environ.get("OLLAMA_KEEP_ALIVE", "30m"),
     }
     api_key = os.environ.get("OLLAMA_API_KEY")
     if api_key and not api_key.startswith("<"):

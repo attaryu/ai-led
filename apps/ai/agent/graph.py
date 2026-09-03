@@ -162,6 +162,9 @@ def _build_llm(ollama_client: OllamaClient):
         # emitting a stop token — confirmed via Ollama server logs. Cap it
         # to fail fast instead.
         "num_predict": 4096,
+        # Ollama's own default (5min) unloads a 20+GB model between
+        # sessions run a few minutes apart — see llm/ollama_client.py.
+        "keep_alive": os.environ.get("OLLAMA_KEEP_ALIVE", "30m"),
     }
     api_key = os.environ.get("OLLAMA_API_KEY")
     if api_key and not api_key.startswith("<"):
@@ -547,6 +550,7 @@ def build_judge_llm():
         # temperature=0.0 (fully greedy) is the most repetition-loop-prone
         # setting there is — same runaway-generation risk as _build_llm above.
         "num_predict": 2048,
+        "keep_alive": os.environ.get("OLLAMA_KEEP_ALIVE", "30m"),
     }
     api_key = os.environ.get("RAGAS_OLLAMA_API_KEY", os.environ.get("OLLAMA_API_KEY"))
     if api_key and not api_key.startswith("<"):

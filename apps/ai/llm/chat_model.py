@@ -39,6 +39,9 @@ def build_plain_llm():
     api_key = os.environ.get("OLLAMA_API_KEY")
     if api_key and not api_key.startswith("<"):
         kwargs["client_kwargs"] = {"headers": {"Authorization": f"Bearer {api_key}"}}
+    # Ollama's own default (5min) unloads a 20+GB model between test/dev
+    # attempts a few minutes apart -- see llm/ollama_client.py::OllamaClient.
+    kwargs["keep_alive"] = os.environ.get("OLLAMA_KEEP_ALIVE", "30m")
     return ChatOllama(**kwargs)
 
 
@@ -75,4 +78,7 @@ def build_judge_llm():
     api_key = os.environ.get("OLLAMA_API_KEY")
     if api_key and not api_key.startswith("<"):
         kwargs["client_kwargs"] = {"headers": {"Authorization": f"Bearer {api_key}"}}
+    # Ollama's own default (5min) unloads a 20+GB model between test/dev
+    # attempts a few minutes apart -- see llm/ollama_client.py::OllamaClient.
+    kwargs["keep_alive"] = os.environ.get("OLLAMA_KEEP_ALIVE", "30m")
     return ChatOllama(**kwargs)

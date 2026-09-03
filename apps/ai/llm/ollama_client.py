@@ -46,6 +46,10 @@ class OllamaClient:
     timeout_seconds: int = 300
     api_key: Optional[str] = None
     max_retries: int = 3
+    # Ollama's own default (5min) unloads a 20+GB model between test/dev
+    # attempts a few minutes apart -- the next call then pays a full
+    # disk->VRAM reload on the remote box before it can answer at all.
+    keep_alive: str = "30m"
 
     def _headers(self) -> dict[str, str]:
         h: dict[str, str] = {"Content-Type": "application/json"}
@@ -65,6 +69,7 @@ class OllamaClient:
             "messages": messages,
             "stream": False,
             "options": {"temperature": temperature},
+            "keep_alive": self.keep_alive,
         }
 
         last_error: Optional[Exception] = None
@@ -167,4 +172,5 @@ def create_ollama_client_from_env(model: Optional[str] = None) -> OllamaClient:
         model=model or get_available_models()[0],
         timeout_seconds=int(os.environ.get("OLLAMA_TIMEOUT_SECONDS", "300")),
         api_key=os.environ.get("OLLAMA_API_KEY"),
+        keep_alive=os.environ.get("OLLAMA_KEEP_ALIVE", "30m"),
     )

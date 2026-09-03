@@ -218,6 +218,7 @@ def _build_ragas_llm(model: Optional[str] = None):
             # questions) are always short and structured, so this only bites
             # a degenerate generation.
             "num_predict": 4096,
+            "keep_alive": os.environ.get("OLLAMA_KEEP_ALIVE", "30m"),
         }
         api_key = os.environ.get(
             "RAGAS_OLLAMA_API_KEY",
