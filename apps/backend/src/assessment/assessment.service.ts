@@ -58,6 +58,34 @@ export class AssessmentService {
     });
   }
 
+  /**
+   * Hasil terbaru per indikator, digabung lintas SEMUA sesi dokumen ini —
+   * bukan cuma sesi terbaru.
+   *
+   * "Freestyle indicator picking" (use-assessment-indicator-picks.ts) sengaja
+   * membiarkan pengguna mencicil: nilai indikator 1-2 dulu, lihat hasilnya,
+   * lalu nilai indikator 3-6 di run terpisah. Tiap run bikin `AssessmentSession`
+   * baru (lihat DokumenLedService.triggerAssessment) — kalau tabel hasil cuma
+   * baca sesi terbaru, indikator dari run sebelumnya "hilang" dari layar
+   * padahal datanya masih utuh di Postgres, cuma nempel di sesi lain.
+   */
+  async findResultsForDocument(dokumenId: string) {
+    await this.dokumenLedService.findOne(dokumenId); // isolasi tenant + 404
+    const results = await this.prisma.indicatorResult.findMany({
+      where: { session: { documentId: dokumenId } },
+      orderBy: { createdAt: 'desc' },
+    });
+    const terbaruPerIndikator = new Map<number, (typeof results)[number]>();
+    for (const hasil of results) {
+      if (!terbaruPerIndikator.has(hasil.indicatorNo)) {
+        terbaruPerIndikator.set(hasil.indicatorNo, hasil);
+      }
+    }
+    return [...terbaruPerIndikator.values()].sort(
+      (a, b) => a.indicatorNo - b.indicatorNo,
+    );
+  }
+
   async findReasoning(sessionId: string, indicatorNo: number) {
     await this.findSessionScoped(sessionId);
     return this.prisma.reasoningStep.findMany({

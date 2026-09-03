@@ -15,11 +15,28 @@ import { type IndicatorResultEntity } from '../../domain/entities/indicator-resu
 import { type AssessmentPermission } from './use-assessment-permission';
 
 /**
- * Tabel penilaian final untuk satu sesi: hasil AI ditimpa keputusan Penjamin
- * Mutu, digabung dengan master indikator.
+ * Tabel penilaian final: hasil AI ditimpa keputusan Penjamin Mutu, digabung
+ * dengan master indikator.
  *
- * **Keputusan dibaca per dokumen, hasil dibaca per sesi**, dan perbedaan itu
- * disengaja — itulah yang membuat keputusan bertahan saat penilaian diulang.
+ * **Keputusan dibaca per dokumen, hasil dibaca beda cara tergantung sesi mana
+ * yang dilihat**, dan perbedaan itu disengaja.
+ *
+ * **Melihat sesi TERBARU** — hasil digabung lintas SEMUA sesi dokumen ini
+ * (`findResultsByDokumenId`, terbaru per indikator menang), bukan cuma sesi
+ * itu sendiri. Ini yang membuat "freestyle indicator picking"
+ * (use-assessment-indicator-picks.ts) benar-benar bisa dicicil: nilai
+ * indikator 1-2 di satu run (bikin sesi baru), nilai indikator 3-6 di run
+ * lain (sesi baru lagi) — tanpa penggabungan ini, indikator 1-2 "hilang" dari
+ * layar begitu run kedua selesai, padahal datanya masih utuh di Postgres,
+ * cuma nempel di sesi yang berbeda.
+ *
+ * **Melihat sesi LAMA dari Riwayat** — hasil dibaca cuma dari sesi itu
+ * (`findResultsBySession`), snapshot apa adanya waktu run itu jalan, TIDAK
+ * digabung dengan run lain: yang ditanyakan orang saat membuka sesi lama
+ * adalah "apa yang dihasilkan run ini", bukan keadaan gabungan sekarang.
+ *
+ * Keputusan (`keputusan`) selalu yang berlaku sekarang, sesi apa pun yang
+ * dilihat — itulah yang membuat keputusan bertahan saat penilaian diulang.
  * Sesi lama yang dibuka dari Riwayat pun menampilkan keputusan yang berlaku
  * sekarang, bukan keputusan "versi waktu itu": yang ditanyakan orang saat membuka
  * sesi lama adalah bagaimana angka AI waktu itu dibandingkan keputusan yang
@@ -29,10 +46,12 @@ export function useAssessmentResults({
 	projectId,
 	sesi,
 	izin,
+	melihatSesiTerbaru,
 }: {
 	projectId: string;
 	sesi: AssessmentSessionEntity | undefined;
 	izin: AssessmentPermission;
+	melihatSesiTerbaru: boolean;
 }) {
 	const [hasil, setHasil] = React.useState<IndicatorResultEntity[]>([]);
 	const [keputusan, setKeputusan] = React.useState<AssessmentVerdictEntity[]>(
@@ -44,14 +63,16 @@ export function useAssessmentResults({
 
 	const muat = React.useCallback(async () => {
 		const [hasilBaru, keputusanBaru] = await Promise.all([
-			sesiId
-				? assessmentSessionRepository.findResultsBySession(sesiId)
-				: Promise.resolve([]),
+			melihatSesiTerbaru
+				? assessmentSessionRepository.findResultsByDokumenId(projectId)
+				: sesiId
+					? assessmentSessionRepository.findResultsBySession(sesiId)
+					: Promise.resolve([]),
 			assessmentVerdictRepository.findByDokumenId(projectId),
 		]);
 		setHasil(hasilBaru);
 		setKeputusan(keputusanBaru);
-	}, [sesiId, projectId]);
+	}, [sesiId, projectId, melihatSesiTerbaru]);
 
 	React.useEffect(() => {
 		void muat();

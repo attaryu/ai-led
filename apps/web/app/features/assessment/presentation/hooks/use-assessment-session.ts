@@ -138,6 +138,10 @@ export function useAssessmentSession({
 				// di-`muat()` di atas sudah membawa status CANCELLED-nya sendiri
 				// buat ditampilkan (assessmentStatusLabels).
 				setStatus('diam');
+				// Bersihkan pesan gagal-membatalkan yang mungkin masih nempel dari
+				// klik Batalkan yang sempat gagal (lihat `batalkan`) — run ini
+				// sendiri sudah beres, pesan lama itu sudah tidak relevan.
+				setPesanGagal(null);
 			} catch {
 				setStatus('gagal');
 				setPesanGagal(
@@ -223,16 +227,35 @@ export function useAssessmentSession({
 	 * `tunggu()`'s SSE loop sendiri yang menerima event terminal `cancelled`
 	 * dan membereskan status. Tidak mengubah `status` di sini supaya progress
 	 * bar tidak berkedip balik ke keadaan diam sebelum workernya sungguhan
-	 * berhenti. */
+	 * berhenti.
+	 *
+	 * Job id-nya diutamakan dari `sesiAktif.jobId` (kolom Postgres,
+	 * `AssessmentSession.bullJobId`) — itu yang membuat tombol ini bekerja
+	 * dari tab/pengguna MANAPUN yang sedang melihat sesi RUNNING, bukan cuma
+	 * tab yang memulainya. `jobIdBerjalan.current` (ref lokal) cuma jadi
+	 * fallback buat jendela singkat tepat setelah `jalankan()` memicu job,
+	 * sebelum `muat()` sempat membawa `bullJobId`-nya masuk ke `sesiAktif`. */
 	const batalkan = React.useCallback(async () => {
-		if (!jobIdBerjalan.current || membatalkan) return;
+		if (membatalkan) return;
+		const jobId = sesiAktif?.jobId ?? jobIdBerjalan.current;
+		if (!jobId) {
+			// Sesi lama dari sebelum kolom `bullJobId` ada, atau lewat rute HTTP
+			// langsung apps/ai — tidak ada job buat ditarget sama sekali. Beri
+			// tahu, jangan diam-diam tidak berbuat apa-apa (persis bug yang
+			// dulu terjadi lewat `jobIdBerjalan.current` doang).
+			setPesanGagal(
+				'Sesi ini tidak bisa dibatalkan dari sini — tidak ada job yang tercatat untuknya.',
+			);
+			return;
+		}
 		setMembatalkan(true);
 		try {
-			await assessmentSessionRepository.cancel(jobIdBerjalan.current);
+			await assessmentSessionRepository.cancel(jobId);
 		} catch {
 			setMembatalkan(false);
+			setPesanGagal('Gagal membatalkan penilaian. Coba lagi.');
 		}
-	}, [membatalkan]);
+	}, [membatalkan, sesiAktif]);
 
 	return {
 		daftarSesi,

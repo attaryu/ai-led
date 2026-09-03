@@ -826,6 +826,13 @@ model AssessmentSession {
   totalIndicators     Int              @map("total_indicators")
   completedIndicators Int              @default(0) @map("completed_indicators")
   status              AssessmentStatus @default(RUNNING)
+  /// BullMQ `Job.bullJobId` yang menjalankan sesi ini — dipakai tombol
+  /// Batalkan (JobsService.cancel) supaya bisa menarget job dari tab/pengguna
+  /// MANAPUN yang sedang melihat sesi RUNNING, bukan cuma tab yang memulainya
+  /// (lihat komentar `useAssessmentSession`). `null` untuk sesi lewat rute
+  /// HTTP langsung apps/ai (/assessment/start, /resume) yang tidak lewat
+  /// BullMQ sama sekali.
+  bullJobId           String?          @map("bull_job_id")
   error               String?          @db.Text
   /// RAGAS level-sesi (docs/database.md §12b(3)) — apps/ai/eval/ragas_eval.py's
   /// `scores`/`per_indicator`/`total_chunks`/`model`/`finished_at`, ditimpa tiap

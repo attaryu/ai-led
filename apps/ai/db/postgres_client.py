@@ -54,6 +54,7 @@ def create_session(
     sumber_led: str = "EDITOR",
     led_file_name: Optional[str] = None,
     lkps_bukti_dukung_id: Optional[str] = None,
+    bull_job_id: Optional[str] = None,
 ) -> None:
     """Insert a new assessment_sessions row (status=RUNNING).
 
@@ -66,6 +67,12 @@ def create_session(
     searches the same pgvector-indexed chunks for this (tenant_id,
     dokumen_id) regardless of this value; there's no code path that reads
     BabDokumen.kontenKerja directly.
+
+    bull_job_id — the BullMQ job driving this session (worker.py's
+    `job.id`), persisted so the Batalkan button works from any tab/user
+    viewing this session, not just the one that started it (see
+    JobsService.cancel, apps/backend). `None` for the direct HTTP
+    /assessment/start /resume routes, which never go through BullMQ.
     """
     try:
         with _get_conn().cursor() as cur:
@@ -75,8 +82,8 @@ def create_session(
                     (id, tenant_id, document_id, created_by_user_id,
                      report_evidence_id, led_source, led_file_name,
                      lkps_evidence_id, total_indicators,
-                     completed_indicators, status, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'RUNNING', now())
+                     completed_indicators, status, bull_job_id, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 'RUNNING', %s, now())
                 """,
                 (
                     session_id,
@@ -88,6 +95,7 @@ def create_session(
                     led_file_name,
                     lkps_bukti_dukung_id,
                     total_indicators,
+                    bull_job_id,
                 ),
             )
     except Exception:

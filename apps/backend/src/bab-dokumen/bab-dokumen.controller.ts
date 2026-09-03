@@ -110,7 +110,13 @@ export class BabDokumenController {
     @Param('sectionId') sectionId: string,
     @Body() dto: GenerateBabDto,
   ) {
-    return this.babPipelineService.triggerGenerate(id, sectionId, dto.prompt, dto.draftId);
+    return this.babPipelineService.triggerGenerate(
+      id,
+      sectionId,
+      dto.prompt,
+      dto.draftId,
+      dto.selectedEvidenceIds,
+    );
   }
 
   @Post('bab/:id/sections')

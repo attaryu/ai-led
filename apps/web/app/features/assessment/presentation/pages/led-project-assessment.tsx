@@ -129,7 +129,12 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 	});
 
 	const { baris, ringkasan, simpanKeputusan, cabutKeputusan } =
-		useAssessmentResults({ projectId: ledProject.id, sesi: sesiAktif, izin });
+		useAssessmentResults({
+			projectId: ledProject.id,
+			sesi: sesiAktif,
+			izin,
+			melihatSesiTerbaru,
+		});
 
 	const pemilihanIndikator = useAssessmentIndicatorPicks(baris);
 

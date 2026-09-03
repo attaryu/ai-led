@@ -812,13 +812,7 @@ async def _handle_generasi_outline_bab(job) -> dict:
 
 
 def _compile_chapter_from_sections(sections: list[dict]) -> tuple[str, str]:
-    """Gabung semua section berstatus GENERATED jadi satu markdown/HTML --
-    tiap section jadi heading + isinya, `##` untuk section teratas dan `###`
-    untuk sub-sub-bab-nya (`parent_id` non-null) -- disusuri sebagai pohon
-    (top-level dulu urut `order`, lalu anak tiap top-level urut `order`),
-    BUKAN `order` global (order sekarang bersaing per parent, lihat
-    ChapterSection.parentId di schema.prisma). Section yang belum
-    digenerate diabaikan (bukan placeholder kosong)."""
+    """Gabung section GENERATED jadi markdown/HTML, disusuri sebagai pohon (## top-level, ### anak), bukan order global."""
     import markdown as md_lib
 
     anak_dari: dict[str, list[dict]] = {}
@@ -988,8 +982,11 @@ async def _handle_generasi_bab(job) -> dict:
     # fallback) — resolved before the checklist call so the checklist prompt
     # can use the selected documents' names as a terminology hint (port of
     # Dimas's 332ab2f, see _build_checklist_prompt's selected_document_names).
+    # No confirmed draft -> fall back to manual picker's `selectedEvidenceIds`.
     confirmed = get_confirmed_recommendation(draft_id) if draft_id else None
-    selected_ids: list[str] = (confirmed or {}).get("selected_evidence_ids") or []
+    selected_ids: list[str] = (
+        (confirmed or {}).get("selected_evidence_ids") or payload.get("selectedEvidenceIds") or []
+    )
     evidence_labels: dict[str, str] = get_evidence_citation_labels(selected_ids) if selected_ids else {}
 
     try:
@@ -1429,17 +1426,19 @@ async def _handle_assessment_ami(job) -> dict:
     dari berkas yang sama (`UPLOAD_DIR/{tenant_id}/{dokumen_id}/lkps.xlsx`)
     sebelum pipeline jalan, kalau berkasnya ada.
 
-    Rubrik: `rubric_tool.py::_get_rubrics()` masih cache proses tunggal, satu
-    matriks untuk semua tenant (bukan per dokumen) — celah pra-ada, dicatat
-    di tracker, bukan diperbaiki di sini.
+    Rubrik: dari `rubric_tool.py::_get_rubrics_for_set`, di-scope ke
+    `AccreditationSet` dokumen ini (sama seperti `/start`/`/resume` HTTP di
+    api/routes/assessment.py) -- bukan lagi `_get_rubrics()` global tanpa
+    scope, yang juga tidak lagi cocok dengan `_run_assessment_pipeline`
+    (butuh `accreditation_set_id` wajib, dulu tidak pernah dikirim dari sini).
     """
     import uuid
 
     from agent.tools.lkps_tool import set_lkps_registry
-    from agent.tools.rubric_tool import _get_rubrics
+    from agent.tools.rubric_tool import _get_rubrics_for_set
     from api.routes.assessment import _run_assessment_pipeline, _SimpleIndicator
     from api.routes.upload import _doc_dir
-    from db.postgres_client import create_session, get_session
+    from db.postgres_client import create_session, get_document_accreditation_set, get_session
     from ingestion.lkps_loader import load_lkps
 
     payload = job.data
@@ -1448,6 +1447,13 @@ async def _handle_assessment_ami(job) -> dict:
     user_id = payload["createdByUserId"]
     study_program_id = payload.get("programStudiId")
     indikator_list = payload.get("indikatorList")
+
+    accreditation_set_id = get_document_accreditation_set(dokumen_id)
+    if accreditation_set_id is None:
+        return {
+            "status": "error",
+            "error": "Dokumen ini belum memilih Set Akreditasi — pilih Set Akreditasi dulu sebelum menjalankan penilaian.",
+        }
 
     lkps_path = os.path.join(_doc_dir(tenant_id, dokumen_id), "lkps.xlsx")
     if os.path.exists(lkps_path):
@@ -1458,7 +1464,7 @@ async def _handle_assessment_ami(job) -> dict:
                 "Gagal memuat ulang LKPS untuk tenant=%s dokumen=%s", tenant_id, dokumen_id
             )
 
-    rubrics = _get_rubrics()
+    rubrics = _get_rubrics_for_set(accreditation_set_id)
     wanted = set(indikator_list) if indikator_list else None
     indicators = [
         _SimpleIndicator(indicator_no=r.no, kriteria=r.kriteria)
@@ -1482,6 +1488,7 @@ async def _handle_assessment_ami(job) -> dict:
         sumber_led=payload.get("sumberLed", "EDITOR"),
         led_file_name=payload.get("ledFileName"),
         lkps_bukti_dukung_id=payload.get("lkpsBuktiDukungId"),
+        bull_job_id=job.id,
     )
 
     # Ditangkap ke Postgres per indikator (update_session_status, di dalam
@@ -1521,6 +1528,7 @@ async def _handle_assessment_ami(job) -> dict:
             max_parallel=max_parallel,
             tenant_id=tenant_id,
             dokumen_id=dokumen_id,
+            accreditation_set_id=accreditation_set_id,
             study_program_id=study_program_id,
             on_progress=_report_progress,
             is_cancelled=_is_cancelled,
@@ -1703,15 +1711,7 @@ def _build_struktur_dokumen_prompt(teks_pedoman: str) -> str:
 
 
 def _gabung_duplikat_judul(items: list[dict]) -> list[dict]:
-    """Gabung entri (bab ATAU subbab) yang judulnya sama (case-insensitive)
-    jadi satu -- ditemukan dari data produksi: LLM kadang mendaftar BAB yang
-    sama dua kali (ringkasan daftar isi di awal teks, lalu rincian lengkap
-    sub-babnya lagi di bagian lain -- satu pedoman LAM Teknik nyata
-    menghasilkan "BAB II. LAPORAN EVALUASI DIRI" dua kali persis, satu
-    versi rata tanpa sub-sub-bab, satu lagi dengan C.1-C.7 lengkap).
-    Urutan pertama-kali-muncul dipertahankan; kalau kedua kemunculan
-    punya "subbab" sendiri-sendiri, DIGABUNG rekursif (bukan cuma pilih
-    satu) supaya rincian dari keduanya tidak hilang."""
+    """Gabung entri (bab/subbab) berjudul sama (LLM kadang mendaftarnya dua kali); subbab digabung rekursif, bukan cuma pilih satu."""
     by_title: dict[str, dict] = {}
     order: list[str] = []
     for item in items:

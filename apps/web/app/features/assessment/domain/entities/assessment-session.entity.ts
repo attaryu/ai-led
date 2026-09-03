@@ -65,6 +65,11 @@ export const assessmentSessionSchema = z.object({
 	 * rusak lalu menghapus pekerjaan lokal penggunanya.
 	 */
 	kualitas: assessmentQualitySchema.nullable().default(null),
+	/** Job BullMQ yang menjalankan sesi ini — dipakai tombol Batalkan supaya
+	 * bisa menarget job dari tab/pengguna manapun, bukan cuma yang memulainya
+	 * (lihat komentar `useAssessmentSession`). `null` untuk sesi lama atau
+	 * yang lewat rute HTTP langsung apps/ai. */
+	jobId: z.string().nullable().default(null),
 });
 
 export type AssessmentSessionEntity = z.infer<typeof assessmentSessionSchema>;

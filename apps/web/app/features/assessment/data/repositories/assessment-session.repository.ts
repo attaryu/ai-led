@@ -28,6 +28,12 @@ export const assessmentSessionRepository = {
 		return rows.map(mapResult);
 	},
 
+	/** Hasil terbaru per indikator lintas semua sesi dokumen ini — lihat use-assessment-results.ts. */
+	async findResultsByDokumenId(dokumenId: string): Promise<IndicatorResultEntity[]> {
+		const rows = await assessmentRemoteSource.findResultsForDocument(dokumenId);
+		return rows.map(mapResult);
+	},
+
 	/** Memicu ASSESSMENT_AMI; mengembalikan id job BullMQ untuk dipantau lewat SSE. */
 	trigger(dokumenId: string, payload: TriggerAssessmentPayload) {
 		return assessmentRemoteSource.trigger(dokumenId, payload);

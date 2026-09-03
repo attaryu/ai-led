@@ -22,13 +22,17 @@ describe('BabPipelineService manual section CRUD', () => {
     const access: Pick<BabAccessService, 'findOneScoped'> = {
       findOneScoped: jest.fn().mockResolvedValue({ id: 'bab-1', locked: false, ...babOverrides }),
     };
+    const tenantContext = {
+      getOrThrow: jest.fn().mockReturnValue({ tenantId: 'tenant-1', userId: 'user-1' }),
+    };
+    const jobsService = { enqueue: jest.fn().mockResolvedValue({ id: 'job-1' }) };
     const service = new BabPipelineService(
       prisma as never,
-      {} as never,
-      {} as never,
+      tenantContext as never,
+      jobsService as never,
       access as BabAccessService,
     );
-    return { service, prisma, access };
+    return { service, prisma, access, tenantContext, jobsService };
   }
 
   describe('createSection', () => {
@@ -228,6 +232,41 @@ describe('BabPipelineService manual section CRUD', () => {
 
       await expect(service.deleteSection('bab-1', 'sec-x')).rejects.toThrow(NotFoundException);
       expect(prisma.chapterSection.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('triggerGenerate', () => {
+    it('passes selectedEvidenceIds through to the job when no draftId is given', async () => {
+      const { service, jobsService } = makeService();
+      await service.triggerGenerate('bab-1', 'sec-1', undefined, undefined, ['ev-1', 'ev-2']);
+
+      expect(jobsService.enqueue).toHaveBeenCalledWith(
+        'GENERASI_BAB',
+        expect.objectContaining({ selectedEvidenceIds: ['ev-1', 'ev-2'] }),
+      );
+    });
+
+    it('omits selectedEvidenceIds from the job when the list is empty', async () => {
+      const { service, jobsService } = makeService();
+      await service.triggerGenerate('bab-1', 'sec-1', undefined, undefined, []);
+
+      const [, data] = jobsService.enqueue.mock.calls[0];
+      expect(data).not.toHaveProperty('selectedEvidenceIds');
+    });
+
+    it('still passes draftId through untouched alongside selectedEvidenceIds', async () => {
+      const { service, jobsService } = makeService();
+      await service.triggerGenerate('bab-1', 'sec-1', undefined, 'draft-1', ['ev-1']);
+
+      expect(jobsService.enqueue).toHaveBeenCalledWith(
+        'GENERASI_BAB',
+        expect.objectContaining({ draftId: 'draft-1', selectedEvidenceIds: ['ev-1'] }),
+      );
+    });
+
+    it('rejects when the chapter is locked', async () => {
+      const { service } = makeService({ locked: true });
+      await expect(service.triggerGenerate('bab-1', 'sec-1')).rejects.toThrow(ForbiddenException);
     });
   });
 });

@@ -90,6 +90,63 @@ def _run(job, llm_content="Narasi kebijakan tata pamong.", judge_content='{"fait
     return result, {**defaults, "search_led": search_led, "plain_llm": plain_llm, "judge_llm": judge_llm}
 
 
+def test_manual_selected_evidence_ids_used_when_no_confirmed_draft():
+    """apps/web's manual "Bukti Dukung" picker sends `selectedEvidenceIds`
+    straight on the payload when there's no recommend->confirm draft --
+    previously ignored entirely (evidence retrieval skipped, 0 evidence
+    ever linked), now it should drive search_evidence + get linked."""
+    job = _fake_job()
+    job.data["selectedEvidenceIds"] = ["ev-1", "ev-2"]
+
+    search_evidence = MagicMock(return_value=[
+        {"chunk_id": "chunk-1", "text": "Cuplikan evidence.", "bukti_dukung_id": "ev-1"},
+    ])
+
+    plain_llm = MagicMock()
+    plain_llm.ainvoke = AsyncMock(side_effect=[
+        MagicMock(content="- Butuh dasar hukum apa?"),
+        MagicMock(content="Narasi kebijakan tata pamong."),
+    ])
+    judge_llm = MagicMock()
+    judge_llm.ainvoke = AsyncMock(return_value=MagicMock(content='{"faithfulness": 0.8}'))
+
+    defaults = dict(
+        get_bab_dokumen=MagicMock(return_value=_fake_bab()),
+        get_chapter_section=MagicMock(return_value=_fake_section()),
+        get_chapter_sections=MagicMock(return_value=[_fake_section(status="GENERATED")]),
+        get_pedoman_for_bab=MagicMock(return_value=[]),
+        get_rubrik_for_bab=MagicMock(return_value=[]),
+        get_confirmed_recommendation=MagicMock(return_value=None),
+        get_evidence_citation_labels=MagicMock(return_value={"ev-1": "Renstra.pdf", "ev-2": "SK.pdf"}),
+        get_user_nama=MagicMock(return_value="Budi"),
+        create_bab_draft=MagicMock(return_value={"id": "draft-1", "version": 1}),
+        link_evidence_to_chapter_and_draft=MagicMock(),
+        update_bab_dokumen_aktif=MagicMock(),
+        create_generation_run=MagicMock(return_value={"id": "run-1"}),
+        create_ragas_score=MagicMock(return_value={"id": "score-1"}),
+        update_chapter_section=MagicMock(),
+    )
+
+    from worker import _handle_generasi_bab
+
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(patch("llm.chat_model.build_plain_llm", return_value=plain_llm))
+        stack.enter_context(patch("llm.chat_model.build_judge_llm", return_value=judge_llm))
+        stack.enter_context(patch("vectorstore.pgvector_store.search_led", return_value=[]))
+        stack.enter_context(patch("vectorstore.pgvector_evidence_store.search_evidence", search_evidence))
+        stack.enter_context(patch("eval.ragas_eval.score_single_sample", return_value={"faithfulness": 0.8}))
+        for name, fn in defaults.items():
+            stack.enter_context(patch(f"db.generation_client.{name}", fn))
+        result = asyncio.run(_handle_generasi_bab(job))
+
+    assert result["status"] == "completed"
+    search_evidence.assert_called()
+    assert search_evidence.call_args.args[2] == ["ev-1", "ev-2"]
+    defaults["link_evidence_to_chapter_and_draft"].assert_called_once_with(
+        "bab-1", "draft-1", ["ev-1", "ev-2"],
+    )
+
+
 def test_generates_one_section_and_compiles_chapter():
     result, defaults = _run(_fake_job())
 

@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { IsArray, IsOptional, IsString } from 'class-validator';
 
 export class GenerateBabDto {
   @ApiPropertyOptional({ example: 'Fokuskan ke capaian akreditasi 3 tahun terakhir' })
@@ -12,4 +12,11 @@ export class GenerateBabDto {
   @IsOptional()
   @IsString()
   draftId?: string;
+
+  // Manual "Bukti Dukung" picker; ignored if `draftId` is set.
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  selectedEvidenceIds?: string[];
 }

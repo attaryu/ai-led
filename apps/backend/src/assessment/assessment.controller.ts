@@ -64,6 +64,13 @@ export class AssessmentController {
     return this.assessmentService.findResults(id);
   }
 
+  /** Hasil terbaru per indikator lintas semua sesi dokumen ini — dipakai saat melihat sesi terbaru, lihat AssessmentService.findResultsForDocument. */
+  @Get('dokumen/:dokumenId/assessment-results')
+  @Protected(...READ_ROLES)
+  findResultsForDocument(@Param('dokumenId') dokumenId: string) {
+    return this.assessmentService.findResultsForDocument(dokumenId);
+  }
+
   @Get('assessment-sessions/:id/reasoning')
   @Protected(...READ_ROLES)
   findReasoning(

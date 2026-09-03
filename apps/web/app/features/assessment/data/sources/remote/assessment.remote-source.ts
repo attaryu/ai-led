@@ -44,6 +44,10 @@ export type BackendAssessmentSession = {
 	createdBy: { fullName: string };
 	/** `null` = sesi ini belum pernah dievaluasi RAGAS. */
 	kualitas: BackendSessionQuality | null;
+	/** Job BullMQ yang menjalankan sesi ini — target `POST /jobs/:id/cancel`.
+	 * `null` untuk sesi lewat rute HTTP langsung apps/ai, atau sesi lama
+	 * sebelum kolom ini ada. */
+	bullJobId: string | null;
 };
 
 /** Baris Prisma `IndicatorResult` — `score`/`confidence` Decimal datang sebagai string. */
@@ -166,6 +170,14 @@ export const assessmentRemoteSource = {
 	findResults(sessionId: string): Promise<BackendIndicatorResult[]> {
 		return apiFetch<BackendIndicatorResult[]>(
 			`/assessment-sessions/${sessionId}/results`,
+		);
+	},
+
+	/** Hasil terbaru per indikator lintas semua sesi dokumen ini — dipakai saat
+	 * melihat sesi terbaru, lihat use-assessment-results.ts. */
+	findResultsForDocument(dokumenId: string): Promise<BackendIndicatorResult[]> {
+		return apiFetch<BackendIndicatorResult[]>(
+			`/dokumen/${dokumenId}/assessment-results`,
 		);
 	},
 

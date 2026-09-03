@@ -39,6 +39,7 @@ export function mapSession(row: BackendAssessmentSession): AssessmentSessionEnti
 		createdAt: row.createdAt,
 		updatedAt: row.updatedAt,
 		kualitas: row.kualitas ? buildAssessmentQuality(row.kualitas) : null,
+		jobId: row.bullJobId,
 	};
 }
 

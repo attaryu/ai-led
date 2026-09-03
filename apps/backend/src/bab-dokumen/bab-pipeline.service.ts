@@ -176,8 +176,14 @@ export class BabPipelineService {
     });
   }
 
-  /** Enqueues GENERASI_BAB — apps/ai's worker generate SATU section (RAG pipeline scoped ke section.guidance). `draftId` (recommend->confirm flow) scopes Evidence retrieval to that draft's confirmed recommendation. */
-  async triggerGenerate(id: string, sectionId: string, prompt?: string, draftId?: string) {
+  /** Enqueues GENERASI_BAB — apps/ai's worker generate SATU section. `draftId` wins over `selectedEvidenceIds` when both are set. */
+  async triggerGenerate(
+    id: string,
+    sectionId: string,
+    prompt?: string,
+    draftId?: string,
+    selectedEvidenceIds?: string[],
+  ) {
     const { tenantId, userId } = this.tenantContext.getOrThrow();
     const bab = await this.access.findOneScoped(id);
     if (bab.locked) {
@@ -195,6 +201,7 @@ export class BabPipelineService {
       createdByUserId: userId,
       ...(prompt ? { prompt } : {}),
       ...(draftId ? { draftId } : {}),
+      ...(selectedEvidenceIds && selectedEvidenceIds.length > 0 ? { selectedEvidenceIds } : {}),
     });
   }
 

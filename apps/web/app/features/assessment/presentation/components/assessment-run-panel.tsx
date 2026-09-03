@@ -192,7 +192,7 @@ export function AssessmentRunPanel({
 					</p>
 				)}
 
-				{status === 'gagal' && pesanGagal && (
+				{pesanGagal && (
 					<div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-2.5">
 						<WarningCircleIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
 						<p className="text-xs leading-relaxed text-destructive">
