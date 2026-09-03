@@ -116,6 +116,7 @@ def test_build_eval_samples_uses_real_session_justification():
         patch("agent.tools.rubric_tool._get_rubrics", return_value=[_fake_rubric(1)]),
         patch("vectorstore.pgvector_store.search_led", return_value=_fake_search_results(1)),
         patch("eval.ragas_eval._build_ragas_llm", return_value=fake_llm_wrapper),
+        patch("db.postgres_client.get_session", return_value={"tenant_id": "tenant-x"}),
         patch(
             "db.postgres_client.get_indicator_results",
             return_value=[{"indicator_no": 1, "justification": "Justifikasi dari session."}],
@@ -138,6 +139,7 @@ def test_build_eval_samples_filters_by_session_indicators():
               return_value=[_fake_rubric(i) for i in range(1, 40)]),
         patch("vectorstore.pgvector_store.search_led", return_value=_fake_search_results(1)),
         patch("eval.ragas_eval._build_ragas_llm", return_value=fake_llm_wrapper),
+        patch("db.postgres_client.get_session", return_value={"tenant_id": "tenant-x"}),
         patch(
             "db.postgres_client.get_indicator_results",
             return_value=[{"indicator_no": 31, "justification": "Justifikasi indikator 31."}],
@@ -442,9 +444,12 @@ def test_get_assessor_model_reads_from_indicator_results():
     """assessor_model — which model(s) actually scored a session — is distinct from the judge model (ariel 88082d7, adapted to dev-v1's per-indicator IndicatorResult.model)."""
     from eval.ragas_eval import _get_assessor_model
 
-    with patch(
-        "db.postgres_client.get_indicator_results",
-        return_value=[{"indicator_no": 1, "model": "deepseek-r1:32b"}, {"indicator_no": 2, "model": "deepseek-r1:32b"}],
+    with (
+        patch("db.postgres_client.get_session", return_value={"tenant_id": "tenant-x"}),
+        patch(
+            "db.postgres_client.get_indicator_results",
+            return_value=[{"indicator_no": 1, "model": "deepseek-r1:32b"}, {"indicator_no": 2, "model": "deepseek-r1:32b"}],
+        ),
     ):
         assert _get_assessor_model("sess-1") == "deepseek-r1:32b"
 
@@ -452,9 +457,12 @@ def test_get_assessor_model_reads_from_indicator_results():
 def test_get_assessor_model_joins_distinct_models():
     from eval.ragas_eval import _get_assessor_model
 
-    with patch(
-        "db.postgres_client.get_indicator_results",
-        return_value=[{"indicator_no": 1, "model": "a"}, {"indicator_no": 2, "model": "b"}],
+    with (
+        patch("db.postgres_client.get_session", return_value={"tenant_id": "tenant-x"}),
+        patch(
+            "db.postgres_client.get_indicator_results",
+            return_value=[{"indicator_no": 1, "model": "a"}, {"indicator_no": 2, "model": "b"}],
+        ),
     ):
         assert _get_assessor_model("sess-1") == "a, b"
 
@@ -477,6 +485,7 @@ def test_run_ragas_evaluation_looks_up_assessor_model_when_session_given():
         patch("ragas.dataset_schema.SingleTurnSample", return_value=MagicMock()),
         patch("ragas.EvaluationDataset", return_value=MagicMock()),
         patch("ragas.evaluate", return_value=fake_result),
+        patch("db.postgres_client.get_session", return_value={"tenant_id": "tenant-x"}),
         patch("db.postgres_client.get_indicator_results", return_value=[{"indicator_no": 1, "model": "deepseek-r1:32b"}]),
     ):
         result = run_ragas_evaluation(n_indicators=1, session_id="sess-1", metrics_to_run=["faithfulness"])
