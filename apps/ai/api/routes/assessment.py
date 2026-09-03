@@ -518,6 +518,16 @@ async def get_session_results(session_id: str) -> SessionResultsResponse:
 # ---------------------------------------------------------------------------
 
 
+def _ringkas(teks: Optional[str], maks: int = 200) -> str:
+    """One-line preview for log output -- justification/recommendation can
+    run up to 2000/500 chars (graph.py's own truncation caps), too long to
+    stay scannable in a terminal log line."""
+    if not teks:
+        return "-"
+    teks = " ".join(teks.split())
+    return teks if len(teks) <= maks else f"{teks[:maks]}…"
+
+
 async def _process_single_indicator(
     indicator,
     session_id: str,
@@ -584,6 +594,28 @@ async def _process_single_indicator(
             confidence = result.get("confidence")
             recommendation = result.get("recommendation")
             error = result.get("error")
+
+            # The graph's actual verdict per indicator — otherwise the only
+            # terminal-visible line is "using Ollama endpoint ..." logged
+            # BEFORE invocation (line above), and the result only ever lands
+            # in Postgres (log_indicator_result below), invisible from here.
+            logger.info(
+                "Indicator %d (session %s) dinilai: skor=%s confidence=%s | justifikasi: %s | rekomendasi: %s",
+                indicator.indicator_no,
+                session_id,
+                f"{score:.2f}" if score is not None else "-",
+                f"{confidence:.2f}" if confidence is not None else "-",
+                _ringkas(justification),
+                _ringkas(recommendation),
+            )
+            if error:
+                # give_up_node/error_node set state["error"] without raising
+                # -- this path returns normally, so without this the failure
+                # is silent in the terminal (only the generic INFO line above).
+                logger.warning(
+                    "Indicator %d (session %s) selesai dengan galat dari agent: %s",
+                    indicator.indicator_no, session_id, error,
+                )
 
             for idx, step in enumerate(result.get("reasoning_steps", [])):
                 log_reasoning_step(
