@@ -49,11 +49,12 @@ class ChatHistoryItem(BaseModel):
 
 @router.get("/{bab_id}/history", response_model=list[ChatHistoryItem])
 async def get_history(bab_id: str) -> list[ChatHistoryItem]:
-    if get_bab_dokumen(bab_id) is None:
+    bab = get_bab_dokumen(bab_id)
+    if bab is None:
         raise HTTPException(status_code=404, detail="Bab tidak ditemukan")
     return [
         ChatHistoryItem(id=r["id"], user_id=r["user_id"], role=r["role"], message=r["message"])
-        for r in get_chat_history(bab_id)
+        for r in get_chat_history(bab["tenant_id"], bab_id)
     ]
 
 
@@ -81,7 +82,7 @@ async def chat(bab_id: str, body: ChatRequest):
     if bab is None:
         raise HTTPException(status_code=404, detail="Bab tidak ditemukan")
 
-    save_chat_message(bab_id, body.user_id, "USER", body.message)
+    save_chat_message(bab["tenant_id"], bab_id, body.user_id, "USER", body.message)
 
     async def stream():
         # Synchronous (psycopg2 + blocking encode) — off the event loop so it
@@ -103,7 +104,7 @@ async def chat(bab_id: str, body: ChatRequest):
             yield f"data: {json.dumps({'error': str(exc)})}\n\n"
         finally:
             if full_reply:
-                save_chat_message(bab_id, body.user_id, "ASSISTANT", full_reply)
+                save_chat_message(bab["tenant_id"], bab_id, body.user_id, "ASSISTANT", full_reply)
             yield f"data: {json.dumps({'done': True})}\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")

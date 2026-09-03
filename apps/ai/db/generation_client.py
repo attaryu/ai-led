@@ -1,12 +1,19 @@
 """Postgres access for the GENERASI_BAB pipeline — reads pedoman/rubrik
 reference data, writes BabDraft/GenerationRun/RagasScore, and updates
-BabDokumen's active state (packages/db/prisma/schema.prisma). Same shared
-connection as db/postgres_client.py and vectorstore/pgvector_store.py.
+BabDokumen's active state (packages/db/prisma/schema.prisma). Same pooled
+connection as db/postgres_client.py and vectorstore/pgvector_store.py
+(db/connection.py).
 
 BabDokumen rows are never created here — they already exist by the time a
 GENERASI_BAB job runs (created via NestJS's existing bab-dokumen module,
 Week 2). This module only reads the one it's told about and writes the
 results of generating into it.
+
+Every function takes `tenant_id` (keyword-only) and runs inside
+db.connection.tenant_cursor(tenant_id) for RLS's `app.tenant_id` session
+var. `tenant_id=None` for the bootstrap lookups that discover tenant_id in
+the first place (get_bab_dokumen), the login-style get_user_nama, and
+global reference data with no tenant column at all (get_pedoman_for_bab).
 """
 
 from __future__ import annotations
@@ -16,11 +23,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from db.connection import get_conn
+from db.connection import tenant_cursor
 
 
 def get_user_nama(user_id: str) -> str:
-    with get_conn().cursor() as cur:
+    with tenant_cursor(None) as cur:
         cur.execute('SELECT full_name FROM org_users WHERE id = %s', (user_id,))
         row = cur.fetchone()
     return row["full_name"] if row else "Unknown"
@@ -38,8 +45,11 @@ def get_bab_dokumen(bab_id: str) -> Optional[dict]:
     accreditation_set_id (nullable — LedDocument may not have picked a set)
     scopes get_rubrik_for_bab/get_chapter_template_subbab to THIS document's
     own set, not whichever set happens to share the same chapter_order.
+
+    Bootstrap lookup — this is what callers use to DISCOVER tenant_id from
+    a bab_id in the first place, so it runs with no tenant scoped yet.
     """
-    with get_conn().cursor() as cur:
+    with tenant_cursor(None) as cur:
         cur.execute(
             """
             SELECT bd.id, bd.document_id, bd.chapter_order, bd.chapter_title, bd.working_content,
@@ -63,8 +73,9 @@ def get_pedoman_for_bab(urutan_bab: int) -> list[dict]:
     urutan_bab is a matching key here, not a FK (see schema.prisma's own
     note on GuideDetailChapter) — plain relational lookup, no vector search:
     pedoman/rubric are structured reference data, not free-text documents.
+    Global reference data, no tenant column at all.
     """
-    with get_conn().cursor() as cur:
+    with tenant_cursor(None) as cur:
         cur.execute(
             """
             SELECT gd.point_code, gd.point_title, gd.content_text, rg.title AS sumber
@@ -78,7 +89,9 @@ def get_pedoman_for_bab(urutan_bab: int) -> list[dict]:
         return [dict(r) for r in cur.fetchall()]
 
 
-def get_rubrik_for_bab(urutan_bab: int, accreditation_set_id: Optional[str]) -> list[dict]:
+def get_rubrik_for_bab(
+    tenant_id: str, urutan_bab: int, accreditation_set_id: Optional[str]
+) -> list[dict]:
     """Scoring rubric criteria relevant to this chapter number, SCOPED to one
     AccreditationSet — chapter_order (1, 2, 3...) is only unique WITHIN a
     set, not across a tenant's sets, so this must always be filtered by
@@ -93,7 +106,7 @@ def get_rubrik_for_bab(urutan_bab: int, accreditation_set_id: Optional[str]) -> 
     """
     if not accreditation_set_id:
         return []
-    with get_conn().cursor() as cur:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
             SELECT rc.id, rc.criterion_code, rc.criterion_group, rc.description
@@ -106,7 +119,9 @@ def get_rubrik_for_bab(urutan_bab: int, accreditation_set_id: Optional[str]) -> 
         return [dict(r) for r in cur.fetchall()]
 
 
-def get_chapter_template_subbab(accreditation_set_id: Optional[str], urutan_bab: int) -> list[dict]:
+def get_chapter_template_subbab(
+    tenant_id: str, accreditation_set_id: Optional[str], urutan_bab: int
+) -> list[dict]:
     """Sub-bab resmi dari struktur pedoman yang di-extract LLM untuk bab ini
     (worker.py::_handle_ingestion_struktur_dokumen) — dipakai sebagai konteks
     TAMBAHAN di _build_outline_prompt, bukan pengganti kelompok kriteria.
@@ -119,7 +134,7 @@ def get_chapter_template_subbab(accreditation_set_id: Optional[str], urutan_bab:
     SubBabTemplate.parentId di schema.prisma."""
     if not accreditation_set_id:
         return []
-    with get_conn().cursor() as cur:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
             SELECT sbt.id, sbt.parent_id, sbt.title, sbt.guidance
@@ -141,11 +156,11 @@ def get_chapter_template_subbab(accreditation_set_id: Optional[str], urutan_bab:
     return [r for r in rows if not r["parent_id"]]
 
 
-def get_rubrik_levels(kriteria_ids: list[str]) -> dict[str, list[dict]]:
+def get_rubrik_levels(tenant_id: str, kriteria_ids: list[str]) -> dict[str, list[dict]]:
     """RubricLevel rows (score 4..0) for a set of criteria, grouped by criterion_id."""
     if not kriteria_ids:
         return {}
-    with get_conn().cursor() as cur:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             "SELECT criterion_id, score, description FROM rubric_levels WHERE criterion_id = ANY(%s) ORDER BY score DESC",
             (kriteria_ids,),
@@ -158,9 +173,9 @@ def get_rubrik_levels(kriteria_ids: list[str]) -> dict[str, list[dict]]:
     return by_kriteria
 
 
-def get_bab_draft(bab_draft_id: str) -> Optional[dict]:
+def get_bab_draft(tenant_id: str, bab_draft_id: str) -> Optional[dict]:
     """Return {id, chapter_id, content_snapshot}, or None."""
-    with get_conn().cursor() as cur:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             "SELECT id, chapter_id, content_snapshot FROM writing_chapter_drafts WHERE id = %s",
             (bab_draft_id,),
@@ -170,6 +185,7 @@ def get_bab_draft(bab_draft_id: str) -> Optional[dict]:
 
 
 def replace_hasil_skor_kriteria(
+    tenant_id: str,
     target_tipe: str,
     bab_id: Optional[str],
     bab_draft_id: Optional[str],
@@ -184,7 +200,7 @@ def replace_hasil_skor_kriteria(
 
     rows: [{kriteria_id, skor_didapat, justifikasi}].
     """
-    with get_conn().cursor() as cur:
+    with tenant_cursor(tenant_id) as cur:
         if target_tipe == "BAB_AKTIF":
             cur.execute(
                 "DELETE FROM rubric_score_results WHERE chapter_id = %s AND target_type = 'BAB_AKTIF'",
@@ -224,6 +240,7 @@ def replace_hasil_skor_kriteria(
 
 
 def create_bab_draft(
+    tenant_id: str,
     bab_id: str,
     dibuat_oleh_user_id: str,
     dibuat_oleh_nama: str,
@@ -232,7 +249,7 @@ def create_bab_draft(
 ) -> dict:
     """Insert a new AI-sourced BabDraft (checkpoint), version = max+1 for this bab."""
     draft_id = str(uuid.uuid4())
-    with get_conn().cursor() as cur:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             "SELECT COALESCE(MAX(version), 0) AS v FROM writing_chapter_drafts WHERE chapter_id = %s",
             (bab_id,),
@@ -260,7 +277,9 @@ def create_bab_draft(
         return dict(cur.fetchone())
 
 
-def update_bab_dokumen_aktif(bab_id: str, konten_kerja: dict, checkpoint_aktif_id: str) -> None:
+def update_bab_dokumen_aktif(
+    tenant_id: str, bab_id: str, konten_kerja: dict, checkpoint_aktif_id: str
+) -> None:
     """Overwrite the chapter's active content — same 'always overwrite'
     policy as every other active-state field in this schema.
 
@@ -271,7 +290,7 @@ def update_bab_dokumen_aktif(bab_id: str, konten_kerja: dict, checkpoint_aktif_i
     whatever it was last set to (traced live: a chapter regenerated today
     still showed 'last_saved_at' from its original seed date, days earlier,
     because nothing here had ever set it)."""
-    with get_conn().cursor() as cur:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
             UPDATE writing_document_chapters
@@ -282,10 +301,10 @@ def update_bab_dokumen_aktif(bab_id: str, konten_kerja: dict, checkpoint_aktif_i
         )
 
 
-def get_chapter_sections(chapter_id: str) -> list[dict]:
+def get_chapter_sections(tenant_id: str, chapter_id: str) -> list[dict]:
     """Outline rows for one bab, in display order — empty list means no
     outline has been generated yet."""
-    with get_conn().cursor() as cur:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
             SELECT id, chapter_id, parent_id, "order", title, guidance, status, content, model, error, generated_at
@@ -298,8 +317,8 @@ def get_chapter_sections(chapter_id: str) -> list[dict]:
         return [dict(r) for r in cur.fetchall()]
 
 
-def get_chapter_section(section_id: str) -> Optional[dict]:
-    with get_conn().cursor() as cur:
+def get_chapter_section(tenant_id: str, section_id: str) -> Optional[dict]:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
             SELECT id, chapter_id, "order", title, guidance, status, content, model, error, generated_at
@@ -331,7 +350,9 @@ def _insert_chapter_section(cur, chapter_id: str, parent_id: str | None, order: 
     return created
 
 
-def create_chapter_sections(chapter_id: str, sections: list[dict], overwrite: bool = False) -> list[dict]:
+def create_chapter_sections(
+    tenant_id: str, chapter_id: str, sections: list[dict], overwrite: bool = False
+) -> list[dict]:
     """Writes the LLM-generated outline as ordered PENDING rows. `sections`
     items may carry `subseksi` (one level of nested sub-sub-bab sections,
     mis. C.1/C.2 di bawah "Kriteria Akreditasi") -- worker.py::_parse_outline.
@@ -340,7 +361,7 @@ def create_chapter_sections(chapter_id: str, sections: list[dict], overwrite: bo
     not set (v1 rule — see plan: outline regenerate resets everything, no
     smart merge) rather than silently appending duplicates.
     """
-    with get_conn().cursor() as cur:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             "SELECT COUNT(*) AS n FROM writing_chapter_sections WHERE chapter_id = %s", (chapter_id,)
         )
@@ -357,13 +378,14 @@ def create_chapter_sections(chapter_id: str, sections: list[dict], overwrite: bo
 
 
 def update_chapter_section(
+    tenant_id: str,
     section_id: str,
     status: str,
     content: Optional[dict] = None,
     model: Optional[str] = None,
     error: Optional[str] = None,
 ) -> None:
-    with get_conn().cursor() as cur:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
             UPDATE writing_chapter_sections
@@ -376,7 +398,7 @@ def update_chapter_section(
 
 
 def link_evidence_to_chapter_and_draft(
-    chapter_id: str, draft_id: str, evidence_ids: list[str]
+    tenant_id: str, chapter_id: str, draft_id: str, evidence_ids: list[str]
 ) -> None:
     """Records which confirmed Bukti Dukung actually backed one generate —
     evidence_chapter_links/evidence_draft_links (schema.prisma), what
@@ -395,7 +417,7 @@ def link_evidence_to_chapter_and_draft(
     if not evidence_ids:
         return
 
-    with get_conn().cursor() as cur:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             "SELECT id, document_name, file_type FROM evidence_files WHERE id = ANY(%s)",
             (evidence_ids,),
@@ -428,6 +450,7 @@ def link_evidence_to_chapter_and_draft(
 
 
 def create_generation_run(
+    tenant_id: str,
     bab_draft_id: str,
     model: str,
     pedoman_used: list[dict],
@@ -440,7 +463,7 @@ def create_generation_run(
     token_count: int,
 ) -> dict:
     run_id = str(uuid.uuid4())
-    with get_conn().cursor() as cur:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
             INSERT INTO writing_generation_runs
@@ -467,6 +490,7 @@ def create_generation_run(
 
 
 def create_ragas_score(
+    tenant_id: str,
     bab_id: str,
     bab_draft_id: str,
     metrik: dict[str, float],
@@ -476,7 +500,7 @@ def create_ragas_score(
     state, not a permanent checkpoint score (that's a separate call with
     target_tipe=BAB_DRAFT, not needed for this job's DoD)."""
     score_id = str(uuid.uuid4())
-    with get_conn().cursor() as cur:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
             INSERT INTO writing_ragas_scores
@@ -489,10 +513,10 @@ def create_ragas_score(
         return dict(cur.fetchone())
 
 
-def save_chat_message(bab_id: str, user_id: str, role: str, message: str) -> dict:
+def save_chat_message(tenant_id: str, bab_id: str, user_id: str, role: str, message: str) -> dict:
     """role is 'USER' or 'ASSISTANT' (ChatRole enum)."""
     msg_id = str(uuid.uuid4())
-    with get_conn().cursor() as cur:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
             INSERT INTO writing_chat_messages (id, chapter_id, user_id, role, message)
@@ -504,8 +528,8 @@ def save_chat_message(bab_id: str, user_id: str, role: str, message: str) -> dic
         return dict(cur.fetchone())
 
 
-def get_chat_history(bab_id: str, limit: int = 50) -> list[dict]:
-    with get_conn().cursor() as cur:
+def get_chat_history(tenant_id: str, bab_id: str, limit: int = 50) -> list[dict]:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
             SELECT id, user_id, role, message, created_at
@@ -519,7 +543,7 @@ def get_chat_history(bab_id: str, limit: int = 50) -> list[dict]:
         return [dict(r) for r in cur.fetchall()]
 
 
-def get_evidence_citation_labels(evidence_ids: list[str]) -> dict[str, str]:
+def get_evidence_citation_labels(tenant_id: str, evidence_ids: list[str]) -> dict[str, str]:
     """id -> citation label map for Bukti Dukung citation labels in the
     GENERASI_BAB prompt — evidence chunks carry no filename of their own
     (vectorstore/pgvector_evidence_store.py::search_evidence only returns
@@ -533,7 +557,7 @@ def get_evidence_citation_labels(evidence_ids: list[str]) -> dict[str, str]:
     """
     if not evidence_ids:
         return {}
-    with get_conn().cursor() as cur:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
             SELECT ef.id, ef.document_name, f.name AS folder_name
@@ -549,12 +573,12 @@ def get_evidence_citation_labels(evidence_ids: list[str]) -> dict[str, str]:
         }
 
 
-def get_confirmed_recommendation(chapter_draft_id: str) -> Optional[dict]:
+def get_confirmed_recommendation(tenant_id: str, chapter_draft_id: str) -> Optional[dict]:
     """The DIKONFIRMASI DocumentRecommendation row for this draft — evidence
     scope for GENERASI_BAB (selectedEvidenceIds). None if this chapter was
     generated without going through recommend-documents first (manual
     generate, still supported — see worker.py::_handle_generasi_bab)."""
-    with get_conn().cursor() as cur:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
             SELECT id, document_query, lkps_needed, lkps_sufficient, lkps_evidence_query,
@@ -571,6 +595,7 @@ def get_confirmed_recommendation(chapter_draft_id: str) -> Optional[dict]:
 
 
 def create_document_recommendation(
+    tenant_id: str,
     chapter_draft_id: str,
     document_query: list[str],
     lkps_needed: bool,
@@ -589,7 +614,7 @@ def create_document_recommendation(
     cards. selectedEvidenceIds starts empty — filled in later by the
     (separate) confirm step."""
     rec_id = str(uuid.uuid4())
-    with get_conn().cursor() as cur:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """UPDATE writing_document_recommendations SET status = 'DIGANTIKAN'
                WHERE chapter_draft_id = %s AND status = 'DIKONFIRMASI'""",

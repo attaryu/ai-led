@@ -391,7 +391,8 @@ def test_resume_with_retry_failed_passes_flag_through(fake_indicators):
 
     captured_call = {}
 
-    def fake_get_completed(session_id, retry_failed=False):
+    def fake_get_completed(tenant_id, session_id, retry_failed=False):
+        captured_call["tenant_id"] = tenant_id
         captured_call["session_id"] = session_id
         captured_call["retry_failed"] = retry_failed
         return set()
@@ -766,6 +767,7 @@ def test_results_returns_indicators_with_kriteria():
 
     session_row = {
         "session_id": "sess-1",
+        "tenant_id": TENANT_ID,
         "document_id": DOKUMEN_ID,
         "status": "completed",
         "total_indicators": 3,
@@ -815,6 +817,7 @@ def test_results_null_recommendation_row_does_not_crash():
 
     session_row = {
         "session_id": "sess-null",
+        "tenant_id": TENANT_ID,
         "document_id": DOKUMEN_ID,
         "status": "completed",
         "total_indicators": 1,

@@ -367,9 +367,10 @@ def build_eval_samples(
     real_justifications: dict[int, str] = {}
     if session_id:
         try:
-            from db.postgres_client import get_indicator_results  # noqa: PLC0415
+            from db.postgres_client import get_indicator_results, get_session  # noqa: PLC0415
 
-            for row in get_indicator_results(session_id):
+            sess = get_session(None, session_id)
+            for row in get_indicator_results(sess["tenant_id"] if sess else None, session_id):
                 if row.get("justification"):
                     real_justifications[row["indicator_no"]] = row["justification"]
         except Exception as exc:
@@ -589,10 +590,15 @@ def run_ragas_evaluation(
 
 def _get_assessor_model(session_id: str) -> Optional[str]:
     """Which model(s) actually scored this session's indicators, from IndicatorResult.model."""
-    from db.postgres_client import get_indicator_results
+    from db.postgres_client import get_indicator_results, get_session
 
     try:
-        models = {r["model"] for r in get_indicator_results(session_id) if r.get("model")}
+        sess = get_session(None, session_id)
+        models = {
+            r["model"]
+            for r in get_indicator_results(sess["tenant_id"] if sess else None, session_id)
+            if r.get("model")
+        }
     except Exception as exc:
         logger.warning("Could not look up assessor_model for session %s: %s", session_id, exc)
         return None

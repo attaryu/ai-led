@@ -15,11 +15,13 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
+import weakref
+from contextlib import contextmanager
 
 import psycopg2.extras
 from pgvector.psycopg2 import register_vector
 
-from db.connection import get_conn
+from db.connection import tenant_connection
 from ingestion.led_chunker import LEDChunk
 
 logger = logging.getLogger(__name__)
@@ -29,7 +31,12 @@ _EMBED_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 
 _model = None
 _model_lock = threading.Lock()
-_vector_registered = False
+# Pooled connections are handed out (and reused) across calls -- track which
+# underlying connection objects already have the vector type adapter
+# registered so a pool of N connections only pays register_vector() once
+# each, not once per checkout. WeakSet so a closed/evicted connection drops
+# out on its own instead of pinning it alive.
+_vector_registered: "weakref.WeakSet" = weakref.WeakSet()
 
 
 def _get_model():
@@ -44,14 +51,16 @@ def _get_model():
     return _model
 
 
-def _conn():
-    """Shared connection with the pgvector type adapter registered on it."""
-    global _vector_registered
-    conn = get_conn()
-    if not _vector_registered:
-        register_vector(conn)
-        _vector_registered = True
-    return conn
+@contextmanager
+def _cursor(tenant_id: str):
+    """tenant_connection, but also registers the pgvector type adapter on
+    the checked-out connection before handing back a cursor."""
+    with tenant_connection(tenant_id) as conn:
+        if conn not in _vector_registered:
+            register_vector(conn)
+            _vector_registered.add(conn)
+        with conn.cursor() as cur:
+            yield cur
 
 
 def index_led_chunks(chunks: list[LEDChunk], tenant_id: str, dokumen_id: str) -> None:
@@ -65,10 +74,9 @@ def index_led_chunks(chunks: list[LEDChunk], tenant_id: str, dokumen_id: str) ->
     """
     import time
 
-    conn = _conn()
     model = _get_model()
 
-    with conn.cursor() as cur:
+    with _cursor(tenant_id) as cur:
         cur.execute(
             "DELETE FROM writing_led_chunk_embeddings WHERE tenant_id = %s AND document_id = %s",
             (tenant_id, dokumen_id),
@@ -101,7 +109,7 @@ def index_led_chunks(chunks: list[LEDChunk], tenant_id: str, dokumen_id: str) ->
         for i, c in enumerate(chunks)
     ]
 
-    with conn.cursor() as cur:
+    with _cursor(tenant_id) as cur:
         psycopg2.extras.execute_values(
             cur,
             """
@@ -123,7 +131,7 @@ def index_led_chunks(chunks: list[LEDChunk], tenant_id: str, dokumen_id: str) ->
 
 def get_led_chunk_count(tenant_id: str, dokumen_id: str) -> int:
     """Chunks already indexed for this document — used to recover led_index_state after a restart."""
-    with _conn().cursor() as cur:
+    with _cursor(tenant_id) as cur:
         cur.execute(
             "SELECT COUNT(*) FROM writing_led_chunk_embeddings WHERE tenant_id = %s AND document_id = %s",
             (tenant_id, dokumen_id),
@@ -142,11 +150,10 @@ def search_led(
     Returns [{text, chunk_id, metadata, distance}], or [] if this document
     was never indexed (not an error — just not ready yet).
     """
-    conn = _conn()
     model = _get_model()
     query_embedding = model.encode([query], show_progress_bar=False)[0]
 
-    with conn.cursor() as cur:
+    with _cursor(tenant_id) as cur:
         cur.execute(
             """
             SELECT chunk_id, text, page_start, page_end, para_start, para_end,

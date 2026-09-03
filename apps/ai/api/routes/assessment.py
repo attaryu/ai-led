@@ -361,7 +361,7 @@ async def resume_assessment(
                 detail=f"Unknown model: {model}. Available: {available}",
             )
 
-    sess = get_session(session_id)
+    sess = get_session(body.tenant_id, session_id)
     if sess is None:
         raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
 
@@ -393,11 +393,12 @@ async def resume_assessment(
             accreditation_set_id=accreditation_set_id,
         )
 
-    done = get_completed_indicator_numbers(session_id, retry_failed=retry_failed)
+    done = get_completed_indicator_numbers(body.tenant_id, session_id, retry_failed=retry_failed)
     remaining = [ind for ind in all_indicators if ind.indicator_no not in done]
 
     if not remaining:
         update_session_status(
+            tenant_id=body.tenant_id,
             session_id=session_id,
             status="completed",
             completed_indicators=len(all_indicators),
@@ -410,7 +411,7 @@ async def resume_assessment(
             message="All indicators already have a result — session marked completed.",
         )
 
-    update_session_status(session_id=session_id, status="running")
+    update_session_status(tenant_id=body.tenant_id, session_id=session_id, status="running")
 
     background_tasks.add_task(
         _run_assessment_pipeline,
@@ -455,7 +456,7 @@ async def list_sessions(limit: int = 50) -> list[SessionSummary]:
 @router.get("/{session_id}/status", response_model=SessionStatusResponse)
 async def get_session_status(session_id: str) -> SessionStatusResponse:
     """Return the current status of an assessment session."""
-    row = get_session(session_id)
+    row = get_session(None, session_id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
 
@@ -471,11 +472,11 @@ async def get_session_status(session_id: str) -> SessionStatusResponse:
 @router.get("/{session_id}/results", response_model=SessionResultsResponse)
 async def get_session_results(session_id: str) -> SessionResultsResponse:
     """Return all per-indicator results for a session, joined with rubric kriteria."""
-    sess = get_session(session_id)
+    sess = get_session(None, session_id)
     if sess is None:
         raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
 
-    rows = get_indicator_results(session_id)
+    rows = get_indicator_results(sess["tenant_id"], session_id)
 
     # Map indicator_no → kriteria for fast lookup, scoped to whatever
     # AccreditationSet this session's document actually used. Falls back to
@@ -483,7 +484,7 @@ async def get_session_results(session_id: str) -> SessionResultsResponse:
     # set shouldn't block viewing already-scored results.
     accreditation_set_id = get_document_accreditation_set(sess["document_id"])
     kriteria_map: dict[int, str] = (
-        {r.no: r.kriteria for r in _get_rubrics_for_set(accreditation_set_id)}
+        {r.no: r.kriteria for r in _get_rubrics_for_set(accreditation_set_id, sess["tenant_id"])}
         if accreditation_set_id
         else {}
     )
@@ -586,6 +587,7 @@ async def _process_single_indicator(
 
             for idx, step in enumerate(result.get("reasoning_steps", [])):
                 log_reasoning_step(
+                    tenant_id=tenant_id,
                     session_id=session_id,
                     indicator_no=indicator.indicator_no,
                     step_index=idx,
@@ -593,6 +595,7 @@ async def _process_single_indicator(
                 )
 
             log_indicator_result(
+                tenant_id=tenant_id,
                 session_id=session_id,
                 indicator_no=indicator.indicator_no,
                 score=score,
@@ -617,6 +620,7 @@ async def _process_single_indicator(
             # (which can contain low-level details like a bare socket error)
             # verbatim.
             log_indicator_result(
+                tenant_id=tenant_id,
                 session_id=session_id,
                 indicator_no=indicator.indicator_no,
                 score=None,
@@ -698,6 +702,7 @@ async def _run_assessment_pipeline(
                 await task
                 completed += 1
                 update_session_status(
+                    tenant_id=tenant_id,
                     session_id=session_id,
                     status="running",
                     completed_indicators=completed,
@@ -714,6 +719,7 @@ async def _run_assessment_pipeline(
                 if not task.done():
                     task.cancel()
             update_session_status(
+                tenant_id=tenant_id,
                 session_id=session_id,
                 status="cancelled",
                 completed_indicators=completed,
@@ -725,6 +731,7 @@ async def _run_assessment_pipeline(
             return
 
         update_session_status(
+            tenant_id=tenant_id,
             session_id=session_id,
             status="completed",
             completed_indicators=initial_completed + len(indicators),
@@ -737,6 +744,7 @@ async def _run_assessment_pipeline(
     except Exception as exc:
         logger.exception("Pipeline failure for session %s", session_id)
         update_session_status(
+            tenant_id=tenant_id,
             session_id=session_id,
             status="failed",
             error=str(exc),

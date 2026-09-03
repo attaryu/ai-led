@@ -12,6 +12,12 @@ callers must account for:
     this module translates to/from the lowercase strings ("running",
     "completed", "failed") the rest of the codebase already uses, so no
     caller-side string literals need to change
+
+Every function takes `tenant_id` (keyword-only) and runs inside
+db.connection.tenant_cursor(tenant_id), which sets Postgres's
+`app.tenant_id` session var for RLS — see db/connection.py's docstring.
+`tenant_id=None` only for the two bootstrap/global-listing exceptions
+(get_document_accreditation_set, list_sessions).
 """
 
 from __future__ import annotations
@@ -22,7 +28,7 @@ from typing import Any, Optional
 
 import psycopg2.extras
 
-from db.connection import get_conn as _get_conn
+from db.connection import tenant_cursor
 from ingestion.matrix_parser import IndicatorRubric
 
 logger = logging.getLogger(__name__)
@@ -75,7 +81,7 @@ def create_session(
     /assessment/start /resume routes, which never go through BullMQ.
     """
     try:
-        with _get_conn().cursor() as cur:
+        with tenant_cursor(tenant_id) as cur:
             cur.execute(
                 """
                 INSERT INTO assessment_sessions
@@ -103,6 +109,7 @@ def create_session(
 
 
 def update_session_status(
+    tenant_id: str,
     session_id: str,
     status: str,
     completed_indicators: Optional[int] = None,
@@ -119,7 +126,7 @@ def update_session_status(
         params.append(error)
     params.append(session_id)
     try:
-        with _get_conn().cursor() as cur:
+        with tenant_cursor(tenant_id) as cur:
             cur.execute(
                 f"UPDATE assessment_sessions SET {', '.join(sets)} WHERE id = %s",
                 params,
@@ -128,7 +135,7 @@ def update_session_status(
         logger.exception("Failed to update session %s status to %s", session_id, status)
 
 
-def save_session_quality(session_id: str, quality: dict) -> None:
+def save_session_quality(tenant_id: str, session_id: str, quality: dict) -> None:
     """Persist a session's RAGAS quality result (docs/database.md §12b(3)).
 
     Overwritten on every re-run, same policy as IndicatorResult — not an
@@ -138,7 +145,7 @@ def save_session_quality(session_id: str, quality: dict) -> None:
     doesn't need a second shape just for persistence.
     """
     try:
-        with _get_conn().cursor() as cur:
+        with tenant_cursor(tenant_id) as cur:
             cur.execute(
                 "UPDATE assessment_sessions SET kualitas = %s WHERE id = %s",
                 (psycopg2.extras.Json(quality), session_id),
@@ -147,12 +154,18 @@ def save_session_quality(session_id: str, quality: dict) -> None:
         logger.exception("Failed to save session %s quality", session_id)
 
 
-def get_session(session_id: str) -> Optional[dict]:
-    """Return the assessment_sessions row for session_id, or None if missing."""
-    with _get_conn().cursor() as cur:
+def get_session(tenant_id: Optional[str], session_id: str) -> Optional[dict]:
+    """Return the assessment_sessions row for session_id, or None if missing.
+
+    `tenant_id=None` where the caller doesn't have one yet (GET /status,
+    /results — session_id is the only identifier the request carries) — the
+    returned row's own `tenant_id` then scopes whatever else that request
+    needs to look up, same bootstrap pattern as get_bab_dokumen.
+    """
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
-            SELECT id AS session_id, document_id, status, total_indicators, completed_indicators, error
+            SELECT id AS session_id, tenant_id, document_id, status, total_indicators, completed_indicators, error
             FROM assessment_sessions WHERE id = %s
             """,
             (session_id,),
@@ -166,8 +179,10 @@ def get_session(session_id: str) -> Optional[dict]:
 
 
 def list_sessions(limit: int = 50) -> list[dict]:
-    """List recent sessions (newest first) with avg indicator score, joined in SQL."""
-    with _get_conn().cursor() as cur:
+    """List recent sessions (newest first) with avg indicator score, joined
+    in SQL. Genuinely cross-tenant (admin/global listing) — no tenant_id,
+    runs with no `app.tenant_id` set."""
+    with tenant_cursor(None) as cur:
         cur.execute(
             """
             SELECT s.id AS session_id, s.status, s.total_indicators,
@@ -195,6 +210,7 @@ def list_sessions(limit: int = 50) -> list[dict]:
 
 
 def log_indicator_result(
+    tenant_id: str,
     session_id: str,
     indicator_no: int,
     score: Optional[float],
@@ -207,7 +223,7 @@ def log_indicator_result(
 ) -> None:
     """Upsert a scored indicator into assessment_indicator_results."""
     try:
-        with _get_conn().cursor() as cur:
+        with tenant_cursor(tenant_id) as cur:
             cur.execute(
                 """
                 INSERT INTO assessment_indicator_results
@@ -242,9 +258,9 @@ def log_indicator_result(
         )
 
 
-def get_indicator_results(session_id: str) -> list[dict]:
+def get_indicator_results(tenant_id: str, session_id: str) -> list[dict]:
     """Return all assessment_indicator_results rows for a session, ordered by indicator_no."""
-    with _get_conn().cursor() as cur:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
             SELECT indicator_no, score, justification, confidence, recommendation, error,
@@ -262,7 +278,7 @@ def get_indicator_results(session_id: str) -> list[dict]:
     return rows
 
 
-def get_completed_indicator_numbers(session_id: str) -> set[int]:
+def get_completed_indicator_numbers(tenant_id: str, session_id: str) -> set[int]:
     """Return the set of indicator_no that already have a row in
     assessment_indicator_results for this session — i.e. their graph run finished
     (successfully or with a logged error), as opposed to never having
@@ -274,7 +290,7 @@ def get_completed_indicator_numbers(session_id: str) -> set[int]:
     not to silently skip work based on an unreadable state.
     """
     try:
-        with _get_conn().cursor() as cur:
+        with tenant_cursor(tenant_id) as cur:
             cur.execute(
                 "SELECT indicator_no FROM assessment_indicator_results WHERE session_id = %s",
                 (session_id,),
@@ -286,6 +302,7 @@ def get_completed_indicator_numbers(session_id: str) -> set[int]:
 
 
 def log_reasoning_step(
+    tenant_id: str,
     session_id: str,
     indicator_no: int,
     step_index: int,
@@ -293,7 +310,7 @@ def log_reasoning_step(
 ) -> None:
     """Append one reasoning step to the assessment_reasoning_steps table."""
     try:
-        with _get_conn().cursor() as cur:
+        with tenant_cursor(tenant_id) as cur:
             cur.execute(
                 """
                 INSERT INTO assessment_reasoning_steps (id, session_id, indicator_no, step_index, content)
@@ -326,8 +343,10 @@ class RubricSetInUseError(RuntimeError):
 
 def get_document_accreditation_set(dokumen_id: str) -> Optional[str]:
     """Return the accreditation_set_id chosen for this document, or None if
-    it hasn't picked one yet (blocks /start and /resume — see assessment.py)."""
-    with _get_conn().cursor() as cur:
+    it hasn't picked one yet (blocks /start and /resume — see assessment.py).
+    Bootstrap lookup — tenant_id isn't known yet, this is what discovers it
+    downstream (worker.py resolves tenant_id from job.data separately)."""
+    with tenant_cursor(None) as cur:
         cur.execute(
             "SELECT accreditation_set_id FROM writing_led_documents WHERE id = %s",
             (dokumen_id,),
@@ -336,11 +355,26 @@ def get_document_accreditation_set(dokumen_id: str) -> Optional[str]:
     return row["accreditation_set_id"] if row else None
 
 
-def get_rubric_criteria_for_set(accreditation_set_id: str) -> list[IndicatorRubric]:
+def get_accreditation_set_tenant(accreditation_set_id: str) -> Optional[str]:
+    """Bootstrap lookup — worker.py's INGESTION_RUBRIK_DOKUMEN/
+    INGESTION_STRUKTUR_DOKUMEN jobs only carry accreditationSetId in their
+    BullMQ payload (accreditation-set.service.ts's enqueue calls), not
+    tenantId, so this discovers it the same way get_document_accreditation_set
+    does for dokumen_id."""
+    with tenant_cursor(None) as cur:
+        cur.execute(
+            "SELECT tenant_id FROM accreditation_sets WHERE id = %s",
+            (accreditation_set_id,),
+        )
+        row = cur.fetchone()
+    return row["tenant_id"] if row else None
+
+
+def get_rubric_criteria_for_set(tenant_id: str, accreditation_set_id: str) -> list[IndicatorRubric]:
     """Return every rubric_criteria row for this set as IndicatorRubric
     objects — same shape as ingestion.matrix_parser.load_cached_rubrics(),
     so agent/tools/rubric_tool.py can use either interchangeably."""
-    with _get_conn().cursor() as cur:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
             SELECT id, indicator_no, criterion_group, description, score_type,
@@ -379,7 +413,9 @@ def get_rubric_criteria_for_set(accreditation_set_id: str) -> list[IndicatorRubr
     ]
 
 
-def replace_rubric_criteria_for_set(accreditation_set_id: str, rubrics: list[IndicatorRubric]) -> int:
+def replace_rubric_criteria_for_set(
+    tenant_id: str, accreditation_set_id: str, rubrics: list[IndicatorRubric]
+) -> int:
     """Wipe and rewrite every rubric_criteria(+levels) row for this set from
     a freshly parsed rubric PDF (worker.py::_handle_ingestion_rubrik_dokumen).
 
@@ -396,8 +432,13 @@ def replace_rubric_criteria_for_set(accreditation_set_id: str, rubrics: list[Ind
     (checked at attach-document time, before this job is even enqueued)
     is a different, narrower gate: it only looks at whether a LedDocument
     currently points at the set, not whether it was ever scored.
+
+    Runs as one transaction (tenant_cursor owns commit/rollback) — the
+    guard SELECT and the wipe+rewrite are now atomic together, where the
+    old autocommit connection needed its own explicit BEGIN/COMMIT after
+    the guard.
     """
-    with _get_conn().cursor() as cur:
+    with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
             SELECT count(*) AS n FROM rubric_score_results
@@ -410,55 +451,48 @@ def replace_rubric_criteria_for_set(accreditation_set_id: str, rubrics: list[Ind
                 "Set ini sudah punya riwayat skor tersimpan, tidak bisa ditimpa otomatis — hubungi admin."
             )
 
-        cur.execute("BEGIN")
-        try:
-            cur.execute(
-                "DELETE FROM rubric_criterion_chapters WHERE criterion_id IN "
-                "(SELECT id FROM rubric_criteria WHERE accreditation_set_id = %s)",
-                (accreditation_set_id,),
-            )
-            cur.execute(
-                "DELETE FROM rubric_levels WHERE criterion_id IN "
-                "(SELECT id FROM rubric_criteria WHERE accreditation_set_id = %s)",
-                (accreditation_set_id,),
-            )
-            cur.execute(
-                "DELETE FROM rubric_criteria WHERE accreditation_set_id = %s",
-                (accreditation_set_id,),
-            )
+        cur.execute(
+            "DELETE FROM rubric_criterion_chapters WHERE criterion_id IN "
+            "(SELECT id FROM rubric_criteria WHERE accreditation_set_id = %s)",
+            (accreditation_set_id,),
+        )
+        cur.execute(
+            "DELETE FROM rubric_levels WHERE criterion_id IN "
+            "(SELECT id FROM rubric_criteria WHERE accreditation_set_id = %s)",
+            (accreditation_set_id,),
+        )
+        cur.execute(
+            "DELETE FROM rubric_criteria WHERE accreditation_set_id = %s",
+            (accreditation_set_id,),
+        )
 
-            for r in sorted(rubrics, key=lambda x: x.no):
-                criterion_id = str(uuid.uuid4())
+        for r in sorted(rubrics, key=lambda x: x.no):
+            criterion_id = str(uuid.uuid4())
+            cur.execute(
+                """
+                INSERT INTO rubric_criteria
+                    (id, accreditation_set_id, indicator_no, criterion_code, criterion_group,
+                     description, score_type, lkps_table_refs, formula, sub_score_formula)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    criterion_id,
+                    accreditation_set_id,
+                    r.no,
+                    str(r.no),
+                    r.kriteria,
+                    r.indikator,
+                    _SCORE_TYPE_FROM_ENGLISH[r.score_type],
+                    r.lkps_table_ref,
+                    r.formula,
+                    r.sub_score_formula,
+                ),
+            )
+            for score, description in r.score_criteria.items():
                 cur.execute(
-                    """
-                    INSERT INTO rubric_criteria
-                        (id, accreditation_set_id, indicator_no, criterion_code, criterion_group,
-                         description, score_type, lkps_table_refs, formula, sub_score_formula)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        criterion_id,
-                        accreditation_set_id,
-                        r.no,
-                        str(r.no),
-                        r.kriteria,
-                        r.indikator,
-                        _SCORE_TYPE_FROM_ENGLISH[r.score_type],
-                        r.lkps_table_ref,
-                        r.formula,
-                        r.sub_score_formula,
-                    ),
+                    "INSERT INTO rubric_levels (id, criterion_id, score, description) VALUES (%s, %s, %s, %s)",
+                    (str(uuid.uuid4()), criterion_id, int(score), description),
                 )
-                for score, description in r.score_criteria.items():
-                    cur.execute(
-                        "INSERT INTO rubric_levels (id, criterion_id, score, description) VALUES (%s, %s, %s, %s)",
-                        (str(uuid.uuid4()), criterion_id, int(score), description),
-                    )
-        except Exception:
-            cur.execute("ROLLBACK")
-            raise
-        else:
-            cur.execute("COMMIT")
 
     return len(rubrics)
 
@@ -478,7 +512,9 @@ def _insert_sub_bab_template(cur, chapter_template_id: str, parent_id: str | Non
         _insert_sub_bab_template(cur, chapter_template_id, sub_bab_id, anak)
 
 
-def replace_chapter_templates_for_set(accreditation_set_id: str, bab_list: list[dict]) -> int:
+def replace_chapter_templates_for_set(
+    tenant_id: str, accreditation_set_id: str, bab_list: list[dict]
+) -> int:
     """Wipe and rewrite every chapter_templates(+sub_bab_templates) row for
     this set from a freshly parsed PANDUAN_LAM PDF
     (worker.py::_handle_ingestion_struktur_dokumen).
@@ -496,34 +532,27 @@ def replace_chapter_templates_for_set(accreditation_set_id: str, bab_list: list[
     re-extracting only changes the template for documents created
     AFTERWARD, never retroactively touches existing ones.
     """
-    with _get_conn().cursor() as cur:
-        cur.execute("BEGIN")
-        try:
-            cur.execute(
-                "DELETE FROM sub_bab_templates WHERE chapter_template_id IN "
-                "(SELECT id FROM chapter_templates WHERE accreditation_set_id = %s)",
-                (accreditation_set_id,),
-            )
-            cur.execute(
-                "DELETE FROM chapter_templates WHERE accreditation_set_id = %s",
-                (accreditation_set_id,),
-            )
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute(
+            "DELETE FROM sub_bab_templates WHERE chapter_template_id IN "
+            "(SELECT id FROM chapter_templates WHERE accreditation_set_id = %s)",
+            (accreditation_set_id,),
+        )
+        cur.execute(
+            "DELETE FROM chapter_templates WHERE accreditation_set_id = %s",
+            (accreditation_set_id,),
+        )
 
-            for bab in bab_list:
-                chapter_template_id = str(uuid.uuid4())
-                cur.execute(
-                    """
-                    INSERT INTO chapter_templates (id, accreditation_set_id, "order", title)
-                    VALUES (%s, %s, %s, %s)
-                    """,
-                    (chapter_template_id, accreditation_set_id, bab["order"], bab["title"]),
-                )
-                for sub in bab.get("subbab", []):
-                    _insert_sub_bab_template(cur, chapter_template_id, None, sub)
-        except Exception:
-            cur.execute("ROLLBACK")
-            raise
-        else:
-            cur.execute("COMMIT")
+        for bab in bab_list:
+            chapter_template_id = str(uuid.uuid4())
+            cur.execute(
+                """
+                INSERT INTO chapter_templates (id, accreditation_set_id, "order", title)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (chapter_template_id, accreditation_set_id, bab["order"], bab["title"]),
+            )
+            for sub in bab.get("subbab", []):
+                _insert_sub_bab_template(cur, chapter_template_id, None, sub)
 
     return len(bab_list)

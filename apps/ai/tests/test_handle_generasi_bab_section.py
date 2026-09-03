@@ -143,7 +143,7 @@ def test_manual_selected_evidence_ids_used_when_no_confirmed_draft():
     search_evidence.assert_called()
     assert search_evidence.call_args.args[2] == ["ev-1", "ev-2"]
     defaults["link_evidence_to_chapter_and_draft"].assert_called_once_with(
-        "bab-1", "draft-1", ["ev-1", "ev-2"],
+        "tenant-1", "bab-1", "draft-1", ["ev-1", "ev-2"],
     )
 
 
@@ -161,7 +161,7 @@ def test_generates_one_section_and_compiles_chapter():
 
     # Compiled from ALL generated sections, persisted as the chapter's active content.
     defaults["create_bab_draft"].assert_called_once()
-    body = defaults["update_bab_dokumen_aktif"].call_args.args[1]["body"]
+    body = defaults["update_bab_dokumen_aktif"].call_args.args[2]["body"]
     assert "Narasi kebijakan tata pamong." in body
 
 

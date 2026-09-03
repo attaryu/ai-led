@@ -71,7 +71,7 @@ def test_passes_accreditation_set_id_through_to_the_pipeline():
 
 def test_uses_the_set_scoped_rubric_lookup_not_the_global_one():
     _, defaults = _run(_fake_job(), accreditation_set_id="set-42")
-    defaults["_get_rubrics_for_set"].assert_called_with("set-42")
+    defaults["_get_rubrics_for_set"].assert_called_with("set-42", "tenant-1")
 
 
 def test_document_without_a_chosen_set_fails_fast_without_calling_the_pipeline():

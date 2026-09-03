@@ -25,11 +25,11 @@ _rubric_cache_by_set: dict[str, list] = {}
 _rubric_load_errors_by_set: dict[str, str] = {}
 
 
-def _get_rubrics_for_set(accreditation_set_id: str) -> list:
+def _get_rubrics_for_set(accreditation_set_id: str, tenant_id: str | None = None) -> list:
     if accreditation_set_id not in _rubric_cache_by_set:
         try:
             _rubric_cache_by_set[accreditation_set_id] = get_rubric_criteria_for_set(
-                accreditation_set_id
+                tenant_id, accreditation_set_id
             )
         except Exception as exc:
             # Same rationale as _get_rubrics()'s FileNotFoundError/JSONDecodeError
@@ -69,8 +69,9 @@ def get_indicator_rubric(indicator_no: int) -> str:
     Mengembalikan JSON string dengan score_criteria (0-4) dan formula jika ada.
     Gunakan tool ini PERTAMA sebelum tool lainnya.
     """
-    accreditation_set_id = require_current_context().accreditation_set_id
-    rubrics = _get_rubrics_for_set(accreditation_set_id)
+    ctx = require_current_context()
+    accreditation_set_id = ctx.accreditation_set_id
+    rubrics = _get_rubrics_for_set(accreditation_set_id, ctx.tenant_id)
     for r in rubrics:
         if r.no == indicator_no:
             return json.dumps(

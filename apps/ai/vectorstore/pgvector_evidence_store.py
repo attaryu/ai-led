@@ -9,11 +9,13 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
+import weakref
+from contextlib import contextmanager
 
 import psycopg2.extras
 from pgvector.psycopg2 import register_vector
 
-from db.connection import get_conn
+from db.connection import tenant_connection
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +23,9 @@ _EMBED_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 
 _model = None
 _model_lock = threading.Lock()
-_vector_registered = False
+# See pgvector_store.py's identical helper -- one register_vector() per
+# pooled connection, not per checkout.
+_vector_registered: "weakref.WeakSet" = weakref.WeakSet()
 
 
 def _get_model():
@@ -35,13 +39,14 @@ def _get_model():
     return _model
 
 
-def _conn():
-    global _vector_registered
-    conn = get_conn()
-    if not _vector_registered:
-        register_vector(conn)
-        _vector_registered = True
-    return conn
+@contextmanager
+def _cursor(tenant_id: str):
+    with tenant_connection(tenant_id) as conn:
+        if conn not in _vector_registered:
+            register_vector(conn)
+            _vector_registered.add(conn)
+        with conn.cursor() as cur:
+            yield cur
 
 
 def index_evidence_chunks(chunks: list[dict], tenant_id: str, bukti_dukung_id: str) -> None:
@@ -50,10 +55,9 @@ def index_evidence_chunks(chunks: list[dict], tenant_id: str, bukti_dukung_id: s
     """
     import time
 
-    conn = _conn()
     model = _get_model()
 
-    with conn.cursor() as cur:
+    with _cursor(tenant_id) as cur:
         cur.execute(
             "DELETE FROM evidence_chunk_embeddings WHERE evidence_id = %s",
             (bukti_dukung_id,),
@@ -81,7 +85,7 @@ def index_evidence_chunks(chunks: list[dict], tenant_id: str, bukti_dukung_id: s
         for i, c in enumerate(chunks)
     ]
 
-    with conn.cursor() as cur:
+    with _cursor(tenant_id) as cur:
         psycopg2.extras.execute_values(
             cur,
             """
@@ -111,8 +115,7 @@ def list_available_evidence_ids(
     (matches origin/ariel's design; tenant filter is dev-v1-only, Ariel's
     prototype has no tenant concept at all).
     """
-    conn = _conn()
-    with conn.cursor() as cur:
+    with _cursor(tenant_id) as cur:
         cur.execute(
             """
             SELECT ef.id
@@ -137,7 +140,6 @@ def search_evidence(
 
     Returns [{text, entity, chunk_id, bukti_dukung_id, confidence, distance}].
     """
-    conn = _conn()
     model = _get_model()
     query_embedding = model.encode([query], show_progress_bar=False)[0]
 
@@ -149,7 +151,7 @@ def search_evidence(
         where.append("evidence_id = ANY(%s)")
         params.append(bukti_dukung_ids)
 
-    with conn.cursor() as cur:
+    with _cursor(tenant_id) as cur:
         cur.execute(
             f"""
             SELECT chunk_id, evidence_id, entity, text, confidence,

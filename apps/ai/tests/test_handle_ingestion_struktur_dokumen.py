@@ -23,6 +23,7 @@ def _run(job, llm_content, pdf_pages=None, **overrides):
 
     defaults = dict(
         download_to=MagicMock(),
+        get_accreditation_set_tenant=MagicMock(return_value="tenant-1"),
         replace_chapter_templates_for_set=MagicMock(return_value=1),
         extract_pdf_pages=MagicMock(return_value=pdf_pages if pdf_pages is not None else ["Teks pedoman contoh."]),
         status_updates=MagicMock(),
@@ -35,6 +36,9 @@ def _run(job, llm_content, pdf_pages=None, **overrides):
         stack.enter_context(patch("llm.chat_model.build_plain_llm", return_value=llm))
         stack.enter_context(patch("db.r2_client.download_to", defaults["download_to"]))
         stack.enter_context(
+            patch("db.postgres_client.get_accreditation_set_tenant", defaults["get_accreditation_set_tenant"])
+        )
+        stack.enter_context(
             patch("db.postgres_client.replace_chapter_templates_for_set", defaults["replace_chapter_templates_for_set"])
         )
         stack.enter_context(patch("worker._extract_pdf_pages", defaults["extract_pdf_pages"]))
@@ -43,9 +47,10 @@ def _run(job, llm_content, pdf_pages=None, **overrides):
         fake_cursor.__enter__ = MagicMock(return_value=fake_cursor)
         fake_cursor.__exit__ = MagicMock(return_value=False)
         fake_cursor.execute = defaults["status_updates"]
-        fake_conn = MagicMock()
-        fake_conn.cursor = MagicMock(return_value=fake_cursor)
-        stack.enter_context(patch("db.connection.get_conn", return_value=fake_conn))
+        fake_tenant_cursor_cm = MagicMock()
+        fake_tenant_cursor_cm.__enter__ = MagicMock(return_value=fake_cursor)
+        fake_tenant_cursor_cm.__exit__ = MagicMock(return_value=False)
+        stack.enter_context(patch("db.connection.tenant_cursor", MagicMock(return_value=fake_tenant_cursor_cm)))
 
         result = asyncio.run(_handle_ingestion_struktur_dokumen(job))
 
@@ -73,6 +78,7 @@ def test_extracts_structure_and_replaces_templates():
 
     assert result == {"status": "completed", "accreditationSetId": "set-1", "count": 1}
     defaults["replace_chapter_templates_for_set"].assert_called_once_with(
+        "tenant-1",
         "set-1",
         [
             {
@@ -107,7 +113,7 @@ def test_nested_subsubbab_is_kept_one_level_deep_and_capped_below_that():
     result, defaults = _run(_fake_job(), raw)
 
     assert result["status"] == "completed"
-    ((_set_id, bab_list),) = [
+    ((_tenant_id, _set_id, bab_list),) = [
         call.args for call in defaults["replace_chapter_templates_for_set"].call_args_list
     ]
     kriteria = bab_list[0]["subbab"][0]
@@ -140,7 +146,7 @@ def test_duplicate_bab_title_is_merged_not_listed_twice():
     result, defaults = _run(_fake_job(), raw)
 
     assert result["status"] == "completed"
-    ((_set_id, bab_list),) = [
+    ((_tenant_id, _set_id, bab_list),) = [
         call.args for call in defaults["replace_chapter_templates_for_set"].call_args_list
     ]
     titles = [b["title"] for b in bab_list]

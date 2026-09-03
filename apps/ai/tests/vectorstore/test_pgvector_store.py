@@ -47,13 +47,16 @@ def fake_model(monkeypatch):
 def conn():
     import db.connection as conn_mod
 
-    conn_mod._conn = None
+    conn_mod.reset_pool()
     try:
-        c = conn_mod.get_conn()
+        pool = conn_mod._get_pool()
+        c = pool.getconn()
     except Exception as exc:
         pytest.skip(f"Postgres unavailable: {exc}")
+    c.autocommit = True
     yield c
-    conn_mod._conn = None
+    pool.putconn(c)
+    conn_mod.reset_pool()
 
 
 @pytest.fixture()

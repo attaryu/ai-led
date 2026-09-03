@@ -70,8 +70,9 @@ def test_parses_valid_outline_and_persists_sections():
 
     assert result == {"status": "completed", "sectionCount": 2}
     args, kwargs = create_sections.call_args
-    assert args[0] == "bab-1"
-    assert args[1] == [
+    assert args[0] == "tenant-1"
+    assert args[1] == "bab-1"
+    assert args[2] == [
         {"title": "Kebijakan Tata Pamong", "guidance": "Bahas dasar hukum penetapan tata pamong", "subseksi": []},
         {"title": "Pelaksanaan", "guidance": "Bahas praktik tata pamong sehari-hari", "subseksi": []},
     ]
@@ -111,8 +112,8 @@ def test_rubrik_and_struktur_lookups_scoped_to_documents_accreditation_set():
     raw = '{"sections": [{"judul": "A", "panduan": "B"}]}'
     _, defaults = _run_with_llm(_fake_job(), _llm_returning(raw))
 
-    defaults["get_rubrik_for_bab"].assert_called_once_with(1, "set-1")
-    defaults["get_chapter_template_subbab"].assert_called_once_with("set-1", 1)
+    defaults["get_rubrik_for_bab"].assert_called_once_with("tenant-1", 1, "set-1")
+    defaults["get_chapter_template_subbab"].assert_called_once_with("tenant-1", "set-1", 1)
 
 
 def test_struktur_referensi_included_in_outline_prompt():

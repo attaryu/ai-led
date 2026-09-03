@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from db.postgres_client import save_session_quality
+from db.postgres_client import get_session, save_session_quality
 from eval.ragas_eval import (
     ALL_METRICS,
     get_available_judge_models,
@@ -184,7 +184,9 @@ def _run_evaluation_background(
         # sungguhan". _eval_results above stays the poll source of truth for
         # THIS run; this is what makes the result still there after a refresh.
         if session_id is not None and result.get("scores") and result.get("per_indicator"):
+            sess = get_session(None, session_id)
             save_session_quality(
+                sess["tenant_id"] if sess else None,
                 session_id,
                 {
                     "scores": result.get("scores"),

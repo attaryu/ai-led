@@ -786,9 +786,9 @@ async def _handle_generasi_outline_bab(job) -> dict:
 
     accreditation_set_id = bab.get("accreditation_set_id")
     pedoman = get_pedoman_for_bab(bab["chapter_order"])
-    rubric = get_rubrik_for_bab(bab["chapter_order"], accreditation_set_id)
+    rubric = get_rubrik_for_bab(bab["tenant_id"], bab["chapter_order"], accreditation_set_id)
     kelompok = _group_rubric_by_criterion_group(rubric)
-    struktur_referensi = get_chapter_template_subbab(accreditation_set_id, bab["chapter_order"])
+    struktur_referensi = get_chapter_template_subbab(bab["tenant_id"], accreditation_set_id, bab["chapter_order"])
 
     llm = build_plain_llm()
     try:
@@ -804,7 +804,7 @@ async def _handle_generasi_outline_bab(job) -> dict:
         return {"status": "error", "error": "LLM gagal menyusun outline yang valid untuk bab ini"}
 
     try:
-        created = create_chapter_sections(bab_id, sections, overwrite=overwrite)
+        created = create_chapter_sections(bab["tenant_id"], bab_id, sections, overwrite=overwrite)
     except ValueError as e:
         return {"status": "error", "error": str(e)}
 
@@ -953,11 +953,11 @@ async def _handle_generasi_bab(job) -> dict:
     if bab is None:
         return {"status": "error", "error": f"BabDokumen {bab_id} tidak ditemukan"}
 
-    section = get_chapter_section(section_id)
+    section = get_chapter_section(bab["tenant_id"], section_id)
     if section is None or section["chapter_id"] != bab_id:
         return {"status": "error", "error": f"Section {section_id} tidak ditemukan pada bab {bab_id}"}
 
-    update_chapter_section(section_id, status="GENERATING")
+    update_chapter_section(bab["tenant_id"], section_id, status="GENERATING")
 
     # Port of Dimas's 766de26 institution context — lets the checklist and
     # generate prompts know which prodi/university this LED is for, instead
@@ -973,7 +973,7 @@ async def _handle_generasi_bab(job) -> dict:
     # sama seperti sebelumnya — checklist/judge di bawah tetap butuh konteks
     # rubrik/pedoman satu bab penuh, bukan cuma section ini).
     pedoman = get_pedoman_for_bab(bab["chapter_order"])
-    rubric = get_rubrik_for_bab(bab["chapter_order"], bab.get("accreditation_set_id"))
+    rubric = get_rubrik_for_bab(bab["tenant_id"], bab["chapter_order"], bab.get("accreditation_set_id"))
 
     llm = build_plain_llm()
 
@@ -983,11 +983,13 @@ async def _handle_generasi_bab(job) -> dict:
     # can use the selected documents' names as a terminology hint (port of
     # Dimas's 332ab2f, see _build_checklist_prompt's selected_document_names).
     # No confirmed draft -> fall back to manual picker's `selectedEvidenceIds`.
-    confirmed = get_confirmed_recommendation(draft_id) if draft_id else None
+    confirmed = get_confirmed_recommendation(bab["tenant_id"], draft_id) if draft_id else None
     selected_ids: list[str] = (
         (confirmed or {}).get("selected_evidence_ids") or payload.get("selectedEvidenceIds") or []
     )
-    evidence_labels: dict[str, str] = get_evidence_citation_labels(selected_ids) if selected_ids else {}
+    evidence_labels: dict[str, str] = (
+        get_evidence_citation_labels(bab["tenant_id"], selected_ids) if selected_ids else {}
+    )
 
     try:
         # 2. Checklist — real LLM call (port of SYSTEM_CHECKLIST), scoped to
@@ -1071,20 +1073,23 @@ async def _handle_generasi_bab(job) -> dict:
 
         model_name = getattr(llm, "model", getattr(llm, "model_name", "unknown"))
         section_konten = {"format": "html", "body": html, "markdown": markdown_text}
-        update_chapter_section(section_id, status="GENERATED", content=section_konten, model=model_name)
+        update_chapter_section(
+            bab["tenant_id"], section_id, status="GENERATED", content=section_konten, model=model_name
+        )
     except Exception as e:
         logger.exception("Generate section %s gagal", section_id)
-        update_chapter_section(section_id, status="ERROR", error=str(e))
+        update_chapter_section(bab["tenant_id"], section_id, status="ERROR", error=str(e))
         raise
 
     # Compile: gabung SEMUA section GENERATED milik bab ini jadi satu
     # checkpoint bab, sama seperti sebelum section ada — lihat
     # _compile_chapter_from_sections.
-    all_sections = get_chapter_sections(bab_id)
+    all_sections = get_chapter_sections(bab["tenant_id"], bab_id)
     compiled_markdown, compiled_html = _compile_chapter_from_sections(all_sections)
     konten = {"format": "html", "body": compiled_html, "markdown": compiled_markdown}
     user_nama = get_user_nama(user_id)
     draft = create_bab_draft(
+        bab["tenant_id"],
         bab_id,
         user_id,
         user_nama,
@@ -1093,9 +1098,10 @@ async def _handle_generasi_bab(job) -> dict:
     )
     # Records which confirmed Bukti Dukung actually backed this generate —
     # no-op if selected_ids is empty (manual generate, no recommendation).
-    link_evidence_to_chapter_and_draft(bab_id, draft["id"], selected_ids)
-    update_bab_dokumen_aktif(bab_id, konten, draft["id"])
+    link_evidence_to_chapter_and_draft(bab["tenant_id"], bab_id, draft["id"], selected_ids)
+    update_bab_dokumen_aktif(bab["tenant_id"], bab_id, konten, draft["id"])
     create_generation_run(
+        tenant_id=bab["tenant_id"],
         bab_draft_id=draft["id"],
         model=model_name,
         pedoman_used=pedoman,
@@ -1108,7 +1114,7 @@ async def _handle_generasi_bab(job) -> dict:
         token_count=len(markdown_text.split()),
     )
     if ragas_scores:
-        create_ragas_score(bab_id, draft["id"], ragas_scores, jumlah_chunk=len(chunks))
+        create_ragas_score(bab["tenant_id"], bab_id, draft["id"], ragas_scores, jumlah_chunk=len(chunks))
 
     return {
         "status": "completed",
@@ -1161,7 +1167,7 @@ async def _handle_rekomendasi_dokumen(job) -> dict:
 
     # 1. Pedoman & rubrik — same relational lookup as GENERASI_BAB.
     pedoman = get_pedoman_for_bab(bab["chapter_order"])
-    rubric = get_rubrik_for_bab(bab["chapter_order"], bab.get("accreditation_set_id"))
+    rubric = get_rubrik_for_bab(bab["tenant_id"], bab["chapter_order"], bab.get("accreditation_set_id"))
 
     # 2. needs_lkps — same regex gate as GENERASI_BAB (definitive both ways,
     # no LLM guess needed: pedoman LAM Teknik always spells out explicit
@@ -1252,9 +1258,9 @@ async def _handle_rekomendasi_dokumen(job) -> dict:
         draft_id = reuse_draft_id
     else:
         user_nama = get_user_nama(user_id)
-        draft = create_bab_draft(bab_id, user_id, user_nama, konten_snapshot={})
+        draft = create_bab_draft(bab["tenant_id"], bab_id, user_id, user_nama, konten_snapshot={})
         draft_id = draft["id"]
-        update_bab_dokumen_aktif(bab_id, {}, draft_id)
+        update_bab_dokumen_aktif(bab["tenant_id"], bab_id, {}, draft_id)
 
     pedoman_used = [{"id": p.get("point_code"), "text": (p.get("content_text") or "")[:300]} for p in pedoman]
     rubric_used = [{"id": r.get("id"), "text": (r.get("description") or "")[:300]} for r in rubric]
@@ -1270,6 +1276,7 @@ async def _handle_rekomendasi_dokumen(job) -> dict:
     )
 
     rec = create_document_recommendation(
+        tenant_id=bab["tenant_id"],
         chapter_draft_id=draft_id,
         document_query=[],
         lkps_needed=needs_lkps,
@@ -1347,7 +1354,7 @@ async def _handle_simulasi_skor(job) -> dict:
         return {"status": "error", "error": f"BabDokumen {bab_id} tidak ditemukan"}
 
     if bab_draft_id:
-        draft = get_bab_draft(bab_draft_id)
+        draft = get_bab_draft(bab["tenant_id"], bab_draft_id)
         if draft is None or draft["chapter_id"] != bab_id:
             return {"status": "error", "error": f"Checkpoint {bab_draft_id} tidak ditemukan"}
         snapshot = draft["content_snapshot"]
@@ -1361,11 +1368,11 @@ async def _handle_simulasi_skor(job) -> dict:
     if not konten.strip():
         return {"status": "error", "error": "Belum ada tulisan yang bisa dinilai untuk lingkup yang dipilih"}
 
-    kriteria = get_rubrik_for_bab(bab["chapter_order"], bab.get("accreditation_set_id"))
+    kriteria = get_rubrik_for_bab(bab["tenant_id"], bab["chapter_order"], bab.get("accreditation_set_id"))
     if not kriteria:
         return {"status": "error", "error": f"Bab {bab['chapter_order']} tidak dinilai kriteria rubrik apa pun"}
 
-    levels_by_kriteria = get_rubrik_levels([k["id"] for k in kriteria])
+    levels_by_kriteria = get_rubrik_levels(bab["tenant_id"], [k["id"] for k in kriteria])
     for k in kriteria:
         k["level"] = levels_by_kriteria.get(k["id"], [])
 
@@ -1401,6 +1408,7 @@ async def _handle_simulasi_skor(job) -> dict:
 
     user_nama = get_user_nama(user_id)
     hasil = replace_hasil_skor_kriteria(
+        bab["tenant_id"],
         target_tipe,
         bab_id=bab_id if target_tipe == "BAB_AKTIF" else None,
         bab_draft_id=bab_draft_id if target_tipe == "BAB_DRAFT" else None,
@@ -1464,7 +1472,7 @@ async def _handle_assessment_ami(job) -> dict:
                 "Gagal memuat ulang LKPS untuk tenant=%s dokumen=%s", tenant_id, dokumen_id
             )
 
-    rubrics = _get_rubrics_for_set(accreditation_set_id)
+    rubrics = _get_rubrics_for_set(accreditation_set_id, tenant_id)
     wanted = set(indikator_list) if indikator_list else None
     indicators = [
         _SimpleIndicator(indicator_no=r.no, kriteria=r.kriteria)
@@ -1536,7 +1544,7 @@ async def _handle_assessment_ami(job) -> dict:
     finally:
         await redis_client.aclose()
 
-    sess = get_session(session_id)
+    sess = get_session(tenant_id, session_id)
     if sess is not None and sess["status"] == "cancelled":
         return {
             "status": "cancelled",
@@ -1573,7 +1581,7 @@ async def _handle_ingestion_bukti_dukung(job) -> dict:
     import tempfile
     from pathlib import Path
 
-    from db.connection import get_conn
+    from db.connection import tenant_cursor
     from db.r2_client import download_to
     from ingestion.evidence_pipeline import UnsupportedFileError, process_file
     from vectorstore.pgvector_evidence_store import index_evidence_chunks
@@ -1583,7 +1591,7 @@ async def _handle_ingestion_bukti_dukung(job) -> dict:
     file_url = job.data["fileUrl"]
 
     def _set_status(status: str, catatan: str | None) -> None:
-        with get_conn().cursor() as cur:
+        with tenant_cursor(tenant_id) as cur:
             cur.execute(
                 "UPDATE evidence_files SET extraction_status = %s, failure_note = %s WHERE id = %s",
                 (status, catatan, bukti_dukung_id),
@@ -1620,16 +1628,24 @@ async def _handle_ingestion_rubrik_dokumen(job) -> dict:
     import tempfile
     from pathlib import Path
 
-    from db.connection import get_conn
-    from db.postgres_client import RubricSetInUseError, replace_rubric_criteria_for_set
+    from db.connection import tenant_cursor
+    from db.postgres_client import (
+        RubricSetInUseError,
+        get_accreditation_set_tenant,
+        replace_rubric_criteria_for_set,
+    )
     from db.r2_client import download_to
     from ingestion.matrix_parser import parse_matrix_pdf
 
     accreditation_set_id = job.data["accreditationSetId"]
     file_url = job.data["fileUrl"]
+    # accreditation-set.service.ts's enqueue() only sends accreditationSetId —
+    # bootstrap it the same way get_document_accreditation_set does for
+    # dokumen_id.
+    tenant_id = get_accreditation_set_tenant(accreditation_set_id)
 
     def _set_status(status: str, catatan: str | None) -> None:
-        with get_conn().cursor() as cur:
+        with tenant_cursor(tenant_id) as cur:
             cur.execute(
                 "UPDATE accreditation_sets SET criteria_parse_status = %s, criteria_parse_error = %s WHERE id = %s",
                 (status, catatan, accreditation_set_id),
@@ -1647,7 +1663,7 @@ async def _handle_ingestion_rubrik_dokumen(job) -> dict:
                     "pastikan formatnya sesuai matriks penilaian.",
                 )
                 return {"status": "empty", "accreditationSetId": accreditation_set_id}
-            count = replace_rubric_criteria_for_set(accreditation_set_id, rubrics)
+            count = replace_rubric_criteria_for_set(tenant_id, accreditation_set_id, rubrics)
     except RubricSetInUseError as e:
         _set_status("GAGAL", str(e))
         return {"status": "in_use", "accreditationSetId": accreditation_set_id, "reason": str(e)}
@@ -1807,16 +1823,17 @@ async def _handle_ingestion_struktur_dokumen(job) -> dict:
     import tempfile
     from pathlib import Path
 
-    from db.connection import get_conn
-    from db.postgres_client import replace_chapter_templates_for_set
+    from db.connection import tenant_cursor
+    from db.postgres_client import get_accreditation_set_tenant, replace_chapter_templates_for_set
     from db.r2_client import download_to
     from llm.chat_model import build_plain_llm
 
     accreditation_set_id = job.data["accreditationSetId"]
     file_url = job.data["fileUrl"]
+    tenant_id = get_accreditation_set_tenant(accreditation_set_id)
 
     def _set_status(status: str, catatan: str | None) -> None:
-        with get_conn().cursor() as cur:
+        with tenant_cursor(tenant_id) as cur:
             cur.execute(
                 "UPDATE accreditation_sets SET structure_parse_status = %s, structure_parse_error = %s WHERE id = %s",
                 (status, catatan, accreditation_set_id),
@@ -1852,7 +1869,7 @@ async def _handle_ingestion_struktur_dokumen(job) -> dict:
             )
             return {"status": "empty", "accreditationSetId": accreditation_set_id}
 
-        count = replace_chapter_templates_for_set(accreditation_set_id, bab_list)
+        count = replace_chapter_templates_for_set(tenant_id, accreditation_set_id, bab_list)
     except Exception as e:
         logger.exception("Ekstraksi struktur dokumen gagal untuk set %s", accreditation_set_id)
         _set_status("GAGAL", str(e)[:500])

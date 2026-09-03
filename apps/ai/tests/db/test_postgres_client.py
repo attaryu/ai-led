@@ -22,15 +22,21 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture()
 def conn():
+    """A raw connection checked out from the pool, in autocommit mode — for
+    test setup/teardown SQL that doesn't go through tenant_cursor (no RLS
+    scoping needed for fixture rows under BYPASSRLS)."""
     import db.connection as conn_mod
 
-    conn_mod._conn = None
+    conn_mod.reset_pool()
     try:
-        c = conn_mod.get_conn()
+        pool = conn_mod._get_pool()
+        c = pool.getconn()
     except Exception as exc:
         pytest.skip(f"Postgres unavailable: {exc}")
+    c.autocommit = True
     yield c
-    conn_mod._conn = None
+    pool.putconn(c)
+    conn_mod.reset_pool()
 
 
 @pytest.fixture()
@@ -78,42 +84,43 @@ def fixture_ids(conn):
         cur.execute("DELETE FROM org_tenants WHERE id = %s", (tenant_id,))
 
 
-def test_session_lifecycle_and_upsert(fixture_ids):
+def test_session_lifecycle_and_upsert(fixture_ids, conn):
     import db.postgres_client as pc
 
+    tenant_id = fixture_ids["tenant_id"]
     session_id = f"test-session-{uuid.uuid4().hex[:8]}"
     try:
         pc.create_session(
             session_id,
-            tenant_id=fixture_ids["tenant_id"],
+            tenant_id=tenant_id,
             dokumen_id=fixture_ids["dokumen_id"],
             created_by_user_id=fixture_ids["user_id"],
             total_indicators=3,
         )
-        sess = pc.get_session(session_id)
+        sess = pc.get_session(tenant_id, session_id)
         assert sess is not None
         assert sess["status"] == "running"
         assert sess["total_indicators"] == 3
 
-        pc.log_indicator_result(session_id, indicator_no=1, score=3.5, justification="j1", confidence=0.9)
+        pc.log_indicator_result(tenant_id, session_id, indicator_no=1, score=3.5, justification="j1", confidence=0.9)
         pc.log_indicator_result(
-            session_id, indicator_no=1, score=4.0, justification="j1-updated", confidence=0.95,
+            tenant_id, session_id, indicator_no=1, score=4.0, justification="j1-updated", confidence=0.95,
             model="deepseek-r1:32b", sources_used={"led_chunks": [{"page": 3}], "lkps_tables": [], "evidence_documents": []},
         )
-        pc.log_indicator_result(session_id, indicator_no=2, score=2.0, justification="j2", confidence=0.5)
-        pc.log_reasoning_step(session_id, indicator_no=1, step_index=0, content="step0")
+        pc.log_indicator_result(tenant_id, session_id, indicator_no=2, score=2.0, justification="j2", confidence=0.5)
+        pc.log_reasoning_step(tenant_id, session_id, indicator_no=1, step_index=0, content="step0")
 
-        assert pc.get_completed_indicator_numbers(session_id) == {1, 2}
+        assert pc.get_completed_indicator_numbers(tenant_id, session_id) == {1, 2}
 
-        results = pc.get_indicator_results(session_id)
+        results = pc.get_indicator_results(tenant_id, session_id)
         r1 = next(r for r in results if r["indicator_no"] == 1)
         assert r1["score"] == 4.0, "upsert (ON CONFLICT) should overwrite, not duplicate"
         assert r1["justification"] == "j1-updated"
         assert r1["model"] == "deepseek-r1:32b"
         assert r1["sources_used"] == {"led_chunks": [{"page": 3}], "lkps_tables": [], "evidence_documents": []}
 
-        pc.update_session_status(session_id, "completed", completed_indicators=2)
-        sess2 = pc.get_session(session_id)
+        pc.update_session_status(tenant_id, session_id, "completed", completed_indicators=2)
+        sess2 = pc.get_session(tenant_id, session_id)
         assert sess2["status"] == "completed"
         assert sess2["completed_indicators"] == 2
 
@@ -124,8 +131,8 @@ def test_session_lifecycle_and_upsert(fixture_ids):
             "model": "deepseek-r1:32b",
             "finished_at": "2026-09-02T00:00:00+00:00",
         }
-        pc.save_session_quality(session_id, quality)
-        with pc._get_conn().cursor() as cur:
+        pc.save_session_quality(tenant_id, session_id, quality)
+        with conn.cursor() as cur:
             cur.execute("SELECT kualitas FROM assessment_sessions WHERE id = %s", (session_id,))
             assert cur.fetchone()["kualitas"] == quality, "overwritten in place, not appended"
 
@@ -133,7 +140,6 @@ def test_session_lifecycle_and_upsert(fixture_ids):
         found = next(s for s in sessions if s["session_id"] == session_id)
         assert found["avg_score"] == 3.0  # (4.0 + 2.0) / 2
     finally:
-        conn = pc._get_conn()
         with conn.cursor() as cur:
             cur.execute("DELETE FROM assessment_sessions WHERE id = %s", (session_id,))
 
@@ -141,13 +147,13 @@ def test_session_lifecycle_and_upsert(fixture_ids):
 def test_get_session_returns_none_for_unknown_id(fixture_ids):
     import db.postgres_client as pc
 
-    assert pc.get_session("does-not-exist") is None
+    assert pc.get_session(fixture_ids["tenant_id"], "does-not-exist") is None
 
 
 def test_get_completed_indicator_numbers_empty_for_unknown_session():
     import db.postgres_client as pc
 
-    assert pc.get_completed_indicator_numbers("does-not-exist") == set()
+    assert pc.get_completed_indicator_numbers(None, "does-not-exist") == set()
 
 
 def test_get_document_accreditation_set_none_when_unset(fixture_ids):
@@ -159,6 +165,7 @@ def test_get_document_accreditation_set_none_when_unset(fixture_ids):
 def test_get_rubric_criteria_for_set(fixture_ids, conn):
     import db.postgres_client as pc
 
+    tenant_id = fixture_ids["tenant_id"]
     set_id = f"test-set-{uuid.uuid4().hex[:8]}"
     criterion_id = f"test-criterion-{uuid.uuid4().hex[:8]}"
     try:
@@ -168,7 +175,7 @@ def test_get_rubric_criteria_for_set(fixture_ids, conn):
                 INSERT INTO accreditation_sets (id, tenant_id, nama, lembaga, tahun_siklus, status, updated_at)
                 VALUES (%s, %s, %s, %s, %s, 'SIAP', now())
                 """,
-                (set_id, fixture_ids["tenant_id"], "Test Set", "Test Lembaga", 2026),
+                (set_id, tenant_id, "Test Set", "Test Lembaga", 2026),
             )
             cur.execute(
                 """
@@ -195,7 +202,7 @@ def test_get_rubric_criteria_for_set(fixture_ids, conn):
 
         assert pc.get_document_accreditation_set(fixture_ids["dokumen_id"]) == set_id
 
-        rubrics = pc.get_rubric_criteria_for_set(set_id)
+        rubrics = pc.get_rubric_criteria_for_set(tenant_id, set_id)
         assert len(rubrics) == 1
         r = rubrics[0]
         assert r.no == 1
@@ -209,7 +216,7 @@ def test_get_rubric_criteria_for_set(fixture_ids, conn):
         assert r.sub_score_formula == "((I x 2) + II) / 3"
         assert r.lkps_table_ref == ["Tabel 1"]
 
-        assert pc.get_rubric_criteria_for_set("does-not-exist") == []
+        assert pc.get_rubric_criteria_for_set(tenant_id, "does-not-exist") == []
     finally:
         with conn.cursor() as cur:
             cur.execute(
