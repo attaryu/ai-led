@@ -24,8 +24,12 @@ const IKON_STATUS = {
 	ERROR: <WarningCircleIcon className="size-3.5 shrink-0 text-destructive" weight="fill" />,
 } as const;
 
-/** Form inline judul + panduan, dipakai baik untuk tambah maupun edit section manual. */
-function FormSection({
+/**
+ * Form inline judul + panduan, dipakai baik untuk tambah maupun edit section
+ * manual — juga dipakai `chapter-editor-toc.tsx` (tombol `[+]` per baris
+ * pohon Daftar Isi), makanya diekspor.
+ */
+export function FormSection({
 	judulAwal = '',
 	panduanAwal = '',
 	onSimpan,

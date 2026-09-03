@@ -1,15 +1,18 @@
-import { CaretRightIcon, XIcon } from '@phosphor-icons/react';
+import { CaretRightIcon, PlusIcon, XIcon } from '@phosphor-icons/react';
+import * as React from 'react';
 import { Link } from 'react-router';
 
 import { Button } from '~/core/components/ui/button';
 import { ScrollArea } from '~/core/components/ui/scroll-area';
 import { cn } from '~/core/lib/utils';
+import { chapterRepository } from '../../data/repositories/chapter.repository';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import {
 	findChapterForTocNode,
 	findTocPathForChapter,
 	type ChapterTocNode,
 } from '../../domain/entities/chapter-toc.entity';
+import { FormSection } from './chapter-section-list';
 
 /**
  * Sidebar kiri Editor Bab — Daftar Isi (docs/application_flow.md §7.1).
@@ -31,6 +34,8 @@ import {
  *
  * Status terbentang dipegang halaman editor, bukan komponen ini — alasannya di
  * `chapter-editor.tsx`.
+ *
+ * Tombol `[+]` per baris (hover) — tambah sub-bab/sub-sub-bab manual langsung dari sini.
  */
 export function ChapterEditorToc({
 	projectId,
@@ -42,6 +47,7 @@ export function ChapterEditorToc({
 	onToggle,
 	terbuka,
 	onTutup,
+	onSectionAdded,
 }: {
 	projectId: string;
 	chapters: ChapterEntity[];
@@ -55,6 +61,8 @@ export function ChapterEditorToc({
 	/** Hanya berlaku di bawah `lg`; di desktop kolomnya selalu menempel. */
 	terbuka: boolean;
 	onTutup: () => void;
+	/** Dipanggil sesudah tambah section manual lewat `[+]` — pemanggil membangun ulang `chapterToc`. */
+	onSectionAdded: () => void | Promise<void>;
 }) {
 	const jalurAktif = new Set(
 		findTocPathForChapter(chapterAktif.urutanBab, chapterToc, sectionIdAktif).map(
@@ -116,23 +124,30 @@ export function ChapterEditorToc({
 			</div>
 
 			<nav className="space-y-0.5 px-2 pb-8">
-				{chapterToc.map((node) => (
-					<TocNode
-						key={node.id}
-						node={node}
-						depth={0}
-						projectId={projectId}
-						// Simpul akar selalu setara satu bab (`urutanBab` non-null) —
-						// id-nya jadi dasar tautan seluruh keturunannya, termasuk
-						// simpul section yang `urutanBab`-nya sendiri `null`.
-						chapterIdBab={findChapterForTocNode(node, chapters)?.id}
-						chapterAktifId={chapterAktif.id}
-						sectionIdAktif={sectionIdAktif}
-						jalurAktif={jalurAktif}
-						terbentang={terbentang}
-						onToggle={onToggle}
-					/>
-				))}
+				{chapterToc.map((node) => {
+					// Simpul akar selalu setara satu bab (`urutanBab` non-null) — id-nya
+					// jadi dasar tautan seluruh keturunannya, termasuk simpul section
+					// yang `urutanBab`-nya sendiri `null`. `terkunci`-nya juga ikut
+					// turun ke seluruh keturunan lewat prop yang sama: tombol `[+]`
+					// tidak boleh nambah section ke bab yang sedang dikunci review.
+					const babNyata = findChapterForTocNode(node, chapters);
+					return (
+						<TocNode
+							key={node.id}
+							node={node}
+							depth={0}
+							projectId={projectId}
+							chapterIdBab={babNyata?.id}
+							chapterTerkunci={babNyata?.terkunci ?? false}
+							chapterAktifId={chapterAktif.id}
+							sectionIdAktif={sectionIdAktif}
+							jalurAktif={jalurAktif}
+							terbentang={terbentang}
+							onToggle={onToggle}
+							onSectionAdded={onSectionAdded}
+						/>
+					);
+				})}
 			</nav>
 		</ScrollArea>
 	);
@@ -143,22 +158,27 @@ function TocNode({
 	depth,
 	projectId,
 	chapterIdBab,
+	chapterTerkunci,
 	chapterAktifId,
 	sectionIdAktif,
 	jalurAktif,
 	terbentang,
 	onToggle,
+	onSectionAdded,
 }: {
 	node: ChapterTocNode;
 	depth: number;
 	projectId: string;
 	/** Id bab (nyata) pemilik simpul ini — sama untuk simpul akar dan seluruh keturunannya. */
 	chapterIdBab: string | undefined;
+	/** Sama untuk simpul akar dan seluruh keturunannya — gerbang tombol `[+]`. */
+	chapterTerkunci: boolean;
 	chapterAktifId: string;
 	sectionIdAktif: string | null;
 	jalurAktif: Set<string>;
 	terbentang: ReadonlySet<string>;
 	onToggle: (id: string) => void;
+	onSectionAdded: () => void | Promise<void>;
 }) {
 	const isChapterNode = node.urutanBab !== null;
 	const isAktif = node.sectionId
@@ -167,6 +187,26 @@ function TocNode({
 	const diJalurAktif = jalurAktif.has(node.id);
 	const punyaAnak = node.children.length > 0;
 	const terbuka = punyaAnak && terbentang.has(node.id);
+
+	// [+] di BAB: tambah sub-bab. Di sub-bab ber-sectionId (depth 1): tambah sub-sub-bab.
+	const bisaTambah =
+		!chapterTerkunci && !!chapterIdBab && (isChapterNode || (depth === 1 && node.sectionId !== null));
+	const [sedangTambah, setSedangTambah] = React.useState(false);
+
+	async function simpanTambahan(judul: string, panduan: string) {
+		if (!chapterIdBab) return;
+		await chapterRepository.createSection(
+			chapterIdBab,
+			judul,
+			panduan,
+			isChapterNode ? undefined : (node.sectionId ?? undefined),
+		);
+		// Bentangkan kalau tadinya belum punya anak, biar anak barunya langsung kelihatan.
+		const perluBentangSendiri = !punyaAnak;
+		setSedangTambah(false);
+		await onSectionAdded();
+		if (perluBentangSendiri) onToggle(node.id);
+	}
 
 	const kelasLabel = cn(
 		'flex-1 rounded-md px-1.5 py-1.5 text-left text-sm leading-snug transition-colors',
@@ -180,7 +220,7 @@ function TocNode({
 
 	return (
 		<div>
-			<div className="flex items-start">
+			<div className="group flex items-start">
 				{punyaAnak ? (
 					<button
 						type="button"
@@ -235,7 +275,33 @@ function TocNode({
 				) : (
 					<p className={cn(kelasLabel, 'text-muted-foreground')}>{node.label}</p>
 				)}
+
+				{bisaTambah && (
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon-sm"
+						aria-label={`Tambah ${isChapterNode ? 'sub-bab' : 'sub-sub-bab'} di ${node.label}`}
+						onClick={() => {
+							if (punyaAnak && !terbuka) onToggle(node.id);
+							setSedangTambah((v) => !v);
+						}}
+						// Kelihatan pas hover/fokus, atau selalu kalau formnya lagi terbuka.
+						className={cn(
+							'mt-1 size-6 shrink-0 cursor-pointer opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+							sedangTambah && 'opacity-100',
+						)}
+					>
+						<PlusIcon className="size-3.5" />
+					</Button>
+				)}
 			</div>
+
+			{sedangTambah && (
+				<div className="ml-3 border-l border-border pl-1.5">
+					<FormSection onBatal={() => setSedangTambah(false)} onSimpan={simpanTambahan} />
+				</div>
+			)}
 
 			{terbuka && (
 				<div className="ml-3 border-l border-border pl-1.5">
@@ -246,11 +312,13 @@ function TocNode({
 							depth={depth + 1}
 							projectId={projectId}
 							chapterIdBab={chapterIdBab}
+							chapterTerkunci={chapterTerkunci}
 							chapterAktifId={chapterAktifId}
 							sectionIdAktif={sectionIdAktif}
 							jalurAktif={jalurAktif}
 							terbentang={terbentang}
 							onToggle={onToggle}
+							onSectionAdded={onSectionAdded}
 						/>
 					))}
 				</div>

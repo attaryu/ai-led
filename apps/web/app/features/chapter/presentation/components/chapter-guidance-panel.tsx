@@ -12,9 +12,9 @@ import {
 import { ChapterGuidanceDetailSheet } from './chapter-guidance-detail-sheet';
 
 /**
- * Isi tab "Panduan" — panduan LAM Teknik yang jadi rujukan bab ini
- * (docs/application_flow.md §11.1c), dalam dua kelompok: pedoman penulisan
- * (RAG 1) dan rubrik penilaian (RAG 2).
+ * Isi tab "Panduan" — panduan set akreditasi dokumen ini yang jadi rujukan
+ * bab ini (docs/application_flow.md §11.1c), dalam dua kelompok: pedoman
+ * penulisan (RAG 1) dan rubrik penilaian (RAG 2).
  *
  * Murni **read-only**, seperti tab Bukti: tidak ada satu pun aksi di sini, jadi
  * tidak ada cabang `izin.canEdit` sama sekali. §12.2 menuntut seluruh tab tetap
@@ -74,7 +74,7 @@ export function ChapterGuidancePanel({ chapter }: { chapter: ChapterEntity }) {
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
 			<div className="flex shrink-0 flex-wrap items-baseline justify-between gap-x-2 gap-y-1 px-5 pt-4 pb-2">
-				<p className="text-sm font-medium">Panduan LAM Teknik</p>
+				<p className="text-sm font-medium">Panduan Penulisan</p>
 				<span className="text-xs text-muted-foreground">
 					{semuaBaris.length === 0
 						? 'Tidak dicocoki panduan'
@@ -93,7 +93,7 @@ export function ChapterGuidancePanel({ chapter }: { chapter: ChapterEntity }) {
 						 */
 						<p className="py-8 text-center text-xs leading-relaxed text-muted-foreground">
 							Bab ini tidak dicocoki poin panduan maupun indikator rubrik mana
-							pun. Panduan LAM Teknik memang tidak mengatur setiap bab.
+							pun. Panduan Penulisan memang tidak mengatur setiap bab.
 						</p>
 					) : (
 						/*

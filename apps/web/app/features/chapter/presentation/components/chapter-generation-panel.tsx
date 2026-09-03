@@ -124,10 +124,13 @@ export function ChapterGenerationPanel({
 	// lama setelah refresh juga mendorong hasilnya ke editor, bukan cuma
 	// jalur klik manual ini.
 	async function handleGenerateSection(sectionId: string) {
-		await jalankanGenerate(
-			sectionId,
-			rekomendasi?.status === 'DIKONFIRMASI' ? rekomendasi.chapterDraftId : undefined,
-		);
+		// `draftId` cuma dipakai kalau user BELUM nyentang apa pun baru sejak
+		// rekomendasi dikonfirmasi (jumlahBaru === 0) -- sebelum ini draftId
+		// selalu dikirim selama rekomendasi masih DIKONFIRMASI, jadi centang
+		// manual baru diam-diam diabaikan worker (bug nyata, terpilih != apa
+		// yang benar-benar dipakai).
+		const pakaiRekomendasi = rekomendasi?.status === 'DIKONFIRMASI' && jumlahBaru === 0;
+		await jalankanGenerate(sectionId, pakaiRekomendasi ? rekomendasi.chapterDraftId : undefined);
 		await sections.refetch();
 	}
 
@@ -218,18 +221,7 @@ export function ChapterGenerationPanel({
 				</div>
 			</div>
 
-			{/*
-			 * Hanya bagian inilah yang bergulir. Pencarian di atas dan blok generate
-			 * di bawah tetap terlihat berapa pun panjang pustakanya — daftar yang
-			 * mendorong tombolnya keluar layar akan membuat penyusun menggulung balik
-			 * hanya untuk menekan Generate.
-			 *
-			 * `ScrollArea`, bukan `overflow-y-auto`, karena kolomnya sempit: scrollbar
-			 * bawaan Windows selebar ~17 px memakan ruang yang di sini justru paling
-			 * mahal, sementara yang ini 10 px dan menumpang di atas isinya. Dasarnya
-			 * tetap gulungan native, jadi roda tetikus, drag thumb, dan pencarian
-			 * bawaan peramban berperilaku seperti biasa.
-			 */}
+			{/* Satu ScrollArea buat daftar bukti + blok generate -- daftar section 3-level bisa panjang, gak muat kalau blok generate dipaksa shrink-0. */}
 			<ScrollArea className="min-h-0 flex-1">
 				<div className="px-5">
 					{daftar.length === 0 ? (
@@ -254,210 +246,212 @@ export function ChapterGenerationPanel({
 						</ul>
 					)}
 				</div>
-			</ScrollArea>
 
-			<div className="shrink-0 space-y-2 border-t border-border px-5 py-3">
-				{/*
-				 * Auto-centang tanpa keterangan terbaca seperti perilaku hantu: berkas
-				 * yang barusan diunggah tampil mati beberapa detik, lalu tiba-tiba
-				 * tercentang sendiri. Baris ini yang mengumumkannya lebih dulu.
-				 */}
-				{jumlahMenungguOtomatis > 0 && (
-					<p className="text-xs leading-relaxed text-muted-foreground">
-						{jumlahMenungguOtomatis} berkas yang baru diunggah sedang diproses
-						dan akan tercentang sendiri begitu siap dipakai.
-					</p>
-				)}
+				<div className="space-y-2 border-t border-border px-5 py-3">
+					{/*
+					 * Auto-centang tanpa keterangan terbaca seperti perilaku hantu: berkas
+					 * yang barusan diunggah tampil mati beberapa detik, lalu tiba-tiba
+					 * tercentang sendiri. Baris ini yang mengumumkannya lebih dulu.
+					 */}
+					{jumlahMenungguOtomatis > 0 && (
+						<p className="text-xs leading-relaxed text-muted-foreground">
+							{jumlahMenungguOtomatis} berkas yang baru diunggah sedang diproses
+							dan akan tercentang sendiri begitu siap dipakai.
+						</p>
+					)}
 
-				{/*
-				 * Hanya bicara soal berkas yang benar-benar lenyap dari pustaka. Yang
-				 * cuma belum selesai diproses tidak lagi disebut di sini — barisnya
-				 * terlihat di daftar atas lengkap dengan badge dan catatan gagalnya,
-				 * dan karena statusnya tidak berubah sendiri, catatan ini dulu menyala
-				 * permanen sampai berhenti terbaca sebagai kabar.
-				 */}
-				{jumlahGugur > 0 && (
-					<p className="text-xs leading-relaxed text-muted-foreground">
-						{jumlahGugur} bukti dari generate sebelumnya sudah dihapus dari
-						pustaka, jadi tidak ikut tercentang.
-					</p>
-				)}
+					{/*
+					 * Hanya bicara soal berkas yang benar-benar lenyap dari pustaka. Yang
+					 * cuma belum selesai diproses tidak lagi disebut di sini — barisnya
+					 * terlihat di daftar atas lengkap dengan badge dan catatan gagalnya,
+					 * dan karena statusnya tidak berubah sendiri, catatan ini dulu menyala
+					 * permanen sampai berhenti terbaca sebagai kabar.
+					 */}
+					{jumlahGugur > 0 && (
+						<p className="text-xs leading-relaxed text-muted-foreground">
+							{jumlahGugur} bukti dari generate sebelumnya sudah dihapus dari
+							pustaka, jadi tidak ikut tercentang.
+						</p>
+					)}
 
-				{/*
-				 * §1: yang tidak boleh dipakai disembunyikan, bukan ditampilkan mati —
-				 * aturan yang sama dipakai bilah alat editor. Daftar di atas tetap utuh
-				 * karena §12.2 menuntut seluruh tab tetap terbaca saat bab dikunci.
-				 */}
-				{izin.canEdit ? (
-					<>
-						{/*
-						 * Blok gerbang konfirmasi, di kaki panel dekat tombol yang
-						 * digerbanginya — keputusan yang langsung menentukan apakah tombol
-						 * di bawahnya bisa ditekan, jadi keduanya harus terlihat sekaligus.
-						 */}
-						<ChapterDocumentRecommendation
-							rekomendasi={rekomendasi}
-							status={rekomendasiDokumen.status}
-							pesanGagal={rekomendasiDokumen.pesanGagal}
-							jumlahDipilih={terpilih.size}
-							dimatikan={sedangBerjalan}
-							onTrigger={rekomendasiDokumen.trigger}
-							onKonfirmasi={() => rekomendasiDokumen.konfirmasi([...terpilih])}
-						/>
-
-						<div className="flex items-center justify-between gap-2">
-							<button
-								type="button"
-								onClick={() => setPromptTerbuka((terbuka) => !terbuka)}
-								disabled={sedangBerjalan}
-								aria-expanded={promptTerbuka}
-								aria-controls="prompt-generate"
-								className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-							>
-								<CaretDownIcon
-									className={
-										promptTerbuka
-											? 'size-3 shrink-0 rotate-180 transition-transform'
-											: 'size-3 shrink-0 transition-transform'
-									}
-								/>
-								<span className="truncate">
-									{/*
-									 * Prompt yang terisi lalu dilipat tetap ikut terkirim.
-									 * Tanpa penanda ini, pengguna tidak punya cara tahu bahwa
-									 * generate berikutnya masih membawa arahan lama.
-									 */}
-									Prompt tambahan{!promptTerbuka && prompt.trim() && ' · terisi'}
-								</span>
-							</button>
-
-							{sections.dimuat && sections.sections.length === 0 && (
-								<Button
-									type="button"
-									size="sm"
-									onClick={() => sections.generateOutline()}
-									disabled={sedangBerjalan || terpilih.size === 0 || menungguKonfirmasi}
-									className="shrink-0"
-								>
-									{sections.status === 'berjalan' ? (
-										<>
-											<SpinnerGapIcon className="animate-spin" />
-											Menyusun outline…
-										</>
-									) : (
-										<>
-											<SparkleIcon />
-											Buat Outline
-										</>
-									)}
-								</Button>
-							)}
-						</div>
-
-						{menungguKonfirmasi && (
-							<p className="text-xs leading-relaxed text-muted-foreground">
-								Konfirmasi rekomendasi dokumen di atas dulu sebelum generate.
-							</p>
-						)}
-
-						{sections.status === 'gagal' && sections.pesanGagal && (
-							<div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-2.5">
-								<WarningCircleIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
-								<p className="text-xs leading-relaxed text-destructive">
-									{sections.pesanGagal}
-								</p>
-							</div>
-						)}
-
-						{sections.dimuat && (
-							<ChapterSectionList
-								sections={sections.sections}
-								dimatikanEdit={sedangBerjalan}
-								dimatikanGenerate={sedangBerjalan || terpilih.size === 0 || menungguKonfirmasi}
-								onGenerate={handleGenerateSection}
-								onCreate={handleCreateSection}
-								onUpdate={handleUpdateSection}
-								onDelete={handleDeleteSection}
+					{/*
+					 * §1: yang tidak boleh dipakai disembunyikan, bukan ditampilkan mati —
+					 * aturan yang sama dipakai bilah alat editor. Daftar di atas tetap utuh
+					 * karena §12.2 menuntut seluruh tab tetap terbaca saat bab dikunci.
+					 */}
+					{izin.canEdit ? (
+						<>
+							{/*
+							 * Blok gerbang konfirmasi, di kaki panel dekat tombol yang
+							 * digerbanginya — keputusan yang langsung menentukan apakah tombol
+							 * di bawahnya bisa ditekan, jadi keduanya harus terlihat sekaligus.
+							 */}
+							<ChapterDocumentRecommendation
+								rekomendasi={rekomendasi}
+								status={rekomendasiDokumen.status}
+								pesanGagal={rekomendasiDokumen.pesanGagal}
+								jumlahDipilih={terpilih.size}
+								dimatikan={sedangBerjalan}
+								onTrigger={rekomendasiDokumen.trigger}
+								onKonfirmasi={() => rekomendasiDokumen.konfirmasi([...terpilih])}
 							/>
-						)}
 
-						{/*
-						 * Tetap terpasang saat dilipat, bukan dilepas dari pohon: tombol di
-						 * atas menunjuknya lewat `aria-controls`, dan acuan ke elemen yang
-						 * tidak ada membuat pola disclosure-nya tidak bisa diikuti pembaca
-						 * layar. Atribut `hidden` sudah cukup mengeluarkannya dari urutan
-						 * tab maupun pohon aksesibilitas.
-						 */}
-						<Textarea
-							id="prompt-generate"
-							hidden={!promptTerbuka}
-							rows={2}
-							value={prompt}
-							onChange={(event) => setPrompt(event.target.value)}
-							disabled={sedangBerjalan}
-							placeholder="Arahan khusus untuk AI, misal: fokus pada capaian tiga tahun terakhir."
-							aria-label="Prompt tambahan (opsional)"
-							className="max-h-28 min-h-14 resize-none py-1.5 text-xs"
-						/>
+							<div className="flex items-center justify-between gap-2">
+								<button
+									type="button"
+									onClick={() => setPromptTerbuka((terbuka) => !terbuka)}
+									disabled={sedangBerjalan}
+									aria-expanded={promptTerbuka}
+									aria-controls="prompt-generate"
+									className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+								>
+									<CaretDownIcon
+										className={
+											promptTerbuka
+												? 'size-3 shrink-0 rotate-180 transition-transform'
+												: 'size-3 shrink-0 transition-transform'
+										}
+									/>
+									<span className="truncate">
+										{/*
+										 * Prompt yang terisi lalu dilipat tetap ikut terkirim.
+										 * Tanpa penanda ini, pengguna tidak punya cara tahu bahwa
+										 * generate berikutnya masih membawa arahan lama.
+										 */}
+										Prompt tambahan{!promptTerbuka && prompt.trim() && ' · terisi'}
+									</span>
+								</button>
 
-						{sedangBerjalan && (
-							<p className="text-xs leading-relaxed text-muted-foreground">
-								Hasilnya akan langsung menggantikan isi bab ini.
-							</p>
-						)}
-
-						{status === 'gagal' && pesanGagal && (
-							<div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-2.5">
-								<WarningCircleIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
-								<p className="text-xs leading-relaxed text-destructive">
-									{pesanGagal}
-								</p>
-							</div>
-						)}
-
-						{status === 'diam' && digenerateAt && (
-							<p className="text-xs leading-relaxed text-muted-foreground">
-								Digenerate {formatRelativeTimeLong(digenerateAt)} dari{' '}
-								{chapter.buktiDukung.length} bukti dukung.{' '}
-								{/*
-								 * §8.2: checkpoint tidak pernah dibuat sistem sendiri, bahkan
-								 * sesudah generate. Tawarannya diletakkan di sini — tepat di
-								 * tempat hasilnya muncul — supaya jalur yang menandai
-								 * checkpoint bersumber `AI` adalah jalur yang paling dekat.
-								 */}
-								{bisaSimpanDraft ? (
-									<button
+								{sections.dimuat && sections.sections.length === 0 && (
+									<Button
 										type="button"
-										onClick={simpanSebagaiDraft}
-										className="underline underline-offset-4 hover:text-foreground"
+										size="sm"
+										onClick={() => sections.generateOutline()}
+										// Outline tidak pernah baca bukti dukung, jadi tidak digerbang `terpilih`.
+										disabled={sedangBerjalan || menungguKonfirmasi}
+										className="shrink-0"
 									>
-										Simpan sebagai draft
-									</button>
-								) : (
-									versiTersimpan !== null && (
-										<span className="text-foreground">
-											Tersimpan sebagai Versi {versiTersimpan}.
-										</span>
-									)
+										{sections.status === 'berjalan' ? (
+											<>
+												<SpinnerGapIcon className="animate-spin" />
+												Menyusun outline…
+											</>
+										) : (
+											<>
+												<SparkleIcon />
+												Buat Outline
+											</>
+										)}
+									</Button>
 								)}
-							</p>
-						)}
-					</>
-				) : (
-					/*
-					 * Akibatnya lebih dulu, sebabnya belakangan — dua kalimat pendek,
-					 * bukan satu kalimat "X, jadi Y tidak bisa". Yang dicari pembaca
-					 * saat tombolnya mati adalah "apa yang tidak bisa saya lakukan",
-					 * dan itu tidak boleh menunggu sampai anak kalimat kedua.
-					 */
-					<p className="text-xs leading-relaxed text-muted-foreground">
-						{izin.blockedReason === 'terkunci' ||
-						izin.blockedReason === 'diajukan'
-							? `Generate tidak tersedia. ${frasaBlokir[izin.blockedReason]}.`
-							: 'Anda hanya bisa membaca bab ini.'}
-					</p>
-				)}
-			</div>
+							</div>
+
+							{menungguKonfirmasi && (
+								<p className="text-xs leading-relaxed text-muted-foreground">
+									Konfirmasi rekomendasi dokumen di atas dulu sebelum generate.
+								</p>
+							)}
+
+							{sections.status === 'gagal' && sections.pesanGagal && (
+								<div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-2.5">
+									<WarningCircleIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
+									<p className="text-xs leading-relaxed text-destructive">
+										{sections.pesanGagal}
+									</p>
+								</div>
+							)}
+
+							{sections.dimuat && (
+								<ChapterSectionList
+									sections={sections.sections}
+									dimatikanEdit={sedangBerjalan}
+									// Boleh generate tanpa bukti dukung dicentang (mis. section naratif).
+									dimatikanGenerate={sedangBerjalan || menungguKonfirmasi}
+									onGenerate={handleGenerateSection}
+									onCreate={handleCreateSection}
+									onUpdate={handleUpdateSection}
+									onDelete={handleDeleteSection}
+								/>
+							)}
+
+							{/*
+							 * Tetap terpasang saat dilipat, bukan dilepas dari pohon: tombol di
+							 * atas menunjuknya lewat `aria-controls`, dan acuan ke elemen yang
+							 * tidak ada membuat pola disclosure-nya tidak bisa diikuti pembaca
+							 * layar. Atribut `hidden` sudah cukup mengeluarkannya dari urutan
+							 * tab maupun pohon aksesibilitas.
+							 */}
+							<Textarea
+								id="prompt-generate"
+								hidden={!promptTerbuka}
+								rows={2}
+								value={prompt}
+								onChange={(event) => setPrompt(event.target.value)}
+								disabled={sedangBerjalan}
+								placeholder="Arahan khusus untuk AI, misal: fokus pada capaian tiga tahun terakhir."
+								aria-label="Prompt tambahan (opsional)"
+								className="max-h-28 min-h-14 resize-none py-1.5 text-xs"
+							/>
+
+							{sedangBerjalan && (
+								<p className="text-xs leading-relaxed text-muted-foreground">
+									Hasilnya akan langsung menggantikan isi bab ini.
+								</p>
+							)}
+
+							{status === 'gagal' && pesanGagal && (
+								<div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-2.5">
+									<WarningCircleIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
+									<p className="text-xs leading-relaxed text-destructive">
+										{pesanGagal}
+									</p>
+								</div>
+							)}
+
+							{status === 'diam' && digenerateAt && (
+								<p className="text-xs leading-relaxed text-muted-foreground">
+									Digenerate {formatRelativeTimeLong(digenerateAt)} dari{' '}
+									{chapter.buktiDukung.length} bukti dukung.{' '}
+									{/*
+									 * §8.2: checkpoint tidak pernah dibuat sistem sendiri, bahkan
+									 * sesudah generate. Tawarannya diletakkan di sini — tepat di
+									 * tempat hasilnya muncul — supaya jalur yang menandai
+									 * checkpoint bersumber `AI` adalah jalur yang paling dekat.
+									 */}
+									{bisaSimpanDraft ? (
+										<button
+											type="button"
+											onClick={simpanSebagaiDraft}
+											className="underline underline-offset-4 hover:text-foreground"
+										>
+											Simpan sebagai draft
+										</button>
+									) : (
+										versiTersimpan !== null && (
+											<span className="text-foreground">
+												Tersimpan sebagai Versi {versiTersimpan}.
+											</span>
+										)
+									)}
+								</p>
+							)}
+						</>
+					) : (
+						/*
+						 * Akibatnya lebih dulu, sebabnya belakangan — dua kalimat pendek,
+						 * bukan satu kalimat "X, jadi Y tidak bisa". Yang dicari pembaca
+						 * saat tombolnya mati adalah "apa yang tidak bisa saya lakukan",
+						 * dan itu tidak boleh menunggu sampai anak kalimat kedua.
+						 */
+						<p className="text-xs leading-relaxed text-muted-foreground">
+							{izin.blockedReason === 'terkunci' ||
+							izin.blockedReason === 'diajukan'
+								? `Generate tidak tersedia. ${frasaBlokir[izin.blockedReason]}.`
+								: 'Anda hanya bisa membaca bab ini.'}
+						</p>
+					)}
+				</div>
+			</ScrollArea>
 
 			{/*
 			 * Modal yang sama persis dengan yang dipakai kedua Perpustakaan Bukti

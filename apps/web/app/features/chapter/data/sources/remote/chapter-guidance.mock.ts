@@ -1,119 +1,24 @@
-import {
-	rubricScoreTypeLabels,
-	type RubricScoreType,
-} from '../../../domain/entities/rubric-criterion.entity';
-import {
-	type ButirRubrikDipakai,
-	type PoinPanduan,
-} from '../../../domain/entities/guidance-point.entity';
+import { type ButirRubrikDipakai, type PoinPanduan } from '../../../domain/entities/guidance-point.entity';
 
-/**
- * Kutipan panduan yang dipakai AI saat menyusun sebuah bab
- * (docs/application_flow.md §11.1b).
- *
- * Ini **satu-satunya berkas yang perlu diganti** saat backend siap, mengikuti
- * kebiasaan `chapter-chunk.mock.ts` dan `chapter-generation.mock.ts`. Yang
- * sungguhan datang dari `generation_runs.pedoman_used` (RAG 1) dan `rubric_used`
- * (RAG 2) — dua kolom terpisah berisi `[{ id, text }]` (docs/database.md).
- *
- * **Terpisah dari `chapter-chunk.mock.ts`, bukan memakai ulangnya.** Yang itu
- * menggantikan `chunks_used`, masukannya `BuktiDukungRef`, dan pustakanya
- * dikunci token nama berkas. Yang ini menggantikan dua kolom lain, masukannya
- * poin panduan, dan isinya diturunkan dari poinnya sendiri. Menyatukan keduanya
- * berarti satu berkas yang saat backend siap cuma separuhnya boleh dihapus.
- *
- * **Halamannya dihitung, bukan diacak.** Urutannya sudah intrinsik — poin `4.1`
- * mendahului `4.5` di dokumen aslinya — jadi tidak ada yang perlu dijinakkan
- * `sidikJari`. Ini mengikuti aturan yang sudah ditulis
- * `evidence-recommendation.entity.ts`: tidak ada yang perlu diacak, jadi tidak
- * ada yang perlu dijinakkan. Sekaligus menghindarkan seluruh persoalan geser
- * bertanda yang pernah membuat halaman mundur di mock kutipan bukti dukung.
- *
- * **Kutipan rubrik tidak punya halaman, dan itu bukan kelalaian.** Matriks
- * penilaian sebuah **tabel**, bukan dokumen naratif berhalaman — `search_rubric`
- * di `apps/ai` pun mengembalikan potongan bermetadata `sub_bab`, tanpa halaman
- * di mana pun. Nomor halaman untuk satu sel rubrik tidak punya dasar apa pun,
- * sejenis dengan skor kemiripan yang sengaja ditinggalkan
- * `chapter-chunk.mock.ts`. Karena itu asalnya diisi keterangan provenans
- * ("Bunyi kriteria", "Skor 4", "Sumber angka"), bukan halaman.
- */
+/** Kutipan panduan dipakai AI saat menyusun bab. Tanpa nomor halaman (worker belum melacaknya per sub-bab) -- `asal` provenans singkat aja. */
 export type PanduanChunk = {
 	id: string;
 	kutipan: string;
-	/**
-	 * Asal potongan, **sudah jadi**: `hlm. 24` untuk pedoman, `Skor 4` untuk
-	 * rubrik.
-	 *
-	 * Dirakit di sini, bukan di komponen seperti `KutipanChunk` di tab Bukti.
-	 * Alasannya bukan selera: potongan pedoman punya halaman, potongan rubrik
-	 * tidak. Membiarkan komponen memilih di antara keduanya berarti menaruh
-	 * pengetahuan tentang bentuk sumber datanya di lapisan yang paling tidak
-	 * berhak memilikinya.
-	 */
+	/** Asal potongan -- keterangan provenans singkat, bukan halaman (lihat catatan berkas ini). */
 	asal: string;
 	/** Keterangan kedua di eyebrow; `null` bila tidak ada yang perlu ditambah. */
 	judulBagian: string | null;
 };
 
-/** Halaman poin panduan pertama; sisanya menaik dari sini. */
-const HALAMAN_AWAL = 18;
-/** Berapa halaman satu poin menempati di dokumen aslinya. */
-const HALAMAN_PER_POIN = 2;
-/** Berapa nama indikator yang muat dalam satu halaman panduan. */
-const INDIKATOR_PER_HALAMAN = 4;
-
-/**
- * Keterangan singkat tiap tipe skor.
- *
- * Bunyinya diambil dari alasan yang sudah ditulis `rubricScoreTypeEnum`:
- * bedanya nyata, bukan label — indikator kuantitatif dihitung dari tabel LKPS
- * dan tidak membaik seberapa pun narasinya ditambah.
- */
-const CATATAN_TIPE: Record<RubricScoreType, string> = {
-	kuantitatif: 'Dinilai dari angka tabel LKPS, bukan dari narasi.',
-	kualitatif: 'Dinilai dari uraian yang ditulis di LED.',
-	komposit: 'Dinilai dari angka LKPS dan uraian LED sekaligus.',
-};
-
-/**
- * Potongan pedoman penulisan yang dipakai satu bab (`pedoman_used`, RAG 1).
- *
- * Potongan pertama selalu `isiTeks` poin itu sendiri — itu memang yang di-chunk
- * dan di-index menurut docs/database.md §14, bukan berkas mentahnya. Sisanya
- * satu potongan per nama indikator, yang sekaligus menaruh daftar panjang (dua
- * belas indikator untuk Kriteria 4) di laci, bukan di kolom 320 px.
- */
-export function kutipanUntukPedoman({
-	daftarPedoman,
-	poin,
-}: {
-	/** Seluruh poin pedoman bab ini, sudah dimuat pemanggil — dipakai cuma
-	 * untuk menemukan posisi `poin` di antaranya, bukan dimuat ulang di sini
-	 * (fungsi ini sengaja tetap sinkron; `findPanduanForBab` sendiri jaringan). */
-	daftarPedoman: PoinPanduan[];
-	poin: PoinPanduan;
-}): PanduanChunk[] {
-	const urutanPoin = daftarPedoman.findIndex(
-		(kandidat) => kandidat.id === poin.id,
-	);
-	const halamanDasar =
-		HALAMAN_AWAL + Math.max(urutanPoin, 0) * HALAMAN_PER_POIN;
-	const nomor = (urutan: number) =>
-		`chunk-pedoman-${poin.id}-${String(urutan).padStart(2, '0')}`;
-
+/** Satu poin pedoman = satu potongan, teks nyata hasil ekstraksi. */
+export function kutipanUntukPedoman({ poin }: { poin: PoinPanduan }): PanduanChunk[] {
 	return [
 		{
-			id: nomor(1),
+			id: `chunk-pedoman-${poin.id}-01`,
 			kutipan: poin.isiTeks,
-			asal: `hlm. ${halamanDasar}`,
+			asal: 'Struktur Panduan Penulisan',
 			judulBagian: null,
 		},
-		...poin.iku.map((butir, urutan) => ({
-			id: nomor(urutan + 2),
-			kutipan: `${butir.nama}. ${CATATAN_TIPE[butir.tipeSkor]}`,
-			asal: `hlm. ${halamanDasar + Math.floor(urutan / INDIKATOR_PER_HALAMAN)}`,
-			judulBagian: rubricScoreTypeLabels[butir.tipeSkor],
-		})),
 	];
 }
 

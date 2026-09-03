@@ -230,19 +230,20 @@ export const chapterRemoteSource = {
 		return apiFetch<BackendChapterSection[]>(`/bab/${id}/sections`);
 	},
 
-	/**
-	 * Memicu GENERASI_BAB (Producer NestJS -> Worker FastAPI) untuk SATU section.
-	 * `draftId` menamai checkpoint kosong dari alur rekomendasi yang sudah
-	 * dikonfirmasi — worker lalu membatasi pencarian bukti dukungnya ke
-	 * `selectedEvidenceIds` milik rekomendasi itu. Tanpa `draftId`, generate
-	 * berjalan seperti biasa.
-	 */
-	generateSection(id: string, sectionId: string, prompt?: string, draftId?: string): Promise<BackendJob> {
+	/** Memicu GENERASI_BAB untuk SATU section. `draftId` (rekomendasi terkonfirmasi) mengalahkan `selectedEvidenceIds` (picker manual). */
+	generateSection(
+		id: string,
+		sectionId: string,
+		prompt?: string,
+		draftId?: string,
+		selectedEvidenceIds?: string[],
+	): Promise<BackendJob> {
 		return apiFetch<BackendJob>(`/bab/${id}/sections/${sectionId}/generate`, {
 			method: 'POST',
 			body: {
 				...(prompt ? { prompt } : {}),
 				...(draftId ? { draftId } : {}),
+				...(selectedEvidenceIds && selectedEvidenceIds.length > 0 ? { selectedEvidenceIds } : {}),
 			},
 		});
 	},

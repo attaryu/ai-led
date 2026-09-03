@@ -145,13 +145,7 @@ function buildFallbackToc(
 	];
 }
 
-/**
- * Sumber sub-bab netral — dari `ChapterSection` (nyata, navigable) ATAU
- * `SubBabTemplate` (referensi, dekoratif). `anak` — sub-sub-bab nyata hasil
- * ekstraksi/outline (mis. "C.1" di bawah "C. Kriteria Akreditasi"), satu
- * tingkat, lihat `ChapterSection.parentId`/`SubBabTemplate.parentId` di
- * schema.prisma.
- */
+/** Sumber sub-bab netral — `ChapterSection` (nyata) ATAU `SubBabTemplate` (dekoratif); `anak` = sub-sub-bab, satu tingkat. */
 type SubBabItem = { urutan: number; judul: string; sectionId: string | null; anak: SubBabItem[] };
 
 const KRITERIA_RE = /kriteria/i;
@@ -162,20 +156,7 @@ function simpulSubBab(urutanBab: number, item: SubBabItem, jalurLabel: string): 
 	return simpul(`bab-${urutanBab}-sub-${jalurLabel}`, `${jalurLabel}. ${item.judul}`, null, anak, item.sectionId);
 }
 
-/**
- * Anak-anak satu simpul BAB: sub-bab berhuruf (A, B, C…), tiap satu bawa
- * sub-sub-bab NYATA-nya sendiri kalau ekstraksi/outline memang punya
- * (`item.anak`, lihat {@link simpulSubBab}).
- *
- * Kelompok kriteria akreditasi sintetis (dari `rubric_criterion_chapters`,
- * beda tabel dari ekstraksi Panduan — {@link simpulKriteriaUntukBab}) cuma
- * dipasang kalau sub-bab yang judulnya menyebut "kriteria" itu BELUM punya
- * anak nyata sendiri — kalau sudah (C.1, C.2 hasil ekstraksi 3-tingkat),
- * dobel-nya justru bikin bug "C.X nyampur sama C" yang dilaporkan.
- * Gak ada sub-bab yang cocok sama sekali → tetap fallback ke sibling rata
- * (perilaku lama, buat pedoman institusi yang tidak menamainya "Kriteria
- * Akreditasi" tapi kriterianya sudah di-assign manual ke bab ini).
- */
+/** Kelompok kriteria sintetis cuma dipasang kalau sub-bab "kriteria" BELUM punya anak nyata sendiri (hindari dobel). */
 function bangunAnakBab(
 	urutanBab: number,
 	subItems: SubBabItem[],

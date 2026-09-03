@@ -24,10 +24,7 @@ import { ChapterChunkList } from './chapter-chunk-list';
  * tidak bisa dibaca sebagai apa pun. Kelompok mana yang sedang dibuka dikabarkan
  * baris `jejak` di kepalanya.
  *
- * **Catatan kakinya lebih tegas daripada di laci bukti**, dan itu disengaja.
- * Kutipan bukti dukung yang meleset masih bisa diperiksa penggunanya dengan
- * membuka berkasnya sendiri; rumusan panduan yang keliru mengaku menyampaikan
- * tuntutan LAM, dan penyusun yang memercayainya tidak punya cara mendeteksinya.
+ * Catatan kaki: kedua kelompok data nyata sekarang; pedoman ringkasan LLM, rubrik verbatim.
  */
 export function ChapterGuidanceDetailSheet({
 	baris,
@@ -74,7 +71,7 @@ export function ChapterGuidanceDetailSheet({
 				<ChapterChunkList
 					potongan={baris.kutipan}
 					pengantar={baris.pengantar}
-					catatanKaki="Rumusan poin panduan di sini masih contoh dan bukan kutipan resmi LAM Teknik. Nama indikatornya nyata; kalimat penjelasnya menyusul bersama dokumen panduan aslinya."
+					catatanKaki="Poin pedoman penulisan adalah ringkasan LLM (1-2 kalimat) dari dokumen Panduan Penulisan yang diunggah, bukan kutipan kata-demi-kata. Poin rubrik penilaian diambil verbatim dari Matriks Penilaian."
 				/>
 			</SheetBody>
 		</Sheet>

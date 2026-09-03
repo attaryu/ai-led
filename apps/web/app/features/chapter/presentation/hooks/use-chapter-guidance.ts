@@ -69,7 +69,7 @@ export function useChapterGuidance({
 			if (dibatalkan) return;
 
 			const pedoman = daftarPedoman.map<BarisPanduan>((poin) => {
-				const kutipan = kutipanUntukPedoman({ daftarPedoman, poin });
+				const kutipan = kutipanUntukPedoman({ poin });
 				const halamanAwal = kutipan[0]?.asal ?? '';
 				const halamanAkhir = kutipan.at(-1)?.asal ?? '';
 
@@ -102,7 +102,8 @@ export function useChapterGuidance({
 					{
 						kunci: 'pedoman',
 						label: 'Pedoman penulisan',
-						sumber: 'Panduan Penyusunan LED LAM Teknik',
+						// Nama berkas Panduan Penulisan nyata yang diunggah set ini.
+						sumber: daftarPedoman[0]?.sumber.judul ?? 'Panduan Penyusunan LED',
 						baris: pedoman,
 					},
 					{

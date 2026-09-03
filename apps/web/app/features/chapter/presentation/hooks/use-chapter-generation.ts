@@ -449,29 +449,10 @@ export function useChapterGeneration({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [chapter.id]);
 
-	/**
-	 * Memicu GENERASI_BAB sungguhan untuk SATU section (Producer NestJS ->
-	 * Worker FastAPI) lalu menunggu selesainya lewat `tunggu` di atas.
-	 * `sectionId` wajib — outline (daftar section) dikelola `use-chapter-sections.ts`,
-	 * hook ini hanya menjalankan generate-nya memakai evidence/prompt yang
-	 * sama untuk section mana pun yang dipilih pemanggil.
-	 *
-	 * Pemilihan bukti dukung & prompt tambahan: prompt sudah ikut terkirim ke
-	 * worker (lihat `worker.py::_build_section_prompt`), tapi pemilihan bukti
-	 * dukung **belum** — worker menjalankan pencarian bukti LED sendiri lewat
-	 * pgvector, bukan menyaring dari `terpilih`. Daftarnya tetap ditampilkan
-	 * sebagai konteks yang relevan buat penyusun, bukan kontrol yang benar-benar
-	 * mengarahkan generate — celah ini dicatat di tracker, bukan ditutupi diam-diam.
-	 *
-	 * `draftId`, bila diisi pemanggil (`chapter-generation-panel.tsx`, gerbang
-	 * konfirmasi rekomendasi dokumen), justru **membatasi** pencarian itu ke
-	 * `selectedEvidenceIds` milik rekomendasi yang sudah `DIKONFIRMASI` — lihat
-	 * `worker.py::_handle_generasi_bab`. Bab yang tidak pernah memicu alur
-	 * rekomendasi memanggil ini tanpa argumen, tidak berubah dari sebelumnya.
-	 */
+	/** Memicu GENERASI_BAB untuk SATU section. `terpilih` sekarang beneran sampai ke worker (bukan kosmetik lagi); kosong tetap sah. */
 	const jalankanGenerate =
 		React.useCallback(async (sectionId: string, draftId?: string): Promise<HasilGenerate | null> => {
-			if (!enabled || status === 'berjalan' || terpilih.size === 0) return null;
+			if (!enabled || status === 'berjalan') return null;
 
 			setStatus('berjalan');
 			setPesanGagal(null);
@@ -482,6 +463,7 @@ export function useChapterGeneration({
 					sectionId,
 					prompt.trim() || undefined,
 					draftId,
+					[...terpilih],
 				);
 				simpanJobTertunda(chapter.id, JENIS_JOB, job.id);
 				return await tunggu(job.id);

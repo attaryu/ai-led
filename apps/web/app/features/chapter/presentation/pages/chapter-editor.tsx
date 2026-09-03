@@ -36,6 +36,7 @@ import { type HasilPulih } from '../hooks/use-chapter-draft';
 import { type HasilGenerate } from '../hooks/use-chapter-generation';
 import { useChapterPermission } from '../hooks/use-chapter-permission';
 import { usePanelResize } from '../hooks/use-panel-resize';
+import { CITATION_LINK_HREF, sisipkanTautanSitasi } from '../utils/citation-links';
 import { editorExtensions } from '../utils/editor-extensions';
 
 /**
@@ -113,6 +114,17 @@ export function ChapterEditor() {
 		return () => {
 			cancelled = true;
 		};
+	}, [ledProject, chapters]);
+
+	/**
+	 * Bangun ulang pohon Daftar Isi tanpa nunggu efek di atas re-jalan --
+	 * dipanggil `ChapterEditorToc` sesudah nambah sub-bab/sub-sub-bab lewat
+	 * `[+]` di baris pohon, supaya simpul barunya langsung kelihatan tanpa
+	 * pindah bab / reload halaman.
+	 */
+	const refetchChapterToc = React.useCallback(async () => {
+		if (!ledProject || !chapters) return;
+		setChapterToc(await buildChapterToc(ledProject.accreditationSetId, chapters));
 	}, [ledProject, chapters]);
 
 	/**
@@ -266,6 +278,7 @@ export function ChapterEditor() {
 			chapterToc={chapterToc}
 			tocTerbentang={tocTerbentang}
 			onToggleTocNode={toggleTocNode}
+			onSectionAdded={refetchChapterToc}
 		/>
 	);
 }
@@ -287,6 +300,7 @@ function ChapterEditorWorkspace({
 	chapterToc,
 	tocTerbentang,
 	onToggleTocNode,
+	onSectionAdded,
 }: {
 	projectId: string;
 	judulDokumen: string;
@@ -298,6 +312,8 @@ function ChapterEditorWorkspace({
 	chapterToc: ChapterTocNode[];
 	tocTerbentang: ReadonlySet<string>;
 	onToggleTocNode: (id: string) => void;
+	/** Diteruskan ke `ChapterEditorToc` — lihat `refetchChapterToc` di `ChapterEditor`. */
+	onSectionAdded: () => void | Promise<void>;
 }) {
 	const [tabAktif, setTabAktif] = React.useState<PanelTabValue>(
 		PANEL_TABS[0].value,
@@ -396,10 +412,21 @@ function ChapterEditorWorkspace({
 		// berlangganan `storage-update`, supaya siaran autosave tidak memantul
 		// balik dan menimpa dokumen yang sedang diketik. `section` non-undefined
 		// → isi SECTION ini saja, bukan `kontenKerja` bab utuh.
-		content: (section ? section.konten : chapter.kontenKerja) ?? '',
+		content: sisipkanTautanSitasi(
+			(section ? section.konten : chapter.kontenKerja) ?? '',
+			chapter.buktiDukung,
+		),
 		editable: izin.canEdit,
 		editorProps: {
 			attributes: { class: 'tiptap', 'data-slot': 'chapter-editor-content' },
+			// Klik angka sitasi "(sumber: ...)" -> pindah ke tab Bukti, bukan taruh kursor.
+			handleClickOn: (_view, _pos, _node, _nodePos, event) => {
+				const target = (event.target as HTMLElement).closest(`a[href="${CITATION_LINK_HREF}"]`);
+				if (!target) return false;
+				event.preventDefault();
+				setTabAktif('rujukan');
+				return true;
+			},
 		},
 		onUpdate: ({ editor, transaction }) => {
 			// Tidak semua pemberitahuan berarti tulisannya berubah: perubahan
@@ -609,6 +636,7 @@ function ChapterEditorWorkspace({
 						onToggle={onToggleTocNode}
 						terbuka={laci === 'toc'}
 						onTutup={tutupLaci}
+						onSectionAdded={onSectionAdded}
 					/>
 
 					{editor ? (
