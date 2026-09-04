@@ -22,6 +22,7 @@ import {
 	findTocPathForChapter,
 	type ChapterTocNode,
 } from '../../domain/entities/chapter-toc.entity';
+import { ChapterCitationHoverCard } from '../components/chapter-citation-hover-card';
 import { ChapterEditorCanvas } from '../components/chapter-editor-canvas';
 import { ChapterEditorHeader } from '../components/chapter-editor-header';
 import {
@@ -36,6 +37,7 @@ import { type HasilPulih } from '../hooks/use-chapter-draft';
 import { type HasilGenerate } from '../hooks/use-chapter-generation';
 import { useChapterPermission } from '../hooks/use-chapter-permission';
 import { usePanelResize } from '../hooks/use-panel-resize';
+import { useSectionSources } from '../hooks/use-section-sources';
 import { CITATION_LINK_HREF, sisipkanTautanSitasi } from '../utils/citation-links';
 import { editorExtensions } from '../utils/editor-extensions';
 
@@ -401,6 +403,8 @@ function ChapterEditorWorkspace({
 
 	const { markDirty, flush } = autosave;
 
+	const sumberSection = useSectionSources(chapter.id, section?.id);
+
 	const editor = useEditor({
 		extensions: editorExtensions,
 		// Halaman ini dihidrasi React Router (SPA mode), dan membangun editor di
@@ -640,11 +644,14 @@ function ChapterEditorWorkspace({
 					/>
 
 					{editor ? (
-						<ChapterEditorCanvas
-							editor={editor}
-							judulBab={section ? `${chapter.judulBab} — ${section.judul}` : chapter.judulBab}
-							blockedReason={izin.blockedReason}
-						/>
+						<>
+							<ChapterEditorCanvas
+								editor={editor}
+								judulBab={section ? `${chapter.judulBab} — ${section.judul}` : chapter.judulBab}
+								blockedReason={izin.blockedReason}
+							/>
+							<ChapterCitationHoverCard editor={editor} sumber={sumberSection} />
+						</>
 					) : (
 						<main className="min-w-0 flex-1 bg-muted/40 p-8" />
 					)}

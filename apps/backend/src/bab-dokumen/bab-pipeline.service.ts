@@ -39,6 +39,30 @@ export class BabPipelineService {
   }
 
   /**
+   * GET bab/:id/sections/:sectionId/sumber — chunk asli yang dipakai AI
+   * menyusun section ini (worker.py::_handle_generasi_bab's `chunks_used`),
+   * backing the citation hover-card di editor. `null` (bukan array kosong)
+   * kalau section ini belum pernah digenerate lewat job ini (ditulis manual,
+   * atau digenerate sebelum kolom `section_id` ada) -- beda dari "digenerate
+   * tapi tidak ada bukti terpakai", yang sah berupa array kosong.
+   */
+  async findSourcesForSection(id: string, sectionId: string) {
+    await this.access.findOneScoped(id);
+    const section = await this.prisma.chapterSection.findFirst({ where: { id: sectionId, chapterId: id } });
+    if (!section) {
+      throw new NotFoundException('Section tidak ditemukan');
+    }
+
+    const run = await this.prisma.generationRun.findFirst({
+      where: { sectionId },
+      orderBy: { createdAt: 'desc' },
+      select: { chunksUsed: true, createdAt: true },
+    });
+    if (!run) return null;
+    return { chunksUsed: run.chunksUsed, generatedAt: run.createdAt };
+  }
+
+  /**
    * POST bab/:id/sections — tambah section manual, langsung di akhir daftar
    * SAUDARANYA (parentId sama). `dto.parentId` diisi → jadi sub-sub-bab
    * anak section itu (satu tingkat, harus section yang sudah ada & di bab

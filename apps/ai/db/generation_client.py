@@ -461,20 +461,27 @@ def create_generation_run(
     prompt_full: str,
     latency_sec: float,
     token_count: int,
+    section_id: Optional[str] = None,
 ) -> dict:
+    """`section_id` -- the ONE section this call actually generated (worker.py's
+    `_handle_generasi_bab` is per-section) -- backs the citation hover-card
+    (apps/web, read via NestJS/Prisma, not from here): `chunks_used` elements
+    each carry a `citation_label` computed once in worker.py, so the reader
+    never re-derives the folder-name-preference logic itself."""
     run_id = str(uuid.uuid4())
     with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
             INSERT INTO writing_generation_runs
-                (id, chapter_draft_id, model, guidelines_used, rubric_used, checklist,
+                (id, chapter_draft_id, section_id, model, guidelines_used, rubric_used, checklist,
                  chunks_used, judge_result, prompt_full, latency_sec, token_count)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
                 run_id,
                 bab_draft_id,
+                section_id,
                 model,
                 json.dumps(pedoman_used),
                 json.dumps(rubric_used),

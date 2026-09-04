@@ -201,6 +201,19 @@ def test_generates_one_section_and_compiles_chapter():
     assert ragas_metrics["context_recall"] == {"nilai": 0.5, "alasan": ""}
 
 
+def test_generation_run_carries_section_id_and_labeled_chunks():
+    """Backs the citation hover-card (apps/web): chunks_used elements must
+    carry citation_label pre-computed here, and the run must be tied to the
+    section that was actually generated -- not just the compiled bab draft."""
+    led_chunk = {"chunk_id": "c1", "text": "Teks LED.", "metadata": {"page_start": 3}}
+    _, defaults = _run(_fake_job(), search_led=MagicMock(return_value=[led_chunk]))
+
+    call = defaults["create_generation_run"].call_args
+    assert call.kwargs["section_id"] == "sec-1"
+    chunks_used = call.kwargs["chunks_used"]
+    assert chunks_used == [{**led_chunk, "citation_label": "LED hal. 3", "kind": "led"}]
+
+
 def test_retrieval_query_uses_section_guidance_not_chapter_title():
     _, defaults = _run(_fake_job())
     query = defaults["search_led"].call_args.args[0]

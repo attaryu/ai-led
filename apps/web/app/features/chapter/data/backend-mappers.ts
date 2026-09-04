@@ -1,6 +1,7 @@
 import { type BuktiDukungRef } from '../domain/entities/bukti-dukung-ref.entity';
 import { type ChapterScoreEntity } from '../domain/entities/chapter-score.entity';
 import { type ChapterSectionEntity } from '../domain/entities/chapter-section.entity';
+import { type SectionSumber } from '../domain/entities/chunk-sumber.entity';
 import { type DocumentRecommendationEntity } from '../domain/entities/document-recommendation.entity';
 import { type RagasMetrik, type RagasScore } from '../domain/entities/ragas-score.entity';
 import {
@@ -10,6 +11,7 @@ import {
 	type BackendDocumentRecommendation,
 	type BackendHasilSkorKriteria,
 	type BackendRagasScore,
+	type BackendSectionSumber,
 } from './sources/remote/chapter.remote-source';
 
 /**
@@ -118,6 +120,18 @@ export function mapHasilSkor(rows: BackendHasilSkorKriteria[] | undefined): Chap
 		dijalankanOlehNama: row.runByName,
 		dijalankanPada: row.runAt,
 	}));
+}
+
+export function mapSectionSumber(row: BackendSectionSumber): SectionSumber {
+	if (!row) return null;
+	return {
+		chunks: row.chunksUsed.map((chunk) => ({
+			label: chunk.citation_label,
+			teks: chunk.text,
+			jenis: chunk.kind,
+		})),
+		digenerateAt: row.generatedAt,
+	};
 }
 
 export function mapChapterSection(row: BackendChapterSection): ChapterSectionEntity {
