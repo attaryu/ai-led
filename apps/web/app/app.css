@@ -297,6 +297,23 @@ body {
     padding-inline-start: 0.75rem;
     color: var(--muted-foreground);
   }
+  /*
+   * Sitasi "(sumber: X)" (citation-links.ts::sisipkanTautanSitasi) --
+   * TANPA aturan ini `<span data-citation-label>` (LED/LKPS, tanpa `href`)
+   * tidak beda sama sekali dari teks biasa, dan `<a href="#bukti-dukung">`
+   * (Evidence terkonfirmasi) cuma dapat biru-garis-bawah bawaan browser --
+   * keduanya tidak mengundang orang buat hover ke chapter-citation-hover-card.tsx.
+   */
+  .tiptap [data-citation-label] {
+    border-radius: 4px;
+    padding-inline: 0.2em;
+    margin-inline: -0.1em;
+    background-color: var(--accent);
+    color: var(--accent-foreground);
+    cursor: pointer;
+    text-decoration: none;
+  }
+
   /* Penanda bab kosong: tanpa ini kanvas kosong tidak memberi petunjuk apa pun. */
   .tiptap p.is-editor-empty:first-child::before {
     content: attr(data-placeholder);
