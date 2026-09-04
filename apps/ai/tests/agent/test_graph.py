@@ -1148,3 +1148,34 @@ def test_collect_evidence_text_includes_evidence_tool_by_default():
     ]
     combined = collect_evidence_text(messages)
     assert "Sertifikat menunjukkan Y" in combined
+
+
+def test_formula_data_confirmed_unavailable_true_when_lkps_reports_not_found():
+    """Escape valve for the force-finalize give_up dead-end (port of ariel's
+    3d4d1fe, reported against this exact fork): a formula/quantitative
+    indicator can finalize without compute_formula_score once get_lkps_table
+    has been called and its own result confirms the table doesn't exist."""
+    import json
+    from agent.graph import formula_data_confirmed_unavailable
+
+    rubric_json = '{"score_type": "quantitative", "formula": "(2 x DPD) / 5000000"}'
+    lkps_result = json.dumps(
+        {"error": "Tabel 'Tabel 2.b. LKPS' tidak ditemukan", "available_refs": []}
+    )
+    assert formula_data_confirmed_unavailable(rubric_json, lkps_result) is True
+
+
+def test_formula_data_confirmed_unavailable_false_cases():
+    import json
+    from agent.graph import formula_data_confirmed_unavailable
+
+    quantitative = '{"score_type": "quantitative", "formula": "BOP / 5000000"}'
+    qualitative = '{"score_type": "qualitative", "formula": null}'
+    not_found = json.dumps({"error": "Tabel 'X' tidak ditemukan"})
+
+    # No LKPS result at all — tool was never called.
+    assert formula_data_confirmed_unavailable(quantitative, None) is False
+    # Qualitative indicators never require the formula tool in the first place.
+    assert formula_data_confirmed_unavailable(qualitative, not_found) is False
+    # A successful (non-error) LKPS result must not be mistaken for "missing".
+    assert formula_data_confirmed_unavailable(quantitative, "| DPD |\n|---|\n| 9000000 |") is False

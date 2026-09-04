@@ -32,6 +32,7 @@ from agent.graph import (
     _EMPTY_SOURCES,
     build_judge_llm,
     compute_decimal_score,
+    formula_data_confirmed_unavailable,
     parse_checklist,
     parse_judge_verdict,
     requires_formula_tool,
@@ -323,9 +324,18 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
 
             rubric_json = _find_reasoning_tool_result(state["messages"], "get_indicator_rubric")
             if requires_formula_tool(rubric_json) and "tool:compute_formula_score" not in iters:
-                return _force_or_give_up(
-                    state, "Quantitative/composite indicator finalized without calling compute_formula_score"
+                # ...UNLESS get_lkps_table was already called and confirmed
+                # the referenced table doesn't exist in this upload (no real
+                # numbers to compute with -- see formula_data_confirmed_unavailable).
+                lkps_result = (
+                    _find_reasoning_tool_result(state["messages"], "get_lkps_table")
+                    if "tool:get_lkps_table" in iters
+                    else None
                 )
+                if not formula_data_confirmed_unavailable(rubric_json, lkps_result):
+                    return _force_or_give_up(
+                        state, "Quantitative/composite indicator finalized without calling compute_formula_score"
+                    )
             return "finalize"
 
         if action in _TOOL_REGISTRY:
@@ -509,7 +519,11 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
                 "menghitung skornya — JANGAN menghitung manual di kepala, karena rawan salah "
                 "menerapkan cabang rumus (band mana yang berlaku sesuai kondisinya) atau salah "
                 "aritmatika. Ambil variabel yang dibutuhkan dari LKPS/LED yang sudah dicari, "
-                "lalu panggil compute_formula_score sebelum memberi skor final."
+                "lalu panggil compute_formula_score sebelum memberi skor final. Jika Anda sudah "
+                "memanggil get_lkps_table untuk tabel yang direferensikan rubrik ini dan hasilnya "
+                "menyatakan tabel tersebut tidak ditemukan, JANGAN mengarang angka — sebutkan "
+                "secara eksplisit di justification bahwa data LKPS tidak tersedia, lalu berikan "
+                "skor konservatif dengan confidence rendah (0.1-0.3)."
             )
         else:
             nudge = (

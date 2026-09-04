@@ -324,6 +324,29 @@ def requires_formula_tool(rubric_json: Optional[str]) -> bool:
     )
 
 
+def formula_data_confirmed_unavailable(
+    rubric_json: Optional[str], lkps_result: Optional[str]
+) -> bool:
+    """Whether get_lkps_table was called for a formula/quantitative
+    indicator and its own result confirms the referenced table doesn't
+    exist in the uploaded LKPS — a legitimate reason to finalize without
+    ever calling compute_formula_score (there are no real numbers to
+    substitute), distinct from skipping the tool out of laziness or
+    fabricating numbers just to satisfy the gate. Requires the tool's own
+    structured error marker (agent/tools/lkps_tool.py's
+    `{"error": "Tabel '...' tidak ditemukan"}`), not a bare substring guess
+    against arbitrary tool output."""
+    if not requires_formula_tool(rubric_json):
+        return False
+    if not lkps_result:
+        return False
+    try:
+        parsed = json.loads(lkps_result)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return isinstance(parsed, dict) and "tidak ditemukan" in str(parsed.get("error", "")).lower()
+
+
 # ---------------------------------------------------------------------------
 # Decimal score refinement — shared by graph.py and reasoning_graph.py
 # ---------------------------------------------------------------------------
@@ -740,7 +763,21 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
                 if requires_formula_tool(rubric_json) and not has_called_tool(
                     state["messages"], "compute_formula_score"
                 ):
-                    return "force" if forces < FORCE_LIMIT else "give_up"
+                    # ...UNLESS get_lkps_table was already called and its own
+                    # result confirms the referenced table doesn't exist in
+                    # this upload -- there are no real numbers to substitute
+                    # then, and forcing more retries only pushes the model
+                    # toward fabricating some (previously: an honest "data
+                    # unavailable" answer was rejected identically to a lazy
+                    # one, exhausting FORCE_LIMIT into a give_up with zero
+                    # info for the reviewer).
+                    lkps_result = (
+                        find_tool_result(state["messages"], "get_lkps_table")
+                        if has_called_tool(state["messages"], "get_lkps_table")
+                        else None
+                    )
+                    if not formula_data_confirmed_unavailable(rubric_json, lkps_result):
+                        return "force" if forces < FORCE_LIMIT else "give_up"
                 return "parse_output"
             return "force" if forces < FORCE_LIMIT else "give_up"
 
@@ -801,7 +838,11 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
                 "menghitung skornya — JANGAN menghitung manual di kepala, karena rawan salah "
                 "menerapkan cabang rumus (band mana yang berlaku sesuai kondisinya) atau salah "
                 "aritmatika. Ambil variabel yang dibutuhkan dari LKPS/LED yang sudah dicari, "
-                "lalu panggil compute_formula_score sebelum memberi skor final."
+                "lalu panggil compute_formula_score sebelum memberi skor final. Jika Anda sudah "
+                "memanggil get_lkps_table untuk tabel yang direferensikan rubrik ini dan hasilnya "
+                "menyatakan tabel tersebut tidak ditemukan, JANGAN mengarang angka — sebutkan "
+                "secara eksplisit di JUSTIFIKASI bahwa data LKPS tidak tersedia, lalu berikan "
+                "skor konservatif dengan CONFIDENCE rendah (0.1-0.3)."
             )
         else:
             nudge = (
