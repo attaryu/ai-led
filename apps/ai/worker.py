@@ -139,6 +139,13 @@ def _strip_think(raw: str) -> str:
     return _THINK_RE.sub("", raw or "").strip()
 
 
+def _err_msg(e: Exception) -> str:
+    """`str(e)` is empty for exceptions like httpx.ReadError (network drop
+    mid-stream against the remote Ollama endpoint) that carry no message --
+    falls back to the class name so GAGAL/error fields are never blank."""
+    return str(e) or type(e).__name__
+
+
 def _parse_llm_json(raw: str) -> dict:
     try:
         return json.loads(raw)
@@ -648,6 +655,26 @@ def _parse_judge_json(raw: str) -> dict:
     return {"raw": raw, "parse_error": "could not extract any metric"}
 
 
+_RAGAS_JUDGE_KEYS = ("faithfulness", "answer_relevancy", "context_precision", "context_recall")
+
+
+def _judge_to_ragas_metrics(judge_result: dict) -> dict[str, dict]:
+    """Reshapes judge output into writing_ragas_scores.metrics's JSON shape
+    ({metric: {nilai, alasan}}) for the "Skor" tab (create_ragas_score below)
+    -- all-or-nothing: skips entirely on judge error or a missing/non-numeric
+    metric, same discipline the old library-based ragas_scores had."""
+    if "error" in judge_result:
+        return {}
+    reasoning = judge_result.get("reasoning") or {}
+    metrics: dict[str, dict] = {}
+    for key in _RAGAS_JUDGE_KEYS:
+        value = judge_result.get(key)
+        if not isinstance(value, (int, float)):
+            return {}
+        metrics[key] = {"nilai": float(value), "alasan": reasoning.get(key) or ""}
+    return metrics
+
+
 # ──────────────────────────────────────────────────────────────────────
 # Outline generation (GENERASI_OUTLINE_BAB) — LLM menyusun daftar section
 # per bab, dituntun kelompok kriteria rubrik tenant itu sendiri (bukan JSON
@@ -792,7 +819,7 @@ async def _handle_generasi_outline_bab(job) -> dict:
 
     llm = build_plain_llm()
     try:
-        raw = await llm.ainvoke(
+        raw = await llm.with_retry().ainvoke(
             _build_outline_prompt(bab["chapter_title"], kelompok, pedoman, struktur_referensi)
         )
         sections = _parse_outline(raw.content)
@@ -938,7 +965,6 @@ async def _handle_generasi_bab(job) -> dict:
         update_bab_dokumen_aktif,
         update_chapter_section,
     )
-    from eval.ragas_eval import score_single_sample
     from llm.chat_model import build_judge_llm, build_plain_llm
     from vectorstore.pgvector_evidence_store import search_evidence
     from vectorstore.pgvector_store import search_led
@@ -1000,7 +1026,7 @@ async def _handle_generasi_bab(job) -> dict:
             list(evidence_labels.values()),
         )
         try:
-            checklist_raw = await llm.ainvoke(checklist_prompt)
+            checklist_raw = await llm.with_retry().ainvoke(checklist_prompt)
             checklist = _parse_checklist(checklist_raw.content)
         except Exception:
             logger.exception("Checklist LLM gagal untuk section %s, pakai fallback", section_id)
@@ -1037,25 +1063,20 @@ async def _handle_generasi_bab(job) -> dict:
             section["title"], bab["chapter_title"], pedoman, rubric, checklist, chunks, lkps_tables,
             evidence_chunks, evidence_labels, payload.get("prompt"), institution_context,
         )
-        response = await llm.ainvoke(prompt)
+        response = await llm.with_retry().ainvoke(prompt)
         markdown_text = response.content
         html = md_lib.markdown(markdown_text)
         latency_sec = time.time() - t0
 
-        # 4a. RAGAS: faithfulness / answer_relevancy / context_precision.
-        try:
-            ragas_scores = score_single_sample(
-                question=section["title"],
-                answer=markdown_text,
-                contexts=[c["text"] for c in chunks],
-            )
-        except Exception:
-            logger.exception("RAGAS scoring gagal untuk section %s, lanjut tanpa skor", section_id)
-            ragas_scores = {}
-
-        # 4b. LLM-as-judge (port of SYSTEM_JUDGE) — separate model
-        # (llm/chat_model.py::build_judge_llm), degrades to {"error": ...} rather
-        # than crashing the job, same style as the RAGAS try/except above.
+        # 4. LLM-as-judge (port of Dimas's SYSTEM_JUDGE, generator.py::_judge) —
+        # separate model (llm/chat_model.py::build_judge_llm), degrades to
+        # {"error": ...} rather than crashing the job. Also backs the "Skor"
+        # tab (writing_ragas_scores) below -- dev-v1 used to run the real
+        # `ragas` library live here too, but its internal JSON-format prompts
+        # are too strict for local LLMs (frequent RagasOutputParserException
+        # noise); Dimas never ran it live either, only offline via
+        # scripts/evaluate.py, so that live call is dropped in favor of this
+        # judge's own 4 metrics.
         judge_facts = (
             [{"text": c["text"], "filename": _led_citation_label(c)} for c in chunks]
             + [{"text": c["text"], "filename": _evidence_citation_label(c, evidence_labels)} for c in evidence_chunks]
@@ -1063,13 +1084,14 @@ async def _handle_generasi_bab(job) -> dict:
         )
         try:
             judge_llm = build_judge_llm()
-            judge_raw = await judge_llm.ainvoke(
+            judge_raw = await judge_llm.with_retry().ainvoke(
                 _build_judge_prompt(section["title"], markdown_text, rubric, judge_facts)
             )
             judge_result = _parse_judge_json(judge_raw.content)
         except Exception as e:
             logger.exception("Judge LLM gagal untuk section %s, lanjut tanpa skor judge", section_id)
-            judge_result = {"error": str(e)}
+            judge_result = {"error": _err_msg(e)}
+        ragas_scores = _judge_to_ragas_metrics(judge_result)
 
         model_name = getattr(llm, "model", getattr(llm, "model_name", "unknown"))
         section_konten = {"format": "html", "body": html, "markdown": markdown_text}
@@ -1078,7 +1100,7 @@ async def _handle_generasi_bab(job) -> dict:
         )
     except Exception as e:
         logger.exception("Generate section %s gagal", section_id)
-        update_chapter_section(bab["tenant_id"], section_id, status="ERROR", error=str(e))
+        update_chapter_section(bab["tenant_id"], section_id, status="ERROR", error=_err_msg(e))
         raise
 
     # Compile: gabung SEMUA section GENERATED milik bab ini jadi satu
@@ -1198,7 +1220,7 @@ async def _handle_rekomendasi_dokumen(job) -> dict:
             assess_data = _parse_llm_json(_strip_think(raw.content))
         except Exception as e:
             logger.exception("assess_and_recommend LLM gagal untuk bab %s", bab_id)
-            assess_data = {"recommendation_text": f"Gagal menyusun rekomendasi: {e}", "items": []}
+            assess_data = {"recommendation_text": f"Gagal menyusun rekomendasi: {_err_msg(e)}", "items": []}
             break
         if not assess_data.get("parse_error"):
             break
@@ -1378,7 +1400,7 @@ async def _handle_simulasi_skor(job) -> dict:
 
     prompt = _build_simulasi_skor_prompt(bab["chapter_title"], konten, kriteria)
     llm = build_plain_llm()
-    response = await llm.ainvoke(prompt)
+    response = await llm.with_retry().ainvoke(prompt)
     parsed = _extract_json(response.content)
     dinilai = parsed.get("skor") if isinstance(parsed, dict) else None
     if not isinstance(dinilai, list):
@@ -1609,8 +1631,8 @@ async def _handle_ingestion_bukti_dukung(job) -> dict:
         return {"status": "unsupported", "buktiDukungId": bukti_dukung_id, "reason": str(e)}
     except Exception as e:
         logger.exception("Ingestion gagal untuk bukti_dukung %s", bukti_dukung_id)
-        _set_status("GAGAL", str(e)[:500])
-        return {"status": "error", "buktiDukungId": bukti_dukung_id, "reason": str(e)}
+        _set_status("GAGAL", _err_msg(e)[:500])
+        return {"status": "error", "buktiDukungId": bukti_dukung_id, "reason": _err_msg(e)}
 
     _set_status("SIAP", None)
     return {"status": "completed", "buktiDukungId": bukti_dukung_id, "chunks": len(chunks)}
@@ -1669,8 +1691,8 @@ async def _handle_ingestion_rubrik_dokumen(job) -> dict:
         return {"status": "in_use", "accreditationSetId": accreditation_set_id, "reason": str(e)}
     except Exception as e:
         logger.exception("Parsing rubrik gagal untuk set %s", accreditation_set_id)
-        _set_status("GAGAL", str(e)[:500])
-        return {"status": "error", "accreditationSetId": accreditation_set_id, "reason": str(e)}
+        _set_status("GAGAL", _err_msg(e)[:500])
+        return {"status": "error", "accreditationSetId": accreditation_set_id, "reason": _err_msg(e)}
 
     _set_status("SIAP", None)
     return {"status": "completed", "accreditationSetId": accreditation_set_id, "count": count}
@@ -1859,8 +1881,22 @@ async def _handle_ingestion_struktur_dokumen(job) -> dict:
             return {"status": "empty", "accreditationSetId": accreditation_set_id}
 
         llm = build_plain_llm()
-        raw = await llm.ainvoke(_build_struktur_dokumen_prompt(teks_pedoman))
-        bab_list = _parse_struktur_dokumen(raw.content)
+        struktur_prompt = _build_struktur_dokumen_prompt(teks_pedoman)
+        # Retry up to 3x on an EMPTY result only (network/invoke errors are
+        # already handled by .with_retry() above) -- the model occasionally
+        # answers {"bab": []} or malformed JSON for a well-formed panduan on
+        # one sampling, same flakiness Dimas hit for assess_and_recommend
+        # (_handle_rekomendasi_dokumen's identical 3-attempt loop).
+        bab_list: list[dict] = []
+        for attempt in range(3):
+            raw = await llm.with_retry().ainvoke(struktur_prompt)
+            bab_list = _parse_struktur_dokumen(raw.content)
+            if bab_list:
+                break
+            logger.warning(
+                "LLM tidak menghasilkan struktur bab (percobaan %d/3) untuk set %s",
+                attempt + 1, accreditation_set_id,
+            )
 
         if not bab_list:
             _set_status(
@@ -1872,8 +1908,8 @@ async def _handle_ingestion_struktur_dokumen(job) -> dict:
         count = replace_chapter_templates_for_set(tenant_id, accreditation_set_id, bab_list)
     except Exception as e:
         logger.exception("Ekstraksi struktur dokumen gagal untuk set %s", accreditation_set_id)
-        _set_status("GAGAL", str(e)[:500])
-        return {"status": "error", "accreditationSetId": accreditation_set_id, "reason": str(e)}
+        _set_status("GAGAL", _err_msg(e)[:500])
+        return {"status": "error", "accreditationSetId": accreditation_set_id, "reason": _err_msg(e)}
 
     _set_status("SIAP", None)
     return {"status": "completed", "accreditationSetId": accreditation_set_id, "count": count}

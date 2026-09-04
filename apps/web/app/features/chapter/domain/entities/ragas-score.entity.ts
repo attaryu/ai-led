@@ -17,16 +17,18 @@ import { z } from 'zod';
  * ditulis ke basis data bersama `konten_kerja` dan `BUKTI_DUKUNG_BAB`. Celah itu
  * dicatat di `database.md`, bukan ditambal diam-diam.
  *
- * **`context_recall` sengaja tidak ada.** Metrik itu menuntut `reference` —
- * jawaban acuan yang dianggap benar untuk dibandingkan. LED tidak punya itu:
- * justru dokumen inilah yang sedang disusun, dan tidak ada versi "yang benar"
- * untuk diperbandingkan. Menampilkannya berarti menyediakan tempat kosong yang
- * tidak akan pernah terisi jujur.
+ * **Dihitung LLM-as-judge, bukan library `ragas` langsung** (lihat
+ * `worker.py::_judge_to_ragas_metrics`) — library aslinya butuh LLM patuh
+ * ketat ke format JSON internalnya sendiri, yang gagal terlalu sering dengan
+ * model lokal. `context_recall` karena itu bisa ikut ditampilkan (LLM judge
+ * yang menilai coverage-nya sendiri, bukan dihitung dari `reference` yang LED
+ * memang tidak punya).
  */
 export const ragasMetrikEnum = z.enum([
 	'faithfulness',
-	'response_relevancy',
+	'answer_relevancy',
 	'context_precision',
+	'context_recall',
 ]);
 
 export type RagasMetrik = z.infer<typeof ragasMetrikEnum>;
@@ -64,7 +66,7 @@ export const RAGAS_METRIK_INFO: Record<
 		diukur:
 			'Seberapa banyak pernyataan di hasil generate yang benar-benar bisa ditelusuri ke bukti dukung dan panduan yang diambil. Nilai rendah berarti AI menambahkan hal yang tidak ada di sumbernya.',
 	},
-	response_relevancy: {
+	answer_relevancy: {
 		label: 'Relevansi jawaban',
 		diukur:
 			'Seberapa nyambung hasilnya dengan bab yang diminta beserta arahan tambahan penyusun. Nilai rendah berarti tulisannya melebar ke hal yang tidak ditanyakan.',
@@ -74,13 +76,19 @@ export const RAGAS_METRIK_INFO: Record<
 		diukur:
 			'Seberapa besar bagian potongan sumber yang diambil ternyata memang terpakai. Nilai rendah berarti retrieval membawa banyak potongan yang tidak relevan.',
 	},
+	context_recall: {
+		label: 'Cakupan konteks',
+		diukur:
+			'Seberapa lengkap potongan sumber yang diambil menutupi fakta yang seharusnya dibahas bagian ini. Nilai rendah berarti ada fakta relevan yang tidak ter-retrieve.',
+	},
 };
 
 /** Urutan tampil; dari yang paling menentukan kepercayaan pada hasilnya. */
 export const RAGAS_URUTAN: RagasMetrik[] = [
 	'faithfulness',
-	'response_relevancy',
+	'answer_relevancy',
 	'context_precision',
+	'context_recall',
 ];
 
 /**

@@ -49,22 +49,25 @@ export function mapBuktiDukungRef(
 }
 
 /**
- * RAGAS asli tidak menyertakan alasan per metrik — angkanya murni numerik
- * (lihat `eval/ragas_eval.py::score_single_sample`). Diisi kalimat metodologi
- * yang sama untuk ketiganya, bukan mengarang alasan spesifik yang tidak
- * pernah dihasilkan model manapun.
+ * Fallback untuk baris lama yang ditulis sebelum skor ini dihitung LLM-as-judge
+ * (`worker.py::_judge_to_ragas_metrics`) — waktu itu `metrics` masih angka
+ * polos tanpa alasan (lihat `create_ragas_score`'s doc lama, port library
+ * `ragas` yang tidak pernah kasih alasan per metrik).
  */
-const ALASAN_RAGAS =
-	'Dihitung otomatis oleh evaluasi RAGAS terhadap potongan sumber yang diambil untuk generate ini.';
+const ALASAN_FALLBACK =
+	'Dihitung otomatis dari evaluasi mutu jawaban AI untuk generate ini.';
 
 export function mapRagas(row: BackendRagasScore | undefined): RagasScore | null {
 	if (!row) return null;
 
-	const metrik = Object.entries(row.metrics).map(([nama, nilai]) => ({
-		metrik: nama as RagasMetrik,
-		nilai,
-		alasan: ALASAN_RAGAS,
-	}));
+	const metrik = Object.entries(row.metrics).map(([nama, nilai]) => {
+		const legacy = typeof nilai === 'number';
+		return {
+			metrik: nama as RagasMetrik,
+			nilai: legacy ? nilai : nilai.nilai,
+			alasan: legacy ? ALASAN_FALLBACK : nilai.alasan || ALASAN_FALLBACK,
+		};
+	});
 
 	return {
 		metrik,

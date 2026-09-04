@@ -493,12 +493,15 @@ def create_ragas_score(
     tenant_id: str,
     bab_id: str,
     bab_draft_id: str,
-    metrik: dict[str, float],
+    metrik: dict[str, dict],
     jumlah_chunk: int,
 ) -> dict:
     """target_tipe=BAB_AKTIF — this row is for the chapter's current active
     state, not a permanent checkpoint score (that's a separate call with
-    target_tipe=BAB_DRAFT, not needed for this job's DoD)."""
+    target_tipe=BAB_DRAFT, not needed for this job's DoD).
+
+    `metrik` is worker.py::_judge_to_ragas_metrics's output —
+    {metric_key: {"nilai": float, "alasan": str}}, not a bare float map."""
     score_id = str(uuid.uuid4())
     with tenant_cursor(tenant_id) as cur:
         cur.execute(

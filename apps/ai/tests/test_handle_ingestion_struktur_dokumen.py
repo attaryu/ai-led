@@ -20,6 +20,7 @@ def _fake_job(accreditation_set_id="set-1", file_url="tenant-1/panduan.pdf"):
 def _run(job, llm_content, pdf_pages=None, **overrides):
     llm = MagicMock()
     llm.ainvoke = AsyncMock(return_value=MagicMock(content=llm_content))
+    llm.with_retry.return_value = llm  # worker.py wraps every .ainvoke() call in .with_retry()
 
     defaults = dict(
         download_to=MagicMock(),
@@ -194,6 +195,55 @@ def test_llm_returning_no_bab_marks_gagal():
     assert result["status"] == "empty"
     assert _status_calls(defaults["status_updates"])[-1][0] == "GAGAL"
     defaults["replace_chapter_templates_for_set"].assert_not_called()
+    assert defaults["llm"].ainvoke.call_count == 3  # exhausted all 3 retry attempts
+
+
+def test_empty_result_on_first_attempt_retries_and_succeeds():
+    """Real production case: the model answered {"bab": []} for a
+    well-formed panduan on one sampling, then a clean structure on retry --
+    same flakiness _handle_rekomendasi_dokumen already retries around."""
+    job = _fake_job()
+    llm = MagicMock()
+    llm.ainvoke = AsyncMock(side_effect=[
+        MagicMock(content='{"bab": []}'),
+        MagicMock(content='{"bab": [{"urutan": 1, "judul": "Pendahuluan", "subbab": []}]}'),
+    ])
+    llm.with_retry.return_value = llm
+
+    defaults = dict(
+        download_to=MagicMock(),
+        get_accreditation_set_tenant=MagicMock(return_value="tenant-1"),
+        replace_chapter_templates_for_set=MagicMock(return_value=1),
+        extract_pdf_pages=MagicMock(return_value=["Teks pedoman contoh."]),
+        status_updates=MagicMock(),
+    )
+
+    from worker import _handle_ingestion_struktur_dokumen
+
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(patch("llm.chat_model.build_plain_llm", return_value=llm))
+        stack.enter_context(patch("db.r2_client.download_to", defaults["download_to"]))
+        stack.enter_context(
+            patch("db.postgres_client.get_accreditation_set_tenant", defaults["get_accreditation_set_tenant"])
+        )
+        stack.enter_context(
+            patch("db.postgres_client.replace_chapter_templates_for_set", defaults["replace_chapter_templates_for_set"])
+        )
+        stack.enter_context(patch("worker._extract_pdf_pages", defaults["extract_pdf_pages"]))
+        fake_cursor = MagicMock()
+        fake_cursor.__enter__ = MagicMock(return_value=fake_cursor)
+        fake_cursor.__exit__ = MagicMock(return_value=False)
+        fake_cursor.execute = defaults["status_updates"]
+        fake_tenant_cursor_cm = MagicMock()
+        fake_tenant_cursor_cm.__enter__ = MagicMock(return_value=fake_cursor)
+        fake_tenant_cursor_cm.__exit__ = MagicMock(return_value=False)
+        stack.enter_context(patch("db.connection.tenant_cursor", MagicMock(return_value=fake_tenant_cursor_cm)))
+
+        result = asyncio.run(_handle_ingestion_struktur_dokumen(job))
+
+    assert result == {"status": "completed", "accreditationSetId": "set-1", "count": 1}
+    assert llm.ainvoke.call_count == 2
+    assert _status_calls(defaults["status_updates"])[-1] == ("SIAP", None)
 
 
 def test_unexpected_exception_marks_gagal_with_message():
@@ -205,3 +255,18 @@ def test_unexpected_exception_marks_gagal_with_message():
     assert result["status"] == "error"
     assert "db down" in result["reason"]
     assert _status_calls(defaults["status_updates"])[-1][0] == "GAGAL"
+
+
+def test_exception_with_no_message_falls_back_to_class_name():
+    """Real production case: httpx.ReadError (network drop mid-stream, no
+    exception message) left `reason: ''` and a blank criteria_parse_error in
+    the DB -- worker.py::_err_msg falls back to the exception's class name
+    so GAGAL is never blank."""
+    result, defaults = _run(
+        _fake_job(),
+        llm_content='{"bab": [{"urutan": 1, "judul": "A", "subbab": []}]}',
+        replace_chapter_templates_for_set=MagicMock(side_effect=RuntimeError()),
+    )
+    assert result["status"] == "error"
+    assert result["reason"] == "RuntimeError"
+    assert _status_calls(defaults["status_updates"])[-1] == ("GAGAL", "RuntimeError")

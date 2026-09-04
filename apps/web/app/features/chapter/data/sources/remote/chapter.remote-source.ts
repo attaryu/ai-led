@@ -22,8 +22,13 @@ export type BackendRagasScore = {
 	targetType: 'BAB_AKTIF' | 'BAB_DRAFT';
 	chapterId: string | null;
 	chapterDraftId: string | null;
-	/** `Record<RagasMetrik, number>` — lihat `worker.py::score_single_sample`. */
-	metrics: Record<string, number>;
+	/**
+	 * `Record<RagasMetrik, {nilai, alasan}>` — lihat
+	 * `worker.py::_judge_to_ragas_metrics`. Baris lama (sebelum skor ini
+	 * dihitung LLM-as-judge) masih bisa berupa `Record<RagasMetrik, number>`
+	 * polos — `mapRagas` menangani keduanya.
+	 */
+	metrics: Record<string, number | { nilai: number; alasan: string }>;
 	chunkCount: number;
 	computedAt: string;
 };
@@ -131,7 +136,7 @@ export type GenerasiBabResult = {
 	sectionId?: string;
 	babDraftId?: string;
 	versi?: number;
-	ragasScores?: Record<string, number>;
+	ragasScores?: Record<string, { nilai: number; alasan: string }>;
 	error?: string;
 };
 

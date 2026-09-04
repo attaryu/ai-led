@@ -57,6 +57,7 @@ def _run_with_llm(job, llm, **db_overrides):
 def _llm_returning(content):
     llm = MagicMock()
     llm.ainvoke = AsyncMock(return_value=MagicMock(content=content))
+    llm.with_retry.return_value = llm  # worker.py wraps every .ainvoke() call in .with_retry()
     return llm
 
 
