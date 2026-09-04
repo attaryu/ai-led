@@ -1,6 +1,7 @@
 import * as React from 'react';
 import {
 	CaretDownIcon,
+	FolderIcon,
 	MagnifyingGlassIcon,
 	SparkleIcon,
 	SpinnerGapIcon,
@@ -99,6 +100,43 @@ export function ChapterGenerationPanel({
 	const izinBukti = useEvidencePermission('PROGRAM_STUDI', studyProgramId);
 	const bisaUnggah = izinBukti.canUpload && izinBukti.session !== null;
 	const [unggahTerbuka, setUnggahTerbuka] = React.useState(false);
+
+	/**
+	 * Kelompok folder ROOT (segmen pertama `jalurBukti`) buat daftar Bukti
+	 * Dukung -- port pola dimas (`RecommendationPanel.jsx`): daftar panjang
+	 * jadi satu kotak scroll sendiri (lihat `h-64` di bawah) dibagi per
+	 * folder, bukan satu list datar raksasa. Berkas di akar (tanpa folder)
+	 * dirender lepas duluan, sebelum kelompok folder.
+	 */
+	const folderGroups = React.useMemo(() => {
+		const akar: EvidenceEntity[] = [];
+		const kelompok = new Map<string, EvidenceEntity[]>();
+		for (const bukti of daftar) {
+			const namaFolderAkar = jalurBukti.get(bukti.id)?.split(' / ')[0];
+			if (!namaFolderAkar) {
+				akar.push(bukti);
+				continue;
+			}
+			(kelompok.get(namaFolderAkar) ?? kelompok.set(namaFolderAkar, []).get(namaFolderAkar)!).push(bukti);
+		}
+		return { akar, kelompok, namaFolder: [...kelompok.keys()].sort() };
+	}, [daftar, jalurBukti]);
+
+	const [folderTerbuka, setFolderTerbuka] = React.useState<Record<string, boolean>>({});
+
+	/**
+	 * Centang/lepas SEMUA berkas SIAP di satu folder sekaligus (termasuk yang
+	 * belum di-expand) -- kalau baru sebagian terpilih, klik pertama
+	 * melengkapi jadi semua terpilih (bukan malah melepas semua).
+	 */
+	function toggleFolderSelection(dokumen: EvidenceEntity[]) {
+		const bisaDipilih = dokumen.filter((bukti) => bukti.status === 'SIAP');
+		const semuaTerpilih =
+			bisaDipilih.length > 0 && bisaDipilih.every((bukti) => terpilih.has(bukti.id));
+		for (const bukti of bisaDipilih) {
+			if (terpilih.has(bukti.id) === semuaTerpilih) toggle(bukti);
+		}
+	}
 
 	/**
 	 * Prompt tertutup secara bawaan karena ia memang opsional (§12.1 bahkan tidak
@@ -232,18 +270,40 @@ export function ChapterGenerationPanel({
 							onUnggah={() => setUnggahTerbuka(true)}
 						/>
 					) : (
-						<ul className="space-y-0.5 pb-2">
-							{daftar.map((bukti) => (
-								<BarisBukti
-									key={bukti.id}
-									bukti={bukti}
-									jalur={jalurBukti.get(bukti.id)}
-									terpilih={terpilih.has(bukti.id)}
-									dimatikan={sedangBerjalan}
-									onToggle={() => toggle(bukti)}
-								/>
-							))}
-						</ul>
+						<ScrollArea className="h-64 rounded-md border border-border">
+							<ul className="space-y-0.5 p-1.5">
+								{folderGroups.akar.map((bukti) => (
+									<BarisBukti
+										key={bukti.id}
+										bukti={bukti}
+										jalur={jalurBukti.get(bukti.id)}
+										terpilih={terpilih.has(bukti.id)}
+										dimatikan={sedangBerjalan}
+										onToggle={() => toggle(bukti)}
+									/>
+								))}
+
+								{folderGroups.namaFolder.map((nama) => {
+									const dokumen = folderGroups.kelompok.get(nama)!;
+									return (
+										<GrupFolderBukti
+											key={nama}
+											nama={nama}
+											dokumen={dokumen}
+											jalurBukti={jalurBukti}
+											terpilih={terpilih}
+											dimatikan={sedangBerjalan}
+											terbuka={!!folderTerbuka[nama]}
+											onToggleTerbuka={() =>
+												setFolderTerbuka((s) => ({ ...s, [nama]: !s[nama] }))
+											}
+											onToggleBukti={toggle}
+											onToggleSemua={() => toggleFolderSelection(dokumen)}
+										/>
+									);
+								})}
+							</ul>
+						</ScrollArea>
 					)}
 				</div>
 
@@ -543,6 +603,87 @@ function KeadaanKosong({
 	);
 }
 
+const FOLDER_PREVIEW_COUNT = 5;
+
+/**
+ * Satu kelompok folder di daftar Bukti Dukung (port pola dimas
+ * `RecommendationPanel.jsx`): header bisa dicentang buat pilih semua isi
+ * folder, isinya dibatasi {@link FOLDER_PREVIEW_COUNT} dulu supaya folder
+ * besar tidak mendominasi kotak scroll `h-64` di atasnya sendirian.
+ */
+function GrupFolderBukti({
+	nama,
+	dokumen,
+	jalurBukti,
+	terpilih,
+	dimatikan,
+	terbuka,
+	onToggleTerbuka,
+	onToggleBukti,
+	onToggleSemua,
+}: {
+	nama: string;
+	dokumen: EvidenceEntity[];
+	jalurBukti: Map<string, string>;
+	terpilih: ReadonlySet<string>;
+	dimatikan: boolean;
+	terbuka: boolean;
+	onToggleTerbuka: () => void;
+	onToggleBukti: (bukti: EvidenceEntity) => void;
+	onToggleSemua: () => void;
+}) {
+	const ditampilkan = terbuka ? dokumen : dokumen.slice(0, FOLDER_PREVIEW_COUNT);
+	const sisaTersembunyi = dokumen.length - ditampilkan.length;
+	const bisaDipilih = dokumen.filter((bukti) => bukti.status === 'SIAP');
+	const jumlahTerpilih = bisaDipilih.filter((bukti) => terpilih.has(bukti.id)).length;
+
+	return (
+		<li>
+			<label
+				className={
+					dimatikan || bisaDipilih.length === 0
+						? 'flex cursor-not-allowed items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground opacity-60'
+						: 'flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted/60'
+				}
+			>
+				<Checkbox
+					checked={bisaDipilih.length > 0 && jumlahTerpilih === bisaDipilih.length}
+					indeterminate={jumlahTerpilih > 0 && jumlahTerpilih < bisaDipilih.length}
+					onCheckedChange={onToggleSemua}
+					disabled={dimatikan || bisaDipilih.length === 0}
+					aria-label={`Pilih semua file di folder ${nama}`}
+				/>
+				<FolderIcon className="size-3.5 shrink-0" />
+				<span className="min-w-0 flex-1 truncate">{nama}</span>
+				<span className="shrink-0 text-muted-foreground/70">({dokumen.length})</span>
+			</label>
+
+			<ul className="space-y-0.5 pl-4">
+				{ditampilkan.map((bukti) => (
+					<BarisBukti
+						key={bukti.id}
+						bukti={bukti}
+						jalur={jalurBukti.get(bukti.id)}
+						terpilih={terpilih.has(bukti.id)}
+						dimatikan={dimatikan}
+						onToggle={() => onToggleBukti(bukti)}
+					/>
+				))}
+			</ul>
+
+			{(sisaTersembunyi > 0 || terbuka) && dokumen.length > FOLDER_PREVIEW_COUNT && (
+				<button
+					type="button"
+					onClick={onToggleTerbuka}
+					className="w-full py-1 pl-9 text-left text-xs text-muted-foreground hover:text-foreground"
+				>
+					{terbuka ? 'Sembunyikan' : `Tampilkan ${sisaTersembunyi} lainnya…`}
+				</button>
+			)}
+		</li>
+	);
+}
+
 /**
  * Satu bukti dukung di daftar pemilihan.
  *
@@ -602,8 +743,10 @@ function BarisBukti({
 					</span>
 
 					{/*
-					 * Daftarnya tetap datar; jalur ini yang membedakan dua berkas
-					 * bernama sama dari folder berbeda — lihat JSDoc `jalurBukti`.
+					 * Jalur lengkap tetap ditampilkan di sini walau folder ROOT-nya
+					 * sudah jadi header kelompok (GrupFolderBukti) -- yang membedakan
+					 * dua berkas bernama sama di SUBfolder berbeda dalam folder ROOT
+					 * yang sama, lihat JSDoc `jalurBukti`.
 					 */}
 					{jalur && (
 						<span
