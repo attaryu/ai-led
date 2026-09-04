@@ -1264,12 +1264,21 @@ async def _handle_generasi_bab(job) -> dict:
         lkps_refs = _lkps_refs_in_pedoman(pedoman)
         lkps_tables = _load_lkps_tables(bab, lkps_refs)
 
-        # 2c. Bukti Dukung evidence chunks for the selected ids above.
+        # 2c. Bukti Dukung evidence chunks for the selected ids above -- one
+        # independent vector search per checklist item, fired concurrently
+        # (asyncio.gather, each on its own thread) instead of awaited one at
+        # a time. Safe: search_evidence checks out its own connection from
+        # db/connection.py's ThreadedConnectionPool (built for concurrent
+        # checkout) and SentenceTransformer.encode has no shared mutable
+        # state across calls. gather preserves per-item result order, so
+        # de-dup below still favors the earliest checklist item's hit.
         evidence_chunks: list[dict] = []
         if selected_ids:
             seen_chunks: set[str] = set()
-            for item in checklist:
-                hits = await asyncio.to_thread(search_evidence, item, bab["tenant_id"], selected_ids, 2)
+            hasil_per_item = await asyncio.gather(
+                *(asyncio.to_thread(search_evidence, item, bab["tenant_id"], selected_ids, 2) for item in checklist)
+            )
+            for hits in hasil_per_item:
                 for h in hits:
                     if h["chunk_id"] in seen_chunks:
                         continue
@@ -1295,9 +1304,19 @@ async def _handle_generasi_bab(job) -> dict:
         # noise); Dimas never ran it live either, only offline via
         # scripts/evaluate.py, so that live call is dropped in favor of this
         # judge's own 4 metrics.
+        # `citation_label` computed ONCE here (folder-name-preference etc.
+        # already applied) and stored verbatim in `chunks_used` below -- backs
+        # the citation hover-card (apps/web), which matches a clicked
+        # "(sumber: X)" against this field instead of re-deriving it.
+        chunks_used = (
+            [{**c, "citation_label": _led_citation_label(c), "kind": "led"} for c in chunks]
+            + [
+                {**c, "citation_label": _evidence_citation_label(c, evidence_labels), "kind": "evidence"}
+                for c in evidence_chunks
+            ]
+        )
         judge_facts = (
-            [{"text": c["text"], "filename": _led_citation_label(c)} for c in chunks]
-            + [{"text": c["text"], "filename": _evidence_citation_label(c, evidence_labels)} for c in evidence_chunks]
+            [{"text": c["text"], "filename": c["citation_label"]} for c in chunks_used]
             + [{"text": t, "filename": "LKPS"} for t in lkps_tables]
         )
         try:
@@ -1343,11 +1362,12 @@ async def _handle_generasi_bab(job) -> dict:
     create_generation_run(
         tenant_id=bab["tenant_id"],
         bab_draft_id=draft["id"],
+        section_id=section_id,
         model=model_name,
         pedoman_used=pedoman,
         rubric_used=rubric,
         checklist=checklist,
-        chunks_used=chunks + evidence_chunks,
+        chunks_used=chunks_used,
         judge_result=judge_result,
         prompt_full=prompt,
         latency_sec=latency_sec,
