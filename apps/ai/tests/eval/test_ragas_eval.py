@@ -440,6 +440,60 @@ def test_run_ragas_evaluation_passes_run_config_with_generous_timeout_and_low_wo
     assert run_config.max_workers <= 4
 
 
+def test_run_ragas_evaluation_reports_per_job_progress_via_pbar():
+    """The 'evaluating' stage's progress must actually move as ragas
+    completes jobs -- not jump from 0 straight to the final count only once
+    the whole (possibly 60+ minute) evaluate() call returns. Without this,
+    a caller polling progress_current can't tell a genuinely-progressing run
+    from a hung one (port of ariel's d0ddc7a -- production incident: an
+    80%-complete run was abandoned this way, left running as an orphaned
+    background task competing for GPU)."""
+    import pandas as pd
+    from eval.ragas_eval import EvalSample, run_ragas_evaluation
+
+    fake_samples = [
+        EvalSample(
+            indicator_no=i, user_input="q?", retrieved_contexts=["ctx"],
+            response="resp", reference="ref",
+        )
+        for i in (1, 2)
+    ]
+    fake_metric = MagicMock()
+    fake_metric.name = "faithfulness"
+    fake_result = MagicMock()
+    fake_result.to_pandas.return_value = pd.DataFrame({"faithfulness": [0.8, 0.7]})
+
+    def fake_evaluate(*args, **kwargs):
+        pbar = kwargs.get("_pbar")
+        assert pbar is not None, "evaluate() must be given a real progress hook"
+        pbar.update(1)
+        pbar.update(1)
+        return fake_result
+
+    progress_calls: list[dict] = []
+
+    with (
+        patch("eval.ragas_eval.build_eval_samples", return_value=fake_samples),
+        patch("eval.ragas_eval._build_ragas_llm", return_value=MagicMock()),
+        patch("eval.ragas_eval._build_ragas_embeddings", return_value=MagicMock()),
+        patch("ragas.metrics.Faithfulness", return_value=fake_metric),
+        patch("ragas.dataset_schema.SingleTurnSample", return_value=MagicMock()),
+        patch("ragas.EvaluationDataset", return_value=MagicMock()),
+        patch("ragas.evaluate", side_effect=fake_evaluate),
+    ):
+        run_ragas_evaluation(
+            n_indicators=2,
+            metrics_to_run=["faithfulness"],
+            progress_cb=lambda **kw: progress_calls.append(kw),
+        )
+
+    evaluating_calls = [c for c in progress_calls if c["stage"] == "evaluating"]
+    # 2 samples x 1 metric = 2 jobs total; progress must move 0 -> 1 -> 2,
+    # not just appear once at 0 and never again until the call returns.
+    assert [c["current"] for c in evaluating_calls] == [0, 1, 2]
+    assert all(c["total"] == 2 for c in evaluating_calls)
+
+
 def test_get_assessor_model_reads_from_indicator_results():
     """assessor_model — which model(s) actually scored a session — is distinct from the judge model (ariel 88082d7, adapted to dev-v1's per-indicator IndicatorResult.model)."""
     from eval.ragas_eval import _get_assessor_model

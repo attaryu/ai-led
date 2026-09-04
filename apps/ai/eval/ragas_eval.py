@@ -461,6 +461,30 @@ def build_eval_samples(
 # ---------------------------------------------------------------------------
 
 
+class _JobProgressPbar:
+    """Duck-typed tqdm replacement passed as ragas.evaluate()'s `_pbar` arg
+    (port of ariel's d0ddc7a).
+
+    ragas's Executor calls `.update(1)` once per completed job -- success or
+    failure -- regardless of batching. Without this, the "evaluating" stage's
+    progress_cb was only ever invoked once, with current=0, before evaluate()
+    started, and never again until the whole (possibly 60+ minute) call
+    returned -- indistinguishable from a hung run to any caller polling
+    progress_current."""
+
+    def __init__(self, total: int, on_update) -> None:
+        self.total = total
+        self.n = 0
+        self._on_update = on_update
+
+    def update(self, n: int = 1) -> None:
+        self.n += n
+        try:
+            self._on_update(self.n, self.total)
+        except Exception:
+            pass
+
+
 def run_ragas_evaluation(
     n_indicators: int = 5,
     session_id: Optional[str] = None,
@@ -511,12 +535,6 @@ def run_ragas_evaluation(
         model=model,
     )
 
-    if progress_cb:
-        try:
-            progress_cb(stage="evaluating", current=0, total=len(samples))
-        except Exception:
-            pass
-
     if not samples:
         return {"error": "No evaluation samples could be built.", "n_samples": 0}
 
@@ -558,9 +576,21 @@ def run_ragas_evaluation(
         max_workers=int(os.environ.get("RAGAS_MAX_WORKERS", "2")),
     )
 
+    total_jobs = len(ragas_samples) * len(active_metrics)
+    pbar = None
+    if progress_cb:
+        try:
+            progress_cb(stage="evaluating", current=0, total=total_jobs)
+        except Exception:
+            pass
+        pbar = _JobProgressPbar(
+            total_jobs,
+            lambda cur, tot: progress_cb(stage="evaluating", current=cur, total=tot),
+        )
+
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        result = evaluate(dataset=dataset, metrics=active_metrics, run_config=run_config)
+        result = evaluate(dataset=dataset, metrics=active_metrics, run_config=run_config, _pbar=pbar)
 
     result_df = result.to_pandas()
 
