@@ -1,0 +1,47 @@
+/graphify-out/
+/.playwright-mcp/
+/docs/.*
+# Claude Code's own worktree checkouts/session state — local scratch, never
+# meant to be committed (this is what dumped ~300 untracked items into
+# source control before it was added here).
+/.claude/
+
+node_modules/
+dist/
+build/
+.env
+.env.*
+!.env.example
+apps/backend/uploads/
+
+# Python (apps/ai)
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+*.egg-info/
+# Unanchored `data/...` here never matched apps/ai/data/... at all — a
+# pattern with an internal slash is rooted to this .gitignore's own
+# directory (repo root), not matched at any depth.
+apps/ai/data/uploads/
+apps/ai/data/rubric_cache/
+apps/ai/data/led.db
+apps/ai/data/led.db-journal
+apps/ai/data/led.db-wal
+apps/ai/data/led.db-shm
+apps/ai/data/hf_cache/
+apps/ai/data/*.sqlite
+apps/ai/data/*.db
+
+# Editor / OS junk
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo

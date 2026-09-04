@@ -1,0 +1,40 @@
+# Runtime API only — ringan
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+requests==2.32.3
+
+# Vector DB + embedding
+# chromadb >= 0.5.6 wajib karena langchain-chroma 0.1.4 menolak 0.5.4/0.5.5
+chromadb==0.5.20
+sentence-transformers==3.1.1
+
+# LangChain stack — LCEL pipeline + Ollama + Chroma + tracing
+langchain==0.3.7
+langchain-core==0.3.15
+langchain-community==0.3.5
+langchain-ollama==0.2.0
+langchain-chroma==0.1.4
+langchain-huggingface==0.1.2
+langsmith==0.1.142
+
+# Storage — PostgreSQL (psycopg3, raw SQL, drop-in style dgn db.py lama)
+psycopg[binary]==3.2.3
+psycopg-pool==3.2.3
+
+# Queue -- dipakai api (enqueue) & worker (consume, lihat Dockerfile.worker)
+rq==2.1.0
+
+# Ekstraksi Evidence upload (lib/extraction/) -- excel_extractor.py & html parsing
+openpyxl==3.1.5
+beautifulsoup4==4.12.3
+pandas==2.2.3
+
+# Upload multipart -- dibutuhkan FastAPI utk UploadFile/Form (routes/documents.py)
+python-multipart==0.0.12
+
+# NOTE: paket eval (ragas, rouge-score, nltk, datasets, litellm) sengaja
+# TIDAK di requirements.txt karena berat (~1 GB extra) dan hanya dipakai
+# scripts/evaluate.py.
+# Install on-demand:
+#   docker compose run --rm api pip install -r /app/requirements-eval.txt

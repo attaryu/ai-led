@@ -1,0 +1,1009 @@
+// Sumber kebenaran skema: docs/database.md
+// Model & kolom di sini adalah terjemahan langsung dari 15 tabel rancangan (§1-15)
+// + RUBRIK_LEVEL (celah dicatat di §10) + 8 model produksi untuk kelompok
+// prototipe AI-LED / AMI Assessment (§16-21), mengikuti arahan integrasi di
+// docs/database.md "Catatan Integrasi".
+//
+// Keputusan desain yang tidak eksplisit di docs (dijawab di sini, bukan dibiarkan
+// implisit):
+// - RagasScore dinormalisasi jadi tabel sendiri (target_tipe/bab_id/bab_draft_id),
+//   persis usulan §12a — bukan kolom jsonb "ragas" ganda di BabDokumen/BabDraft.
+//   Menghindari dua sumber kebenaran untuk data yang sama.
+// - GenerationRun menyimpan kolom `model`, menutup celah Catatan Integrasi #2
+//   (BAB_DRAFT sebelumnya hanya tahu sumber=AI, bukan AI yang mana).
+// - ReasoningStep.sessionId diberi FK sungguhan ke AssessmentSession (ON DELETE
+//   CASCADE) — Catatan Integrasi #7 menandai ini "perbaikan yang murah", jadi
+//   langsung diperbaiki di sini alih-alih diwariskan.
+// - AssessmentSession disambungkan ke tenant & dokumen (Catatan Integrasi #5).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────── Enums ───────────────────────────
+
+enum Role {
+  ADMIN
+  PIMPINAN
+  PENJAMIN_MUTU
+  PENYUSUN
+}
+
+enum Jenjang {
+  D3
+  D4
+  S1
+  S2
+  S3
+}
+
+enum PeringkatAkreditasi {
+  UNGGUL
+  BAIK_SEKALI
+  BAIK
+  BELUM_TERAKREDITASI
+}
+
+enum StatusDokumen {
+  DRAFT
+  REVIEW
+  SELESAI
+}
+
+enum SumberDraft {
+  AI
+  MANUAL
+}
+
+enum OwnerTipe {
+  TENANT
+  PROGRAM_STUDI
+}
+
+enum StatusEkstraksi {
+  MENUNGGU
+  DIPROSES
+  SIAP
+  GAGAL
+}
+
+enum TargetTipe {
+  BAB_AKTIF
+  BAB_DRAFT
+}
+
+enum TipePanduan {
+  PANDUAN_LAM
+  TEMPLATE_LKPS
+  DOKUMEN_RUBRIK
+}
+
+enum ChatRole {
+  USER
+  ASSISTANT
+}
+
+/// assessment-source.entity.ts::ledSourceModeEnum
+enum LedSourceMode {
+  EDITOR
+  UNGGAHAN
+}
+
+enum JobType {
+  GENERASI_BAB
+  ASSESSMENT_AMI
+  INGESTION_BUKTI_DUKUNG
+  SIMULASI_SKOR
+  REKOMENDASI_DOKUMEN
+  INGESTION_RUBRIK_DOKUMEN
+  GENERASI_OUTLINE_BAB
+  INGESTION_STRUKTUR_DOKUMEN
+}
+
+enum JobStatus {
+  WAITING
+  ACTIVE
+  COMPLETED
+  FAILED
+}
+
+enum AssessmentStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// ─────────────────── Kelompok: Organisasi & Pengguna ───────────────────
+
+/// docs/database.md §1
+model Tenant {
+  id             String @id @default(cuid())
+  universityName String @map("university_name")
+
+  users                      User[]
+  studyPrograms              StudyProgram[]
+  buktiDukung                Evidence[]
+  buktiDukungFolders         EvidenceFolder[]
+  jobs                       Job[]
+  assessmentSessions         AssessmentSession[]
+  ledChunkEmbeddings         LedChunkEmbedding[]
+  buktiDukungChunkEmbeddings EvidenceChunkEmbedding[]
+  accreditationSets          AccreditationSet[]
+
+  @@map("org_tenants")
+}
+
+/// docs/database.md §2
+model User {
+  id             String   @id @default(cuid())
+  tenantId       String   @map("tenant_id")
+  studyProgramId String?  @map("study_program_id")
+  fullName       String   @map("full_name")
+  email          String   @unique
+  passwordHash   String   @map("password_hash")
+  role           Role
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  // `Restrict`, bukan default Prisma `SetNull` — lihat notes attar.md #2:
+  // "PENYUSUN tidak boleh ada tanpa prodi" tidak bisa ditegakkan bila hapus
+  // prodi diam-diam mengosongkan study_program_id penghuninya.
+  studyProgram StudyProgram? @relation(fields: [studyProgramId], references: [id], onDelete: Restrict)
+
+  babDraftDibuat      ChapterDraft[]         @relation("BabDraftDibuatOleh")
+  buktiDukungDiunggah Evidence[]             @relation("BuktiDukungDiunggahOleh")
+  panduanDiunggah     ReferenceGuide[]       @relation("PanduanDiunggahOleh")
+  hasilSkorDijalankan CriterionScoreResult[] @relation("HasilSkorDijalankanOleh")
+  chatMessages        ChatMessage[]
+  jobsCreated         Job[]
+  assessmentSessions  AssessmentSession[]
+  assessmentVerdicts  AssessmentVerdict[]    @relation("AssessmentVerdictDitinjauOleh")
+
+  @@index([tenantId])
+  @@map("org_users")
+}
+
+/// docs/database.md §3
+model StudyProgram {
+  id                        String              @id @default(cuid())
+  tenantId                  String              @map("tenant_id")
+  name                      String
+  code                      String
+  level                     Jenjang
+  faculty                   String
+  programHead               String              @map("program_head")
+  accreditationRank         PeringkatAkreditasi @map("accreditation_rank")
+  accreditationDecreeNumber String?             @map("accreditation_decree_number")
+  accreditationValidUntil   DateTime?           @map("accreditation_valid_until") @db.Date
+  createdAt                 DateTime            @default(now()) @map("created_at")
+
+  tenant             Tenant           @relation(fields: [tenantId], references: [id])
+  users              User[]
+  dokumenLed         LedDocument[]
+  buktiDukung        Evidence[]
+  buktiDukungFolders EvidenceFolder[]
+
+  @@index([tenantId])
+  @@map("org_study_programs")
+}
+
+// ─────────────────────── Kelompok: Dokumen LED ───────────────────────
+
+/// docs/database.md §4
+model LedDocument {
+  id                 String        @id @default(cuid())
+  studyProgramId     String        @map("study_program_id")
+  title              String
+  academicYear       String        @map("academic_year")
+  overallStatus      StatusDokumen @map("overall_status")
+  deadline           DateTime?     @db.Date
+  /// null = belum pilih set (RubrikKriteria lama, sebelum Set Akreditasi ada,
+  /// di-backfill ke set default "LAM Teknik (Default)" oleh seed-rubric-criteria.ts.
+  accreditationSetId String?       @map("accreditation_set_id")
+  createdAt          DateTime      @default(now()) @map("created_at")
+
+  studyProgram       StudyProgram        @relation(fields: [studyProgramId], references: [id])
+  accreditationSet   AccreditationSet?   @relation(fields: [accreditationSetId], references: [id])
+  chapters           DocumentChapter[]
+  assessmentSessions AssessmentSession[]
+  assessmentVerdicts AssessmentVerdict[]
+  chunkEmbeddings    LedChunkEmbedding[]
+
+  @@index([studyProgramId])
+  @@index([accreditationSetId])
+  @@map("writing_led_documents")
+}
+
+/// docs/database.md §5
+model DocumentChapter {
+  id                   String    @id @default(cuid())
+  documentId           String    @map("document_id")
+  chapterOrder         Int       @map("chapter_order")
+  chapterTitle         String    @map("chapter_title")
+  workingContent       Json      @map("working_content")
+  activeCheckpointId   String?   @map("active_checkpoint_id")
+  locked               Boolean   @default(false)
+  qualityAssuranceNote String?   @map("quality_assurance_note") @db.Text
+  notedByName          String?   @map("noted_by_name")
+  notedAt              DateTime? @map("noted_at")
+  reviewSubmittedAt    DateTime? @map("review_submitted_at")
+  lastSavedAt          DateTime  @updatedAt @map("last_saved_at")
+
+  document          LedDocument            @relation(fields: [documentId], references: [id])
+  activeCheckpoint  ChapterDraft?          @relation("ActiveCheckpoint", fields: [activeCheckpointId], references: [id])
+  drafts            ChapterDraft[]         @relation("ChapterDrafts")
+  buktiDukungBab    EvidenceChapterLink[]
+  hasilSkorKriteria CriterionScoreResult[]
+  ragasScores       RagasScore[]
+  chatMessages      ChatMessage[]
+  sections          ChapterSection[]
+
+  @@unique([documentId, chapterOrder])
+  @@map("writing_document_chapters")
+}
+
+/// Outline yang di-generate LLM (bukan JSON statis) — daftar sub-bab per bab,
+/// dituntun oleh kriteria rubrik tenant itu sendiri. Tiap section digenerate
+/// detail satu-satu (worker.py::_handle_generasi_bab), hasilnya digabung
+/// otomatis jadi DocumentChapter.workingContent lewat ChapterDraft checkpoint
+/// baru — RAGAS/export/review/chat tetap baca dari sana, tidak berubah.
+model ChapterSection {
+  id          String               @id @default(cuid())
+  chapterId   String               @map("chapter_id")
+  /// Non-null → ini sub-sub-bab (mis. C.1), anak section ini di `chapterId`
+  /// yang sama. Cuma satu tingkat kedalaman (tidak ada cucu) — cukup untuk
+  /// pola "sub-bab → kriteria bernomor" yang ada di pedoman LAM Teknik dkk.
+  parentId    String?              @map("parent_id")
+  order       Int
+  title       String
+  guidance    String               @db.Text
+  status      ChapterSectionStatus @default(PENDING)
+  content     Json?
+  model       String?
+  error       String?              @db.Text
+  generatedAt DateTime?            @map("generated_at")
+
+  chapter  DocumentChapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  parent   ChapterSection?  @relation("ChapterSectionChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children ChapterSection[] @relation("ChapterSectionChildren")
+
+  // Bukan @@unique([chapterId, order]) lagi: order sekarang bersaing per
+  // parent (tiap sub-bab hitung C.1, C.2… dari 1 lagi), dan constraint unik
+  // dengan kolom nullable (parentId) tidak benar-benar menjaga itu di
+  // Postgres (NULL != NULL). Dijaga di application layer (create_chapter_sections
+  // menomori sequential per parent), bukan DB.
+  @@index([chapterId, parentId])
+  @@map("writing_chapter_sections")
+}
+
+enum ChapterSectionStatus {
+  PENDING
+  GENERATING
+  GENERATED
+  ERROR
+}
+
+/// docs/database.md §6
+model ChapterDraft {
+  id                String      @id @default(cuid())
+  chapterId         String      @map("chapter_id")
+  createdByUserId   String      @map("created_by_user_id")
+  version           Int
+  label             String?
+  contentSnapshot   Json        @map("content_snapshot")
+  source            SumberDraft
+  referenceChunkIds String?     @map("reference_chunk_ids") @db.Text
+  createdByName     String      @map("created_by_name")
+  createdAt         DateTime    @default(now()) @map("created_at")
+
+  chapter            DocumentChapter   @relation("ChapterDrafts", fields: [chapterId], references: [id])
+  createdBy          User              @relation("BabDraftDibuatOleh", fields: [createdByUserId], references: [id])
+  activeCheckpointOf DocumentChapter[] @relation("ActiveCheckpoint")
+
+  buktiDukungDraft        EvidenceDraftLink[]
+  hasilSkorKriteria       CriterionScoreResult[]
+  ragasScores             RagasScore[]
+  generationRun           GenerationRun?
+  documentRecommendations DocumentRecommendation[]
+
+  @@unique([chapterId, version])
+  @@index([chapterId])
+  @@map("writing_chapter_drafts")
+}
+
+// ─────────────────────── Kelompok: Bukti Dukung ───────────────────────
+
+/// docs/database.md §7
+model Evidence {
+  id               String          @id @default(cuid())
+  ownerType        OwnerTipe       @map("owner_type")
+  tenantId         String?         @map("tenant_id")
+  studyProgramId   String?         @map("study_program_id")
+  documentName     String          @map("document_name")
+  fileUrl          String          @map("file_url")
+  fileType         String          @map("file_type")
+  sizeBytes        Int             @map("size_bytes")
+  extractionStatus StatusEkstraksi @map("extraction_status")
+  failureNote      String?         @map("failure_note")
+  uploadedByUserId String          @map("uploaded_by_user_id")
+  uploadedByName   String          @map("uploaded_by_name")
+  uploadedAt       DateTime        @default(now()) @map("uploaded_at")
+  /// `null` = akar cakupannya. Folder deletion never cascades here — see
+  /// EvidenceFolder doc comment: the caller reassigns/deletes rows first, this
+  /// `SetNull` is only a backstop against an FK violation if it doesn't.
+  folderId         String?         @map("folder_id")
+
+  tenant       Tenant?         @relation(fields: [tenantId], references: [id])
+  studyProgram StudyProgram?   @relation(fields: [studyProgramId], references: [id])
+  uploadedBy   User            @relation("BuktiDukungDiunggahOleh", fields: [uploadedByUserId], references: [id])
+  folder       EvidenceFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  chapterLinks       EvidenceChapterLink[]
+  draftLinks         EvidenceDraftLink[]
+  assessmentSessions AssessmentSession[]
+  chunkEmbeddings    EvidenceChunkEmbedding[]
+  indicatorTags      EvidenceIndicatorTag[]
+
+  @@index([tenantId])
+  @@index([studyProgramId])
+  @@index([folderId])
+  @@map("evidence_files")
+}
+
+/// docs/database.md §7a — folder bukti dukung. Koleksi terpisah dari
+/// `Evidence` (evidence-folder.entity.ts kepala berkas): 7 tempat lain
+/// menghitung tiap baris Evidence sebagai dokumen untuk persenSiap, dan
+/// sebuah folder ikut jadi baris di sana akan melubangi angka itu. Tidak ada
+/// `status`, tidak ada path/depth tersimpan (diturunkan dari `parentId`), dan
+/// tidak ada tempat sampah — hapus permanen.
+model EvidenceFolder {
+  id              String    @id @default(cuid())
+  ownerType       OwnerTipe @map("owner_type")
+  tenantId        String?   @map("tenant_id")
+  studyProgramId  String?   @map("study_program_id")
+  name            String
+  /// `null` = folder ini di akar cakupannya.
+  parentId        String?   @map("parent_id")
+  createdByUserId String    @map("created_by_user_id")
+  createdByName   String    @map("created_by_name")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  tenant           Tenant?           @relation(fields: [tenantId], references: [id])
+  studyProgram     StudyProgram?     @relation(fields: [studyProgramId], references: [id])
+  parent           EvidenceFolder?   @relation("EvidenceFolderChildren", fields: [parentId], references: [id], onDelete: SetNull)
+  children         EvidenceFolder[]  @relation("EvidenceFolderChildren")
+  evidences        Evidence[]
+  documentRegistry DocumentRegistry?
+
+  @@index([tenantId])
+  @@index([studyProgramId])
+  @@index([parentId])
+  @@map("evidence_folders")
+}
+
+/// Tag indikator AMI untuk 1 Bukti Dukung (row 63/70 tracker) — evidence
+/// hanya terlihat ke agen asesmen untuk indikator yang eksplisit ditag di
+/// sini, meniru skema tagging origin/ariel. Tidak ada fallback ke seluruh
+/// evidence tenant/prodi kalau kosong.
+/// indicatorNo alone is ambiguous once >1 AccreditationSet exists -- a prodi
+/// can realistically run concurrent LED projects under different
+/// accreditation bodies (e.g. BAN-PT + LAM Teknik), each numbering their own
+/// indicators from 1. accreditationSetId disambiguates which set's indicator
+/// this tag refers to.
+model EvidenceIndicatorTag {
+  id                 String @id @default(cuid())
+  evidenceId         String @map("evidence_id")
+  accreditationSetId String @map("accreditation_set_id")
+  indicatorNo        Int    @map("indicator_no")
+
+  evidence         Evidence         @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  accreditationSet AccreditationSet @relation(fields: [accreditationSetId], references: [id], onDelete: Cascade)
+
+  @@unique([evidenceId, accreditationSetId, indicatorNo])
+  @@index([accreditationSetId, indicatorNo])
+  @@map("evidence_indicator_tags")
+}
+
+enum StatusRekomendasi {
+  DIREKOMENDASIKAN
+  DIKONFIRMASI
+  DIGANTIKAN
+}
+
+/// Rekomendasi dokumen AI (alur "Rekomendasikan Dokumen" -> "Tulis Narasi",
+/// port dari origin/led-wiriting(dimas)) — 1:1 dengan draft EMPTY yang dibuat
+/// saat rekomendasi pertama kali dijalankan. Hanya 1 baris berstatus
+/// DIKONFIRMASI per chapterDraftId (partial unique index, lihat migration.sql
+/// — Prisma tidak mendukung partial unique index langsung di schema).
+model DocumentRecommendation {
+  id                  String            @id @default(cuid())
+  chapterDraftId      String            @map("chapter_draft_id")
+  documentQuery       Json              @map("document_query")
+  lkpsNeeded          Boolean           @map("lkps_needed")
+  lkpsSufficient      Boolean?          @map("lkps_sufficient")
+  lkpsEvidenceQuery   Json?             @map("lkps_evidence_query")
+  candidateFolders    Json              @map("candidate_folders")
+  recommendationText  String?           @map("recommendation_text") @db.Text
+  selectedEvidenceIds Json              @map("selected_evidence_ids")
+  pedomanUsed         Json              @map("pedoman_used")
+  rubricUsed          Json              @map("rubric_used")
+  lkpsUsed            Json              @map("lkps_used")
+  status              StatusRekomendasi
+  createdAt           DateTime          @default(now()) @map("created_at")
+
+  chapterDraft ChapterDraft         @relation(fields: [chapterDraftId], references: [id], onDelete: Cascade)
+  items        RecommendationItem[]
+
+  @@index([chapterDraftId])
+  @@map("writing_document_recommendations")
+}
+
+/// Kartu tampilan 1 rekomendasi (label + alasan) — dev-v1 tidak
+/// mendenormalisasi ini ke JSON di DocumentRecommendation supaya urutan
+/// tampil bisa di-query/di-reorder tanpa rewrite seluruh baris.
+model RecommendationItem {
+  id               String  @id @default(cuid())
+  recommendationId String  @map("recommendation_id")
+  label            String
+  reason           String? @db.Text
+  order            Int
+
+  recommendation DocumentRecommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+
+  @@map("writing_recommendation_items")
+}
+
+/// Index semantik level-folder (bge-m3, beda model & dimensi dari
+/// evidence_chunk_embeddings/led_chunk_embeddings yang MiniLM/384) dipakai
+/// tahap "cari kandidat dokumen" alur rekomendasi — 1 baris per folder,
+/// bukan per chunk (folder bukti kecil & isinya cuma nama, lihat
+/// worker.py-nya dimas soal REGISTRY_MAX_DISTANCE).
+model DocumentRegistry {
+  id             String                      @id @default(cuid())
+  ownerType      OwnerTipe                   @map("owner_type")
+  tenantId       String?                     @map("tenant_id")
+  studyProgramId String?                     @map("study_program_id")
+  folderId       String                      @unique @map("folder_id")
+  label          String
+  embedding      Unsupported("vector(1024)")
+  createdAt      DateTime                    @default(now()) @map("created_at")
+
+  folder EvidenceFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([studyProgramId])
+  @@map("document_registry")
+}
+
+/// docs/database.md §8 — kondisi aktif, ditimpa tiap generate ulang
+model EvidenceChapterLink {
+  id           String @id @default(cuid())
+  evidenceId   String @map("evidence_id")
+  chapterId    String @map("chapter_id")
+  documentName String @map("document_name")
+  fileType     String @map("file_type")
+
+  evidence Evidence        @relation(fields: [evidenceId], references: [id])
+  chapter  DocumentChapter @relation(fields: [chapterId], references: [id])
+
+  @@unique([evidenceId, chapterId])
+  @@map("evidence_chapter_links")
+}
+
+/// docs/database.md §9 — permanen, menempel ke satu checkpoint
+model EvidenceDraftLink {
+  id           String @id @default(cuid())
+  evidenceId   String @map("evidence_id")
+  draftId      String @map("draft_id")
+  documentName String @map("document_name")
+  fileType     String @map("file_type")
+
+  evidence Evidence     @relation(fields: [evidenceId], references: [id])
+  draft    ChapterDraft @relation(fields: [draftId], references: [id])
+
+  @@unique([evidenceId, draftId])
+  @@map("evidence_draft_links")
+}
+
+// ─────────────────── Kelompok: Set Akreditasi (Rubrik Dinamis) ───────────────────
+
+/// Pengganti rubrik LAM Teknik hardcoded -- satu set = satu rubrik lengkap
+/// (kriteria + level skor + dokumen acuan) yang bisa dikustomisasi per tenant.
+/// Satu LedDocument memilih SATU set (accreditationSetId), dikunci total begitu
+/// dipakai (lihat deriveSetLock di apps/web) -- versi baru dibuat lewat duplikasi,
+/// bukan edit set yang sudah dipakai.
+model AccreditationSet {
+  id                  String                 @id @default(cuid())
+  tenantId            String                 @map("tenant_id")
+  nama                String
+  lembaga             String
+  tahunSiklus         Int                    @map("tahun_siklus")
+  status              AccreditationSetStatus @default(DRAF)
+  /// Status ekstraksi otomatis kriteria dari dokumen DOKUMEN_RUBRIK yang
+  /// diunggah (worker.py::_handle_ingestion_rubrik_dokumen). Default SIAP
+  /// supaya set lama/isi-manual tidak tampak "belum diproses" selamanya.
+  criteriaParseStatus StatusEkstraksi        @default(SIAP) @map("criteria_parse_status")
+  criteriaParseError  String?                @map("criteria_parse_error") @db.Text
+  /// Status ekstraksi struktur bab/sub-bab dari dokumen PANDUAN_LAM yang
+  /// diunggah (worker.py::_handle_ingestion_struktur_dokumen). Default SIAP,
+  /// sama alasannya dengan criteriaParseStatus.
+  structureParseStatus StatusEkstraksi       @default(SIAP) @map("structure_parse_status")
+  structureParseError  String?               @map("structure_parse_error") @db.Text
+  createdAt           DateTime               @default(now()) @map("created_at")
+  updatedAt           DateTime               @updatedAt @map("updated_at")
+
+  tenant           Tenant                 @relation(fields: [tenantId], references: [id])
+  criteria         RubricCriterion[]
+  documents        ReferenceGuide[]
+  documentsUsing   LedDocument[]
+  evidenceTags     EvidenceIndicatorTag[]
+  chapterTemplates ChapterTemplate[]
+
+  @@index([tenantId])
+  @@map("accreditation_sets")
+}
+
+/// Struktur BAB resmi diekstrak LLM dari dokumen PANDUAN_LAM (worker.py::
+/// _handle_ingestion_struktur_dokumen) — dipakai menstempel DocumentChapter
+/// dokumen LED baru di bawah set ini (menggantikan CHAPTER_TEMPLATE fallback
+/// 4-bab) dan sebagai konteks outline (_build_outline_prompt).
+model ChapterTemplate {
+  id                 String @id @default(cuid())
+  accreditationSetId String @map("accreditation_set_id")
+  order              Int
+  title              String
+
+  accreditationSet AccreditationSet @relation(fields: [accreditationSetId], references: [id], onDelete: Cascade)
+  subBab           SubBabTemplate[]
+
+  @@unique([accreditationSetId, order])
+  @@map("chapter_templates")
+}
+
+model SubBabTemplate {
+  id                String @id @default(cuid())
+  chapterTemplateId String @map("chapter_template_id")
+  /// Non-null → ini sub-sub-bab (mis. "C.1"), anak sub-bab lain di
+  /// `chapterTemplateId` yang sama. Satu tingkat kedalaman saja, sama
+  /// seperti ChapterSection.parentId di atas.
+  parentId          String? @map("parent_id")
+  order             Int
+  title             String
+  guidance          String @db.Text
+
+  chapterTemplate ChapterTemplate  @relation(fields: [chapterTemplateId], references: [id], onDelete: Cascade)
+  parent          SubBabTemplate?  @relation("SubBabTemplateChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children        SubBabTemplate[] @relation("SubBabTemplateChildren")
+
+  // Lihat komentar ChapterSection di atas: bukan @@unique lagi karena
+  // order sekarang bersaing per parent, dan NULL parentId membuat constraint
+  // unik tidak benar-benar menjaga level teratas di Postgres.
+  @@index([chapterTemplateId, parentId])
+  @@map("sub_bab_templates")
+}
+
+enum AccreditationSetStatus {
+  DRAF
+  SIAP
+}
+
+// ─────────────────── Kelompok: Skoring (Simulasi Penilaian) ───────────────────
+
+/// docs/database.md §10 — skor_maksimal sengaja TIDAK dibuat, diturunkan dari RubricLevel
+model RubricCriterion {
+  id                 String          @id @default(cuid())
+  accreditationSetId String          @map("accreditation_set_id")
+  indicatorNo        Int             @map("indicator_no")
+  criterionCode      String          @map("criterion_code")
+  criterionGroup     String          @map("criterion_group")
+  description        String          @db.Text
+  scoreType          RubricScoreType @map("score_type")
+  lkpsTableRefs      String[]        @map("lkps_table_refs")
+  /// Non-null hanya untuk scoreType KUANTITATIF/KOMPOSIT -- lihat
+  /// apps/ai/ingestion/matrix_parser.py::IndicatorRubric untuk makna aslinya.
+  formula            String?         @db.Text
+  subScoreFormula    String?         @map("sub_score_formula") @db.Text
+
+  accreditationSet  AccreditationSet         @relation(fields: [accreditationSetId], references: [id], onDelete: Cascade)
+  levels            RubricLevel[]
+  criterionChapters RubricCriterionChapter[]
+  scoreResults      CriterionScoreResult[]
+
+  @@unique([accreditationSetId, indicatorNo])
+  @@map("rubric_criteria")
+}
+
+enum RubricScoreType {
+  KUALITATIF
+  KUANTITATIF
+  KOMPOSIT
+}
+
+/// docs/database.md §10a
+model RubricLevel {
+  id          String @id @default(cuid())
+  criterionId String @map("criterion_id")
+  score       Int
+  description String @db.Text
+
+  criterion RubricCriterion @relation(fields: [criterionId], references: [id], onDelete: Cascade)
+
+  @@unique([criterionId, score])
+  @@map("rubric_levels")
+}
+
+/// docs/database.md §11 — chapterOrder adalah matching key, BUKAN FK ke DocumentChapter.id
+model RubricCriterionChapter {
+  id           String @id @default(cuid())
+  criterionId  String @map("criterion_id")
+  chapterOrder Int    @map("chapter_order")
+
+  criterion RubricCriterion @relation(fields: [criterionId], references: [id], onDelete: Cascade)
+
+  @@unique([criterionId, chapterOrder])
+  @@map("rubric_criterion_chapters")
+}
+
+/// docs/database.md §12 — target BAB_AKTIF (ditimpa tiap re-run) atau BAB_DRAFT (permanen)
+model CriterionScoreResult {
+  id            String     @id @default(cuid())
+  criterionId   String     @map("criterion_id")
+  targetType    TargetTipe @map("target_type")
+  chapterId     String?    @map("chapter_id")
+  draftId       String?    @map("draft_id")
+  scoreObtained Int        @map("score_obtained")
+  justification String?    @db.Text
+  runByUserId   String     @map("run_by_user_id")
+  runByName     String     @map("run_by_name")
+  runAt         DateTime   @default(now()) @map("run_at")
+
+  criterion RubricCriterion  @relation(fields: [criterionId], references: [id], onDelete: Cascade)
+  chapter   DocumentChapter? @relation(fields: [chapterId], references: [id])
+  draft     ChapterDraft?    @relation(fields: [draftId], references: [id])
+  runBy     User             @relation("HasilSkorDijalankanOleh", fields: [runByUserId], references: [id])
+
+  @@index([chapterId])
+  @@index([draftId])
+  @@map("rubric_score_results")
+}
+
+// ─────────────── Kelompok: Panduan Referensi (Master Data RAG) ───────────────
+
+/// docs/database.md §13
+model ReferenceGuide {
+  id                 String      @id @default(cuid())
+  type               TipePanduan
+  title              String
+  fileUrl            String      @map("file_url")
+  fileType           String      @map("file_type")
+  /// null = panduan lama, sebelum Set Akreditasi ada (masih global, bukan per-set).
+  accreditationSetId String?     @map("accreditation_set_id")
+  /// null = baris lama, diunggah sebelum kolom ini ada -- lihat
+  /// accreditation-set/data/backend-mappers.ts::mapDocument.
+  sizeBytes          Int?        @map("size_bytes")
+  uploadedByUserId   String?     @map("uploaded_by_user_id")
+  uploadedByName     String?     @map("uploaded_by_name")
+  createdAt          DateTime    @default(now()) @map("created_at")
+
+  accreditationSet AccreditationSet? @relation(fields: [accreditationSetId], references: [id], onDelete: Cascade)
+  uploadedBy       User?             @relation("PanduanDiunggahOleh", fields: [uploadedByUserId], references: [id])
+  details          GuideDetail[]
+
+  @@index([accreditationSetId])
+  @@map("guide_references")
+}
+
+/// docs/database.md §14
+model GuideDetail {
+  id          String @id @default(cuid())
+  guideId     String @map("guide_id")
+  pointCode   String @map("point_code")
+  pointTitle  String @map("point_title")
+  contentText String @map("content_text") @db.Text
+
+  guide          ReferenceGuide       @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  detailChapters GuideDetailChapter[]
+
+  @@map("guide_details")
+}
+
+/// docs/database.md §15 — chapterOrder adalah matching key, BUKAN FK
+model GuideDetailChapter {
+  id            String @id @default(cuid())
+  guideDetailId String @map("guide_detail_id")
+  chapterOrder  Int    @map("chapter_order")
+
+  guideDetail GuideDetail @relation(fields: [guideDetailId], references: [id], onDelete: Cascade)
+
+  @@map("guide_detail_chapters")
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Kelompok baru: produksi untuk AI-LED Generation & AMI Assessment
+// (menggantikan prototipe §16-21 — lihat catatan desain di atas)
+// ═══════════════════════════════════════════════════════════════════
+
+/// Jejak teknis lengkap satu proses generate — 1:1 dengan BabDraft yang
+/// dihasilkannya. Mengganti `drafts` (§16); kontennya sendiri tetap hidup
+/// di BabDraft.kontenSnapshot, bukan di sini.
+model GenerationRun {
+  id             String   @id @default(cuid())
+  chapterDraftId String   @unique @map("chapter_draft_id")
+  model          String
+  guidelinesUsed Json     @map("guidelines_used")
+  rubricUsed     Json     @map("rubric_used")
+  checklist      Json
+  chunksUsed     Json     @map("chunks_used")
+  judgeResult    Json?    @map("judge_result")
+  promptFull     String   @map("prompt_full") @db.Text
+  latencySec     Float    @map("latency_sec")
+  tokenCount     Int      @map("token_count")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  chapterDraft ChapterDraft @relation(fields: [chapterDraftId], references: [id])
+  evalResult   EvalResult?
+
+  @@map("writing_generation_runs")
+}
+
+/// Skor RAGAS dinormalisasi — persis usulan §12a, menempel ke bab aktif
+/// ATAU checkpoint sesuai target_tipe (pola sama dengan CriterionScoreResult).
+model RagasScore {
+  id             String     @id @default(cuid())
+  targetType     TargetTipe @map("target_type")
+  chapterId      String?    @map("chapter_id")
+  chapterDraftId String?    @map("chapter_draft_id")
+  metrics        Json
+  chunkCount     Int        @map("chunk_count")
+  computedAt     DateTime   @map("computed_at")
+
+  chapter      DocumentChapter? @relation(fields: [chapterId], references: [id])
+  chapterDraft ChapterDraft?    @relation(fields: [chapterDraftId], references: [id])
+
+  @@index([chapterId])
+  @@index([chapterDraftId])
+  @@map("writing_ragas_scores")
+}
+
+/// Riwayat chat revisi, diikat ke kondisi aktif bab (bukan section_id/model
+/// bebas seperti prototipe §17 — prototipe multi-model dijatuhkan di produksi).
+model ChatMessage {
+  id        String   @id @default(cuid())
+  chapterId String   @map("chapter_id")
+  userId    String   @map("user_id")
+  role      ChatRole
+  message   String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  chapter DocumentChapter @relation(fields: [chapterId], references: [id])
+  user    User            @relation(fields: [userId], references: [id])
+
+  @@index([chapterId])
+  @@map("writing_chat_messages")
+}
+
+/// Riwayat job BullMQ yang tahan lama di Postgres (Redis menyimpan state
+/// aktif; tabel ini untuk audit/riwayat setelah job selesai/di-evict).
+model Job {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  createdByUserId String    @map("created_by_user_id")
+  type            JobType
+  queueName       String    @map("queue_name")
+  // BullMQ menomori job per-antrean (counter sendiri tiap queue), BUKAN
+  // global — job pertama di generation-queue dan job pertama di
+  // assessment-queue sama-sama dapat id "1". `@unique` tunggal di sini akan
+  // bentrok begitu ada lebih dari satu queue terpakai; unik yang benar
+  // adalah pasangan (queueName, bullJobId).
+  bullJobId       String    @map("bull_job_id")
+  status          JobStatus @default(WAITING)
+  progress        Int       @default(0)
+  payload         Json
+  result          Json?
+  error           String?   @db.Text
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id])
+  createdBy User   @relation(fields: [createdByUserId], references: [id])
+
+  @@unique([queueName, bullJobId])
+  @@index([tenantId, status])
+  @@map("infra_jobs")
+}
+
+/// Produksi dari §19, disambungkan ke tenant & dokumen (Catatan Integrasi #5).
+model AssessmentSession {
+  id                  String           @id @default(cuid())
+  tenantId            String           @map("tenant_id")
+  documentId          String           @map("document_id")
+  createdByUserId     String           @map("created_by_user_id")
+  reportEvidenceId    String?          @map("report_evidence_id")
+  /// Menambal celah yang dicatat assessment-source.entity.ts §12b: dari mana
+  /// bahan LED sesi ini berasal, dan (kalau UNGGAHAN) nama berkasnya.
+  ledSource           LedSourceMode    @default(EDITOR) @map("led_source")
+  ledFileName         String?          @map("led_file_name")
+  lkpsEvidenceId      String?          @map("lkps_evidence_id")
+  totalIndicators     Int              @map("total_indicators")
+  completedIndicators Int              @default(0) @map("completed_indicators")
+  status              AssessmentStatus @default(RUNNING)
+  /// BullMQ `Job.bullJobId` yang menjalankan sesi ini — dipakai tombol
+  /// Batalkan (JobsService.cancel) supaya bisa menarget job dari tab/pengguna
+  /// MANAPUN yang sedang melihat sesi RUNNING, bukan cuma tab yang memulainya
+  /// (lihat komentar `useAssessmentSession`). `null` untuk sesi lewat rute
+  /// HTTP langsung apps/ai (/assessment/start, /resume) yang tidak lewat
+  /// BullMQ sama sekali.
+  bullJobId           String?          @map("bull_job_id")
+  error               String?          @db.Text
+  /// RAGAS level-sesi (docs/database.md §12b(3)) — apps/ai/eval/ragas_eval.py's
+  /// `scores`/`per_indicator`/`total_chunks`/`model`/`finished_at`, ditimpa tiap
+  /// "Jalankan Evaluasi" ditekan ulang (sama seperti IndicatorResult, bukan
+  /// riwayat berlapis). `null` = belum pernah dievaluasi.
+  kualitas            Json?
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+
+  tenant         Tenant      @relation(fields: [tenantId], references: [id])
+  document       LedDocument @relation(fields: [documentId], references: [id])
+  createdBy      User        @relation(fields: [createdByUserId], references: [id])
+  reportEvidence Evidence?   @relation(fields: [reportEvidenceId], references: [id])
+
+  indicatorResults            IndicatorResult[]
+  reasoningSteps              ReasoningStep[]
+  /// Verdict yang lahir SAAT sesi ini — bukan berarti verdict itu masih
+  /// "milik" sesi ini kalau dokumennya dinilai ulang lagi setelahnya, lihat
+  /// AssessmentVerdict.
+  verdictsReviewedThisSession AssessmentVerdict[]
+
+  @@index([tenantId, status])
+  @@map("assessment_sessions")
+}
+
+/// Produksi dari §20 — menambah kolom `model` (Catatan Integrasi #2).
+model IndicatorResult {
+  id             String   @id @default(cuid())
+  sessionId      String   @map("session_id")
+  indicatorNo    Int      @map("indicator_no")
+  score          Decimal? @db.Decimal(5, 2)
+  justification  String?  @db.Text
+  confidence     Decimal? @db.Decimal(4, 3)
+  recommendation String?  @db.Text
+  model          String?
+  error          String?  @db.Text
+  /// LED/LKPS/evidence citations retrieved while scoring, written by apps/ai only
+  sourcesUsed    Json?    @map("sources_used")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  session AssessmentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, indicatorNo])
+  @@map("assessment_indicator_results")
+}
+
+/// Produksi dari §21 — session_id diberi FK sungguhan (Catatan Integrasi #7),
+/// beda dari prototipe yang sengaja/tidak sengaja membiarkannya lepas.
+model ReasoningStep {
+  id          String   @id @default(cuid())
+  sessionId   String   @map("session_id")
+  indicatorNo Int      @map("indicator_no")
+  stepIndex   Int      @map("step_index")
+  content     String   @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  session AssessmentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, indicatorNo])
+  @@map("assessment_reasoning_steps")
+}
+
+/// Keputusan Penjamin Mutu atas satu indikator — celah yang dicatat
+/// `assessment-verdict.entity.ts` §12b sejak awal, ditambal di sini. Kunci
+/// (documentId, indicatorNo), BUKAN sessionId: keputusan menempel ke dokumen
+/// supaya bertahan melewati penilaian ulang (IndicatorResult kebijakannya
+/// main timpa) — sessionIdAtReview cuma keterangan kapan/dasar apa
+/// keputusan ini dibuat, bukan pemiliknya.
+model AssessmentVerdict {
+  id                   String   @id @default(cuid())
+  documentId           String   @map("document_id")
+  indicatorNo          Int      @map("indicator_no")
+  finalScore           Decimal  @map("final_score") @db.Decimal(5, 2)
+  /// Wajib diisi FE saat mengoreksi, boleh kosong saat menyetujui apa adanya
+  /// — lihat assessment-verdict.entity.ts::catatanKoreksiSchema.
+  note                 String?  @db.Text
+  /// null bila indikatornya gagal dinilai mesin saat itu.
+  machineScoreAtReview Decimal? @map("machine_score_at_review") @db.Decimal(5, 2)
+  sessionIdAtReview    String   @map("session_id_at_review")
+  reviewedByUserId     String   @map("reviewed_by_user_id")
+  reviewedByName       String   @map("reviewed_by_name")
+  reviewedAt           DateTime @default(now()) @map("reviewed_at")
+
+  document        LedDocument       @relation(fields: [documentId], references: [id])
+  sessionAtReview AssessmentSession @relation(fields: [sessionIdAtReview], references: [id])
+  reviewedBy      User              @relation("AssessmentVerdictDitinjauOleh", fields: [reviewedByUserId], references: [id])
+
+  @@unique([documentId, indicatorNo])
+  @@map("assessment_verdicts")
+}
+
+/// Produksi dari §18 — alat benchmark, diikat ke GenerationRun (bukan
+/// section_id/model bebas) supaya tetap tertelusur ke draf & model yang sama.
+model EvalResult {
+  id               String   @id @default(cuid())
+  generationRunId  String   @unique @map("generation_run_id")
+  rouge1           Float?   @map("rouge_1")
+  rouge2           Float?   @map("rouge_2")
+  rougeL           Float?   @map("rouge_l")
+  bleu4            Float?   @map("bleu_4")
+  answerRelevancy  Float?   @map("answer_relevancy")
+  contextPrecision Float?   @map("context_precision")
+  contextRecall    Float?   @map("context_recall")
+  evaluatedAt      DateTime @default(now()) @map("evaluated_at")
+
+  generationRun GenerationRun @relation(fields: [generationRunId], references: [id])
+
+  @@map("writing_eval_results")
+}
+
+// ─────────────────── Kelompok: Vector Store (pgvector) ───────────────────
+
+/// LED chunk embeddings — apps/ai/vectorstore/pgvector_store.py. Replaces the
+/// old per-(tenant_id, dokumen_id) ChromaDB collection scheme: isolation is
+/// now a plain WHERE clause on real FK columns, same as every other table,
+/// instead of a second, separately-reasoned-about isolation mechanism.
+///
+/// `embedding` is `Unsupported` because Prisma has no native vector type —
+/// the column, the pgvector extension, and its HNSW index are all added by
+/// hand in this model's migration.sql (Prisma's autogenerated SQL always
+/// skips Unsupported fields).
+model LedChunkEmbedding {
+  id             String                     @id @default(cuid())
+  tenantId       String                     @map("tenant_id")
+  documentId     String                     @map("document_id")
+  chunkId        String                     @map("chunk_id")
+  text           String                     @db.Text
+  embedding      Unsupported("vector(384)")
+  pageStart      Int                        @map("page_start")
+  pageEnd        Int                        @map("page_end")
+  paraStart      Int                        @map("para_start")
+  paraEnd        Int                        @map("para_end")
+  sectionHeading String?                    @map("section_heading")
+  charStart      Int                        @map("char_start")
+  createdAt      DateTime                   @default(now()) @map("created_at")
+
+  tenant   Tenant      @relation(fields: [tenantId], references: [id])
+  document LedDocument @relation(fields: [documentId], references: [id])
+
+  @@unique([documentId, chunkId])
+  @@index([tenantId, documentId])
+  @@map("writing_led_chunk_embeddings")
+}
+
+/// Chunk + embedding untuk satu berkas BuktiDukung — pola sama dengan
+/// LedChunkEmbedding di atas. `onDelete: Cascade` (beda dari itu, yang
+/// Restrict) karena ini indeks turunan, bukan jejak audit.
+model EvidenceChunkEmbedding {
+  id         String                     @id @default(cuid())
+  tenantId   String                     @map("tenant_id")
+  evidenceId String                     @map("evidence_id")
+  chunkId    String                     @map("chunk_id")
+  entity     String                     @db.Text
+  text       String                     @db.Text
+  embedding  Unsupported("vector(384)")
+  /// "HIGH" / "LOW" — hasil klasifikasi chunking dimas (evidence_chunking.py).
+  /// `null` untuk chunk dari sumber yang tidak melewati jalur itu (excel/csv/txt).
+  confidence String?
+  createdAt  DateTime                   @default(now()) @map("created_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  evidence Evidence @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+
+  @@unique([evidenceId, chunkId])
+  @@index([tenantId, evidenceId])
+  @@map("evidence_chunk_embeddings")
+}

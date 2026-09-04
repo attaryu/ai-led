@@ -1,0 +1,308 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/dm-sans";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+html,
+body {
+  /*
+   * `bg-background`, bukan `bg-white`: sejak paletnya punya rona, putih murni
+   * disediakan untuk kartu. Aturan ini berada di luar `@layer base`, jadi ia
+   * menang atas `body { @apply bg-background }` di bawah — keduanya kini
+   * menunjuk nilai yang sama, dan `html` ikut terwarnai sehingga area
+   * overscroll tidak berkedip putih.
+   */
+  @apply bg-background;
+
+  @media (prefers-color-scheme: dark) {
+    color-scheme: dark;
+  }
+}
+
+/*
+ * Palet: tinta di atas kertas.
+ *
+ * Nilai sebelumnya adalah bawaan shadcn apa adanya — violet hue 277 dengan
+ * chroma 0.24, dan netral ber-chroma nol. Keduanya adalah ciri paling kentara
+ * dari tampilan hasil generate, dan dua-duanya tidak menyampaikan apa pun
+ * tentang produk ini.
+ *
+ * Yang menggantikannya dipilih berpasangan, bukan satu per satu:
+ *
+ * - `--primary` navy hue 252 dengan chroma 0.105 dan lightness 0.42. Chroma
+ *   rendah dan gelap membuatnya terbaca sebagai tinta, bukan biru tombol;
+ *   biru jenuh biasa hanya memindahkan kesan "bawaan" dari satu kerangka ke
+ *   kerangka lain.
+ * - Netral diberi rona hangat (hue 85, chroma 0.005–0.008). Rona ini nyaris
+ *   tidak kelihatan sendirian, tapi ia yang membedakan "dipilih" dari
+ *   "default", dan ia menghangatkan latar menjadi kertas.
+ * - Karena `--background` bukan lagi putih murni sedangkan `--card` tetap
+ *   putih, kartu naik selapis di atas halaman tanpa perlu tambahan garis atau
+ *   bayangan. Hierarki yang selama ini hilang didapat dari kontras permukaan.
+ * - `--ring` ikut warna merek, bukan abu-abu netral. Fokus keyboard jadi
+ *   bagian dari identitas, bukan sisa bawaan.
+ * - `--muted-foreground` sengaja digelapkan dari 0.556 ke 0.50: nilai lama
+ *   berada di bawah rasio kontras 4.5:1 untuk teks biasa, padahal seluruh
+ *   subjudul dan teks bantu memakainya.
+ * - `--border` di 0.83, bukan 0.922 bawaan. Di atas kertas 0.995 nilai lama
+ *   nyaris tak terbedakan dari latarnya sendiri, sehingga tepi kartu dan
+ *   garis antarbaris tabel hilang. Yang dinaikkan kepekatannya, bukan
+ *   tebalnya: garis tetap 1 px, hanya jadi terlihat. Nilainya duduk di antara
+ *   `gray-300` dan `gray-400` — batas atas sebelum tabel mulai terbaca
+ *   sebagai kisi, bukan sebagai daftar.
+ * - `--sidebar` adalah **ground** tata letak inset, bukan sekadar latar
+ *   sidebar: ia yang membungkus kartu konten. Karena itu ia harus lebih
+ *   gelap dari `--background`, dan jaraknya harus cukup untuk terbaca —
+ *   0.978 hanya berjarak 1,7% dari kartunya dan celah pembungkusnya tidak
+ *   terlihat sama sekali. `--sidebar-accent` ikut digelapkan supaya penanda
+ *   menu aktif tetap menonjol di atas ground yang baru.
+ *
+ * `--radius` turun dari 0.625rem ke 0.375rem. Sudut yang lebih tegas membaca
+ * sebagai perkakas kerja; 10 px seragam di kartu, tombol, input, dan tabel
+ * adalah tanda lain dari kerangka yang tidak disetel.
+ *
+ * Ramp `--chart-*` diselaraskan ke hue yang sama. Belum ada yang memakainya
+ * (tidak ada rujukan di seluruh `app/`), tapi meninggalkannya violet berarti
+ * grafik pertama yang dibuat nanti akan bertengkar dengan sisa halaman.
+ */
+:root {
+  --background: oklch(0.995 0.002 85);
+  --foreground: oklch(0.21 0.012 265);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.012 265);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.012 265);
+  --primary: oklch(0.42 0.105 252);
+  --primary-foreground: oklch(0.985 0.003 85);
+  --secondary: oklch(0.965 0.005 85);
+  --secondary-foreground: oklch(0.28 0.012 265);
+  --muted: oklch(0.968 0.005 85);
+  --muted-foreground: oklch(0.5 0.012 265);
+  --accent: oklch(0.955 0.008 85);
+  --accent-foreground: oklch(0.28 0.012 265);
+  --destructive: oklch(0.55 0.19 27);
+  --border: oklch(0.83 0.009 85);
+  --input: oklch(0.83 0.009 85);
+  --ring: oklch(0.42 0.105 252);
+  --chart-1: oklch(0.8 0.045 252);
+  --chart-2: oklch(0.68 0.075 252);
+  --chart-3: oklch(0.55 0.1 252);
+  --chart-4: oklch(0.42 0.105 252);
+  --chart-5: oklch(0.32 0.085 254);
+  --radius: 0.375rem;
+  --sidebar: oklch(0.953 0.008 85);
+  --sidebar-foreground: oklch(0.21 0.012 265);
+  --sidebar-primary: oklch(0.42 0.105 252);
+  --sidebar-primary-foreground: oklch(0.985 0.003 85);
+  --sidebar-accent: oklch(0.915 0.011 85);
+  --sidebar-accent-foreground: oklch(0.28 0.012 265);
+  --sidebar-border: oklch(0.83 0.009 85);
+  --sidebar-ring: oklch(0.42 0.105 252);
+}
+
+/*
+ * Mode gelap mengikuti pasangan yang sama, dengan satu pembalikan yang
+ * disengaja: `--primary` di sini lebih *terang* dari mode terang (0.58 lawan
+ * 0.42). Nilai lama justru lebih gelap (0.398), yang berarti tombol utama
+ * tenggelam ke latar alih-alih menonjol darinya.
+ *
+ * Ronanya juga dibalik: netral gelap condong dingin (hue 265) supaya tidak
+ * berlumpur, sedangkan teksnya menyimpan sedikit rona hangat dari kertas.
+ */
+.dark {
+  --background: oklch(0.175 0.008 265);
+  --foreground: oklch(0.965 0.003 85);
+  --card: oklch(0.215 0.01 265);
+  --card-foreground: oklch(0.965 0.003 85);
+  --popover: oklch(0.215 0.01 265);
+  --popover-foreground: oklch(0.965 0.003 85);
+  --primary: oklch(0.58 0.12 252);
+  --primary-foreground: oklch(0.985 0.003 85);
+  --secondary: oklch(0.275 0.01 265);
+  --secondary-foreground: oklch(0.965 0.003 85);
+  --muted: oklch(0.27 0.01 265);
+  --muted-foreground: oklch(0.7 0.012 265);
+  --accent: oklch(0.3 0.012 265);
+  --accent-foreground: oklch(0.965 0.003 85);
+  --destructive: oklch(0.66 0.17 25);
+  --border: oklch(1 0 0 / 22%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.58 0.12 252);
+  --chart-1: oklch(0.82 0.05 252);
+  --chart-2: oklch(0.72 0.08 252);
+  --chart-3: oklch(0.62 0.11 252);
+  --chart-4: oklch(0.52 0.11 252);
+  --chart-5: oklch(0.42 0.09 254);
+  --sidebar: oklch(0.145 0.01 265);
+  --sidebar-foreground: oklch(0.965 0.003 85);
+  --sidebar-primary: oklch(0.58 0.12 252);
+  --sidebar-primary-foreground: oklch(0.985 0.003 85);
+  --sidebar-accent: oklch(0.29 0.012 265);
+  --sidebar-accent-foreground: oklch(0.965 0.003 85);
+  --sidebar-border: oklch(1 0 0 / 22%);
+  --sidebar-ring: oklch(0.58 0.12 252);
+}
+
+@theme inline {
+  --font-sans: 'DM Sans Variable', sans-serif;
+  --font-heading: 'Geist Variable', sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+@layer components {
+  /*
+   * Scrollbar kanvas Editor Bab.
+   *
+   * Kedua sidebar editor memakai `ScrollArea` Base UI dengan scrollbar 10 px yang
+   * menumpang di atas isinya; kanvas tidak, karena ProseMirror mengurus sendiri
+   * pengejaran kursornya dan lapis pembungkus di jalur itu hanya menambah risiko
+   * (alasan lengkapnya di `chapter-editor-canvas.tsx`). Yang tersisa cuma soal
+   * rupa: tanpa aturan ini, scrollbar Windows lengkap dengan tombol panahnya
+   * berdiri persis di sebelah scrollbar ramping sidebar.
+   *
+   * Dua properti standar, bukan `::-webkit-scrollbar`: keduanya sudah didukung
+   * Firefox dan Chromium, dan gulungannya tetap gulungan native — yang berubah
+   * hanya ukuran dan warnanya.
+   */
+  [data-slot='chapter-editor-canvas'] {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  /*
+   * Isi kartu konten `AppShell`, dengan alasan yang sama seperti di atas dan
+   * satu tambahan: sejak tata letaknya inset, gulungan ini berada **di dalam**
+   * kartu bersudut membulat. Scrollbar Windows setebal 17 px lengkap dengan
+   * tombol panahnya berdiri persis menabrak lengkung sudut itu, dan tidak ada
+   * radius yang bisa menyembunyikannya.
+   *
+   * Tidak dibungkus `ScrollArea` Base UI seperti tabel dan laci: ini gulungan
+   * utama halaman, dan menggantinya berarti scrollbar aplikasi yang paling
+   * sering dipakai berhenti jadi gulungan native — termasuk pengejaran fokus
+   * keyboard dan lompat-ke-anchor.
+   */
+  [data-slot='app-shell-main'] {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  /*
+   * Kanvas Editor Bab (docs/application_flow.md §7.2).
+   *
+   * Preflight Tailwind mematikan penanda daftar, ukuran heading, dan margin
+   * paragraf, jadi tanpa blok ini tombol daftar di toolbar akan tampak tidak
+   * berfungsi. Ditulis tangan alih-alih memasang @tailwindcss/typography:
+   * skala prose plugin itu opinionated dan bertengkar dengan rancangan
+   * "kertas" bab. Lingkupnya sengaja hanya elemen di dalam editor.
+   *
+   * `font-size` di sini harus sama dengan UKURAN_FONT_DEFAULT di
+   * features/chapter/presentation/components/chapter-font-size-control.tsx —
+   * angka "14" di toolbar baru jujur kalau keduanya sepakat.
+   */
+  .tiptap {
+    font-size: 14px;
+    line-height: 1.7;
+  }
+  .tiptap:focus {
+    outline: none;
+  }
+  .tiptap p {
+    margin-block: 0.5rem;
+  }
+  .tiptap ul {
+    list-style: disc;
+    padding-inline-start: 1.5rem;
+  }
+  .tiptap ol {
+    list-style: decimal;
+    padding-inline-start: 1.5rem;
+  }
+  .tiptap li p {
+    margin-block: 0.15rem;
+  }
+  .tiptap h1 {
+    font-size: 1.75em;
+    font-weight: 700;
+    margin-block: 1rem 0.5rem;
+  }
+  .tiptap h2 {
+    font-size: 1.4em;
+    font-weight: 700;
+    margin-block: 0.9rem 0.5rem;
+  }
+  .tiptap h3 {
+    font-size: 1.15em;
+    font-weight: 600;
+    margin-block: 0.8rem 0.4rem;
+  }
+  .tiptap blockquote {
+    border-inline-start: 3px solid var(--border);
+    padding-inline-start: 0.75rem;
+    color: var(--muted-foreground);
+  }
+  /* Penanda bab kosong: tanpa ini kanvas kosong tidak memberi petunjuk apa pun. */
+  .tiptap p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
+    color: var(--muted-foreground);
+  }
+}

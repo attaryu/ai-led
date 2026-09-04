@@ -1,0 +1,10 @@
+model,score_type,n,mae,exact_pct,within1_pct,score_zero_count
+qwen3.5:35b,qualitative,9,0.4444,55.56,100.0,0
+qwen3.5:35b,composite,4,0.875,0.0,100.0,0
+qwen3.5:35b,quantitative,6,0.6667,33.33,100.0,0
+deepseek-r1:32b,qualitative,9,1.1111,33.33,77.78,1
+deepseek-r1:32b,composite,4,0.875,25.0,75.0,0
+deepseek-r1:32b,quantitative,6,2.1667,0.0,33.33,2
+mistral-small3.2:24b,qualitative,9,2.8889,0.0,11.11,7
+mistral-small3.2:24b,composite,4,3.125,0.0,0.0,3
+mistral-small3.2:24b,quantitative,6,0.5,66.67,83.33,0

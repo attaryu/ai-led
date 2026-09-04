@@ -1,0 +1,26 @@
+Priority,Task,Definition of Done,Notes/Attachment,Start Date,End Date,Status
+High,Migrasi storage SQLite ke PostgreSQL,Seluruh data aplikasi berpindah dan tersimpan di database PostgreSQL tanpa kehilangan data,db.py; migrate_to_postgres.py,2026-08-06,2026-08-06,Done
+High,Modul ekstraksi dokumen bukti dukung,"Dokumen bukti dukung yang diunggah (PDF/DOCX/XLSX) otomatis terbaca dan terpecah menjadi potongan konten siap pakai",modul ekstraksi (MinerU + watermark + chunking + Excel),2026-08-07,2026-08-10,Done
+High,Penyesuaian akses dokumen & role user untuk LED,"Setiap peran (Admin/Pimpinan/Penjamin Mutu/Penyusun) hanya bisa mengakses dan mengubah LED sesuai haknya masing-masing",guard akses per role + endpoint profil user,2026-08-07,2026-08-07,Done
+Medium,UI Upload & Sidebar navigasi dokumen,"User bisa mengunggah dokumen lewat browser dan berpindah antar halaman lewat menu samping",komponen Upload Zone & Sidebar,2026-08-07,2026-08-07,Done
+High,Pipeline ekstraksi end-to-end + background worker,"Proses ekstraksi dokumen berjalan otomatis di latar belakang tanpa membuat aplikasi utama macet/lambat",pipeline ekstraksi + proses worker terpisah,2026-08-10,2026-08-12,Done
+High,Document registry & endpoint dokumen bukti dukung,"User bisa melihat, menambah, dan menghapus dokumen bukti dukung yang terdaftar di sistem",endpoint kelola dokumen + tabel registry dokumen,2026-08-10,2026-08-12,Done
+Medium,Retrieval & integrasi model LLM lokal,"Sistem bisa mengambil potongan konten paling relevan dan mengirimkannya ke model AI lokal untuk diproses",modul retrieval + koneksi ke LLM lokal,2026-08-10,2026-08-13,Done
+Medium,Halaman daftar LED & routing app,"User bisa melihat daftar LED dan berpindah antara halaman daftar, editor, dan detail dengan lancar",halaman daftar LED + navigasi antar halaman,2026-08-10,2026-08-10,Done
+Medium,Editor LED (toolbar + halaman editor),"User bisa membuat, mengedit, dan menyetujui draf narasi tiap bagian LED",toolbar editor + halaman editor,2026-08-11,2026-08-11,Done
+Low,Modul rekomendasi dokumen bukti dukung,"Sistem bisa menyarankan dokumen bukti dukung yang relevan sebelum narasi bab dibuat",tabel & alur rekomendasi dokumen,2026-08-11,2026-08-13,Done
+Medium,Halaman kelola dokumen (Documents Page),"User bisa mengelola seluruh dokumen (unggah, hapus, cek status ekstraksi) dalam satu halaman",halaman kelola dokumen,2026-08-12,2026-08-12,Done
+High,Arsitektur multi-container (worker terpisah),"Proses berat (ekstraksi dokumen) berjalan terpisah dari server utama agar aplikasi tetap responsif",konfigurasi container API + worker terpisah,2026-08-12,2026-08-12,Done
+High,Finalisasi struktur database,"Seluruh struktur data (dokumen, bab, draf, chat, rekomendasi, dll) terdefinisi lengkap dan konsisten di database",skema database final (22 tabel),2026-08-13,2026-08-13,Done
+Medium,Panel rekomendasi & info section di editor,"User bisa melihat info tiap bagian LED dan memilih dokumen bukti dukung yang relevan langsung dari editor",panel rekomendasi + panel info section,2026-08-13,2026-08-13,Done
+Medium,Perbaikan prompt & generator draft bab,"Draf narasi yang dihasilkan AI mengikuti referensi dan bukti dukung terpilih dengan lebih akurat",penyesuaian prompt & mesin generate draft,2026-08-13,2026-08-13,Done
+Medium,Perbaikan akses aplikasi dari jaringan lain (dev),"Aplikasi bisa diakses dan berfungsi normal dari perangkat lain dalam satu jaringan, tidak hanya dari komputer server",perbaikan pengaturan akses lintas-origin,2026-08-14,2026-08-14,Done
+Low,Cleanup komponen lama,"Tampilan navigasi lama yang sudah tidak dipakai dihapus agar tidak membingungkan",penghapusan komponen top bar lama,2026-08-07,2026-08-12,Done
+High,Ekstraksi buku pedoman & saran pengisian via RAG,"Sistem (RAG) bisa membaca buku pedoman dan menyarankan ke user poin-poin apa saja yang perlu diisi untuk tiap bagian LED",RAG atas buku pedoman + prompt engineering tahap awal,2026-08-14,2026-08-21,Planned
+High,Prompt engineering narasi subbab berbasis dokumen & pedoman,"Narasi tiap subbab yang dihasilkan AI sudah tepat dan relevan, mengacu pada dokumen bukti dukung yang diupload user maupun buku pedoman",penyempurnaan prompt & RAG generator narasi,2026-08-21,2026-08-28,Planned
+Medium,Chat asisten per-bab,"User bisa tanya-jawab dengan asisten AI khusus untuk tiap bab, dan riwayat percakapannya tersimpan",panel chat + endpoint chat,2026-08-28,2026-09-04,Planned
+High,Perbaikan bug & stabilisasi pasca-integrasi,"Aplikasi berjalan stabil end-to-end tanpa error setelah seluruh modul (worker, registry, akses jaringan, RAG pedoman) terintegrasi",-,2026-09-01,2026-09-04,Planned
+Medium,Evaluasi fungsionalitas rekomendasi narasi,"Rekomendasi narasi per bagian LED diuji terhadap contoh nyata, dan tingkat akurasi/relevansinya tercatat",-,2026-09-05,2026-09-08,Planned
+Medium,Evaluasi fungsionalitas pemberi rekomendasi dokumen,"Rekomendasi dokumen bukti dukung diuji terhadap contoh nyata, dan tingkat akurasi/relevansinya tercatat",-,2026-09-05,2026-09-08,Planned
+Medium,Perbaikan hasil evaluasi rekomendasi,"Seluruh temuan dari evaluasi rekomendasi narasi & dokumen diperbaiki dan lolos uji ulang",-,2026-09-08,2026-09-11,Planned
+High,Finalisasi,"Seluruh fitur (ekstraksi, editor, chat, rekomendasi narasi & dokumen) lolos uji akhir dan siap dipakai/didemokan",-,2026-09-12,2026-09-12,Planned

@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AMI Assessment — LAM Teknik</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f5f7fa;
+      color: #1a1a2e;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 0.25rem; }
+    .subtitle { color: #666; font-size: 0.9rem; margin-bottom: 2rem; }
+
+    .container { max-width: 860px; margin: 0 auto; }
+
+    /* ── Step cards ───────────────────────────────────────────────────────── */
+    .steps { display: flex; flex-direction: column; gap: 1.2rem; }
+
+    .card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 1.4rem 1.6rem;
+      position: relative;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .step-num {
+      background: #3b82f6;
+      color: #fff;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .card-title { font-size: 1rem; font-weight: 600; }
+    .card-desc { font-size: 0.82rem; color: #666; margin-top: 0.1rem; }
+
+    .card-status {
+      position: absolute;
+      top: 1.2rem;
+      right: 1.4rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 2px 10px;
+      border-radius: 99px;
+    }
+    .status-idle    { background: #f1f5f9; color: #64748b; }
+    .status-ok      { background: #dcfce7; color: #16a34a; }
+    .status-busy    { background: #fef9c3; color: #a16207; }
+    .status-err     { background: #fee2e2; color: #dc2626; }
+
+    /* ── File drop zone ───────────────────────────────────────────────────── */
+    .drop-zone {
+      border: 2px dashed #cbd5e1;
+      border-radius: 8px;
+      padding: 1.2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      font-size: 0.85rem;
+      color: #94a3b8;
+    }
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: #3b82f6;
+      background: #eff6ff;
+      color: #3b82f6;
+    }
+    .drop-zone input[type="file"] { display: none; }
+    .drop-zone .chosen { color: #1a1a2e; font-weight: 500; margin-top: 0.4rem; }
+
+    /* ── Upload button ────────────────────────────────────────────────────── */
+    .btn {
+      display: inline-block;
+      margin-top: 0.8rem;
+      padding: 0.5rem 1.2rem;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-primary  { background: #3b82f6; color: #fff; }
+    .btn-primary:hover:not(:disabled)  { background: #2563eb; }
+    .btn-success  { background: #16a34a; color: #fff; font-size: 1rem; width: 100%; padding: 0.75rem; }
+    .btn-success:hover:not(:disabled)  { background: #15803d; }
+
+    /* ── LED indexing bar ─────────────────────────────────────────────────── */
+    .progress-wrap { margin-top: 0.8rem; display: none; }
+    .progress-label { font-size: 0.8rem; color: #64748b; margin-bottom: 0.3rem; }
+    .progress-bar-track {
+      height: 6px;
+      background: #e2e8f0;
+      border-radius: 99px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: #3b82f6;
+      border-radius: 99px;
+      transition: width 0.4s;
+    }
+    .progress-msg { font-size: 0.78rem; margin-top: 0.3rem; color: #64748b; }
+
+    /* ── Assessment result panel ──────────────────────────────────────────── */
+    #result-panel {
+      display: none;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 1.4rem 1.6rem;
+      margin-top: 1.5rem;
+    }
+    #result-panel h2 { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; }
+
+    .stat-row { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .stat-box {
+      flex: 1;
+      min-width: 120px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 0.8rem 1rem;
+    }
+    .stat-value { font-size: 1.6rem; font-weight: 700; }
+    .stat-label { font-size: 0.75rem; color: #64748b; margin-top: 0.1rem; }
+
+    .assess-progress-track {
+      height: 10px;
+      background: #e2e8f0;
+      border-radius: 99px;
+      overflow: hidden;
+      margin-bottom: 0.5rem;
+    }
+    .assess-progress-fill {
+      height: 100%;
+      background: #16a34a;
+      border-radius: 99px;
+      transition: width 0.6s;
+    }
+    .assess-status-text { font-size: 0.82rem; color: #64748b; }
+
+    .badge-running   { color: #a16207; }
+    .badge-completed { color: #16a34a; }
+    .badge-failed    { color: #dc2626; }
+
+    .alert {
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      margin-top: 0.5rem;
+    }
+    .alert-err { background: #fee2e2; color: #991b1b; }
+    .alert-info { background: #dbeafe; color: #1e40af; }
+
+    /* ── Results table ────────────────────────────────────────────────────── */
+    #results-panel {
+      display: none;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 1.4rem 1.6rem;
+      margin-top: 1.5rem;
+    }
+    .results-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .results-header h2 { font-size: 1rem; font-weight: 600; }
+    .btn-pdf {
+      background: #dc2626; color: #fff;
+      padding: 0.5rem 1rem; font-size: 0.85rem;
+      border: none; border-radius: 6px; cursor: pointer; font-weight: 600;
+    }
+    .btn-pdf:hover { background: #b91c1c; }
+
+    .results-table-wrap {
+      overflow-x: auto;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+    }
+    table.results {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+    table.results thead th {
+      background: #f8fafc;
+      padding: 0.6rem 0.7rem;
+      text-align: left;
+      font-weight: 600;
+      color: #334155;
+      border-bottom: 1px solid #e2e8f0;
+      white-space: nowrap;
+    }
+    table.results tbody td {
+      padding: 0.55rem 0.7rem;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: top;
+    }
+    table.results tbody tr:last-child td { border-bottom: none; }
+    table.results td.no-col { text-align: center; width: 40px; font-weight: 600; }
+    table.results td.score-col { text-align: center; width: 60px; font-weight: 700; }
+    table.results td.conf-col { text-align: center; width: 70px; color: #64748b; }
+    .score-pill {
+      display: inline-block;
+      min-width: 28px;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+    .score-0, .score-1 { background: #fee2e2; color: #991b1b; }
+    .score-2          { background: #fef3c7; color: #92400e; }
+    .score-3          { background: #dbeafe; color: #1e40af; }
+    .score-4          { background: #dcfce7; color: #166534; }
+    .score-na         { background: #f1f5f9; color: #64748b; }
+    .justification    { color: #334155; line-height: 1.4; }
+    .err-text         { color: #dc2626; font-style: italic; }
+
+    /* Print styles for PDF export */
+    @media print {
+      body { background: #fff; padding: 0; }
+      .container > .steps, #result-panel, .btn-pdf { display: none !important; }
+      #results-panel { border: none; padding: 0; margin: 0; }
+    }
+
+    /* ── RAGAS evaluation panel ───────────────────────────────────────────── */
+    #ragas-panel {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 1.4rem 1.6rem;
+      margin-top: 2rem;
+    }
+    #ragas-panel h2 { font-size: 1rem; font-weight: 600; margin-bottom: 0.3rem; }
+    .ragas-subtitle { font-size: 0.82rem; color: #64748b; margin-bottom: 1rem; }
+    .ragas-config {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 0.6rem 0.9rem;
+      font-size: 0.82rem;
+      margin-bottom: 1rem;
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .ragas-config strong { color: #1a1a2e; }
+    .ragas-form { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-bottom: 1rem; }
+    .ragas-form label { font-size: 0.78rem; color: #475569; display: block; margin-bottom: 0.25rem; font-weight: 500; }
+    .ragas-form input, .ragas-form select {
+      width: 100%;
+      padding: 0.45rem 0.6rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 5px;
+      font-size: 0.85rem;
+      font-family: inherit;
+    }
+    .metrics-row { display: flex; gap: 0.7rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .metric-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.78rem;
+      padding: 0.3rem 0.7rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 99px;
+      cursor: pointer;
+      background: #fff;
+      transition: all 0.15s;
+      user-select: none;
+    }
+    .metric-chip input { accent-color: #3b82f6; cursor: pointer; }
+    .metric-chip:has(input:checked) { background: #eff6ff; border-color: #3b82f6; color: #1d4ed8; }
+
+    .btn-eval {
+      background: #8b5cf6; color: #fff;
+      padding: 0.55rem 1.2rem; font-size: 0.88rem;
+      border: none; border-radius: 6px; cursor: pointer; font-weight: 600;
+    }
+    .btn-eval:hover:not(:disabled) { background: #7c3aed; }
+    .btn-eval:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .ragas-progress {
+      font-size: 0.82rem; color: #64748b;
+      margin-top: 0.6rem;
+      display: none;
+    }
+    .ragas-progress.active { display: block; }
+
+    /* ── RAGAS comparison table ───────────────────────────────────────────── */
+    .compare-wrap {
+      margin-top: 1.5rem;
+      overflow-x: auto;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+    }
+    table.compare {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+    table.compare thead th {
+      background: #f8fafc;
+      padding: 0.55rem 0.7rem;
+      text-align: left;
+      font-weight: 600;
+      color: #334155;
+      border-bottom: 1px solid #e2e8f0;
+      white-space: nowrap;
+    }
+    table.compare tbody td {
+      padding: 0.5rem 0.7rem;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    table.compare tbody tr:last-child td { border-bottom: none; }
+    table.compare .metric-cell { text-align: center; font-weight: 600; }
+    .score-bar {
+      display: inline-block;
+      height: 6px;
+      background: #3b82f6;
+      border-radius: 99px;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    .compare-empty {
+      padding: 2rem;
+      text-align: center;
+      color: #94a3b8;
+      font-size: 0.85rem;
+    }
+    .clear-history {
+      background: none;
+      border: none;
+      color: #dc2626;
+      font-size: 0.78rem;
+      cursor: pointer;
+      padding: 0;
+      text-decoration: underline;
+    }
+    .clear-history:hover { color: #991b1b; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>AMI Assessment</h1>
+  <p class="subtitle">Penilaian Akreditasi Program Studi — LAM Teknik (Automated)</p>
+
+  <div class="steps">
+
+    <!-- Step 1: Upload Matriks Penilaian PDF -->
+    <div class="card" id="card-matrix">
+      <div class="card-status status-idle" id="status-matrix">Belum diunggah</div>
+      <div class="card-header">
+        <div class="step-num">1</div>
+        <div>
+          <div class="card-title">Matriks Penilaian (PDF)</div>
+          <div class="card-desc">Rubrik penilaian dari LAM — sumber kriteria dan skor 0–4</div>
+        </div>
+      </div>
+
+      <div class="drop-zone" id="drop-matrix" onclick="document.getElementById('file-matrix').click()">
+        <input type="file" id="file-matrix" accept=".pdf" />
+        <div>Klik atau seret file PDF rubrik ke sini</div>
+        <div class="chosen" id="chosen-matrix"></div>
+      </div>
+      <button class="btn btn-primary" id="btn-matrix" disabled onclick="uploadMatrix()">Unggah &amp; Parse</button>
+    </div>
+
+    <!-- Step 2: Upload LED PDF -->
+    <div class="card" id="card-led">
+      <div class="card-status status-idle" id="status-led">Belum diunggah</div>
+      <div class="card-header">
+        <div class="step-num">2</div>
+        <div>
+          <div class="card-title">Dokumen LED (PDF)</div>
+          <div class="card-desc">Laporan Evaluasi Diri — narasi kualitatif program studi</div>
+        </div>
+      </div>
+
+      <div class="drop-zone" id="drop-led" onclick="document.getElementById('file-led').click()">
+        <input type="file" id="file-led" accept=".pdf" />
+        <div>Klik atau seret file PDF ke sini</div>
+        <div class="chosen" id="chosen-led"></div>
+      </div>
+      <button class="btn btn-primary" id="btn-led" disabled onclick="uploadLed()">Unggah &amp; Indeks</button>
+
+      <div class="progress-wrap" id="led-progress">
+        <div class="progress-label">Mengindeks LED ke vector store…</div>
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="led-bar" style="width:0%"></div>
+        </div>
+        <div class="progress-msg" id="led-progress-msg"></div>
+      </div>
+    </div>
+
+    <!-- Step 3: Upload LKPS Excel -->
+    <div class="card" id="card-lkps">
+      <div class="card-status status-idle" id="status-lkps">Belum diunggah</div>
+      <div class="card-header">
+        <div class="step-num">3</div>
+        <div>
+          <div class="card-title">Data LKPS (Excel)</div>
+          <div class="card-desc">Laporan Kinerja Program Studi — 50 tabel kuantitatif</div>
+        </div>
+      </div>
+
+      <div class="drop-zone" id="drop-lkps" onclick="document.getElementById('file-lkps').click()">
+        <input type="file" id="file-lkps" accept=".xlsx,.xls" />
+        <div>Klik atau seret file Excel ke sini</div>
+        <div class="chosen" id="chosen-lkps"></div>
+      </div>
+      <button class="btn btn-primary" id="btn-lkps" disabled onclick="uploadLkps()">Unggah &amp; Muat</button>
+    </div>
+
+    <!-- Step 4: Upload Laporan AK (optional) -->
+    <div class="card" id="card-laporan">
+      <div class="card-status status-idle" id="status-laporan">Opsional</div>
+      <div class="card-header">
+        <div class="step-num">4</div>
+        <div>
+          <div class="card-title">Laporan AK (Excel) — Opsional</div>
+          <div class="card-desc">Filter subset indikator yang dinilai. Kosongkan untuk menilai semua indikator dari matriks.</div>
+        </div>
+      </div>
+
+      <div class="drop-zone" id="drop-laporan" onclick="document.getElementById('file-laporan').click()">
+        <input type="file" id="file-laporan" accept=".xlsx,.xls" />
+        <div>Klik atau seret file Excel ke sini</div>
+        <div class="chosen" id="chosen-laporan"></div>
+      </div>
+      <button class="btn btn-primary" id="btn-laporan" disabled onclick="uploadLaporan()">Unggah</button>
+    </div>
+
+    <!-- Step 5: Start Assessment -->
+    <div class="card">
+      <div class="card-header">
+        <div class="step-num">5</div>
+        <div>
+          <div class="card-title">Mulai Penilaian</div>
+          <div class="card-desc">Jalankan agen AI untuk menilai indikator secara paralel</div>
+        </div>
+      </div>
+      <button class="btn btn-success" id="btn-start" disabled onclick="startAssessment()">
+        Mulai Penilaian Otomatis
+      </button>
+    </div>
+
+  </div><!-- /steps -->
+
+  <!-- Result panel -->
+  <div id="result-panel">
+    <h2>Progres Penilaian</h2>
+    <div class="stat-row">
+      <div class="stat-box">
+        <div class="stat-value" id="stat-total">—</div>
+        <div class="stat-label">Total Indikator</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value" id="stat-done">0</div>
+        <div class="stat-label">Selesai Dinilai</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value" id="stat-status">—</div>
+        <div class="stat-label">Status</div>
+      </div>
+    </div>
+    <div class="assess-progress-track">
+      <div class="assess-progress-fill" id="assess-bar" style="width:0%"></div>
+    </div>
+    <div class="assess-status-text" id="assess-msg"></div>
+  </div>
+
+  <!-- Assessment history panel -->
+  <div id="history-panel" style="background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:1.4rem 1.6rem; margin-top:1.5rem;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem; gap:1rem; flex-wrap:wrap;">
+      <h2 style="font-size:1rem; font-weight:600;">Riwayat Penilaian</h2>
+      <button class="btn btn-primary" style="margin:0; padding:0.4rem 0.9rem; font-size:0.8rem;" onclick="loadHistory()">Refresh</button>
+    </div>
+    <div class="results-table-wrap" id="history-content">
+      <div class="compare-empty">Memuat riwayat…</div>
+    </div>
+  </div>
+
+  <!-- Results table panel (shown after completion) -->
+  <div id="results-panel">
+    <div class="results-header">
+      <h2>Hasil Penilaian</h2>
+      <button class="btn-pdf" onclick="downloadPdf()">Unduh PDF</button>
+    </div>
+    <div id="results-content">
+      <!-- Table is rendered here by renderResults() -->
+    </div>
+  </div>
+
+  <!-- RAGAS evaluation panel (always visible, for comparing models) -->
+  <div id="ragas-panel">
+    <h2>Evaluasi RAGAS — Bandingkan Model</h2>
+    <div class="ragas-subtitle">
+      Ukur kualitas RAG (faithfulness, answer relevancy, context precision/recall).
+      Hasil setiap run disimpan lokal untuk komparasi antar model — ganti
+      <code>LLM_PROVIDER</code> / <code>OPENROUTER_MODEL</code> di <code>.env</code>,
+      restart backend, lalu jalankan eval lagi.
+    </div>
+
+    <div class="ragas-config">
+      <div style="flex:1; min-width:240px;">
+        <div style="font-size:0.72rem; color:#94a3b8; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:2px;">Yang dinilai (Assessment)</div>
+        <div>Model: <strong id="assess-model">memuat…</strong></div>
+        <div>Provider: <strong id="assess-provider">—</strong></div>
+      </div>
+      <div style="flex:1; min-width:240px; border-left:2px solid #e2e8f0; padding-left:1.2rem;">
+        <div style="font-size:0.72rem; color:#94a3b8; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:2px;">Judge RAGAS</div>
+        <div>Model: <strong id="eval-model">memuat…</strong></div>
+        <div>Provider: <strong id="eval-provider">—</strong></div>
+      </div>
+    </div>
+    <div style="font-size:0.78rem; color:#64748b; margin-bottom:1rem;">
+      💡 Set <code>RAGAS_PROVIDER</code>, <code>RAGAS_OLLAMA_MODEL</code>, atau <code>RAGAS_OPENROUTER_MODEL</code> di <code>.env</code> agar judge berbeda dari assessment model (untuk benchmarking yang fair).
+    </div>
+
+    <div class="ragas-form">
+      <div>
+        <label for="eval-n">Jumlah indikator (1–78)</label>
+        <input type="number" id="eval-n" min="1" max="78" value="5" />
+      </div>
+      <div>
+        <label for="eval-session">Session ID (opsional)</label>
+        <input type="text" id="eval-session" placeholder="Pakai justifikasi dari session ini" />
+      </div>
+    </div>
+
+    <div class="metrics-row" id="metrics-row">
+      <label class="metric-chip"><input type="checkbox" value="faithfulness" checked /> faithfulness</label>
+      <label class="metric-chip"><input type="checkbox" value="answer_relevancy" checked /> answer_relevancy</label>
+      <label class="metric-chip"><input type="checkbox" value="context_precision" checked /> context_precision</label>
+      <label class="metric-chip"><input type="checkbox" value="context_recall" checked /> context_recall</label>
+    </div>
+
+    <button class="btn-eval" id="btn-eval" onclick="startEval()">Jalankan RAGAS</button>
+
+    <div id="eval-progress-wrap" style="display:none; margin-top:0.9rem;">
+      <div style="display:flex; justify-content:space-between; font-size:0.78rem; color:#64748b; margin-bottom:0.3rem;">
+        <span id="eval-stage-label">Memulai…</span>
+        <span id="eval-progress-pct">0%</span>
+      </div>
+      <div class="assess-progress-track" style="height:8px;">
+        <div class="assess-progress-fill" id="eval-bar" style="width:0%; background:#8b5cf6;"></div>
+      </div>
+      <div class="ragas-progress active" id="eval-progress"></div>
+    </div>
+
+    <!-- Comparison table -->
+    <div style="display:flex; justify-content: space-between; align-items: center; margin-top: 1.5rem; margin-bottom: 0.4rem;">
+      <strong style="font-size: 0.88rem;">Riwayat Run</strong>
+      <button class="clear-history" onclick="clearEvalHistory()">Hapus semua</button>
+    </div>
+    <div class="compare-wrap" id="compare-wrap">
+      <div class="compare-empty">Belum ada riwayat. Jalankan RAGAS untuk mulai membandingkan.</div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<!-- html2pdf.js for client-side PDF generation -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+<script>
+/* ── State ─────────────────────────────────────────────────────────────────── */
+let laporanPath = null;
+let sessionId   = null;
+let pollTimer   = null;
+let ledIndexPollTimer = null;
+
+/* ── File input wiring ─────────────────────────────────────────────────────── */
+const PDF_KEYS = new Set(['matrix', 'led']);
+['matrix','led','lkps','laporan'].forEach(key => {
+  const input = document.getElementById(`file-${key}`);
+  const btn   = document.getElementById(`btn-${key}`);
+  const label = document.getElementById(`chosen-${key}`);
+  const drop  = document.getElementById(`drop-${key}`);
+
+  input.addEventListener('change', () => {
+    if (input.files[0]) {
+      label.textContent = input.files[0].name;
+      btn.disabled = false;
+    }
+  });
+
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('dragover'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.classList.remove('dragover');
+    const dt = e.dataTransfer;
+    if (dt.files[0]) {
+      const name = dt.files[0].name.toLowerCase();
+      const ok = PDF_KEYS.has(key) ? name.endsWith('.pdf') : (name.endsWith('.xlsx') || name.endsWith('.xls'));
+      if (!ok) { alert(`File harus berformat ${PDF_KEYS.has(key) ? 'PDF' : 'Excel'}.`); return; }
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(dt.files[0]);
+      input.files = dataTransfer.files;
+      label.textContent = dt.files[0].name;
+      btn.disabled = false;
+    }
+  });
+});
+
+/* ── Upload helpers ─────────────────────────────────────────────────────────── */
+function setCardStatus(key, cls, text) {
+  const el = document.getElementById(`status-${key}`);
+  el.className = `card-status ${cls}`;
+  el.textContent = text;
+}
+
+async function doUpload(endpoint, fileInputId, key) {
+  const input = document.getElementById(fileInputId);
+  if (!input.files[0]) return null;
+  const fd = new FormData();
+  fd.append('file', input.files[0]);
+  const resp = await fetch(endpoint, { method: 'POST', body: fd });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(err.detail || resp.statusText);
+  }
+  return resp.json();
+}
+
+/* ── Matrix upload (parses rubrics) ─────────────────────────────────────────── */
+async function uploadMatrix() {
+  const btn = document.getElementById('btn-matrix');
+  btn.disabled = true;
+  setCardStatus('matrix', 'status-busy', 'Mem-parse…');
+  try {
+    const data = await doUpload('/upload/matrix', 'file-matrix', 'matrix');
+    setCardStatus('matrix', 'status-ok', `✓ ${data.rubric_count} rubrik`);
+    checkAllReady();
+  } catch(e) {
+    setCardStatus('matrix', 'status-err', 'Error');
+    alert('Upload Matriks gagal: ' + e.message);
+    btn.disabled = false;
+  }
+}
+
+/* ── LED upload + index polling ─────────────────────────────────────────────── */
+async function uploadLed() {
+  const btn = document.getElementById('btn-led');
+  btn.disabled = true;
+  setCardStatus('led', 'status-busy', 'Mengunggah…');
+  try {
+    await doUpload('/upload/led', 'file-led', 'led');
+    setCardStatus('led', 'status-busy', 'Mengindeks…');
+    document.getElementById('led-progress').style.display = 'block';
+    pollLedIndex();
+  } catch(e) {
+    setCardStatus('led', 'status-err', 'Error');
+    alert('Upload LED gagal: ' + e.message);
+    btn.disabled = false;
+  }
+}
+
+function pollLedIndex() {
+  clearInterval(ledIndexPollTimer);
+  ledIndexPollTimer = setInterval(async () => {
+    try {
+      const data = await fetch('/upload/status').then(r => r.json());
+      const state = data.led_index_state;
+      const bar = document.getElementById('led-bar');
+      const msg = document.getElementById('led-progress-msg');
+
+      if (state === 'indexing') {
+        bar.style.width = '60%';
+        msg.textContent = 'Proses indexing sedang berjalan…';
+      } else if (state === 'ready') {
+        bar.style.width = '100%';
+        msg.textContent = `${data.led_chunk_count} chunks berhasil diindeks.`;
+        clearInterval(ledIndexPollTimer);
+        setCardStatus('led', 'status-ok', `✓ ${data.led_chunk_count} chunks`);
+        checkAllReady();
+      } else if (state === 'error') {
+        clearInterval(ledIndexPollTimer);
+        setCardStatus('led', 'status-err', 'Indexing gagal');
+        msg.textContent = data.led_error || 'Unknown error';
+        document.getElementById('btn-led').disabled = false;
+      }
+    } catch(e) { /* network hiccup, retry next tick */ }
+  }, 3000);
+}
+
+/* ── LKPS upload ────────────────────────────────────────────────────────────── */
+async function uploadLkps() {
+  const btn = document.getElementById('btn-lkps');
+  btn.disabled = true;
+  setCardStatus('lkps', 'status-busy', 'Mengunggah…');
+  try {
+    const data = await doUpload('/upload/lkps', 'file-lkps', 'lkps');
+    setCardStatus('lkps', 'status-ok', `✓ ${data.non_empty_sheets} sheets`);
+    checkAllReady();
+  } catch(e) {
+    setCardStatus('lkps', 'status-err', 'Error');
+    alert('Upload LKPS gagal: ' + e.message);
+    btn.disabled = false;
+  }
+}
+
+/* ── Laporan upload ─────────────────────────────────────────────────────────── */
+async function uploadLaporan() {
+  const btn = document.getElementById('btn-laporan');
+  btn.disabled = true;
+  setCardStatus('laporan', 'status-busy', 'Mengunggah…');
+  try {
+    const data = await doUpload('/upload/laporan', 'file-laporan', 'laporan');
+    laporanPath = data.laporan_path;
+    setCardStatus('laporan', 'status-ok', `✓ ${(data.size_bytes / 1024).toFixed(0)} KB`);
+    checkAllReady();
+  } catch(e) {
+    setCardStatus('laporan', 'status-err', 'Error');
+    alert('Upload Laporan AK gagal: ' + e.message);
+    btn.disabled = false;
+  }
+}
+
+/* ── Enable start button when matrix + LED + LKPS are ready (laporan optional) ── */
+function checkAllReady() {
+  const s0 = document.getElementById('status-matrix').className.includes('status-ok');
+  const s1 = document.getElementById('status-led').className.includes('status-ok');
+  const s2 = document.getElementById('status-lkps').className.includes('status-ok');
+  document.getElementById('btn-start').disabled = !(s0 && s1 && s2);
+}
+
+/* ── Assessment pipeline ────────────────────────────────────────────────────── */
+async function startAssessment() {
+  const btn = document.getElementById('btn-start');
+  btn.disabled = true;
+  btn.textContent = 'Memulai…';
+
+  try {
+    // Only include laporan_path if user uploaded one
+    const body = laporanPath ? { laporan_path: laporanPath } : {};
+    const resp = await fetch('/assessment/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      throw new Error(err.detail || resp.statusText);
+    }
+    const data = await resp.json();
+    sessionId = data.session_id;
+
+    document.getElementById('stat-total').textContent = data.total_indicators;
+    document.getElementById('result-panel').style.display = 'block';
+    btn.textContent = 'Penilaian Berjalan…';
+
+    pollAssessment();
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = 'Mulai Penilaian Otomatis';
+    alert('Gagal memulai penilaian: ' + e.message);
+  }
+}
+
+function pollAssessment() {
+  clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    try {
+      const data = await fetch(`/assessment/${sessionId}/status`).then(r => r.json());
+      const total = data.total_indicators || 1;
+      const done  = data.completed_indicators || 0;
+      const pct   = Math.round((done / total) * 100);
+
+      document.getElementById('stat-done').textContent = done;
+      document.getElementById('assess-bar').style.width = pct + '%';
+
+      const statusEl = document.getElementById('stat-status');
+      const msgEl    = document.getElementById('assess-msg');
+
+      if (data.status === 'running') {
+        statusEl.textContent = 'Berjalan';
+        statusEl.className   = 'stat-value badge-running';
+        msgEl.textContent    = `${done} dari ${total} indikator selesai (${pct}%)`;
+      } else if (data.status === 'completed') {
+        statusEl.textContent = 'Selesai ✓';
+        statusEl.className   = 'stat-value badge-completed';
+        msgEl.textContent    = `Semua ${total} indikator berhasil dinilai. Tabel hasil di bawah.`;
+        clearInterval(pollTimer);
+        document.getElementById('btn-start').textContent = 'Penilaian Selesai ✓';
+        loadAndRenderResults();
+        loadHistory();  // refresh history list
+      } else if (data.status === 'failed') {
+        statusEl.textContent = 'Gagal';
+        statusEl.className   = 'stat-value badge-failed';
+        msgEl.textContent    = data.error || 'Pipeline gagal.';
+        clearInterval(pollTimer);
+        document.getElementById('btn-start').disabled = false;
+        document.getElementById('btn-start').textContent = 'Coba Lagi';
+      }
+    } catch(e) { /* retry next tick */ }
+  }, 4000);
+}
+
+/* ── Results: fetch, render table, PDF export ───────────────────────────────── */
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
+    .replaceAll('"','&quot;').replaceAll("'",'&#39;');
+}
+
+function scorePill(score) {
+  if (score == null) return '<span class="score-pill score-na">–</span>';
+  const rounded = Math.round(score);
+  return `<span class="score-pill score-${rounded}">${score.toFixed(1)}</span>`;
+}
+
+async function loadAndRenderResults() {
+  try {
+    const data = await fetch(`/assessment/${sessionId}/results`).then(r => r.json());
+    renderResults(data);
+    document.getElementById('results-panel').style.display = 'block';
+  } catch (e) {
+    console.error('Failed to load results:', e);
+  }
+}
+
+function renderResults(data) {
+  const rows = data.results.map(r => {
+    const justOrErr = r.error
+      ? `<span class="err-text">Error: ${escapeHtml(r.error)}</span>`
+      : `<span class="justification">${escapeHtml(r.justification || '—')}</span>`;
+    const conf = r.confidence != null ? r.confidence.toFixed(2) : '—';
+    return `
+      <tr>
+        <td class="no-col">${r.indicator_no}</td>
+        <td>${escapeHtml(r.kriteria || '—')}</td>
+        <td class="score-col">${scorePill(r.score)}</td>
+        <td>${justOrErr}</td>
+        <td class="conf-col">${conf}</td>
+      </tr>`;
+  }).join('');
+
+  const avgScore = (() => {
+    const valid = data.results.filter(r => r.score != null).map(r => r.score);
+    if (!valid.length) return '–';
+    return (valid.reduce((a,b) => a+b, 0) / valid.length).toFixed(2);
+  })();
+
+  document.getElementById('results-content').innerHTML = `
+    <div style="margin-bottom: 1rem; font-size: 0.85rem; color: #64748b;">
+      Total: <strong>${data.total_indicators}</strong> indikator •
+      Skor rata-rata: <strong>${avgScore}</strong>
+    </div>
+    <div class="results-table-wrap">
+      <table class="results">
+        <thead>
+          <tr>
+            <th>No</th>
+            <th>Kriteria</th>
+            <th style="text-align:center;">Skor</th>
+            <th>Justifikasi</th>
+            <th style="text-align:center;">Conf.</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+/* ── Assessment history ────────────────────────────────────────────────────── */
+async function loadHistory() {
+  const wrap = document.getElementById('history-content');
+  wrap.innerHTML = '<div class="compare-empty">Memuat…</div>';
+  try {
+    const sessions = await fetch('/assessment/list?limit=50').then(r => r.json());
+    if (!Array.isArray(sessions) || sessions.length === 0) {
+      wrap.innerHTML = '<div class="compare-empty">Belum ada penilaian. Jalankan Step 5 untuk memulai.</div>';
+      return;
+    }
+
+    const rows = sessions.map(s => {
+      const created = s.created_at ? new Date(s.created_at).toLocaleString('id-ID') : '—';
+      const avg = s.avg_score != null ? s.avg_score.toFixed(2) : '—';
+      const progress = `${s.completed_indicators}/${s.total_indicators}`;
+      const statusBadge = (
+        s.status === 'completed' ? '<span style="color:#16a34a; font-weight:600;">✓ Selesai</span>' :
+        s.status === 'running'   ? '<span style="color:#a16207; font-weight:600;">⏳ Berjalan</span>' :
+        s.status === 'failed'    ? '<span style="color:#dc2626; font-weight:600;">✗ Gagal</span>' :
+        s.status
+      );
+      const idShort = s.session_id.slice(0, 8);
+      return `
+        <tr>
+          <td>
+            <code style="font-size:0.78rem; cursor:pointer;"
+              title="Klik untuk salin full Session ID"
+              onclick="copySessionId('${s.session_id}', this)">${idShort}…</code>
+            <button class="btn-copy" title="Salin ke RAGAS Session ID"
+              onclick="copyToRagas('${s.session_id}')"
+              style="border:none; background:#eff6ff; color:#3b82f6; cursor:pointer; padding:1px 6px; border-radius:4px; font-size:0.7rem; margin-left:4px;">→ RAGAS</button>
+          </td>
+          <td>${statusBadge}</td>
+          <td style="text-align:center;">${progress}</td>
+          <td class="metric-cell">${avg}</td>
+          <td style="font-size:0.78rem; color:#64748b;">${created}</td>
+          <td>
+            <button class="btn btn-primary" style="margin:0; padding:0.3rem 0.7rem; font-size:0.78rem;"
+              onclick="loadSessionResults('${s.session_id}')">Lihat</button>
+          </td>
+        </tr>`;
+    }).join('');
+
+    wrap.innerHTML = `
+      <table class="results">
+        <thead>
+          <tr>
+            <th>Session ID</th>
+            <th>Status</th>
+            <th style="text-align:center;">Progress</th>
+            <th style="text-align:center;">Skor Rata²</th>
+            <th>Dibuat</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } catch (e) {
+    wrap.innerHTML = `<div class="compare-empty" style="color:#dc2626;">Gagal load: ${e.message}</div>`;
+  }
+}
+
+async function copySessionId(sid, el) {
+  try {
+    await navigator.clipboard.writeText(sid);
+    const original = el.textContent;
+    el.textContent = '✓ disalin';
+    el.style.color = '#16a34a';
+    setTimeout(() => {
+      el.textContent = original;
+      el.style.color = '';
+    }, 1200);
+  } catch (e) {
+    // Fallback: show prompt with full ID
+    prompt('Salin Session ID:', sid);
+  }
+}
+
+function copyToRagas(sid) {
+  const input = document.getElementById('eval-session');
+  input.value = sid;
+  input.style.background = '#dcfce7';
+  setTimeout(() => { input.style.background = ''; }, 800);
+  // Scroll to RAGAS panel so the user sees it filled
+  document.getElementById('ragas-panel').scrollIntoView({behavior:'smooth', block:'start'});
+  input.focus();
+}
+
+async function loadSessionResults(sid) {
+  sessionId = sid;
+  try {
+    const data = await fetch(`/assessment/${sid}/results`).then(r => r.json());
+    document.getElementById('stat-total').textContent = data.total_indicators;
+    document.getElementById('stat-done').textContent = data.completed_indicators;
+    document.getElementById('result-panel').style.display = 'block';
+    renderResults(data);
+    document.getElementById('results-panel').style.display = 'block';
+    document.getElementById('results-panel').scrollIntoView({behavior:'smooth', block:'start'});
+  } catch (e) {
+    alert('Gagal load session: ' + e.message);
+  }
+}
+
+/* ── Bootstrap: reflect server-side state on page load ─────────────────────── */
+(async function bootstrap() {
+  try {
+    const data = await fetch('/upload/status').then(r => r.json());
+    if (data.matrix_uploaded) {
+      setCardStatus('matrix', 'status-ok', `✓ ${data.matrix_rubric_count} rubrik`);
+      checkAllReady();
+    }
+    if (data.led_index_state === 'ready') {
+      setCardStatus('led', 'status-ok', `✓ ${data.led_chunk_count} chunks`);
+      checkAllReady();
+    }
+    if (data.lkps_uploaded) {
+      setCardStatus('lkps', 'status-ok', `✓ tersimpan`);
+      checkAllReady();
+    }
+  } catch (e) { /* server might be cold-starting */ }
+
+  // RAGAS panel: load both judge + assessment model labels
+  try {
+    const cfg = await fetch('/eval/config').then(r => r.json());
+    document.getElementById('eval-model').textContent = cfg.judge_model || '—';
+    document.getElementById('eval-provider').textContent = cfg.judge_provider || '—';
+    document.getElementById('assess-model').textContent = cfg.assessment_model || '—';
+    document.getElementById('assess-provider').textContent = cfg.assessment_provider || '—';
+
+    // Visual hint when judge == assessment (no fair comparison)
+    if (cfg.judge_model === cfg.assessment_model && cfg.judge_provider === cfg.assessment_provider) {
+      document.getElementById('eval-model').style.color = '#dc2626';
+      document.getElementById('eval-model').title = 'Judge = Assessment model. Set RAGAS_* env vars untuk benchmark yang fair.';
+    }
+  } catch(e) {
+    document.getElementById('eval-model').textContent = 'unavailable';
+    document.getElementById('assess-model').textContent = 'unavailable';
+  }
+  renderCompareTable();
+
+  // Assessment history (Supabase-backed)
+  loadHistory();
+})();
+
+/* ── RAGAS evaluation ──────────────────────────────────────────────────────── */
+const EVAL_HISTORY_KEY = 'ami_ragas_history_v1';
+let evalPollTimer = null;
+
+function loadEvalHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(EVAL_HISTORY_KEY)) || [];
+  } catch { return []; }
+}
+
+function saveEvalHistory(items) {
+  localStorage.setItem(EVAL_HISTORY_KEY, JSON.stringify(items));
+}
+
+function clearEvalHistory() {
+  if (!confirm('Hapus seluruh riwayat eval?')) return;
+  localStorage.removeItem(EVAL_HISTORY_KEY);
+  renderCompareTable();
+}
+
+function getSelectedMetrics() {
+  return Array.from(document.querySelectorAll('#metrics-row input:checked')).map(el => el.value);
+}
+
+const STAGE_LABELS = {
+  starting:          'Mempersiapkan…',
+  building_samples:  'Mengumpulkan bukti & ground truth',
+  evaluating:        'Menjalankan metrik RAGAS',
+  completed:         'Selesai',
+};
+
+function setEvalProgress(stage, current, total, elapsed) {
+  const wrap = document.getElementById('eval-progress-wrap');
+  const bar = document.getElementById('eval-bar');
+  const stageLabel = document.getElementById('eval-stage-label');
+  const pctEl = document.getElementById('eval-progress-pct');
+  const detail = document.getElementById('eval-progress');
+
+  wrap.style.display = 'block';
+
+  let pct;
+  if (stage === 'building_samples' && total > 0) {
+    // First 70% of bar represents sample building
+    pct = Math.round((current / total) * 70);
+  } else if (stage === 'evaluating') {
+    // Indeterminate-ish: 75% on entry, animate up to 95% over time
+    pct = Math.min(95, 75 + Math.floor(elapsed / 8));
+  } else if (stage === 'completed') {
+    pct = 100;
+  } else {
+    pct = 5;
+  }
+
+  bar.style.width = pct + '%';
+  pctEl.textContent = pct + '%';
+  stageLabel.textContent = STAGE_LABELS[stage] || stage;
+
+  if (stage === 'building_samples') {
+    detail.textContent = `Sampel ${current} / ${total} • ${elapsed}s`;
+  } else if (stage === 'evaluating') {
+    detail.textContent = `Memberi skor ${total} sampel dengan judge model • ${elapsed}s`;
+  } else if (stage === 'completed') {
+    detail.textContent = `Selesai dalam ${elapsed}s`;
+  } else {
+    detail.textContent = `${elapsed}s`;
+  }
+}
+
+async function startEval() {
+  const btn = document.getElementById('btn-eval');
+  const nInd = parseInt(document.getElementById('eval-n').value, 10) || 5;
+  const sess = document.getElementById('eval-session').value.trim();
+  const metrics = getSelectedMetrics();
+
+  if (metrics.length === 0) {
+    alert('Pilih minimal satu metrik.');
+    return;
+  }
+
+  btn.disabled = true;
+  setEvalProgress('starting', 0, nInd, 0);
+
+  try {
+    const body = { n_indicators: nInd, metrics };
+    if (sess) body.session_id = sess;
+    const resp = await fetch('/eval/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      throw new Error(err.detail || resp.statusText);
+    }
+    const data = await resp.json();
+    pollEval(data.eval_id, btn);
+  } catch(e) {
+    btn.disabled = false;
+    document.getElementById('eval-progress').textContent = 'Gagal: ' + e.message;
+  }
+}
+
+function pollEval(evalId, btn) {
+  clearInterval(evalPollTimer);
+  let elapsed = 0;
+  evalPollTimer = setInterval(async () => {
+    elapsed += 3;
+    try {
+      const data = await fetch(`/eval/${evalId}/results`).then(r => r.json());
+      const stage = data.progress_stage || data.status;
+      const current = data.progress_current || 0;
+      const total = data.progress_total || 1;
+
+      if (data.status === 'pending' || data.status === 'running') {
+        setEvalProgress(stage, current, total, elapsed);
+      } else if (data.status === 'completed') {
+        clearInterval(evalPollTimer);
+        setEvalProgress('completed', total, total, elapsed);
+        btn.disabled = false;
+
+        const history = loadEvalHistory();
+        history.push({
+          eval_id: data.eval_id,
+          provider: data.provider,
+          model: data.model,
+          n_samples: data.n_samples,
+          scores: data.scores || {},
+          finished_at: data.finished_at || new Date().toISOString(),
+        });
+        saveEvalHistory(history);
+        renderCompareTable();
+      } else if (data.status === 'failed') {
+        clearInterval(evalPollTimer);
+        document.getElementById('eval-progress').textContent = 'Gagal: ' + (data.error || 'Unknown error');
+        document.getElementById('eval-bar').style.background = '#dc2626';
+        btn.disabled = false;
+      }
+    } catch(e) { /* retry */ }
+  }, 3000);
+}
+
+function renderCompareTable() {
+  const wrap = document.getElementById('compare-wrap');
+  const history = loadEvalHistory();
+
+  if (history.length === 0) {
+    wrap.innerHTML = '<div class="compare-empty">Belum ada riwayat. Jalankan RAGAS untuk mulai membandingkan.</div>';
+    return;
+  }
+
+  // Collect all metrics that appear in history
+  const allMetrics = new Set();
+  history.forEach(h => Object.keys(h.scores || {}).forEach(m => allMetrics.add(m)));
+  const metrics = Array.from(allMetrics).sort();
+
+  // Sort history: most recent first
+  const sorted = [...history].sort((a,b) => (b.finished_at || '').localeCompare(a.finished_at || ''));
+
+  const headerCells = ['Model', 'Provider', 'N', ...metrics, 'Selesai', ''].map(h => `<th>${escapeHtml(h)}</th>`).join('');
+
+  // Find best (max) per metric for highlighting
+  const bestPerMetric = {};
+  metrics.forEach(m => {
+    const vals = history.map(h => h.scores?.[m]).filter(v => typeof v === 'number');
+    if (vals.length) bestPerMetric[m] = Math.max(...vals);
+  });
+
+  const rowsHtml = sorted.map((h, i) => {
+    const metricCells = metrics.map(m => {
+      const v = h.scores?.[m];
+      if (typeof v !== 'number') return '<td class="metric-cell">—</td>';
+      const isBest = bestPerMetric[m] === v;
+      const barWidth = Math.max(2, Math.round(v * 60));
+      return `<td class="metric-cell">
+        <span class="score-bar" style="width:${barWidth}px; ${isBest ? 'background:#16a34a;' : ''}"></span>
+        <span style="${isBest ? 'color:#16a34a;' : ''}">${v.toFixed(3)}</span>
+      </td>`;
+    }).join('');
+    const ts = h.finished_at ? new Date(h.finished_at).toLocaleString('id-ID') : '—';
+    const removeBtn = `<button class="clear-history" onclick="removeEvalRun('${escapeHtml(h.eval_id)}')">×</button>`;
+    return `<tr>
+      <td><code style="font-size:0.78rem;">${escapeHtml(h.model || '?')}</code></td>
+      <td>${escapeHtml(h.provider || '?')}</td>
+      <td>${h.n_samples ?? '—'}</td>
+      ${metricCells}
+      <td style="font-size:0.76rem; color:#64748b;">${ts}</td>
+      <td>${removeBtn}</td>
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <table class="compare">
+      <thead><tr>${headerCells}</tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>`;
+}
+
+function removeEvalRun(evalId) {
+  const history = loadEvalHistory().filter(h => h.eval_id !== evalId);
+  saveEvalHistory(history);
+  renderCompareTable();
+}
+
+function downloadPdf() {
+  const el = document.getElementById('results-panel');
+  const opt = {
+    margin:       [10, 10, 10, 10],
+    filename:     `AMI_Hasil_Penilaian_${sessionId || 'session'}.pdf`,
+    image:        { type: 'jpeg', quality: 0.98 },
+    html2canvas:  { scale: 2, useCORS: true },
+    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' },
+    pagebreak:    { mode: ['css', 'legacy'] },
+  };
+  // Hide the PDF button itself during capture
+  const pdfBtn = el.querySelector('.btn-pdf');
+  pdfBtn.style.display = 'none';
+  html2pdf().set(opt).from(el).save().then(() => {
+    pdfBtn.style.display = '';
+  });
+}
+</script>
+</body>
+</html>

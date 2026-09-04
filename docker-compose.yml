@@ -1,0 +1,122 @@
+services:
+  postgres:
+    # pgvector/pgvector:pg16 is upstream postgres:16 + the pgvector extension
+    # precompiled — drop-in compatible, same data directory format. Used for
+    # LED chunk embeddings (apps/ai/vectorstore/pgvector_store.py) alongside
+    # every other table Prisma owns.
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_led
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file: apps/backend/.env
+    environment:
+      # app_runtime, not postgres -- RLS-restricted role, see
+      # packages/db/prisma/migrations/..._tenant_row_level_security.
+      DATABASE_URL: postgresql://app_runtime:app_runtime_dev_pw@postgres:5432/ai_led?schema=public
+      REDIS_URL: redis://redis:6379
+      AI_SERVICE_URL: http://ai:8000
+    depends_on:
+      - postgres
+      - redis
+      - ai
+
+  ai:
+    # Shared `image:` with ai-worker below — same code/deps, only the CMD
+    # differs, so one build serves both instead of two ~identical images.
+    image: ai-led-ai:local
+    build:
+      context: ./apps/ai
+      secrets:
+        - hf_token
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./apps/ai/data:/app/data
+      # Without this, every container recreation loses bge-m3/MiniLM (~2.3GB
+      # combined) and the next embedding call re-downloads from HuggingFace
+      # instead of loading from disk — minutes of "stuck" instead of seconds.
+      - hf_cache:/root/.cache/huggingface
+    env_file: apps/ai/.env
+    environment:
+      DATA_DIR: /app/data
+      HF_HOME: /root/.cache/huggingface
+      SENTENCE_TRANSFORMERS_HOME: /root/.cache/huggingface/sentence-transformers
+      HF_HUB_DISABLE_XET: "1"
+      REDIS_URL: redis://redis:6379
+      # app_ai_worker, not postgres -- BYPASSRLS role, see
+      # packages/db/prisma/migrations/..._tenant_row_level_security.
+      DATABASE_URL: postgresql://app_ai_worker:app_ai_worker_dev_pw@postgres:5432/ai_led?schema=public
+    depends_on:
+      - postgres
+      - redis
+
+  # BullMQ consumer (GENERASI_BAB, ASSESSMENT_AMI, INGESTION_BUKTI_DUKUNG) —
+  # previously only ever run manually (`python worker.py`) outside Docker, so
+  # none of those job types actually processed in a deployed environment.
+  ai-worker:
+    image: ai-led-ai:local
+    command: ["python", "worker.py"]
+    restart: unless-stopped
+    volumes:
+      - ./apps/ai/data:/app/data
+      # Shared with `ai` — same cache dir, so whichever service downloads a
+      # model first, the other reuses it instead of downloading its own copy.
+      - hf_cache:/root/.cache/huggingface
+    env_file: apps/ai/.env
+    environment:
+      DATA_DIR: /app/data
+      HF_HOME: /root/.cache/huggingface
+      SENTENCE_TRANSFORMERS_HOME: /root/.cache/huggingface/sentence-transformers
+      HF_HUB_DISABLE_XET: "1"
+      REDIS_URL: redis://redis:6379
+      # app_ai_worker, not postgres -- BYPASSRLS role, see
+      # packages/db/prisma/migrations/..._tenant_row_level_security.
+      DATABASE_URL: postgresql://app_ai_worker:app_ai_worker_dev_pw@postgres:5432/ai_led?schema=public
+    depends_on:
+      - postgres
+      - redis
+      - ai
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5173:3000"
+    environment:
+      API_BASE_URL: http://backend:3000
+    depends_on:
+      - backend
+
+secrets:
+  hf_token:
+    environment: HF_TOKEN
+
+volumes:
+  postgres_data:
+  redis_data:
+  hf_cache:
