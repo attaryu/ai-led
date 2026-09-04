@@ -447,12 +447,23 @@ model DocumentRecommendation {
 /// Kartu tampilan 1 rekomendasi (label + alasan) — dev-v1 tidak
 /// mendenormalisasi ini ke JSON di DocumentRecommendation supaya urutan
 /// tampil bisa di-query/di-reorder tanpa rewrite seluruh baris.
+enum StatusItemRekomendasi {
+  DIREKOMENDASIKAN
+  DIGUNAKAN
+  TIDAK_DIPERLUKAN
+}
+
+/// Status per item diisi oleh cross-check pasca-narasi (worker.py::_cross_check_recommendation_items,
+/// port SYSTEM_CROSS_CHECK_DOCUMENT_STATUS milik dimas) — DIREKOMENDASIKAN
+/// hanya boleh berubah jadi DIGUNAKAN/TIDAK_DIPERLUKAN sekali, baris TIDAK
+/// PERNAH dihapus meski TIDAK_DIPERLUKAN (audit trail, sama seperti skor RAGAS).
 model RecommendationItem {
-  id               String  @id @default(cuid())
-  recommendationId String  @map("recommendation_id")
+  id               String                @id @default(cuid())
+  recommendationId String                @map("recommendation_id")
   label            String
-  reason           String? @db.Text
+  reason           String?               @db.Text
   order            Int
+  status           StatusItemRekomendasi @default(DIREKOMENDASIKAN)
 
   recommendation DocumentRecommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
 

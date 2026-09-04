@@ -658,3 +658,47 @@ def create_document_recommendation(
                 (str(uuid.uuid4()), rec_id, it.get("label", ""), it.get("reason"), i),
             )
     return {"id": rec_id, "created_at": row["created_at"]}
+
+
+def get_recommendation_items(tenant_id: str, recommendation_id: str) -> list[dict]:
+    """Items for the post-synthesis cross-check (worker.py::_cross_check_recommendation_items)
+    to match against by label."""
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute(
+            """
+            SELECT id, label, reason, "order", status
+            FROM writing_recommendation_items
+            WHERE recommendation_id = %s
+            ORDER BY "order"
+            """,
+            (recommendation_id,),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
+def update_recommendation_item_status(tenant_id: str, item_id: str, status: str) -> None:
+    """DIREKOMENDASIKAN -> DIGUNAKAN/TIDAK_DIPERLUKAN only -- caller (worker.py)
+    enforces the one-way transition, this is a plain unconditional UPDATE."""
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute(
+            'UPDATE writing_recommendation_items SET status = %s WHERE id = %s',
+            (status, item_id),
+        )
+
+
+def insert_recommendation_items(
+    tenant_id: str, recommendation_id: str, items: list[dict], start_order: int
+) -> None:
+    """Newly-discovered document needs found by the cross-check -- same INSERT
+    shape as create_document_recommendation's item loop, continuing the
+    existing `order` sequence."""
+    with tenant_cursor(tenant_id) as cur:
+        for i, it in enumerate(items):
+            cur.execute(
+                """
+                INSERT INTO writing_recommendation_items
+                    (id, recommendation_id, label, reason, "order")
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (str(uuid.uuid4()), recommendation_id, it.get("label", ""), it.get("reason"), start_order + i),
+            )

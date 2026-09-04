@@ -99,6 +99,7 @@ export function mapDocumentRecommendation(
 				label: item.label,
 				reason: item.reason,
 				order: item.order,
+				status: item.status,
 			}))
 			.sort((a, b) => a.order - b.order),
 	};

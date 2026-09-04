@@ -179,6 +179,7 @@ export type BackendRecommendationItem = {
 	label: string;
 	reason: string | null;
 	order: number;
+	status: 'DIREKOMENDASIKAN' | 'DIGUNAKAN' | 'TIDAK_DIPERLUKAN';
 };
 
 /**

@@ -407,6 +407,20 @@ ATURAN KATALOG:
 - Gunakan scope, tier, dan purpose hanya untuk membantu memilih dokumen.
 - Kalau tidak ada satupun dokumen di KATALOG yang cocok untuk SECTION ini,
   kembalikan items: [] -- itu jawaban yang sah, jangan memaksakan pilihan.
+- Untuk kebutuhan KEBIJAKAN: asal dokumen (kementerian, perguruan tinggi,
+  UPPS, atau prodi) BUKAN faktor penentu kelayakan. Faktor penentu adalah
+  apakah dokumen itu bagian dari jenjang kebijakan yang relevan dengan
+  substansi SECTION. Kalau ada peraturan/keputusan menteri di KATALOG yang
+  menjadi dasar normatif jenjang tertinggi untuk substansi SECTION ini,
+  dokumen itu WAJIB disertakan.
+- Dokumen berjenis peraturan/keputusan/ketetapan (UU, PP, Perpres, Inpres,
+  Permendikbud/Permendikbudristek/Permendiktisaintek,
+  Kepmendikbud/Kepmendikbudristek/Kepmendiktisaintek, Peraturan/Keputusan/
+  Ketetapan Rektor/Dekan/Ketua/Direktur/Senat, SK, Statuta) TIDAK PERNAH
+  dipilih untuk kebutuhan LATAR BELAKANG, berapa pun relevannya isi
+  klausulnya -- sebelum menghasilkan output, susuri kembali dokumen yang
+  sudah dipilih untuk kebutuhan LATAR BELAKANG dan hapus yang namanya
+  mengandung ciri produk hukum/regulasi di atas.
 
 ATURAN REASON: jelaskan secara SPESIFIK informasi dalam SECTION yang dapat
 didukung dokumen tsb. Jangan gunakan alasan yang terlalu umum seperti
@@ -676,6 +690,196 @@ def _judge_to_ragas_metrics(judge_result: dict) -> dict[str, dict]:
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Cross-check status rekomendasi dokumen -- LLM CALL TERPISAH setelah narasi
+# jadi (port of AI-LED-dimas 190dcd2 SYSTEM_CROSS_CHECK_DOCUMENT_STATUS,
+# dipisah dari synthesis call oleh Dimas sendiri karena model kadang berhenti
+# tanpa JSON penutup kalau digabung 1 call). Status 0/1/2 milik Dimas tetap
+# dipakai APA ADANYA (DIREKOMENDASIKAN/DIGUNAKAN/TIDAK_DIPERLUKAN) --
+# transisi SATU ARAH dari DIREKOMENDASIKAN, baris TIDAK PERNAH dihapus.
+# ──────────────────────────────────────────────────────────────────────
+
+_SYSTEM_CROSS_CHECK_DOCUMENT_STATUS = """
+Anda adalah asesor akreditasi program studi di Indonesia.
+
+TUGAS:
+Periksa SETIAP dokumen dalam DAFTAR REKOMENDASI DOKUMEN berdasarkan
+PEDOMAN, NARASI, dan POTONGAN RAG YANG DIPAKAI.
+
+Tujuan pemeriksaan:
+1. Menentukan apakah dokumen rekomendasi benar-benar digunakan dalam narasi.
+2. Menentukan apakah dokumen yang masih berstatus DIREKOMENDASIKAN memang
+   tidak diperlukan.
+3. Menemukan kebutuhan dokumen baru jika PEDOMAN belum terpenuhi.
+
+STATUS:
+DIREKOMENDASIKAN = belum terbukti dipakai atau tidak diperlukan
+DIGUNAKAN = terbukti dipakai dalam narasi
+TIDAK_DIPERLUKAN = terbukti tidak diperlukan
+
+ATURAN STATUS:
+
+1. STATUS DIGUNAKAN DAN TIDAK_DIPERLUKAN ADALAH FINAL.
+   Dokumen yang sudah berstatus itu WAJIB mempertahankan statusnya. Jangan
+   pernah mengubahnya ke status lain.
+
+2. HANYA STATUS DIREKOMENDASIKAN YANG BOLEH BERUBAH, dan hanya menjadi
+   DIGUNAKAN atau TIDAK_DIPERLUKAN. Kalau belum dapat dibuktikan salah satu,
+   biarkan tetap DIREKOMENDASIKAN.
+
+3. DIREKOMENDASIKAN -> DIGUNAKAN:
+   Tandai DIGUNAKAN hanya jika SEMUA kondisi berikut terpenuhi:
+   - dokumen memiliki cuplikan pada POTONGAN RAG YANG DIPAKAI;
+   - NARASI memiliki sitasi yang merujuk dokumen tersebut;
+   - isi cuplikan tersebut benar-benar digunakan untuk mendukung substansi
+     NARASI.
+   Kecocokan nama dokumen saja tidak cukup. Kemunculan nama dokumen tanpa
+   sitasi tidak cukup. Adanya cuplikan RAG tanpa penggunaan dalam NARASI
+   tidak cukup.
+
+4. DIREKOMENDASIKAN -> TIDAK_DIPERLUKAN:
+   Hanya boleh diberikan jika berdasarkan PEDOMAN dapat dipastikan bahwa
+   dokumen tersebut memang tidak diperlukan untuk memenuhi kebutuhan
+   informasi yang dituntut PEDOMAN.
+   JANGAN memberikan status ini hanya karena:
+   - narasi sudah membahas topik yang sama;
+   - narasi sudah terlihat lengkap;
+   - informasi serupa terdapat pada dokumen lain;
+   - dokumen tidak muncul dalam POTONGAN RAG;
+   - dokumen tidak dikutip dalam NARASI;
+   - dokumen belum digunakan.
+   Jika dokumen masih relevan dengan kebutuhan informasi PEDOMAN tetapi
+   belum terbukti digunakan, PERTAHANKAN STATUS DIREKOMENDASIKAN.
+
+5. Jika NARASI sudah memenuhi suatu kebutuhan PEDOMAN, jangan otomatis
+   mengubah dokumen terkait menjadi TIDAK_DIPERLUKAN. Periksa dahulu apakah
+   dokumen tersebut tetap sumber yang relevan untuk mendukung kebutuhan itu.
+
+6. Jika beberapa dokumen memberikan informasi yang sama, jangan otomatis
+   menjadikan dokumen lain TIDAK_DIPERLUKAN. Status itu hanya diberikan jika
+   dokumen memang tidak diperlukan berdasarkan PEDOMAN, bukan sekadar karena
+   ada sumber alternatif.
+
+7. Jika ditemukan kebutuhan informasi yang jelas berdasarkan PEDOMAN yang
+   belum didukung NARASI dan belum tersedia dalam daftar, tambahkan dokumen
+   baru dengan status DIREKOMENDASIKAN. Dokumen baru hanya boleh ditambahkan
+   jika ada kebutuhan yang jelas dari PEDOMAN dan kebutuhan itu belum
+   dipenuhi NARASI -- jangan menambahkan dokumen hanya untuk memperbanyak
+   bukti.
+
+8. Untuk dokumen yang sudah ada, LABEL HARUS SAMA PERSIS dengan LABEL pada
+   DAFTAR REKOMENDASI DOKUMEN. Jangan mengubah, meringkas, atau
+   memparafrase label.
+
+9. JANGAN MENGHAPUS dokumen dari daftar. Semua dokumen pada DAFTAR
+   REKOMENDASI DOKUMEN harus tetap dikembalikan dengan status akhirnya.
+
+10. Jika DAFTAR REKOMENDASI DOKUMEN kosong dan tidak ada kebutuhan dokumen
+    baru, kembalikan {"items": []}.
+
+OUTPUT:
+Hanya JSON valid. Tidak boleh ada teks, penjelasan, markdown, atau komentar
+di luar JSON.
+
+FORMAT:
+{
+  "items": [
+    {"label": "<label persis>", "status": "DIREKOMENDASIKAN|DIGUNAKAN|TIDAK_DIPERLUKAN"}
+  ]
+}
+"""
+
+
+def _build_cross_check_prompt(
+    judul_bab: str, pedoman: list[dict], compiled_markdown: str,
+    used_sources: list[dict], existing_items: list[dict],
+) -> str:
+    parts = [_SYSTEM_CROSS_CHECK_DOCUMENT_STATUS, "", f"## BAB: {judul_bab}", ""]
+    if pedoman:
+        parts.append("## PEDOMAN:")
+        for p in pedoman:
+            parts.append(f"- {(p.get('content_text') or '')[:500]}")
+        parts.append("")
+    parts.append("## NARASI:")
+    parts.append(compiled_markdown[:6000])
+    parts.append("")
+    if used_sources:
+        parts.append("## POTONGAN RAG YANG DIPAKAI:")
+        for src in used_sources[:12]:
+            parts.append(f"\n[{src.get('filename') or '?'}]\n{(src.get('text') or '')[:400]}")
+        parts.append("")
+    parts.append("## DAFTAR REKOMENDASI DOKUMEN:")
+    for it in existing_items:
+        parts.append(f"- {it['label']} (status saat ini: {it['status']})")
+    parts.append("")
+    parts.append("Output HANYA JSON.")
+    return "\n".join(parts)
+
+
+def _parse_cross_check_json(raw: str) -> dict:
+    raw = _strip_think(raw)
+    raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.MULTILINE).strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
+        if m:
+            try:
+                return json.loads(m.group(0))
+            except json.JSONDecodeError:
+                pass
+    return {}
+
+
+async def _cross_check_recommendation_items(
+    tenant_id: str, recommendation_id: str, judul_bab: str,
+    pedoman: list[dict], compiled_markdown: str, used_sources: list[dict],
+) -> None:
+    """Fire-and-forget: never raises, called after a section's narrative is
+    persisted so a failure here can't undo a successful GENERATED section."""
+    from db.generation_client import (
+        get_recommendation_items,
+        insert_recommendation_items,
+        update_recommendation_item_status,
+    )
+    from llm.chat_model import build_plain_llm
+
+    try:
+        items = get_recommendation_items(tenant_id, recommendation_id)
+        if not items:
+            return
+
+        llm = build_plain_llm()
+        raw = await llm.with_retry().ainvoke(
+            _build_cross_check_prompt(judul_bab, pedoman, compiled_markdown, used_sources, items)
+        )
+        proposed = (_parse_cross_check_json(raw.content) or {}).get("items")
+        if not isinstance(proposed, list):
+            return
+
+        by_label = {it["label"]: it for it in items}
+        next_order = max((it["order"] for it in items), default=-1) + 1
+        new_items: list[dict] = []
+        for p in proposed:
+            if not isinstance(p, dict):
+                continue
+            label, status = p.get("label"), p.get("status")
+            if status not in ("DIREKOMENDASIKAN", "DIGUNAKAN", "TIDAK_DIPERLUKAN"):
+                continue
+            existing = by_label.get(label)
+            if existing is None:
+                if status == "DIREKOMENDASIKAN":
+                    new_items.append({"label": label, "reason": None})
+                continue
+            if existing["status"] == "DIREKOMENDASIKAN" and status != "DIREKOMENDASIKAN":
+                update_recommendation_item_status(tenant_id, existing["id"], status)
+
+        if new_items:
+            insert_recommendation_items(tenant_id, recommendation_id, new_items, next_order)
+    except Exception:
+        logger.exception("Cross-check rekomendasi dokumen gagal untuk recommendation %s", recommendation_id)
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Outline generation (GENERASI_OUTLINE_BAB) — LLM menyusun daftar section
 # per bab, dituntun kelompok kriteria rubrik tenant itu sendiri (bukan JSON
 # statis ala AI-LED-dimas, bukan pula kelompokkanKriteria dipakai apa
@@ -926,7 +1130,10 @@ ATURAN WAJIB:
 2. Setiap klaim faktual harus diikuti penanda sumber: "(sumber: LABEL)" untuk BUKTI (LED atau Evidence) — LABEL adalah teks PERSIS di dalam tanda kurung "(sumber: ...)" pada bukti yang dikutip, bisa berupa nama file ATAU nama folder, ikuti apa adanya, JANGAN diubah/disingkat — atau "(sumber: LKPS <referensi tabel>)" untuk DATA KUANTITATIF. Penanda HANYA boleh dipakai kalau nama/referensi itu BENAR-BENAR muncul literal di bagian BUKTI/DATA KUANTITATIF di atas — dilarang menebak atau mengarang nama sumber.
 3. Jika BUKTI dan DATA KUANTITATIF sama-sama kosong/minim, tulis narasi singkat dan umum berdasarkan PEDOMAN/RUBRIK saja tanpa klaim faktual bersitasi — jangan dipaksakan panjang dengan fakta karangan.
 4. OUTPUT MURNI NARASI SAJA dalam format Markdown, TANPA heading/judul apapun (section ini sendiri sudah jadi satu unit heading di dokumen akhir) — dilarang menambahkan catatan, disclaimer, atau ringkasan proses di luar narasi.
-5. Tulis 3-5 paragraf yang FOKUS pada topik section ini saja ("{judul_bab}") — jangan melebar membahas topik section lain dalam bab yang sama, dan jangan mengulang judul section sebagai baris pembuka."""
+5. Tulis 3-5 paragraf yang FOKUS pada topik section ini saja ("{judul_bab}") — jangan melebar membahas topik section lain dalam bab yang sama, dan jangan mengulang judul section sebagai baris pembuka.
+6. ALUR PEMBAHASAN: susun narasi berdasarkan urutan topik yang logis, BUKAN berdasarkan urutan BUKTI/Evidence yang diberikan di atas. Selesaikan satu topik sebelum pindah ke topik berikutnya — dilarang pola TOPIK A → TOPIK B → kembali ke TOPIK A. Kalau beberapa BUKTI membahas topik yang sama, gabungkan jadi satu pembahasan, jangan buat paragraf terpisah hanya karena berpindah sumber. Setelah suatu topik selesai, jangan bahas lagi kecuali benar-benar diperlukan untuk menghubungkan/menganalisis topik lain.
+7. SUBSTANSI, BUKAN PERISTIWA: jangan jadikan peristiwa administratif (rapat, sidang, sosialisasi, penandatanganan, proses penyusunan, penerbitan, penetapan/pengesahan sebagai kejadian, tanggal/waktu/tempat kejadian, pihak yang hadir, urutan kronologi) sebagai isi narasi. Kalau BUKTI menyebut peristiwa yang menghasilkan substansi, abaikan peristiwanya dan gunakan hanya substansi yang dihasilkan. PERISTIWA = ABAIKAN, SUBSTANSI = GUNAKAN.
+8. KHUSUS kalau section ini pada dasarnya membahas KEBIJAKAN/regulasi: (a) satu paragraf pembukaan yang menjelaskan cakupan kebijakan dan kaitannya dengan PEDOMAN; (b) tiap poin kebijakan sebagai satu bullet, SATU dokumen per bullet (jangan gabung dua dokumen dalam satu bullet, jangan pecah satu dokumen jadi dua bullet), diurutkan berdasarkan hubungan substansi/hierarki kebijakan bukan urutan BUKTI; (c) paragraf analisis penutup yang menghubungkan kebijakan-kebijakan yang SUDAH dijelaskan di poin — dilarang memperkenalkan dokumen atau topik baru di paragraf analisis."""
 
 
 async def _handle_generasi_bab(job) -> dict:
@@ -1137,6 +1344,14 @@ async def _handle_generasi_bab(job) -> dict:
     )
     if ragas_scores:
         create_ragas_score(bab["tenant_id"], bab_id, draft["id"], ragas_scores, jumlah_chunk=len(chunks))
+
+    # Cross-check rekomendasi dokumen (port of Dimas 190dcd2) -- hanya kalau
+    # bab ini datang dari alur rekomendasi->konfirmasi (confirmed tidak
+    # None). Fire-and-forget, tidak pernah menggagalkan job ini.
+    if confirmed:
+        await _cross_check_recommendation_items(
+            bab["tenant_id"], confirmed["id"], bab["chapter_title"], pedoman, compiled_markdown, judge_facts,
+        )
 
     return {
         "status": "completed",

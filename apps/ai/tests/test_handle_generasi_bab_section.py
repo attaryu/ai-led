@@ -254,3 +254,112 @@ def test_synthesis_failure_marks_section_error_and_reraises():
 
     error_calls = [c for c in update_section.call_args_list if c.kwargs.get("status") == "ERROR"]
     assert len(error_calls) == 1
+
+
+def _run_with_cross_check(existing_items, third_ainvoke, **db_overrides):
+    """Like _run(), but with draftId set so a confirmed recommendation exists
+    and _cross_check_recommendation_items fires (worker.py, after
+    create_ragas_score) -- third_ainvoke is either a str (cross-check LLM
+    content) or an Exception (simulates the LLM call itself failing)."""
+    job = _fake_job()
+    job.data["draftId"] = "draft-rec-1"
+
+    third = third_ainvoke if isinstance(third_ainvoke, Exception) else MagicMock(content=third_ainvoke)
+    plain_llm = MagicMock()
+    plain_llm.ainvoke = AsyncMock(side_effect=[
+        MagicMock(content="- Butuh dasar hukum apa?"),  # checklist
+        MagicMock(content="Narasi kebijakan tata pamong."),  # synthesis
+        third,  # cross-check
+    ])
+    plain_llm.with_retry.return_value = plain_llm
+    judge_llm = MagicMock()
+    judge_llm.ainvoke = AsyncMock(return_value=MagicMock(content=_FULL_JUDGE_CONTENT))
+    judge_llm.with_retry.return_value = judge_llm
+
+    defaults = dict(
+        get_bab_dokumen=MagicMock(return_value=_fake_bab()),
+        get_chapter_section=MagicMock(return_value=_fake_section()),
+        get_chapter_sections=MagicMock(return_value=[{
+            **_fake_section(status="GENERATED"),
+            "content": {"format": "html", "body": "<p>Narasi kebijakan tata pamong.</p>", "markdown": "Narasi kebijakan tata pamong."},
+        }]),
+        get_pedoman_for_bab=MagicMock(return_value=[]),
+        get_rubrik_for_bab=MagicMock(return_value=[]),
+        get_confirmed_recommendation=MagicMock(return_value={"id": "rec-1", "selected_evidence_ids": []}),
+        get_recommendation_items=MagicMock(return_value=existing_items),
+        update_recommendation_item_status=MagicMock(),
+        insert_recommendation_items=MagicMock(),
+        get_evidence_citation_labels=MagicMock(return_value={}),
+        get_user_nama=MagicMock(return_value="Budi"),
+        create_bab_draft=MagicMock(return_value={"id": "draft-1", "version": 1}),
+        link_evidence_to_chapter_and_draft=MagicMock(),
+        update_bab_dokumen_aktif=MagicMock(),
+        create_generation_run=MagicMock(return_value={"id": "run-1"}),
+        create_ragas_score=MagicMock(return_value={"id": "score-1"}),
+        update_chapter_section=MagicMock(),
+    )
+    defaults.update(db_overrides)
+
+    from worker import _handle_generasi_bab
+
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(patch("llm.chat_model.build_plain_llm", return_value=plain_llm))
+        stack.enter_context(patch("llm.chat_model.build_judge_llm", return_value=judge_llm))
+        stack.enter_context(patch("vectorstore.pgvector_store.search_led", return_value=[]))
+        stack.enter_context(patch("vectorstore.pgvector_evidence_store.search_evidence", return_value=[]))
+        for name, fn in defaults.items():
+            stack.enter_context(patch(f"db.generation_client.{name}", fn))
+        result = asyncio.run(_handle_generasi_bab(job))
+
+    return result, defaults
+
+
+def test_cross_check_marks_matched_item_digunakan():
+    existing = [{"id": "item-1", "label": "SK Rektor A", "reason": None, "order": 0, "status": "DIREKOMENDASIKAN"}]
+    result, defaults = _run_with_cross_check(
+        existing, '{"items": [{"label": "SK Rektor A", "status": "DIGUNAKAN"}]}',
+    )
+    assert result["status"] == "completed"
+    defaults["update_recommendation_item_status"].assert_called_once_with("tenant-1", "item-1", "DIGUNAKAN")
+    defaults["insert_recommendation_items"].assert_not_called()
+
+
+def test_cross_check_never_reverts_a_final_status():
+    """DIGUNAKAN/TIDAK_DIPERLUKAN are final (dimas's SYSTEM_CROSS_CHECK rule
+    1/2) -- a proposal to change an already-final item must be ignored."""
+    existing = [{"id": "item-1", "label": "SK Rektor A", "reason": None, "order": 0, "status": "DIGUNAKAN"}]
+    result, defaults = _run_with_cross_check(
+        existing, '{"items": [{"label": "SK Rektor A", "status": "TIDAK_DIPERLUKAN"}]}',
+    )
+    assert result["status"] == "completed"
+    defaults["update_recommendation_item_status"].assert_not_called()
+
+
+def test_cross_check_inserts_newly_discovered_item_after_existing_order():
+    existing = [{"id": "item-1", "label": "SK Rektor A", "reason": None, "order": 0, "status": "DIREKOMENDASIKAN"}]
+    result, defaults = _run_with_cross_check(
+        existing,
+        '{"items": [{"label": "SK Rektor A", "status": "DIREKOMENDASIKAN"}, '
+        '{"label": "Pedoman Baru", "status": "DIREKOMENDASIKAN"}]}',
+    )
+    assert result["status"] == "completed"
+    defaults["update_recommendation_item_status"].assert_not_called()
+    defaults["insert_recommendation_items"].assert_called_once_with(
+        "tenant-1", "rec-1", [{"label": "Pedoman Baru", "reason": None}], 1,
+    )
+
+
+def test_cross_check_malformed_json_is_a_no_op():
+    existing = [{"id": "item-1", "label": "SK Rektor A", "reason": None, "order": 0, "status": "DIREKOMENDASIKAN"}]
+    result, defaults = _run_with_cross_check(existing, "bukan json sama sekali")
+    assert result["status"] == "completed"
+    defaults["update_recommendation_item_status"].assert_not_called()
+    defaults["insert_recommendation_items"].assert_not_called()
+
+
+def test_cross_check_llm_failure_does_not_fail_the_job():
+    existing = [{"id": "item-1", "label": "SK Rektor A", "reason": None, "order": 0, "status": "DIREKOMENDASIKAN"}]
+    result, defaults = _run_with_cross_check(existing, RuntimeError("cross-check LLM down"))
+    assert result["status"] == "completed"
+    defaults["update_recommendation_item_status"].assert_not_called()
+    defaults["insert_recommendation_items"].assert_not_called()

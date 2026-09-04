@@ -155,9 +155,27 @@ export function ChapterDocumentRecommendation({
 										key={item.id}
 										className="rounded-md border border-border bg-background p-2"
 									>
-										<p className="text-sm leading-tight font-medium">
-											{item.label}
-										</p>
+										<div className="flex items-baseline justify-between gap-2">
+											<p
+												className={
+													item.status === 'TIDAK_DIPERLUKAN'
+														? 'text-sm leading-tight font-medium text-muted-foreground line-through'
+														: 'text-sm leading-tight font-medium'
+												}
+											>
+												{item.label}
+											</p>
+											{item.status === 'DIGUNAKAN' && (
+												<span className="shrink-0 text-[10px] font-medium text-primary">
+													Digunakan
+												</span>
+											)}
+											{item.status === 'TIDAK_DIPERLUKAN' && (
+												<span className="shrink-0 text-[10px] font-medium text-muted-foreground">
+													Tidak diperlukan
+												</span>
+											)}
+										</div>
 										{item.reason && (
 											<p className="mt-0.5 text-xs text-muted-foreground">
 												{item.reason}
