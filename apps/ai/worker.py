@@ -536,6 +536,11 @@ TUGAS ANDA SEKARANG: usulkan sendiri nama dokumen pendukung yang benar-benar
 dibutuhkan untuk SECTION ini, berdasarkan PEDOMAN yang diberikan.
 
 ATURAN:
+- Periksa dulu KATALOG di bawah -- kalau kebutuhan PEDOMAN sudah bisa
+  dipenuhi (sebagian atau seluruhnya) oleh dokumen yang SUDAH ada di sana,
+  JANGAN usulkan dokumen baru yang isinya setara/duplikat. Kalau katalog
+  cuma memenuhi SEBAGIAN kebutuhan, usulkan HANYA bagian yang masih kurang,
+  bukan mengulang yang sudah tercakup.
 - Usulkan HANYA kalau memang ada kebutuhan dokumen formal yang jelas
   tersirat dari PEDOMAN. Jangan mengarang demi mengisi jumlah.
 - Kalau memang tidak ada kebutuhan dokumen formal sama sekali (section
@@ -557,6 +562,8 @@ def _build_suggest_custom_document_prompt(
 ) -> str:
     """Dipanggil _handle_rekomendasi_dokumen HANYA sbg fallback -- lihat
     catatan di atas."""
+    from document_catalog import catalog_for_prompt
+
     parts = [_SYSTEM_SUGGEST_CUSTOM_DOCUMENT, "", f"## SECTION: {judul_bab}", ""]
     if pedoman:
         parts.append("## PEDOMAN PENULISAN:")
@@ -568,6 +575,10 @@ def _build_suggest_custom_document_prompt(
         for r in rubric[:5]:
             parts.append(f"- {(r.get('description') or '')[:400]}")
         parts.append("")
+    parts.append("## KATALOG (dokumen yang SUDAH tersedia -- jangan usulkan ulang atau duplikat):")
+    for entry in catalog_for_prompt():
+        parts.append(f"- {entry['label']}")
+    parts.append("")
     parts.append("Output HANYA JSON:")
     return "\n".join(parts)
 
