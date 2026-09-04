@@ -1244,7 +1244,17 @@ async def _handle_generasi_bab(job) -> dict:
             list(evidence_labels.values()),
         )
         try:
-            checklist_raw = await llm.with_retry().ainvoke(checklist_prompt)
+            # This is the FIRST call the writing model makes in a job -- if
+            # the previous job's judge call left a different model resident
+            # (VRAM too small to hold both, see worker.py's shared-GPU note),
+            # Ollama has to evict+reload here, and that swap has been
+            # observed crashing with a CUDA "illegal memory access" on some
+            # GPUs almost every time, recovering only after a few retries
+            # (the very next call, synthesis, then succeeds immediately
+            # since the model is already resident). 3 retries (LangChain's
+            # default) usually isn't enough to outlast the swap; 6 gives it
+            # more room before falling back to the generic checklist.
+            checklist_raw = await llm.with_retry(stop_after_attempt=6).ainvoke(checklist_prompt)
             checklist = _parse_checklist(checklist_raw.content)
         except Exception:
             logger.exception("Checklist LLM gagal untuk section %s, pakai fallback", section_id)
