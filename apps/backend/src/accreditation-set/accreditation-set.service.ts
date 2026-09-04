@@ -366,7 +366,7 @@ export class AccreditationSetService {
     type: TipePanduan,
     dto: AttachSetDocumentDto,
   ) {
-    const { tenantId } = this.tenantContext.getOrThrow();
+    const { tenantId, userId } = this.tenantContext.getOrThrow();
     const set = await this.prisma.accreditationSet.findFirst({
       where: { id, tenantId },
     });
@@ -374,9 +374,10 @@ export class AccreditationSetService {
 
     await this.requireUnlocked(id, tenantId);
 
-    await this.storage.headObject(dto.fileKey);
+    const { sizeBytes } = await this.storage.headObject(dto.fileKey);
     const originalFileName = extractFileNameFromKey(dto.fileKey);
     const fileType = (originalFileName.split('.').pop() ?? '').toLowerCase();
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
 
     const existing = await this.prisma.referenceGuide.findFirst({
       where: { accreditationSetId: id, type },
@@ -385,7 +386,14 @@ export class AccreditationSetService {
     const saved = existing
       ? await this.prisma.referenceGuide.update({
           where: { id: existing.id },
-          data: { title: dto.title, fileUrl: dto.fileKey, fileType },
+          data: {
+            title: dto.title,
+            fileUrl: dto.fileKey,
+            fileType,
+            sizeBytes,
+            uploadedByUserId: userId,
+            uploadedByName: user.fullName,
+          },
         })
       : await this.prisma.referenceGuide.create({
           data: {
@@ -394,6 +402,9 @@ export class AccreditationSetService {
             title: dto.title,
             fileUrl: dto.fileKey,
             fileType,
+            sizeBytes,
+            uploadedByUserId: userId,
+            uploadedByName: user.fullName,
           },
         });
 

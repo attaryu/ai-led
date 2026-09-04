@@ -49,6 +49,9 @@ export type BackendReferenceGuide = {
 	title: string;
 	fileUrl: string;
 	fileType: string;
+	/** `null` = baris lama, diunggah sebelum kolom ini ada. */
+	sizeBytes: number | null;
+	uploadedByName: string | null;
 	createdAt: string;
 };
 

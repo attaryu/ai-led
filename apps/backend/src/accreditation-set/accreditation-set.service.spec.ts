@@ -77,6 +77,9 @@ function makeService(tenantId = 't1') {
       create: jest.fn(),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
+    user: {
+      findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'u1', fullName: 'Budi' }),
+    },
     chapterTemplate: {
       findMany: jest.fn().mockResolvedValue([]),
     },

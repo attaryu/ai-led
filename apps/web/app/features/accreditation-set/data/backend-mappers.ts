@@ -71,21 +71,19 @@ export function toCriterionPayload(
 /**
  * `ReferenceGuide` -> `AccreditationSetDocument`.
  *
- * **Gap yang diketahui:** `ReferenceGuide` (packages/db) tidak punya kolom
- * ukuran berkas atau pengunggah -- beda dari `BuktiDukung` yang punya
- * keduanya. `ukuranBytes`/`diunggahOleh` karena itu tidak bisa diisi dari
- * respons manapun setelah unggahan pertama (refresh halaman kehilangan
- * keduanya). Perlu kolom baru (`sizeBytes`, `uploadedByUserId`/`uploadedByName`)
- * di `ReferenceGuide` untuk menutup ini -- di luar cakupan sesi ini.
+ * `sizeBytes`/`uploadedByName` bisa `null` untuk baris yang diunggah sebelum
+ * kolom ini ada di `ReferenceGuide` (packages/db) -- ditampilkan sebagai
+ * "(tidak tercatat)"/0 B, sama seperti gap lama, tapi kini cuma untuk baris
+ * lama itu, bukan semua baris.
  */
 export function mapDocument(row: BackendReferenceGuide): AccreditationSetDocument {
 	return {
 		tipe: row.type,
 		namaBerkas: row.title,
 		tipeBerkas: row.fileType,
-		ukuranBytes: 0,
+		ukuranBytes: row.sizeBytes ?? 0,
 		diunggahPada: row.createdAt,
-		diunggahOleh: '(tidak tercatat)',
+		diunggahOleh: row.uploadedByName ?? '(tidak tercatat)',
 	};
 }
 

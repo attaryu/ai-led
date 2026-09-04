@@ -158,6 +158,7 @@ model User {
 
   babDraftDibuat      ChapterDraft[]         @relation("BabDraftDibuatOleh")
   buktiDukungDiunggah Evidence[]             @relation("BuktiDukungDiunggahOleh")
+  panduanDiunggah     ReferenceGuide[]       @relation("PanduanDiunggahOleh")
   hasilSkorDijalankan CriterionScoreResult[] @relation("HasilSkorDijalankanOleh")
   chatMessages        ChatMessage[]
   jobsCreated         Job[]
@@ -683,9 +684,15 @@ model ReferenceGuide {
   fileType           String      @map("file_type")
   /// null = panduan lama, sebelum Set Akreditasi ada (masih global, bukan per-set).
   accreditationSetId String?     @map("accreditation_set_id")
+  /// null = baris lama, diunggah sebelum kolom ini ada -- lihat
+  /// accreditation-set/data/backend-mappers.ts::mapDocument.
+  sizeBytes          Int?        @map("size_bytes")
+  uploadedByUserId   String?     @map("uploaded_by_user_id")
+  uploadedByName     String?     @map("uploaded_by_name")
   createdAt          DateTime    @default(now()) @map("created_at")
 
   accreditationSet AccreditationSet? @relation(fields: [accreditationSetId], references: [id], onDelete: Cascade)
+  uploadedBy       User?             @relation("PanduanDiunggahOleh", fields: [uploadedByUserId], references: [id])
   details          GuideDetail[]
 
   @@index([accreditationSetId])
