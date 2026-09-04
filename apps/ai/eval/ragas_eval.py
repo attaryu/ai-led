@@ -90,7 +90,9 @@ def get_available_judge_models() -> list[str]:
             "RAGAS_OPENROUTER_MODEL", os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-r1")
         )
     else:
-        raw = os.environ.get("RAGAS_OLLAMA_MODEL", os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b"))
+        raw = os.environ.get(
+            "RAGAS_OLLAMA_MODEL", os.environ.get("ASSESSMENT_OLLAMA_MODEL", os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b"))
+        )
     return [m.strip() for m in raw.split(",") if m.strip()]
 
 
@@ -203,7 +205,9 @@ def _build_ragas_llm(model: Optional[str] = None):
         ragas_base_url = pick_ollama_endpoint(
             os.environ.get(
                 "RAGAS_OLLAMA_BASE_URL",
-                os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
+                os.environ.get(
+                    "ASSESSMENT_OLLAMA_BASE_URL", os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+                ),
             )
         )
         logger.info("RAGAS judge using Ollama endpoint %s", ragas_base_url)
@@ -222,7 +226,7 @@ def _build_ragas_llm(model: Optional[str] = None):
         }
         api_key = os.environ.get(
             "RAGAS_OLLAMA_API_KEY",
-            os.environ.get("OLLAMA_API_KEY"),
+            os.environ.get("ASSESSMENT_OLLAMA_API_KEY", os.environ.get("OLLAMA_API_KEY")),
         )
         if api_key and not api_key.startswith("<"):
             kwargs["client_kwargs"]["headers"] = {"Authorization": f"Bearer {api_key}"}

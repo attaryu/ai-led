@@ -166,7 +166,10 @@ def _build_llm(ollama_client: OllamaClient):
         # sessions run a few minutes apart — see llm/ollama_client.py.
         "keep_alive": os.environ.get("OLLAMA_KEEP_ALIVE", "30m"),
     }
-    api_key = os.environ.get("OLLAMA_API_KEY")
+    # ollama_client.api_key already resolved ASSESSMENT_OLLAMA_API_KEY vs
+    # OLLAMA_API_KEY (llm/ollama_client.py::create_ollama_client_from_env) --
+    # re-reading OLLAMA_API_KEY here directly would silently ignore that.
+    api_key = ollama_client.api_key
     if api_key and not api_key.startswith("<"):
         # Pass Bearer token to the underlying ollama Client
         kwargs["client_kwargs"]["headers"] = {"Authorization": f"Bearer {api_key}"}
@@ -535,9 +538,15 @@ def build_judge_llm():
     from langchain_ollama import ChatOllama
     from llm.ollama_client import pick_ollama_endpoint
 
+    # Falls back through ASSESSMENT_OLLAMA_BASE_URL (not OLLAMA_BASE_URL) --
+    # this judge scores ASSESSMENT output, which runs on the assessment
+    # server, not the writing one.
     judge_base_url = pick_ollama_endpoint(
         os.environ.get(
-            "RAGAS_OLLAMA_BASE_URL", os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+            "RAGAS_OLLAMA_BASE_URL",
+            os.environ.get(
+                "ASSESSMENT_OLLAMA_BASE_URL", os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+            ),
         )
     )
     logger.info("Grounding judge using Ollama endpoint %s", judge_base_url)
@@ -552,7 +561,9 @@ def build_judge_llm():
         "num_predict": 2048,
         "keep_alive": os.environ.get("OLLAMA_KEEP_ALIVE", "30m"),
     }
-    api_key = os.environ.get("RAGAS_OLLAMA_API_KEY", os.environ.get("OLLAMA_API_KEY"))
+    api_key = os.environ.get(
+        "RAGAS_OLLAMA_API_KEY", os.environ.get("ASSESSMENT_OLLAMA_API_KEY", os.environ.get("OLLAMA_API_KEY"))
+    )
     if api_key and not api_key.startswith("<"):
         kwargs["client_kwargs"]["headers"] = {"Authorization": f"Bearer {api_key}"}
     return ChatOllama(**kwargs)

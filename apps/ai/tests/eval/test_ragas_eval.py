@@ -616,7 +616,7 @@ def test_build_ragas_llm_round_robins_across_ollama_endpoints():
         ),
         patch("langchain_ollama.ChatOllama") as mock_chat_ollama_cls,
     ):
-        for k in ("RAGAS_PROVIDER", "RAGAS_OLLAMA_BASE_URL", "RAGAS_OLLAMA_MODEL"):
+        for k in ("RAGAS_PROVIDER", "RAGAS_OLLAMA_BASE_URL", "RAGAS_OLLAMA_MODEL", "ASSESSMENT_OLLAMA_BASE_URL"):
             os.environ.pop(k, None)
         mock_chat_ollama_cls.return_value = MagicMock()
         _build_ragas_llm()
@@ -651,7 +651,7 @@ def test_get_available_judge_models_falls_back_to_assessment_list():
     from eval.ragas_eval import get_available_judge_models
 
     with patch.dict(os.environ, {"LLM_PROVIDER": "ollama", "OLLAMA_MODEL": "qwen3.6:35b,deepseek-r1:32b"}, clear=False):
-        for k in ("RAGAS_PROVIDER", "RAGAS_OLLAMA_MODEL", "RAGAS_OPENROUTER_MODEL"):
+        for k in ("RAGAS_PROVIDER", "RAGAS_OLLAMA_MODEL", "RAGAS_OPENROUTER_MODEL", "ASSESSMENT_OLLAMA_MODEL"):
             os.environ.pop(k, None)
         models = get_available_judge_models()
 

@@ -236,7 +236,10 @@ def _build_reasoning_llm(ollama_client: OllamaClient):
         "num_predict": 8192,
         "keep_alive": os.environ.get("OLLAMA_KEEP_ALIVE", "30m"),
     }
-    api_key = os.environ.get("OLLAMA_API_KEY")
+    # ollama_client.api_key already resolved ASSESSMENT_OLLAMA_API_KEY vs
+    # OLLAMA_API_KEY (llm/ollama_client.py::create_ollama_client_from_env) --
+    # re-reading OLLAMA_API_KEY here directly would silently ignore that.
+    api_key = ollama_client.api_key
     if api_key and not api_key.startswith("<"):
         kwargs["client_kwargs"]["headers"] = {"Authorization": f"Bearer {api_key}"}
     # Retry transient connection failures (e.g. connection reset mid-request
