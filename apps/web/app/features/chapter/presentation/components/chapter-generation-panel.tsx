@@ -29,7 +29,8 @@ import {
 	useChapterGeneration,
 	type HasilGenerate,
 } from '../hooks/use-chapter-generation';
-import { ChapterEvidenceSuggestion } from './chapter-evidence-suggestion';
+import { rekomendasiUntukBab } from '../../data/sources/remote/chapter-recommendation.mock';
+import { ChapterDocumentRecommendation } from './chapter-document-recommendation';
 
 /**
  * Isi tab "Generasi" (docs/application_flow.md §12.1): memilih bukti dukung yang
@@ -74,7 +75,6 @@ export function ChapterGenerationPanel({
 		jumlahBaru,
 		punyaDasar,
 		jumlahGugur,
-		saranBukti,
 		namaProdi,
 		tandaiUnggahanBaru,
 		jumlahMenungguOtomatis,
@@ -119,7 +119,20 @@ export function ChapterGenerationPanel({
 	 * tidak koheren. Ini juga yang menjaga keadaan "tidak ada yang cocok" tetap
 	 * bersih.
 	 */
-	const tampilkanSaran = saranBukti.length > 0 && kataKunci.trim() === '';
+	/**
+	 * Rekomendasi dokumen untuk bab ini, beserta mana yang sudah terjawab
+	 * centang bukti dukung.
+	 *
+	 * Dihitung di sini, bukan di `useChapterGeneration` seperti `saranBukti`
+	 * dulu: yang itu butuh `pustaka` yang cuma dipegang hook-nya, sedangkan
+	 * yang ini turunan murni dari `terpilih` yang sudah ada di tangan panel.
+	 */
+	const rekomendasi = React.useMemo(
+		() => rekomendasiUntukBab(terpilih),
+		[terpilih],
+	);
+
+	const tampilkanRekomendasi = kataKunci.trim() === '';
 
 	async function handleGenerate() {
 		const hasil = await jalankanGenerate();
@@ -229,17 +242,14 @@ export function ChapterGenerationPanel({
 					 * dirender saat bab terkunci, padahal blok ini justru harus tetap
 					 * muncul di sana (§12.1a — hak unggah lepas dari hak sunting).
 					 */}
-					<ChapterEvidenceSuggestion
-						saran={tampilkanSaran ? saranBukti : []}
-						bisaUnggah={bisaUnggah}
-						dimatikan={sedangBerjalan}
-						onUnggah={() => setUnggahTerbuka(true)}
+					<ChapterDocumentRecommendation
+						rekomendasi={tampilkanRekomendasi ? rekomendasi : []}
 					/>
 
 					{daftar.length === 0 ? (
 						<KeadaanKosong
 							totalPustaka={totalPustaka}
-							adaSaran={tampilkanSaran}
+							adaSaran={tampilkanRekomendasi}
 							bisaUnggah={bisaUnggah}
 							dimatikan={sedangBerjalan}
 							onUnggah={() => setUnggahTerbuka(true)}
