@@ -38,7 +38,7 @@ import { sidikJari } from './chapter-scoring.mock';
  * **Sinkron, bukan asinkron.** `TabsContent` di Editor Bab tidak memakai
  * `keepMounted`, jadi panelnya dilepas dari pohon setiap kali tab berpindah —
  * sumber asinkron berarti spinner di kolom 320 px pada tiap kali tab dibuka
- * kembali. Alasan yang sama dipakai `evidence-recommendation.entity.ts`.
+ * kembali.
  */
 export type KutipanChunk = {
 	/** `chunk-bukti-${refId}-${nn}` — keluarga rumus yang sama dengan generate. */
@@ -59,10 +59,8 @@ type Petikan = {
 /**
  * Petikan dikelompokkan menurut **kata kunci nama berkas**, bukan menurut tipe
  * berkasnya: sebuah `.pdf` bisa statuta maupun SK, dan keduanya berbunyi sangat
- * berbeda. Ini kerabat dekat pencocokan penanda di
- * `evidence-recommendation.entity.ts`, dan batasnya pun sama — nama berkas
- * adalah satu-satunya petunjuk yang dipunyai `BUKTI_DUKUNG` (§16 Pertanyaan
- * Terbuka #9).
+ * berbeda. Batasnya disadari: nama berkas adalah satu-satunya petunjuk yang
+ * dipunyai `BUKTI_DUKUNG` (§16 Pertanyaan Terbuka #9).
  *
  * Urutan penting: yang pertama cocok dipakai, jadi kata kunci yang lebih khusus
  * harus berdiri di atas yang lebih umum (`laporan keuangan` sebelum `laporan`).

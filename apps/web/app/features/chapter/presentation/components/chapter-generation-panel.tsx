@@ -43,10 +43,10 @@ import { ChapterDocumentRecommendation } from './chapter-document-recommendation
  * terunggah dan tinggal ditunggu — statusnya sendirilah penjelasan kenapa ia
  * belum bisa dicentang.
  *
- * Di atas daftar itu duduk {@link ChapterEvidenceSuggestion} (§12.1b), yang
- * menjawab pertanyaan sebaliknya: berkas apa yang **tidak** ada di sini padahal
- * kriteria babnya menuntutnya. Keduanya sengaja bertetangga — satu memerikan
- * yang dimiliki, satu yang belum.
+ * Di atas daftar itu duduk {@link ChapterDocumentRecommendation}, yang
+ * menjawab pertanyaan sebaliknya: dokumen berisi apa yang dituntut bab ini,
+ * terlepas dari apa yang kebetulan sudah ada di pustaka. Keduanya sengaja
+ * bertetangga — satu memerikan yang dimiliki, satu yang dibutuhkan.
  */
 export function ChapterGenerationPanel({
 	chapter,
@@ -110,28 +110,27 @@ export function ChapterGenerationPanel({
 	const [promptTerbuka, setPromptTerbuka] = React.useState(false);
 
 	/**
-	 * Blok rekomendasi menghilang selagi mencari (§12.1b).
-	 *
-	 * Kata kunci menyaring `daftar`, bukan `pustaka`, jadi bloknya tetap benar
-	 * secara data — tapi acuannya ke "daftar bawah" berhenti benar begitu daftar
-	 * itu tersaring, dan badan panel saat itu sedang berarti "hasil pencarian".
-	 * Nasihat yang tidak ikut tersaring, duduk di atas daftar yang tersaring,
-	 * tidak koheren. Ini juga yang menjaga keadaan "tidak ada yang cocok" tetap
-	 * bersih.
-	 */
-	/**
 	 * Rekomendasi dokumen untuk bab ini, beserta mana yang sudah terjawab
 	 * centang bukti dukung.
 	 *
-	 * Dihitung di sini, bukan di `useChapterGeneration` seperti `saranBukti`
-	 * dulu: yang itu butuh `pustaka` yang cuma dipegang hook-nya, sedangkan
-	 * yang ini turunan murni dari `terpilih` yang sudah ada di tangan panel.
+	 * Dihitung di panel, bukan di `useChapterGeneration`: ia turunan murni dari
+	 * `terpilih` yang sudah dipegang di sini, dan tidak menyentuh `pustaka`
+	 * yang cuma ada di dalam hook.
 	 */
 	const rekomendasi = React.useMemo(
 		() => rekomendasiUntukBab(terpilih),
 		[terpilih],
 	);
 
+	/**
+	 * Blok rekomendasi menghilang selagi mencari (§12.1b).
+	 *
+	 * Kata kunci menyaring `daftar`, bukan `pustaka`, jadi bloknya tetap benar
+	 * secara data — tapi badan panel saat itu sedang berarti "hasil pencarian",
+	 * dan blok yang tidak ikut tersaring duduk di atas daftar yang tersaring
+	 * tidak koheren. Ini juga yang menjaga keadaan "tidak ada yang cocok" tetap
+	 * bersih.
+	 */
 	const tampilkanRekomendasi = kataKunci.trim() === '';
 
 	async function handleGenerate() {

@@ -16,8 +16,8 @@ import { sidikJari } from './chapter-scoring.mock';
  * `guidance-point.entity.ts` untuk alasan yang sama. Yang dinilai dari mock ini
  * tata letaknya, bukan isinya, dan enam kalimat sudah cukup untuk itu.
  *
- * **Sinkron dan murni**, mengikuti preseden `evidence-recommendation.entity.ts`
- * beserta alasannya yang masih berlaku: `TabsContent` di Editor Bab tidak
+ * **Sinkron dan murni**, alasan yang sama dengan `chapter-chunk.mock.ts`:
+ * `TabsContent` di Editor Bab tidak
  * memakai `keepMounted`, jadi panel Generasi dilepas dari pohon tiap kali tab
  * berpindah — sumber asinkron berarti spinner di kolom 320 px pada setiap
  * kunjungan. Tidak ada `delay` di sini karena tidak ada yang perlu terlihat

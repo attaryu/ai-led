@@ -44,7 +44,7 @@ import { type RekomendasiDokumen } from '../../domain/entities/document-recommen
  * **Tanpa keadaan "semua terpenuhi".** Begitu tidak ada lagi yang tersisa,
  * yang tertinggal cuma eyebrow dan satu baris lipatan — tidak ada spanduk hijau
  * yang menyewa ruang selamanya. Keputusan yang sama sudah diambil
- * `ChapterEvidenceSuggestion` dan `AssessmentBabBanner`.
+ * `AssessmentBabBanner`: `null` ketimbang keadaan kosong.
  *
  * **Tanpa tombol unggah sendiri.** Kepala panel sudah memuat "Unggah" yang
  * selalu tersedia; tombol kedua di dalam blok ini hanya akan bersaing dengannya

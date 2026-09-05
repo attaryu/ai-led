@@ -25,9 +25,8 @@ import {
  *
  * **Halamannya dihitung, bukan diacak.** Urutannya sudah intrinsik — poin `4.1`
  * mendahului `4.5` di dokumen aslinya — jadi tidak ada yang perlu dijinakkan
- * `sidikJari`. Ini mengikuti aturan yang sudah ditulis
- * `evidence-recommendation.entity.ts`: tidak ada yang perlu diacak, jadi tidak
- * ada yang perlu dijinakkan. Sekaligus menghindarkan seluruh persoalan geser
+ * `sidikJari`: tidak ada yang perlu diacak, jadi tidak ada yang perlu
+ * dijinakkan. Sekaligus menghindarkan seluruh persoalan geser
  * bertanda yang pernah membuat halaman mundur di mock kutipan bukti dukung.
  *
  * **Kutipan rubrik tidak punya halaman, dan itu bukan kelalaian.** Matriks

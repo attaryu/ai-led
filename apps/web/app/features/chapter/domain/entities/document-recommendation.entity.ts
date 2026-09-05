@@ -7,10 +7,10 @@
  * Penyusun sendiri yang tahu berkas mana di kampusnya memuat itu. Bentuk ini
  * berbeda dari dua pendahulunya, dan bedanya disengaja:
  *
- * - `RekomendasiBukti` ({@link ./evidence-recommendation.entity.ts}) menyebut
- *   nama artefak lalu menempelkan kode kriteria (`C2 · bukti mutu tiap kerja
- *   sama`). Kode kriteria dibuang di sini — kartunya berdiri sendiri tanpa
- *   perlu pembacanya paham penomoran LAM.
+ * - `RekomendasiBukti`, blok yang digantikannya (dihapus bersama commit ini),
+ *   menyebut nama artefak lalu menempelkan kode kriteria (`C2 · bukti mutu
+ *   tiap kerja sama`). Kode kriteria dibuang di sini — kartunya berdiri
+ *   sendiri tanpa perlu pembacanya paham penomoran LAM.
  * - `RecommendationItemEntity` di branch `dev-v1` memecah `label` dan `reason`
  *   jadi dua medan. Di kartu rujukan (prototipe Dimas) keduanya satu kalimat
  *   mengalir tanpa pemisah visual apa pun, jadi memecahnya berarti mengarang
