@@ -1,13 +1,18 @@
 """pgvector-backed store for Evidence chunks — same pattern as
 pgvector_store.py's LED chunks, different table (evidence_chunk_embeddings)
-and scope (evidence_id, not document_id). Same embedding model/singleton
-so both share one loaded model, not two copies in memory.
+and scope (evidence_id, not document_id). Imports pgvector_store's
+_get_model instead of keeping its own copy -- a same-named module-level
+_model in each file does NOT actually share the loaded SentenceTransformer
+(they're separate globals in separate modules), it just silently loads and
+holds two ~500MB copies in memory, one per module, first use of each
+(confirmed: both "Loading SentenceTransformer model..." lines fire back to
+back in worker logs the first time a job calls both search_led AND
+search_evidence).
 """
 
 from __future__ import annotations
 
 import logging
-import threading
 import uuid
 import weakref
 from contextlib import contextmanager
@@ -16,27 +21,13 @@ import psycopg2.extras
 from pgvector.psycopg2 import register_vector
 
 from db.connection import tenant_connection
+from vectorstore.pgvector_store import _get_model
 
 logger = logging.getLogger(__name__)
 
-_EMBED_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
-
-_model = None
-_model_lock = threading.Lock()
 # See pgvector_store.py's identical helper -- one register_vector() per
 # pooled connection, not per checkout.
 _vector_registered: "weakref.WeakSet" = weakref.WeakSet()
-
-
-def _get_model():
-    global _model
-    if _model is None:
-        with _model_lock:
-            if _model is None:
-                from sentence_transformers import SentenceTransformer
-
-                _model = SentenceTransformer(_EMBED_MODEL)
-    return _model
 
 
 @contextmanager

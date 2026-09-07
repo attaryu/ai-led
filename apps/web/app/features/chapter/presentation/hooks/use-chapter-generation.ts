@@ -316,16 +316,14 @@ export function useChapterGeneration({
 	);
 
 	/**
-	 * Jalur folder per berkas, untuk keterangan di bawah namanya (§4.6a).
+	 * Jalur folder per berkas — dipakai `ChapterGenerationPanel` untuk dua hal:
+	 * keterangan jalur lengkap di bawah nama berkas (§4.6a, membedakan dua
+	 * `LKPS_2026.xlsx` dari tempat berbeda), dan mengelompokkan daftar per
+	 * folder ROOT (segmen pertama jalur) supaya daftar panjang tidak jadi satu
+	 * list datar raksasa.
 	 *
-	 * **Daftarnya tetap datar, tidak jadi pohon.** Pekerjaan panel ini memilih
-	 * berkas mana yang menyuapi AI, bukan menjelajahi perpustakaan; menuntut
-	 * penggunanya menelusuri folder di kolom 320 px menambah langkah tanpa
-	 * menambah kejelasan. Yang benar-benar hilang tanpa folder cuma satu hal —
-	 * kemampuan membedakan dua `LKPS_2026.xlsx` dari tempat berbeda — dan itu
-	 * dijawab satu baris jalur, bukan satu mode navigasi baru.
-	 *
-	 * Berkas di akar tidak masuk peta: barisnya memang tidak menampilkan apa pun.
+	 * Berkas di akar tidak masuk peta: barisnya memang tidak menampilkan apa
+	 * pun dan dirender lepas di luar kelompok folder mana pun.
 	 */
 	const jalurBukti = React.useMemo(() => {
 		const peta = new Map<string, string>();

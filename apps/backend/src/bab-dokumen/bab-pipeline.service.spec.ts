@@ -18,6 +18,9 @@ describe('BabPipelineService manual section CRUD', () => {
       documentChapter: {
         update: jest.fn().mockResolvedValue({ id: 'bab-1' }),
       },
+      generationRun: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
     };
     const access: Pick<BabAccessService, 'findOneScoped'> = {
       findOneScoped: jest.fn().mockResolvedValue({ id: 'bab-1', locked: false, ...babOverrides }),
@@ -267,6 +270,46 @@ describe('BabPipelineService manual section CRUD', () => {
     it('rejects when the chapter is locked', async () => {
       const { service } = makeService({ locked: true });
       await expect(service.triggerGenerate('bab-1', 'sec-1')).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('findSourcesForSection', () => {
+    it('returns the latest run\'s chunksUsed for this section', async () => {
+      const { service, prisma } = makeService();
+      const generatedAt = new Date('2026-09-04T00:00:00Z');
+      prisma.generationRun.findFirst.mockResolvedValue({
+        chunksUsed: [{ citation_label: 'LED hal. 3', text: 'Teks.' }],
+        createdAt: generatedAt,
+      });
+
+      const result = await service.findSourcesForSection('bab-1', 'sec-1');
+
+      expect(prisma.generationRun.findFirst).toHaveBeenCalledWith({
+        where: { sectionId: 'sec-1' },
+        orderBy: { createdAt: 'desc' },
+        select: { chunksUsed: true, createdAt: true },
+      });
+      expect(result).toEqual({
+        chunksUsed: [{ citation_label: 'LED hal. 3', text: 'Teks.' }],
+        generatedAt,
+      });
+    });
+
+    it('returns null (not an empty array) when the section was never generated via this job', async () => {
+      const { service, prisma } = makeService();
+      prisma.generationRun.findFirst.mockResolvedValue(null);
+
+      const result = await service.findSourcesForSection('bab-1', 'sec-1');
+
+      expect(result).toBeNull();
+    });
+
+    it('rejects when the section does not belong to this chapter', async () => {
+      const { service, prisma } = makeService();
+      prisma.chapterSection.findFirst.mockResolvedValue(null);
+
+      await expect(service.findSourcesForSection('bab-1', 'sec-other')).rejects.toThrow(NotFoundException);
+      expect(prisma.generationRun.findFirst).not.toHaveBeenCalled();
     });
   });
 });

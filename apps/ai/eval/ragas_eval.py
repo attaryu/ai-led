@@ -90,7 +90,9 @@ def get_available_judge_models() -> list[str]:
             "RAGAS_OPENROUTER_MODEL", os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-r1")
         )
     else:
-        raw = os.environ.get("RAGAS_OLLAMA_MODEL", os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b"))
+        raw = os.environ.get(
+            "RAGAS_OLLAMA_MODEL", os.environ.get("ASSESSMENT_OLLAMA_MODEL", os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b"))
+        )
     return [m.strip() for m in raw.split(",") if m.strip()]
 
 
@@ -203,7 +205,9 @@ def _build_ragas_llm(model: Optional[str] = None):
         ragas_base_url = pick_ollama_endpoint(
             os.environ.get(
                 "RAGAS_OLLAMA_BASE_URL",
-                os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
+                os.environ.get(
+                    "ASSESSMENT_OLLAMA_BASE_URL", os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+                ),
             )
         )
         logger.info("RAGAS judge using Ollama endpoint %s", ragas_base_url)
@@ -222,7 +226,7 @@ def _build_ragas_llm(model: Optional[str] = None):
         }
         api_key = os.environ.get(
             "RAGAS_OLLAMA_API_KEY",
-            os.environ.get("OLLAMA_API_KEY"),
+            os.environ.get("ASSESSMENT_OLLAMA_API_KEY", os.environ.get("OLLAMA_API_KEY")),
         )
         if api_key and not api_key.startswith("<"):
             kwargs["client_kwargs"]["headers"] = {"Authorization": f"Bearer {api_key}"}
@@ -457,6 +461,30 @@ def build_eval_samples(
 # ---------------------------------------------------------------------------
 
 
+class _JobProgressPbar:
+    """Duck-typed tqdm replacement passed as ragas.evaluate()'s `_pbar` arg
+    (port of ariel's d0ddc7a).
+
+    ragas's Executor calls `.update(1)` once per completed job -- success or
+    failure -- regardless of batching. Without this, the "evaluating" stage's
+    progress_cb was only ever invoked once, with current=0, before evaluate()
+    started, and never again until the whole (possibly 60+ minute) call
+    returned -- indistinguishable from a hung run to any caller polling
+    progress_current."""
+
+    def __init__(self, total: int, on_update) -> None:
+        self.total = total
+        self.n = 0
+        self._on_update = on_update
+
+    def update(self, n: int = 1) -> None:
+        self.n += n
+        try:
+            self._on_update(self.n, self.total)
+        except Exception:
+            pass
+
+
 def run_ragas_evaluation(
     n_indicators: int = 5,
     session_id: Optional[str] = None,
@@ -507,12 +535,6 @@ def run_ragas_evaluation(
         model=model,
     )
 
-    if progress_cb:
-        try:
-            progress_cb(stage="evaluating", current=0, total=len(samples))
-        except Exception:
-            pass
-
     if not samples:
         return {"error": "No evaluation samples could be built.", "n_samples": 0}
 
@@ -554,9 +576,21 @@ def run_ragas_evaluation(
         max_workers=int(os.environ.get("RAGAS_MAX_WORKERS", "2")),
     )
 
+    total_jobs = len(ragas_samples) * len(active_metrics)
+    pbar = None
+    if progress_cb:
+        try:
+            progress_cb(stage="evaluating", current=0, total=total_jobs)
+        except Exception:
+            pass
+        pbar = _JobProgressPbar(
+            total_jobs,
+            lambda cur, tot: progress_cb(stage="evaluating", current=cur, total=tot),
+        )
+
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        result = evaluate(dataset=dataset, metrics=active_metrics, run_config=run_config)
+        result = evaluate(dataset=dataset, metrics=active_metrics, run_config=run_config, _pbar=pbar)
 
     result_df = result.to_pandas()
 

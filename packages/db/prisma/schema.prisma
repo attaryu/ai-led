@@ -269,9 +269,10 @@ model ChapterSection {
   error       String?              @db.Text
   generatedAt DateTime?            @map("generated_at")
 
-  chapter  DocumentChapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
-  parent   ChapterSection?  @relation("ChapterSectionChildren", fields: [parentId], references: [id], onDelete: Cascade)
-  children ChapterSection[] @relation("ChapterSectionChildren")
+  chapter        DocumentChapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  parent         ChapterSection?  @relation("ChapterSectionChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children       ChapterSection[] @relation("ChapterSectionChildren")
+  generationRuns GenerationRun[]
 
   // Bukan @@unique([chapterId, order]) lagi: order sekarang bersaing per
   // parent (tiap sub-bab hitung C.1, C.2… dari 1 lagi), dan constraint unik
@@ -447,12 +448,23 @@ model DocumentRecommendation {
 /// Kartu tampilan 1 rekomendasi (label + alasan) — dev-v1 tidak
 /// mendenormalisasi ini ke JSON di DocumentRecommendation supaya urutan
 /// tampil bisa di-query/di-reorder tanpa rewrite seluruh baris.
+enum StatusItemRekomendasi {
+  DIREKOMENDASIKAN
+  DIGUNAKAN
+  TIDAK_DIPERLUKAN
+}
+
+/// Status per item diisi oleh cross-check pasca-narasi (worker.py::_cross_check_recommendation_items,
+/// port SYSTEM_CROSS_CHECK_DOCUMENT_STATUS milik dimas) — DIREKOMENDASIKAN
+/// hanya boleh berubah jadi DIGUNAKAN/TIDAK_DIPERLUKAN sekali, baris TIDAK
+/// PERNAH dihapus meski TIDAK_DIPERLUKAN (audit trail, sama seperti skor RAGAS).
 model RecommendationItem {
-  id               String  @id @default(cuid())
-  recommendationId String  @map("recommendation_id")
+  id               String                @id @default(cuid())
+  recommendationId String                @map("recommendation_id")
   label            String
-  reason           String? @db.Text
+  reason           String?               @db.Text
   order            Int
+  status           StatusItemRekomendasi @default(DIREKOMENDASIKAN)
 
   recommendation DocumentRecommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
 
@@ -735,10 +747,21 @@ model GuideDetailChapter {
 model GenerationRun {
   id             String   @id @default(cuid())
   chapterDraftId String   @unique @map("chapter_draft_id")
+  /// SECTION yang digenerate PADA PANGGILAN INI -- bukan seluruh bab. Dipakai
+  /// mencari "chunk apa yang beneran mendukung sitasi di section ini" (lihat
+  /// `chunksUsed`'s `citationLabel`) tanpa menebak dari isi `chapterDraft`
+  /// yang bisa memuat section lain yang tidak berubah pada generate ini.
+  /// `null` = baris lama sebelum kolom ini ada -- section aslinya tidak
+  /// pernah tercatat, jadi tidak bisa dipulihkan lewat migrasi data.
+  sectionId      String?  @map("section_id")
   model          String
   guidelinesUsed Json     @map("guidelines_used")
   rubricUsed     Json     @map("rubric_used")
   checklist      Json
+  /// Tiap elemen membawa `citationLabel` (persis string yang tampil di
+  /// "(sumber: ...)" narasinya) selain field chunk asli -- dihitung SEKALI di
+  /// worker.py saat generate (folder-name-preference dkk sudah diterapkan di
+  /// situ), bukan diturunkan ulang di sisi pembaca.
   chunksUsed     Json     @map("chunks_used")
   judgeResult    Json?    @map("judge_result")
   promptFull     String   @map("prompt_full") @db.Text
@@ -746,9 +769,11 @@ model GenerationRun {
   tokenCount     Int      @map("token_count")
   createdAt      DateTime @default(now()) @map("created_at")
 
-  chapterDraft ChapterDraft @relation(fields: [chapterDraftId], references: [id])
+  chapterDraft ChapterDraft    @relation(fields: [chapterDraftId], references: [id])
+  section      ChapterSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   evalResult   EvalResult?
 
+  @@index([sectionId, createdAt])
   @@map("writing_generation_runs")
 }
 

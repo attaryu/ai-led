@@ -18,6 +18,20 @@ export const recommendationStatusEnum = z.enum([
 ]);
 export type RecommendationStatus = z.infer<typeof recommendationStatusEnum>;
 
+/**
+ * Diisi worker.py::_cross_check_recommendation_items (port SYSTEM_CROSS_CHECK_DOCUMENT_STATUS
+ * milik dimas) setelah narasi bab jadi — DIREKOMENDASIKAN hanya boleh berubah
+ * sekali jadi DIGUNAKAN/TIDAK_DIPERLUKAN, tidak pernah sebaliknya.
+ */
+export const recommendationItemStatusEnum = z.enum([
+	'DIREKOMENDASIKAN',
+	'DIGUNAKAN',
+	'TIDAK_DIPERLUKAN',
+]);
+export type RecommendationItemStatus = z.infer<
+	typeof recommendationItemStatusEnum
+>;
+
 export const recommendationItemSchema = z.object({
 	id: z.string(),
 	/** Nama dokumen/folder yang disarankan. */
@@ -25,6 +39,7 @@ export const recommendationItemSchema = z.object({
 	/** Kenapa item ini disarankan; `null` bila AI tidak menjelaskan. */
 	reason: z.string().nullable(),
 	order: z.number().int(),
+	status: recommendationItemStatusEnum,
 });
 export type RecommendationItemEntity = z.infer<typeof recommendationItemSchema>;
 

@@ -99,6 +99,18 @@ export class BabDokumenController {
     return this.babPipelineService.findSections(id);
   }
 
+  @Get('bab/:id/sections/:sectionId/sumber')
+  @Protected(...READ_ROLES)
+  @ApiOperation({
+    summary: 'Chunk asli yang dipakai AI menyusun section ini, backing hover-card sitasi di editor',
+  })
+  findSourcesForSection(
+    @Param('id') id: string,
+    @Param('sectionId') sectionId: string,
+  ) {
+    return this.babPipelineService.findSourcesForSection(id, sectionId);
+  }
+
   @Post('bab/:id/sections/:sectionId/generate')
   @Protected(...WRITE_ROLES)
   @HttpCode(202)

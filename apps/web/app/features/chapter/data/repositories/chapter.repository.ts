@@ -1,6 +1,7 @@
 import { ApiError } from '~/core/lib/api-client';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import { type ChapterSectionEntity } from '../../domain/entities/chapter-section.entity';
+import { type SectionSumber } from '../../domain/entities/chunk-sumber.entity';
 import { type DocumentRecommendationEntity } from '../../domain/entities/document-recommendation.entity';
 import {
 	mapBuktiDukungRef,
@@ -9,6 +10,7 @@ import {
 	mapHasilSkor,
 	mapKontenBody,
 	mapRagas,
+	mapSectionSumber,
 	toKontenBody,
 } from '../backend-mappers';
 import {
@@ -216,6 +218,12 @@ export const chapterRepository = {
 	async findSections(chapterId: string): Promise<ChapterSectionEntity[]> {
 		const rows = await chapterRemoteSource.findSections(chapterId);
 		return rows.map(mapChapterSection).sort((a, b) => a.urutan - b.urutan);
+	},
+
+	/** Chunk asli yang dipakai AI menyusun satu section — backing citation hover-card. */
+	async findSourcesForSection(chapterId: string, sectionId: string): Promise<SectionSumber> {
+		const row = await chapterRemoteSource.findSourcesForSection(chapterId, sectionId);
+		return mapSectionSumber(row);
 	},
 
 	/** Tambah section manual — lihat `useChapterSections`. `parentId` diisi → jadi sub-sub-bab section itu. */

@@ -241,3 +241,77 @@ def test_parse_raises_on_missing_file():
     """parse_matrix_pdf must raise FileNotFoundError for non-existent paths."""
     with pytest.raises(FileNotFoundError):
         parse_matrix_pdf("/tmp/does_not_exist_xyz.pdf")
+
+
+# ---------------------------------------------------------------------------
+# Merged floor-note propagation (pure function — no PDF fixture needed)
+# ---------------------------------------------------------------------------
+
+from ingestion.matrix_parser import _propagate_floor_note  # noqa: E402
+
+
+def test_propagate_floor_note_fills_siblings_when_note_in_middle_band():
+    """Matches ariel's real #27/#29/#30 pattern: the merged-cell text landed
+    on band 1, leaving bands 2 and 0 empty even though it covers all three."""
+    scores = {
+        4: "Jika X >= 25%, maka Skor = 4",
+        3: "Jika X < 25%, maka Skor = 2 + (8 x X)",
+        2: "",
+        1: "Tidak ada skor kurang dari 2",
+        0: "",
+    }
+    result = _propagate_floor_note(scores)
+    assert result[2] == "Tidak ada skor kurang dari 2"
+    assert result[0] == "Tidak ada skor kurang dari 2"
+    assert result[1] == "Tidak ada skor kurang dari 2"
+    # Bands 3/4 (the real formulas) must be untouched.
+    assert result[4] == scores[4]
+    assert result[3] == scores[3]
+
+
+def test_propagate_floor_note_fills_siblings_when_note_in_rightmost_band():
+    """Matches ariel's real #31/#34/#39 pattern: the merged-cell text landed
+    on band 0 instead of band 1 — propagation must not assume a fixed position."""
+    scores = {4: "Jika Y >= 50%, maka Skor = 4", 3: "Jika Y < 50%, maka Skor = 1 + (6 x Y)",
+              2: "", 1: "", 0: "Tidak ada skor kurang dari 1."}
+    result = _propagate_floor_note(scores)
+    assert result[2] == "Tidak ada skor kurang dari 1."
+    assert result[1] == "Tidak ada skor kurang dari 1."
+    assert result[0] == "Tidak ada skor kurang dari 1."
+
+
+def test_propagate_floor_note_detects_garbled_inter_letter_spacing():
+    """Some pages extract the floor note with spurious spaces between every
+    letter (a pdfplumber artifact) — the tolerant pattern must still catch it."""
+    scores = {4: "Jika Z >= 20%, maka Skor = 4", 3: "Jika Z < 20%, maka Skor = 2 + (Z x 10)",
+              2: "", 1: "T i d a k a d a s k o r kurang dari 2", 0: ""}
+    result = _propagate_floor_note(scores)
+    assert result[2] == "T i d a k a d a s k o r kurang dari 2"
+    assert result[0] == "T i d a k a d a s k o r kurang dari 2"
+
+
+def test_propagate_floor_note_leaves_genuinely_blank_bands_unchanged():
+    """Matches ariel's real #9/#56 pattern: the source PDF never states any
+    criteria for bands 2/1/0 at all (a purely continuous formula with no
+    floor note anywhere) — nothing to propagate, must stay empty."""
+    scores = {
+        4: "Jika BOP >= 10.000.000, maka Skor 4",
+        3: "Jika BOP < 10.000.000, maka Skor = (2 x BOP) / 5.000.000",
+        2: "", 1: "", 0: "",
+    }
+    result = _propagate_floor_note(scores)
+    assert result == scores
+
+
+def test_propagate_floor_note_does_not_touch_distinct_per_band_text():
+    """Matches ariel's real #28 pattern: every band already has its own
+    distinct (non-floor-note) criteria text — must be returned unchanged."""
+    scores = {
+        4: "Jika NDTPS >= 12, maka Skor = 4",
+        3: "Jika 5 <= NDTPS < 12, maka Skor = 2 + 2(A x B)",
+        2: "Jika NDTPS >= 5 dan PDTT > 40%, maka skor = 2",
+        1: "Jika NDTPS >= 5, maka Skor = 2 + (2 x B)",
+        0: "Jika NDTPS < 5, maka Skor = 0",
+    }
+    result = _propagate_floor_note(scores)
+    assert result == scores

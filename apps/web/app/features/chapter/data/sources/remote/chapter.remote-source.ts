@@ -162,6 +162,23 @@ export type BackendChapterSection = {
 	generatedAt: string | null;
 };
 
+/**
+ * Satu elemen `GenerationRun.chunksUsed` (Json bebas bentuk) — field lain yang
+ * disimpan worker.py (`chunk_id`, `metadata`, `entity`, dst) sengaja tidak
+ * dideklarasikan di sini karena tidak pernah dibaca frontend.
+ */
+export type BackendChunkUsed = {
+	citation_label: string;
+	kind: 'led' | 'evidence';
+	text: string;
+};
+
+/** `GET bab/:id/sections/:sectionId/sumber` — `null` = section belum pernah digenerate lewat job ini. */
+export type BackendSectionSumber = {
+	chunksUsed: BackendChunkUsed[];
+	generatedAt: string;
+} | null;
+
 /** Hasil job REKOMENDASI_DOKUMEN — lihat `worker.py::_handle_rekomendasi_dokumen`. */
 export type RekomendasiDokumenResult = {
 	status: 'completed' | 'error';
@@ -179,6 +196,7 @@ export type BackendRecommendationItem = {
 	label: string;
 	reason: string | null;
 	order: number;
+	status: 'DIREKOMENDASIKAN' | 'DIGUNAKAN' | 'TIDAK_DIPERLUKAN';
 };
 
 /**
@@ -233,6 +251,11 @@ export const chapterRemoteSource = {
 	/** Daftar section (outline) bab ini, terurut — kosong berarti outline belum pernah digenerate. */
 	findSections(id: string): Promise<BackendChapterSection[]> {
 		return apiFetch<BackendChapterSection[]>(`/bab/${id}/sections`);
+	},
+
+	/** Chunk asli yang dipakai AI menyusun satu section — backing citation hover-card. */
+	findSourcesForSection(id: string, sectionId: string): Promise<BackendSectionSumber> {
+		return apiFetch<BackendSectionSumber>(`/bab/${id}/sections/${sectionId}/sumber`);
 	},
 
 	/** Memicu GENERASI_BAB untuk SATU section. `draftId` (rekomendasi terkonfirmasi) mengalahkan `selectedEvidenceIds` (picker manual). */

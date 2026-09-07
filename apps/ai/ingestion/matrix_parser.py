@@ -53,6 +53,13 @@ _FORMULA_EXTRACT = re.compile(
     r"[Ss]kor\s*=\s*(.+?)(?:\n|$|,\s*[Jj]ika)", re.DOTALL
 )
 
+# Floor-note detection for merged score cells — tolerant of the occasional
+# inter-letter-spacing pdfplumber extraction artifact seen on some pages
+# (e.g. "T i d a k a d a s k o r"), which a literal substring match misses.
+_FLOOR_NOTE_PATTERN = re.compile(
+    r"t\s*i\s*d\s*a\s*k\s*a\s*d\s*a\s*s\s*k\s*o\s*r", re.IGNORECASE
+)
+
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
@@ -152,6 +159,33 @@ def _extract_formula(score_texts: dict[int, str]) -> Optional[str]:
     return None
 
 
+def _propagate_floor_note(scores: dict[int, str]) -> dict[int, str]:
+    """A "Tidak ada skor kurang dari N" note in the source PDF is visually a
+    single cell merged across 2-3 of the low-score columns (2/1/0), but
+    pdfplumber's grid extraction attributes it to only ONE of those column
+    indices — which one varies by page (sometimes the middle, sometimes the
+    rightmost of the merge) — leaving its siblings as empty strings even
+    though the note semantically covers the whole merged range. Detect the
+    note wherever it landed and copy it into any empty band among 2/1/0.
+    Bands 3/4 (the real formula text) are never touched. Indicators whose
+    source PDF genuinely never states low-band criteria (no floor note
+    anywhere in 2/1/0) are left as-is — nothing to propagate."""
+    floor_text = next(
+        (
+            scores[key]
+            for key in (2, 1, 0)
+            if scores.get(key) and _FLOOR_NOTE_PATTERN.search(scores[key])
+        ),
+        None,
+    )
+    if floor_text is None:
+        return scores
+    return {
+        key: (floor_text if key in (2, 1, 0) and not text else text)
+        for key, text in scores.items()
+    }
+
+
 def _extract_sub_score_formula(kriteria: str) -> Optional[str]:
     """
     Extract the composite aggregation formula from kriteria text.
@@ -207,7 +241,7 @@ class _RowAccumulator:
             kriteria=self.kriteria,
             indikator=self.indikator,
             score_type=score_type,
-            score_criteria={k: v for k, v in self.scores.items()},
+            score_criteria=_propagate_floor_note(self.scores),
             formula=formula,
             lkps_table_ref=lkps_refs,
             sub_score_formula=sub_score_formula,
