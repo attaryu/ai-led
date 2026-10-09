@@ -6,3 +6,5 @@ build
 .env
 .env.*
 !.env.example
+# Model besar (~5 GB) dipasang lewat service `bootstrap`, bukan lewat konteks build.
+models

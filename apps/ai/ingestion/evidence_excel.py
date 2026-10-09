@@ -315,10 +315,17 @@ def drop_first_col_only_rows(tables: list) -> list:
     return cleaned
 
 
+def _normalize_checkmark(val):
+    """dimas excel_extractor: a cell that is exactly "V"/"v" (manual LKPS tick) -> True, so the LLM reads yes/no."""
+    if isinstance(val, str) and val.strip().casefold() == "v":
+        return True
+    return val
+
+
 def df_to_konten(df: pd.DataFrame) -> str:
     lines = []
     for _, row in df.iterrows():
-        pairs = [f"{col} : {row[col]}" for col in df.columns if not _is_empty_val(row[col])]
+        pairs = [f"{col} : {_normalize_checkmark(row[col])}" for col in df.columns if not _is_empty_val(row[col])]
         if pairs:
             lines.append(", ".join(pairs))
     return "\n".join(lines)

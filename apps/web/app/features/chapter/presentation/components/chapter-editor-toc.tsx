@@ -12,7 +12,15 @@ import {
 	findTocPathForChapter,
 	type ChapterTocNode,
 } from '../../domain/entities/chapter-toc.entity';
-import { FormSection } from './chapter-section-list';
+import { FormSection } from './section-form';
+
+/**
+ * Posisi gulir Daftar Isi terakhir, per dokumen. Disimpan DI LUAR komponen karena
+ * `ChapterEditorWorkspace` dipasang ulang (`key={chapter.id}:{sectionId}`) tiap pindah bab/
+ * sub-bab, ikut memasang ulang Daftar Isi ini -- tanpa ini kolomnya selalu kembali ke atas
+ * dan pengguna yang sudah menggulung jauh ke bawah harus mencari lagi tempatnya.
+ */
+let posisiGulirToc: { projectId: string; atas: number } | null = null;
 
 /**
  * Sidebar kiri Editor Bab — Daftar Isi (docs/application_flow.md §7.1).
@@ -64,6 +72,21 @@ export function ChapterEditorToc({
 	/** Dipanggil sesudah tambah section manual lewat `[+]` — pemanggil membangun ulang `chapterToc`. */
 	onSectionAdded: () => void | Promise<void>;
 }) {
+	const akarRef = React.useRef<HTMLDivElement | null>(null);
+
+	// Kembalikan posisi gulir sebelum paint pertama (tanpa kedipan di atas), lalu rekam
+	// setiap gulir berikutnya.
+	React.useLayoutEffect(() => {
+		const viewport = akarRef.current?.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]');
+		if (!viewport) return undefined;
+		if (posisiGulirToc?.projectId === projectId) viewport.scrollTop = posisiGulirToc.atas;
+		const simpan = () => {
+			posisiGulirToc = { projectId, atas: viewport.scrollTop };
+		};
+		viewport.addEventListener('scroll', simpan, { passive: true });
+		return () => viewport.removeEventListener('scroll', simpan);
+	}, [projectId]);
+
 	const jalurAktif = new Set(
 		findTocPathForChapter(chapterAktif.urutanBab, chapterToc, sectionIdAktif).map(
 			(node) => node.id,
@@ -81,6 +104,7 @@ export function ChapterEditorToc({
 		// pengguna pembaca layar demi perkara kosmetik.
 		<ScrollArea
 			render={<aside id="chapter-editor-toc" />}
+			ref={akarRef}
 			className={cn(
 				'w-72 shrink-0 border-r border-border bg-background',
 				// Semua gaya laci ditulis `max-lg:`, bukan dibatalkan lagi dengan

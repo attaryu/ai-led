@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Role } from '@ai-led/db';
 import { requireEnv } from '../config/env';
 import { PrismaService } from '../database/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
@@ -35,9 +36,14 @@ export class AssessmentService {
   }
 
   private async findSessionScoped(id: string) {
-    const { tenantId } = this.tenantContext.getOrThrow();
+    const { tenantId, role, studyProgramId } = this.tenantContext.getOrThrow();
     const session = await this.prisma.assessmentSession.findFirst({
-      where: { id, tenantId },
+      where: {
+        id,
+        tenantId,
+        // PENYUSUN only sees sessions of their own prodi's documents.
+        ...(role === Role.PENYUSUN ? { document: { studyProgramId: studyProgramId ?? '' } } : {}),
+      },
       include: this.includeCreatedByName,
     });
     if (!session) {
@@ -75,21 +81,24 @@ export class AssessmentService {
       where: { session: { documentId: dokumenId } },
       orderBy: { createdAt: 'desc' },
     });
-    const terbaruPerIndikator = new Map<number, (typeof results)[number]>();
+    // Kunci = nomor + sub-indikator: 43.I dan 43.II adalah dua hasil berbeda, bukan satu yang saling menimpa.
+    const terbaruPerIndikator = new Map<string, (typeof results)[number]>();
     for (const hasil of results) {
-      if (!terbaruPerIndikator.has(hasil.indicatorNo)) {
-        terbaruPerIndikator.set(hasil.indicatorNo, hasil);
+      const kunci = `${hasil.indicatorNo}|${hasil.subNo}`;
+      if (!terbaruPerIndikator.has(kunci)) {
+        terbaruPerIndikator.set(kunci, hasil);
       }
     }
     return [...terbaruPerIndikator.values()].sort(
-      (a, b) => a.indicatorNo - b.indicatorNo,
+      (a, b) => a.indicatorNo - b.indicatorNo || a.subNo.localeCompare(b.subNo),
     );
   }
 
-  async findReasoning(sessionId: string, indicatorNo: number) {
+  async findReasoning(sessionId: string, indicatorNo: number, subNo?: string) {
     await this.findSessionScoped(sessionId);
     return this.prisma.reasoningStep.findMany({
-      where: { sessionId, indicatorNo },
+      // subNo kosong = semua sub dari nomor ini (perilaku lama); diisi = hanya sub-indikator itu.
+      where: { sessionId, indicatorNo, ...(subNo ? { subNo } : {}) },
       orderBy: { stepIndex: 'asc' },
     });
   }
@@ -101,6 +110,31 @@ export class AssessmentService {
    * trigger (and burn LLM-judge time on) an eval for a session id belonging
    * to another tenant, since apps/ai itself has no tenant concept to check.
    */
+  /** Proxy to apps/ai's GET /eval/{id}/results, scoped through the eval's own session (apps/ai has no tenant concept). */
+  async findEvalResult(evalId: string) {
+    const aiServiceUrl = requireEnv('AI_SERVICE_URL');
+
+    let upstream: globalThis.Response;
+    try {
+      upstream = await fetch(`${aiServiceUrl}/eval/${encodeURIComponent(evalId)}/results`);
+    } catch {
+      throw new BadGatewayException('AI service tidak dapat dihubungi');
+    }
+    if (upstream.status === 404) {
+      throw new NotFoundException('Hasil evaluasi tidak ditemukan');
+    }
+    if (!upstream.ok) {
+      throw new BadGatewayException('Gagal memuat hasil evaluasi RAGAS');
+    }
+
+    const result = (await upstream.json()) as { session_id?: string | null };
+    if (!result.session_id) {
+      throw new NotFoundException('Hasil evaluasi tidak ditemukan');
+    }
+    await this.findSessionScoped(result.session_id);
+    return result;
+  }
+
   async runEval(id: string, dto: RunEvalDto) {
     await this.findSessionScoped(id);
     const aiServiceUrl = requireEnv('AI_SERVICE_URL');
@@ -130,8 +164,44 @@ export class AssessmentService {
 
   /** machineScoreAtReview/sessionIdAtReview are derived here, never trusted from the request body — provenance can't be spoofed. */
   async upsertVerdict(dokumenId: string, dto: UpsertVerdictDto) {
-    await this.dokumenLedService.findOne(dokumenId);
+    const dokumen = await this.dokumenLedService.findOne(dokumenId);
     const { userId } = this.tenantContext.getOrThrow();
+
+    // UpsertVerdictDto only enforces >= 0 (the criterion-specific max isn't a
+    // static constant, it's whatever this indicator's highest RubricLevel
+    // happens to be) -- the frontend's <input max=...> is a soft browser hint,
+    // never a real bound, so it has to be re-checked here too.
+    if (dokumen.accreditationSetId) {
+      // ponytail: findUnique -> findMany. Sejak kolom `sub_no` ada (migrasi
+      // 20261007100000), satu indicatorNo bisa punya BEBERAPA baris -- satu per
+      // sub-indikator komposit (I, II, ...), jadi compound unique
+      // accreditationSetId_indicatorNo tidak ada lagi dan findUnique gagal
+      // dikompilasi. Skor maksimal diambil dari level tertinggi di SELURUH baris
+      // indikator ini: skor yang dikirim penilai adalah skor indikatornya, bukan
+      // skor satu sub-indikator.
+      // const criterion = await this.prisma.rubricCriterion.findUnique({
+      //   where: { accreditationSetId_indicatorNo: { ... } },
+      //   include: { levels: true },
+      // });
+      const criteria = await this.prisma.rubricCriterion.findMany({
+        where: {
+          accreditationSetId: dokumen.accreditationSetId,
+          indicatorNo: dto.indicatorNo,
+          // Skor maksimal hanya dari sub-indikator yang dinilai bila subNo diisi.
+          ...(dto.subNo ? { subNo: dto.subNo } : {}),
+        },
+        include: { levels: true },
+      });
+      const semuaLevel = criteria.flatMap((c) => c.levels);
+      const skorMaksimal = semuaLevel.length
+        ? Math.max(...semuaLevel.map((level) => level.score))
+        : undefined;
+      if (skorMaksimal !== undefined && dto.finalScore > skorMaksimal) {
+        throw new BadRequestException(
+          `Skor tidak boleh melebihi level tertinggi indikator ini (${skorMaksimal})`,
+        );
+      }
+    }
 
     const latestSession = await this.prisma.assessmentSession.findFirst({
       where: { documentId: dokumenId },
@@ -145,9 +215,10 @@ export class AssessmentService {
 
     const currentResult = await this.prisma.indicatorResult.findUnique({
       where: {
-        sessionId_indicatorNo: {
+        sessionId_indicatorNo_subNo: {
           sessionId: latestSession.id,
           indicatorNo: dto.indicatorNo,
+          subNo: dto.subNo ?? '',
         },
       },
     });
@@ -167,18 +238,22 @@ export class AssessmentService {
 
     return this.prisma.assessmentVerdict.upsert({
       where: {
-        documentId_indicatorNo: { documentId: dokumenId, indicatorNo: dto.indicatorNo },
+        documentId_indicatorNo_subNo: {
+          documentId: dokumenId,
+          indicatorNo: dto.indicatorNo,
+          subNo: dto.subNo ?? '',
+        },
       },
-      create: { documentId: dokumenId, indicatorNo: dto.indicatorNo, ...shared },
+      create: { documentId: dokumenId, indicatorNo: dto.indicatorNo, subNo: dto.subNo ?? '', ...shared },
       update: { ...shared, reviewedAt: new Date() },
     });
   }
 
   /** Mencabut keputusan — indikatornya kembali ke "Belum ditinjau". */
-  async removeVerdict(dokumenId: string, indikatorNo: number) {
+  async removeVerdict(dokumenId: string, indikatorNo: number, subNo = '') {
     await this.dokumenLedService.findOne(dokumenId);
     await this.prisma.assessmentVerdict.deleteMany({
-      where: { documentId: dokumenId, indicatorNo: indikatorNo },
+      where: { documentId: dokumenId, indicatorNo: indikatorNo, subNo },
     });
   }
 }

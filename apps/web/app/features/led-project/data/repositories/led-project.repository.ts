@@ -57,6 +57,7 @@ function toEntity(row: BackendDokumenLed, studyProgramName: string): LedProjectE
 		statusKeseluruhan: row.overallStatus,
 		tenggat: row.deadline,
 		accreditationSetId: row.accreditationSetId,
+		lkpsEvidenceId: row.lkpsEvidenceId,
 		createdAt: row.createdAt,
 	};
 }
@@ -107,12 +108,15 @@ export const ledProjectRepository = {
 		tahunAkademik: string;
 		tenggat: string | null;
 		accreditationSetId: string;
+		/** LKPS prodi yang dipilih untuk dokumen ini; `null` = belum dipilih (bisa diisi di Edit Dokumen LED). */
+		lkpsEvidenceId?: string | null;
 	}): Promise<LedProjectEntity> {
 		const dokumen = await ledProjectRemoteSource.create(data.studyProgramId, {
 			title: data.judul,
 			academicYear: data.tahunAkademik,
 			deadline: data.tenggat ?? undefined,
 			accreditationSetId: data.accreditationSetId,
+			lkpsEvidenceId: data.lkpsEvidenceId ?? undefined,
 		});
 
 		const [program, templates] = await Promise.all([
@@ -127,9 +131,24 @@ export const ledProjectRepository = {
 			templates.length > 0
 				? templates.map((t) => ({ chapterOrder: t.urutan, chapterTitle: t.judul }))
 				: CHAPTER_TEMPLATE;
-		await Promise.all(
+		const babTerbuat = await Promise.all(
 			babUntukDistempel.map((bab) => chapterRemoteSource.create(dokumen.id, bab)),
 		);
+
+		// Set dengan struktur Panduan terkonfirmasi: langsung seed section (copy DB,
+		// bukan LLM lagi sejak GENERASI_OUTLINE_BAB dirombak) biar sub-bab di ToC
+		// bisa langsung diklik dari awal, samain UX dengan punya dimas -- tidak
+		// perlu tombol "Buat Outline" manual dulu. Set fallback (CHAPTER_TEMPLATE,
+		// tanpa SubBabTemplate) dilewati -- job itu akan selalu gagal tanpa struktur
+		// terkonfirmasi. Kegagalan di sini ditelan; ini best-effort auto-seed, bukan
+		// bagian kritis pembuatan dokumen.
+		if (templates.length > 0) {
+			await Promise.all(
+				babTerbuat.map((bab) =>
+					chapterRemoteSource.generateOutline(bab.id).catch(() => undefined),
+				),
+			);
+		}
 
 		window.dispatchEvent(new Event('storage-update'));
 		return toEntity(dokumen, prodi);
@@ -208,6 +227,7 @@ export const ledProjectRepository = {
 		if (data.tenggat !== undefined) payload.deadline = data.tenggat ?? undefined;
 		if (data.accreditationSetId !== undefined && data.accreditationSetId !== null)
 			payload.accreditationSetId = data.accreditationSetId;
+		if (data.lkpsEvidenceId) payload.lkpsEvidenceId = data.lkpsEvidenceId;
 
 		const updated = await ledProjectRemoteSource.update(id, payload);
 		const program = await studyProgramRepository.findById(updated.studyProgramId);

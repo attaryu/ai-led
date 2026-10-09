@@ -45,3 +45,9 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Model besar untuk service `bootstrap` (lihat compose/bootstrap.sh)
+/models/
+
+# Catatan pribadi -- tidak boleh ikut di-push
+/catatan.txt

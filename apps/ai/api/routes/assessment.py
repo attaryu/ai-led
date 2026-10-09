@@ -132,11 +132,13 @@ class SessionStatusResponse(BaseModel):
     status: str
     total_indicators: int
     completed_indicators: int
+    model: Optional[str] = None
     error: Optional[str] = None
 
 
 class IndicatorResultItem(BaseModel):
     indicator_no: int
+    sub_no: str = ""
     kriteria: Optional[str] = None
     score: Optional[float] = None
     justification: Optional[str] = None
@@ -152,6 +154,7 @@ class SessionResultsResponse(BaseModel):
     status: str
     total_indicators: int
     completed_indicators: int
+    model: Optional[str] = None
     results: list[IndicatorResultItem]
 
 
@@ -163,6 +166,7 @@ class SessionSummary(BaseModel):
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     avg_score: Optional[float] = None
+    model: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -171,11 +175,15 @@ class SessionSummary(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+from ingestion.matrix_parser import sub_no_dari as _sub_no_dari  # noqa: E402 -- satu pintu, lihat ingestion/matrix_parser.py
+
+
 @dataclass
 class _SimpleIndicator:
     """Minimal shape compatible with what agent.graph needs from indicator_row."""
     indicator_no: int
     kriteria: str
+    sub_no: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +204,7 @@ def _derive_indicators(
     if first_n_indicators is not None:
         rubrics = _get_rubrics_for_set(accreditation_set_id)
         indicators = [
-            _SimpleIndicator(indicator_no=r.no, kriteria=r.kriteria)
+            _SimpleIndicator(indicator_no=r.no, kriteria=r.kriteria, sub_no=_sub_no_dari(r))
             for r in rubrics[:first_n_indicators]
         ]
         if not indicators:
@@ -223,7 +231,7 @@ def _derive_indicators(
     # Default: evaluate every rubric_criteria row in this AccreditationSet
     rubrics = _get_rubrics_for_set(accreditation_set_id)
     indicators = [
-        _SimpleIndicator(indicator_no=r.no, kriteria=r.kriteria)
+        _SimpleIndicator(indicator_no=r.no, kriteria=r.kriteria, sub_no=_sub_no_dari(r))
         for r in rubrics
     ]
     if not indicators:
@@ -394,7 +402,7 @@ async def resume_assessment(
         )
 
     done = get_completed_indicator_numbers(body.tenant_id, session_id, retry_failed=retry_failed)
-    remaining = [ind for ind in all_indicators if ind.indicator_no not in done]
+    remaining = [ind for ind in all_indicators if (ind.indicator_no, _sub_no_dari(ind)) not in done]
 
     if not remaining:
         update_session_status(
@@ -447,6 +455,7 @@ async def list_sessions(limit: int = 50) -> list[SessionSummary]:
             created_at=s.get("created_at").isoformat() if s.get("created_at") else None,
             updated_at=s.get("updated_at").isoformat() if s.get("updated_at") else None,
             avg_score=round(s["avg_score"], 2) if s.get("avg_score") is not None else None,
+            model=s.get("model"),
             error=s.get("error"),
         )
         for s in sessions
@@ -465,6 +474,7 @@ async def get_session_status(session_id: str) -> SessionStatusResponse:
         status=row["status"],
         total_indicators=row["total_indicators"],
         completed_indicators=row["completed_indicators"],
+        model=row.get("model"),
         error=row.get("error"),
     )
 
@@ -483,8 +493,8 @@ async def get_session_results(session_id: str) -> SessionResultsResponse:
     # an empty map (kriteria shows as None) rather than raising — a missing
     # set shouldn't block viewing already-scored results.
     accreditation_set_id = get_document_accreditation_set(sess["document_id"])
-    kriteria_map: dict[int, str] = (
-        {r.no: r.kriteria for r in _get_rubrics_for_set(accreditation_set_id, sess["tenant_id"])}
+    kriteria_map: dict[tuple[int, str], str] = (
+        {(r.no, _sub_no_dari(r)): r.kriteria for r in _get_rubrics_for_set(accreditation_set_id, sess["tenant_id"])}
         if accreditation_set_id
         else {}
     )
@@ -492,7 +502,8 @@ async def get_session_results(session_id: str) -> SessionResultsResponse:
     items: list[IndicatorResultItem] = [
         IndicatorResultItem(
             indicator_no=row["indicator_no"],
-            kriteria=kriteria_map.get(row["indicator_no"]),
+            sub_no=row.get("sub_no") or "",
+            kriteria=kriteria_map.get((row["indicator_no"], row.get("sub_no") or "")),
             score=row.get("score"),
             justification=row.get("justification"),
             confidence=row.get("confidence"),
@@ -509,6 +520,7 @@ async def get_session_results(session_id: str) -> SessionResultsResponse:
         status=sess["status"],
         total_indicators=sess["total_indicators"],
         completed_indicators=sess["completed_indicators"],
+        model=sess.get("model"),
         results=items,
     )
 
@@ -581,7 +593,8 @@ async def _process_single_indicator(
             # explicitly so search_led_evidence/get_lkps_table see this.
             current_assessment_context.set(
                 AssessmentContext(
-                    tenant_id, dokumen_id, indicator.indicator_no, accreditation_set_id, study_program_id
+                    tenant_id, dokumen_id, indicator.indicator_no, accreditation_set_id, study_program_id,
+                    sub_no=_sub_no_dari(indicator),
                 )
             )
             ctx = contextvars.copy_context()
@@ -622,6 +635,7 @@ async def _process_single_indicator(
                     tenant_id=tenant_id,
                     session_id=session_id,
                     indicator_no=indicator.indicator_no,
+                    sub_no=_sub_no_dari(indicator),
                     step_index=idx,
                     content=str(step),
                 )
@@ -630,6 +644,7 @@ async def _process_single_indicator(
                 tenant_id=tenant_id,
                 session_id=session_id,
                 indicator_no=indicator.indicator_no,
+                sub_no=_sub_no_dari(indicator),
                 score=score,
                 justification=justification,
                 confidence=confidence,
@@ -655,6 +670,7 @@ async def _process_single_indicator(
                 tenant_id=tenant_id,
                 session_id=session_id,
                 indicator_no=indicator.indicator_no,
+                sub_no=_sub_no_dari(indicator),
                 score=None,
                 justification=None,
                 confidence=None,

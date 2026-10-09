@@ -10,6 +10,7 @@ import {
 	findPanduanForBab,
 	findRubrikDipakaiForBab,
 	sumberRubrik,
+	type PoinPanduan,
 } from '../../domain/entities/guidance-point.entity';
 import { rubricScoreTypeLabels } from '../../domain/entities/rubric-criterion.entity';
 
@@ -37,12 +38,24 @@ export type KelompokPanduan = {
  * pipeline sungguhan — `pedoman_used` (RAG 1) dan `rubric_used` (RAG 2) adalah
  * dua kolom berbeda di `generation_runs`, diambil dua fungsi retrieval berbeda.
  *
- * **Tanpa pemilih lingkup**, tidak seperti tab Bukti dan Kualitas AI. Bukti
- * dukung memang berbeda antar checkpoint karena penyusunnya yang memilih;
- * panduan murni turunan `urutanBab` dan sama di setiap checkpoint bab yang sama.
- * `Select` yang seluruh pilihannya menghasilkan daftar identik bukan cuma derau
- * — ia menyiratkan variasi yang tidak ada. Ia baru berarti saat `pedoman_used`
- * per generate benar-benar tersimpan.
+ * **Tanpa pemilih lingkup CHECKPOINT**, tidak seperti tab Bukti dan Kualitas
+ * AI. Bukti dukung memang berbeda antar checkpoint karena penyusunnya yang
+ * memilih; panduan murni turunan `urutanBab`/section dan sama di setiap
+ * checkpoint bab yang sama. `Select` yang seluruh pilihannya menghasilkan
+ * daftar identik bukan cuma derau — ia menyiratkan variasi yang tidak ada.
+ * Ia baru berarti saat `pedoman_used` per generate benar-benar tersimpan.
+ *
+ * **Tapi TERSAring per section kalau salah satu sedang dibuka** (`sectionTerbuka`)
+ * — beda dari sebelumnya (semua poin panduan satu BAB penuh, dinavigasi
+ * ‹/› satu-satu). `ChapterSection.panduan` sudah persis salinan
+ * `SubBabTemplate.guidance` node asalnya (disalin verbatim saat outline
+ * di-generate, lihat generation_client.py::_insert_chapter_section) --
+ * section yang sedang dibuka SUDAH membawa teks panduannya sendiri, tidak
+ * perlu dicocokkan lagi ke `ChapterTemplate.subBab[]` lewat kode huruf yang
+ * cuma berasal dari posisi list (`hurufDariUrutan`, rapuh kalau section
+ * ditambah/dihapus manual pasca-generate). Kelompok rubrik TIDAK ikut
+ * tersaring -- kriteria rubrik memang berlaku per BAB, bukan per sub-bab,
+ * tidak ada data granularitas lebih halus untuk itu di skema manapun.
  *
  * **Tanpa langganan `storage-update`.** Tidak ada satu pun sumbernya yang bisa
  * berubah dari tab lain — cuma jaringan, ditangani `useEffect` biasa.
@@ -50,9 +63,12 @@ export type KelompokPanduan = {
 export function useChapterGuidance({
 	urutanBab,
 	ledProjectId,
+	sectionTerbuka,
 }: {
 	urutanBab: number;
 	ledProjectId: string;
+	/** Section yang sedang dibuka di kanvas, atau `null` saat tampilan bab-penuh. */
+	sectionTerbuka: { id: string; judul: string; panduan: string } | null;
 }) {
 	const [kelompok, setKelompok] = React.useState<KelompokPanduan[]>([]);
 
@@ -62,8 +78,31 @@ export function useChapterGuidance({
 		async function muat() {
 			const proyek = await ledProjectRepository.findById(ledProjectId);
 			const accreditationSetId = proyek?.accreditationSetId;
+
+			// Section dibuka DAN sudah bawa teks panduan sendiri -- pakai itu
+			// langsung, skip findPanduanForBab (dan pencocokan kode huruf yang
+			// rapuh) sama sekali. Section tanpa panduan (mis. section yang
+			// ditambah manual) tetap jatuh ke daftar bab penuh di bawah.
+			const daftarPedomanPromise: Promise<PoinPanduan[]> =
+				sectionTerbuka && sectionTerbuka.panduan.trim().length > 0
+					? Promise.resolve([
+							{
+								id: `poin-pedoman-section-${sectionTerbuka.id}`,
+								sumber: {
+									id: `panduan-set-${accreditationSetId}`,
+									tipe: 'PANDUAN_LAM' as const,
+									judul: 'Panduan Penyusunan LED',
+									tipeFile: 'pdf',
+								},
+								kodePoin: '',
+								judulPoin: sectionTerbuka.judul,
+								isiTeks: sectionTerbuka.panduan,
+							},
+						])
+					: findPanduanForBab(urutanBab, accreditationSetId);
+
 			const [daftarPedoman, daftarRubrik] = await Promise.all([
-				findPanduanForBab(urutanBab, accreditationSetId),
+				daftarPedomanPromise,
 				findRubrikDipakaiForBab(urutanBab, accreditationSetId),
 			]);
 			if (dibatalkan) return;
@@ -75,7 +114,9 @@ export function useChapterGuidance({
 
 				return {
 					id: poin.id,
-					judul: `${poin.kodePoin} ${poin.judulPoin}`,
+					// `kodePoin` kosong untuk poin section-tunggal (lihat sectionTerbuka
+					// di atas) -- section dinamis tidak punya kode huruf template.
+					judul: poin.kodePoin ? `${poin.kodePoin} ${poin.judulPoin}` : poin.judulPoin,
 					// Hanya halamannya. Nama dokumen sumbernya sudah dipikul judul
 					// kelompok di atas daftar; mengulanginya di tiap baris menyewa satu
 					// baris penuh untuk mengabarkan hal yang sama berkali-kali.
@@ -124,7 +165,11 @@ export function useChapterGuidance({
 		return () => {
 			dibatalkan = true;
 		};
-	}, [urutanBab, ledProjectId]);
+		// Bergantung pada field skalarnya, bukan objek `sectionTerbuka` itu sendiri
+		// -- pemanggil (chapter-editor.tsx) mencari ulang objek section tiap render
+		// lewat `.find()`, jadi identitasnya selalu baru walau isinya sama persis.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [urutanBab, ledProjectId, sectionTerbuka?.id, sectionTerbuka?.judul, sectionTerbuka?.panduan]);
 
 	return {
 		kelompok,

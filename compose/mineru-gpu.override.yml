@@ -1,0 +1,7 @@
+# Penimpa MinerU untuk docker-compose.mineru-gpu.yml (dimuat lewat `include`, jangan dijalankan sendiri).
+# Basisnya (docker-compose.yml) sudah GPU lokal; di sini hanya dipastikan eksplisit.
+services:
+  mineru:
+    environment:
+      MINERU_MODE: local
+      MINERU_DEVICE_MODE: cuda

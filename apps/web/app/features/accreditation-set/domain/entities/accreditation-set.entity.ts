@@ -4,23 +4,34 @@ import { rubricCriterionSchema } from '~/features/chapter/domain/entities/rubric
 import { evidenceStatusEnum } from '~/features/evidence/domain/entities/evidence.entity';
 
 /**
- * Dua jenis berkas acuan dalam satu set, mengikuti `TipePanduan` di
- * docs/database.md → PANDUAN_REFERENSI (yang punya nilai ketiga,
- * `TEMPLATE_LKPS` — sengaja tidak dipakai di sini, Set Akreditasi cukup
- * Matriks Penilaian + Pedoman Penyusunan). Keduanya menjawab pertanyaan yang
- * sama — menilai ke lembaga mana, siklus kapan — sehingga selalu dipilih
- * sebagai satu paket, bukan satu per satu.
+ * Berkas acuan yang masih berupa slot MILIK satu set (upload 1:1, lewat
+ * `dokumen`) — hanya Matriks Penilaian sekarang. Pedoman Penyusunan
+ * (`PANDUAN_LAM`) pindah jadi entitas SENDIRI yang reusable antar set
+ * (lihat `panduanId`/`panduan` di bawah, migration
+ * `reusable_panduan_penulisan`) — bukan lagi "satu paket" dengan slot ini,
+ * jadi tidak lagi didaftar bareng di sini. `TEMPLATE_LKPS` (nilai ketiga
+ * `TipePanduan`) tetap sengaja tidak dipakai di sini juga.
  */
 export const setDocumentTypeEnum = z.enum([
 	'DOKUMEN_RUBRIK',
-	'PANDUAN_LAM',
 ]);
 export type SetDocumentType = z.infer<typeof setDocumentTypeEnum>;
 
 export const SET_DOCUMENT_TYPE_LABEL: Record<SetDocumentType, string> = {
 	DOKUMEN_RUBRIK: 'Matriks Penilaian',
-	PANDUAN_LAM: 'Pedoman Penyusunan',
 };
+
+/** Panduan Penulisan yang terpasang ke set ini -- pointer ke entitas
+ * reusable (bukan lagi upload 1:1), `null` bila belum dipilih/diunggah.
+ * structureParseStatus/Error pindah ke sini dari AccreditationSet --
+ * ekstraksinya milik berkasnya, bukan milik satu Set yang menunjuknya. */
+export const setPanduanSchema = z.object({
+	id: z.string(),
+	judul: z.string(),
+	structureParseStatus: z.enum([...evidenceStatusEnum.options, 'MENUNGGU_KONFIRMASI']),
+	structureParseError: z.string().nullable(),
+});
+export type SetPanduan = z.infer<typeof setPanduanSchema>;
 
 /**
  * Urutan slot di layar, sekaligus satu-satunya sumber kebenaran bahwa slotnya
@@ -86,6 +97,8 @@ export const accreditationSetSchema = z.object({
 		.max(2100, 'Tahun siklus maksimal 2100'),
 	status: setStatusEnum,
 	dokumen: z.array(accreditationSetDocumentSchema),
+	/** Pedoman Penyusunan terpasang -- lihat setPanduanSchema. */
+	panduan: setPanduanSchema.nullable(),
 	/**
 	 * Isi rubrik yang berlaku untuk set ini — hasil pembacaan berkas
 	 * `DOKUMEN_RUBRIK`, sementara ini dimasukkan manual lewat layar tinjau.
@@ -110,9 +123,8 @@ export const accreditationSetSchema = z.object({
 	 */
 	criteriaParseStatus: evidenceStatusEnum,
 	criteriaParseError: z.string().nullable(),
-	/** Status ekstraksi struktur bab/sub-bab dari PANDUAN_LAM terakhir yang diunggah — worker.py::_handle_ingestion_struktur_dokumen. */
-	structureParseStatus: evidenceStatusEnum,
-	structureParseError: z.string().nullable(),
+	// Status ekstraksi struktur bab/sub-bab pindah ke `panduan.structureParseStatus`
+	// di atas -- lihat setPanduanSchema.
 	createdAt: z.string(),
 });
 
@@ -122,6 +134,8 @@ export type SetCompleteness = {
 	/** Jenis berkas yang sudah terisi, urut mengikuti `SET_DOCUMENT_TYPES`. */
 	terisi: SetDocumentType[];
 	kosong: SetDocumentType[];
+	/** Panduan Penulisan sudah dipilih/diunggah -- pointer reusable, bukan lagi bagian dari `dokumen`/`kosong`. */
+	panduanTerisi: boolean;
 	lengkap: boolean;
 };
 
@@ -138,8 +152,9 @@ export function deriveSetCompleteness(
 		set.dokumen.some((d) => d.tipe === tipe),
 	);
 	const kosong = SET_DOCUMENT_TYPES.filter((tipe) => !terisi.includes(tipe));
+	const panduanTerisi = set.panduan !== null;
 
-	return { terisi, kosong, lengkap: kosong.length === 0 };
+	return { terisi, kosong, panduanTerisi, lengkap: kosong.length === 0 && panduanTerisi };
 }
 
 /** Berkas pada satu slot, atau `null` bila slotnya masih kosong. */
@@ -214,11 +229,14 @@ export function deriveSetLock(dipakaiProyek: number): SetLock {
  * dari belakang tidak menjaga apa pun.
  */
 export function cekSyaratSiap(set: AccreditationSetEntity): string | null {
-	const { kosong } = deriveSetCompleteness(set);
+	const { kosong, panduanTerisi } = deriveSetCompleteness(set);
 
-	if (kosong.length > 0) {
-		const nama = kosong.map((tipe) => SET_DOCUMENT_TYPE_LABEL[tipe]).join(' dan ');
-		return `Set siap harus punya kedua berkas acuan — ${nama} belum ada.`;
+	const namaKosong = [
+		...kosong.map((tipe) => SET_DOCUMENT_TYPE_LABEL[tipe]),
+		...(panduanTerisi ? [] : ['Pedoman Penyusunan']),
+	];
+	if (namaKosong.length > 0) {
+		return `Set siap harus punya kedua berkas acuan — ${namaKosong.join(' dan ')} belum ada.`;
 	}
 
 	if (set.kriteria.length < MIN_KRITERIA_SIAP) {
@@ -294,3 +312,17 @@ export function namaSalinan(
 	while (namaTerpakai.includes(`${dasar} ${urutan}`)) urutan += 1;
 	return `${dasar} ${urutan}`;
 }
+
+/** Satu baris daftar Panduan (GET /panduan) -- dropdown "pilih existing" +
+ * kartu kelola Panduan. `jumlahSetPemakai` dipakai sebagai peringatan
+ * sebelum replace ("akan mempengaruhi N Set lain"). */
+export const panduanLibraryItemSchema = z.object({
+	id: z.string(),
+	judul: z.string(),
+	structureParseStatus: z.enum([...evidenceStatusEnum.options, 'MENUNGGU_KONFIRMASI']),
+	structureParseError: z.string().nullable(),
+	createdAt: z.string(),
+	jumlahBab: z.number(),
+	jumlahSetPemakai: z.number(),
+});
+export type PanduanLibraryItem = z.infer<typeof panduanLibraryItemSchema>;

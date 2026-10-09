@@ -13,6 +13,7 @@ before, unchanged.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import uuid
 import weakref
@@ -26,10 +27,24 @@ from ingestion.led_chunker import LEDChunk
 
 logger = logging.getLogger(__name__)
 
-# Multilingual model that supports Bahasa Indonesia — same as chroma_store.py.
-_EMBED_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
+# Port of Dimas 140d8ae (api/lib/retrieval.py): BAAI/bge-m3 -- multilingual, 1024-d, 8192-token
+# context, normalised vectors (the LKPS/evidence distance thresholds in worker.py are tuned on it).
+# MiniLM (384-d) only saw the first 128 tokens of a chunk. Writing (dimas) columns `embedding` use it.
+_EMBED_MODEL = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-m3")
+# ponytail: MiniLM DIHAPUS -- seluruh sistem kini satu model embedding (bge-m3).
+# Alasannya terukur: MiniLM max_seq_length = 128 token (~600 karakter Indonesia,
+# rasio 4,8 char/token), jadi pada chunk evidence rerata 2306 karakter hanya
+# ~30% bagian awal yang terwakili di vektornya -- dibuktikan dengan cosine
+# 1.000000 antara vektor teks penuh dan teks yang dipotong manual di 128 token.
+# AMI_EMBED_MODEL diarahkan ke _EMBED_MODEL supaya pemanggil lama tidak pecah;
+# baris lamanya dibiarkan sebagai jejak.
+# AMI_EMBED_MODEL = os.environ.get("AMI_EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")
+AMI_EMBED_MODEL = _EMBED_MODEL
+_EMBED_BATCH = 8
+# Chunks longer than this are embedded alone (batch of 1): a single 10-16k char chunk batched with others can OOM.
+_LONG_CHUNK_CHARS = 4000
 
-_model = None
+_models: dict = {}
 _model_lock = threading.Lock()
 # Pooled connections are handed out (and reused) across calls -- track which
 # underlying connection objects already have the vector type adapter
@@ -39,16 +54,51 @@ _model_lock = threading.Lock()
 _vector_registered: "weakref.WeakSet" = weakref.WeakSet()
 
 
-def _get_model():
-    """Lazy singleton — loaded on first use, not at import time."""
-    global _model
-    if _model is None:
+def _get_model(name: str = _EMBED_MODEL):
+    """Lazy singleton per model name — loaded on first use, not at import time."""
+    if name not in _models:
         with _model_lock:
-            if _model is None:
+            if name not in _models:
                 from sentence_transformers import SentenceTransformer
 
-                _model = SentenceTransformer(_EMBED_MODEL)
-    return _model
+                _models[name] = SentenceTransformer(name)
+    return _models[name]
+
+
+def embed_documents(texts: list[str], model_name: str = _EMBED_MODEL):
+    """Embed texts in small batches (port of Dimas's _batched_embed), long chunks isolated. Returns an (n, dim) array."""
+    import numpy as np
+
+    model = _get_model(model_name)
+    out = []
+    i = 0
+    while i < len(texts):
+        if len(texts[i]) > _LONG_CHUNK_CHARS:
+            group = [texts[i]]
+            i += 1
+        else:
+            group = []
+            while i < len(texts) and len(texts[i]) <= _LONG_CHUNK_CHARS and len(group) < _EMBED_BATCH:
+                group.append(texts[i])
+                i += 1
+        out.append(model.encode(group, normalize_embeddings=True, batch_size=_EMBED_BATCH, show_progress_bar=False))
+    return np.vstack(out) if out else np.empty((0, model.get_sentence_embedding_dimension()), dtype="float32")
+
+
+def embed_query(query: str):
+    return embed_documents([query])[0]
+
+
+def embed_documents_ami(texts: list[str]):
+    """DEPRECATED -- alias ke embed_documents (bge-m3). Dulu memakai MiniLM 384-d
+    ke kolom `embedding_ami`; kolom itu sudah di-DROP. Dibiarkan sebagai alias
+    supaya pemanggil lama (eval/ragas_eval.py, scripts/) tidak pecah."""
+    # return embed_documents(texts, AMI_EMBED_MODEL)
+    return embed_documents(texts)
+
+
+def embed_query_ami(query: str):
+    return embed_documents_ami([query])[0]
 
 
 @contextmanager
@@ -74,8 +124,6 @@ def index_led_chunks(chunks: list[LEDChunk], tenant_id: str, dokumen_id: str) ->
     """
     import time
 
-    model = _get_model()
-
     with _cursor(tenant_id) as cur:
         cur.execute(
             "DELETE FROM writing_led_chunk_embeddings WHERE tenant_id = %s AND document_id = %s",
@@ -86,9 +134,9 @@ def index_led_chunks(chunks: list[LEDChunk], tenant_id: str, dokumen_id: str) ->
     if total == 0:
         return
 
-    logger.info("Loading embedding model (first run downloads ~118MB)…")
+    # The LED index is read only by the AMI assessment -> ariel's model, `embedding_ami` column.
     t0 = time.time()
-    embeddings = model.encode([c.text for c in chunks], show_progress_bar=False)
+    embeddings = embed_documents_ami([c.text for c in chunks])
     logger.info("Embedded %d chunks in %.1fs", total, time.time() - t0)
 
     rows = [
@@ -139,6 +187,37 @@ def get_led_chunk_count(tenant_id: str, dokumen_id: str) -> int:
         return cur.fetchone()["count"]
 
 
+EDITOR_CHUNK_PREFIX = "editor-"
+
+
+def led_index_is_from_file(tenant_id: str, dokumen_id: str) -> bool:
+    """True when this document's LED index exists and came from an uploaded file,
+    not from Editor content (chunk_id prefixed EDITOR_CHUNK_PREFIX)."""
+    with _cursor(tenant_id) as cur:
+        cur.execute(
+            "SELECT bool_and(chunk_id NOT LIKE %s AND embedding IS NOT NULL) AS ok FROM writing_led_chunk_embeddings "
+            "WHERE tenant_id = %s AND document_id = %s",
+            (EDITOR_CHUNK_PREFIX + "%", tenant_id, dokumen_id),
+        )
+        return bool(cur.fetchone()["ok"])
+
+
+def led_index_matches_editor(tenant_id: str, dokumen_id: str, chunks: list[LEDChunk]) -> bool:
+    """True when the stored index is already these Editor chunks (same text/heading, same order),
+    so an unchanged Editor needs no re-embedding."""
+    with _cursor(tenant_id) as cur:
+        cur.execute(
+            "SELECT chunk_id, text, section_heading, embedding IS NOT NULL AS embedded FROM writing_led_chunk_embeddings "
+            "WHERE tenant_id = %s AND document_id = %s ORDER BY char_start",
+            (tenant_id, dokumen_id),
+        )
+        rows = cur.fetchall()
+    # Rows indexed before the embedding column was filled are unsearchable -> re-index.
+    return all(r["chunk_id"].startswith(EDITOR_CHUNK_PREFIX) and r["embedded"] for r in rows) and [
+        (r["text"], r["section_heading"] or "") for r in rows
+    ] == [(c.text, c.section_heading or "") for c in chunks]
+
+
 def search_led(
     query: str,
     tenant_id: str,
@@ -150,8 +229,9 @@ def search_led(
     Returns [{text, chunk_id, metadata, distance}], or [] if this document
     was never indexed (not an error — just not ready yet).
     """
-    model = _get_model()
-    query_embedding = model.encode([query], show_progress_bar=False)[0]
+    # ponytail: embed_query_ami kini alias bge-m3; dipanggil langsung agar jelas.
+    # query_embedding = embed_query_ami(query)
+    query_embedding = embed_query(query)
 
     with _cursor(tenant_id) as cur:
         cur.execute(
@@ -159,7 +239,7 @@ def search_led(
             SELECT chunk_id, text, page_start, page_end, para_start, para_end,
                    section_heading, char_start, embedding <=> %s AS distance
             FROM writing_led_chunk_embeddings
-            WHERE tenant_id = %s AND document_id = %s
+            WHERE tenant_id = %s AND document_id = %s AND embedding IS NOT NULL
             ORDER BY embedding <=> %s
             LIMIT %s
             """,

@@ -107,6 +107,8 @@ export function hitungKesiapan(input: {
 	totalBab: number;
 	/** Nama berkas LKPS terpilih; `null` bila id-nya menunjuk berkas yang hilang. */
 	namaLkps: string | null;
+	/** Status ekstraksi LKPS terpilih; hanya `SIAP` yang bisa dibaca penilai. */
+	statusLkps: string | null;
 	namaLaporan: string | null;
 	/** Untuk tautan "lengkapi di sini". */
 	projectId: string;
@@ -117,8 +119,11 @@ export function hitungKesiapan(input: {
 	const matriks: ReadinessItem = {
 		kunci: 'matriks',
 		label: 'Matriks penilaian',
-		state: 'SIAP',
-		keterangan: `${input.jumlahIndikator} indikator dari master rubrik LAM Teknik`,
+		state: input.jumlahIndikator > 0 ? 'SIAP' : 'KURANG',
+		keterangan:
+			input.jumlahIndikator > 0
+				? `${input.jumlahIndikator} indikator dari master rubrik LAM Teknik`
+				: 'Set Akreditasi dokumen ini belum punya indikator.',
 		tautan: null,
 	};
 
@@ -165,8 +170,11 @@ export function hitungKesiapan(input: {
 		? {
 				kunci: 'lkps',
 				label: 'Data LKPS',
-				state: 'SIAP',
-				keterangan: input.namaLkps,
+				state: input.statusLkps === 'SIAP' ? 'SIAP' : 'KURANG',
+				keterangan:
+					input.statusLkps === 'SIAP'
+						? input.namaLkps
+						: `${input.namaLkps} — ${input.statusLkps === 'GAGAL' ? 'gagal dibaca, unggah ulang' : 'masih diproses'}.`,
 				tautan: pustaka,
 			}
 		: {

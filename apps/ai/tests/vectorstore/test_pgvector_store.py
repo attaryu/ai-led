@@ -23,14 +23,20 @@ class _FakeModel:
     """encode() returns a fixed vector per input text, keyed by a marker
     embedded in the text itself — so distance ordering is predictable."""
 
-    def encode(self, texts, show_progress_bar=False):
-        return np.array([_vector_for(t) for t in texts], dtype="float32")
+    def __init__(self, dim: int = 1024):
+        self.dim = dim
+
+    def get_sentence_embedding_dimension(self):
+        return self.dim
+
+    def encode(self, texts, **kwargs):
+        return np.array([_vector_for(t, self.dim) for t in texts], dtype="float32")
 
 
-def _vector_for(text: str) -> list[float]:
+def _vector_for(text: str, dim: int = 1024) -> list[float]:
     # Distinct near-orthogonal-ish directions per marker, deterministic.
-    base = [0.0] * 384
-    marker = abs(hash(text)) % 384
+    base = [0.0] * dim
+    marker = abs(hash(text)) % dim
     base[marker] = 1.0
     return base
 
@@ -39,7 +45,11 @@ def _vector_for(text: str) -> list[float]:
 def fake_model(monkeypatch):
     import vectorstore.pgvector_store as pv
 
-    monkeypatch.setattr(pv, "_get_model", lambda: _FakeModel())
+    # ponytail: MiniLM (384-d) dihapus -- AMI_EMBED_MODEL kini sama dengan bge-m3, jadi
+    # kondisi lama `384 if name == pv.AMI_EMBED_MODEL` membuat SEMUA vektor tiruan 384-d.
+    # Satu model, satu dimensi: 1024.
+    # monkeypatch.setattr(pv, "_get_model", lambda name=pv._EMBED_MODEL: _FakeModel(384 if name == pv.AMI_EMBED_MODEL else 1024))
+    monkeypatch.setattr(pv, "_get_model", lambda name=pv._EMBED_MODEL: _FakeModel(1024))
     yield
 
 

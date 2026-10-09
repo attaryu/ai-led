@@ -20,13 +20,14 @@ import {
 import { ledProjectRepository } from '~/features/led-project/data/repositories/led-project.repository';
 import { type LedProjectEntity } from '~/features/led-project/domain/entities/led-project.entity';
 import { useActiveTenant } from '~/features/tenant/presentation/hooks/use-active-tenant';
-import { type PenilaianFinalRow } from '../../domain/entities/assessment-session.entity';
+import { kunciIndikator, type PenilaianFinalRow } from '../../domain/entities/assessment-session.entity';
 import { AssessmentDetailSheet } from '../components/assessment-detail-sheet';
 import { AssessmentDownloadDialog } from '../components/assessment-download-dialog';
 import { AssessmentHistoryList } from '../components/assessment-history-list';
 import { AssessmentQualityPanel } from '../components/assessment-quality-panel';
 import { AssessmentResultList } from '../components/assessment-result-list';
 import { AssessmentRunPanel } from '../components/assessment-run-panel';
+import { AssessmentReadinessNotice } from '../components/assessment-readiness-notice';
 import { AssessmentSourceCard } from '../components/assessment-source-card';
 import { useAssessmentIndicatorPicks } from '../hooks/use-assessment-indicator-picks';
 import { useAssessmentPermission } from '../hooks/use-assessment-permission';
@@ -52,6 +53,17 @@ type TabValue = (typeof TAB_VALID)[number];
  * konteks dokumen tidak berarti apa pun, dan Kualitas Penilaian selalu tentang
  * satu sesi tertentu.
  */
+/**
+ * Kartu "Sumber & Kesiapan" DISEMBUNYIKAN, bukan dihapus (ubah ke `true` untuk
+ * menampilkannya lagi). Sumber penilaian kini terhubung ke dokumen LED:
+ *   - Dokumen LED  -> selalu "Dari editor"
+ *   - Data LKPS    -> LKPS yang dipilih di form dokumen LED (Tambah/Edit Dokumen LED)
+ * jadi tidak ada lagi yang perlu dipilih di sini. Selama `false`, sumber DIKUNCI ke dokumen
+ * (lihat `kunciKeDokumen` di useAssessmentReadiness) dan prasyarat yang kurang ditampilkan
+ * lewat AssessmentReadinessNotice agar tombol Jalankan tidak mati tanpa penjelasan.
+ */
+const TAMPILKAN_KARTU_SUMBER = false;
+
 export function LedProjectAssessment() {
 	const { projectId } = useParams<{ projectId: string }>();
 	const [ledProject, setLedProject] = React.useState<
@@ -122,10 +134,11 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 		izin,
 	});
 
-	const { sumber, setSumber, kandidat, kesiapan } = useAssessmentReadiness({
+	const { sumber, setSumber, kandidat, kandidatLkps, kesiapan, dokumenDimuat } = useAssessmentReadiness({
 		projectId: ledProject.id,
 		studyProgramId: ledProject.studyProgramId,
 		sumberTerakhir: daftarSesi[0]?.sumber,
+		kunciKeDokumen: !TAMPILKAN_KARTU_SUMBER,
 	});
 
 	const { baris, ringkasan, simpanKeputusan, cabutKeputusan } =
@@ -167,7 +180,7 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 	 * keadaan sebelum penyimpanan sampai ditutup. Menyimpan nomornya membuat isi
 	 * laci selalu ikut segar.
 	 */
-	const [indikatorDibuka, setIndikatorDibuka] = React.useState<number | null>(
+	const [indikatorDibuka, setIndikatorDibuka] = React.useState<string | null>(
 		null,
 	);
 
@@ -180,7 +193,7 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 	const tenant = useActiveTenant();
 
 	const posisiDibuka = urutanTampil.findIndex(
-		(row) => row.kriteria.no === indikatorDibuka,
+		(row) => kunciIndikator(row.kriteria.no, row.kriteria.subNo) === indikatorDibuka,
 	);
 	const rowDibuka = posisiDibuka >= 0 ? urutanTampil[posisiDibuka] : null;
 
@@ -307,20 +320,25 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 				</TabsList>
 
 				<TabsContent value="penilaian" className="flex flex-col gap-4 pt-2">
-					<AssessmentSourceCard
-						sumber={sumber}
-						setSumber={setSumber}
-						kesiapan={kesiapan}
-						kandidat={kandidat}
-						dokumenId={ledProject.id}
-						studyProgramId={ledProject.studyProgramId}
-						studyProgramName={ledProject.studyProgramName}
-						uploader={{
-							userId: izin.session?.userId ?? '',
-							name: izin.session?.namaLengkap ?? '',
-						}}
-						bolehMengubah={izin.canRun}
-					/>
+					{TAMPILKAN_KARTU_SUMBER ? (
+						<AssessmentSourceCard
+							sumber={sumber}
+							setSumber={setSumber}
+							kesiapan={kesiapan}
+							kandidat={kandidat}
+							kandidatLkps={kandidatLkps}
+							dokumenId={ledProject.id}
+							studyProgramId={ledProject.studyProgramId}
+							studyProgramName={ledProject.studyProgramName}
+							uploader={{
+								userId: izin.session?.userId ?? '',
+								name: izin.session?.namaLengkap ?? '',
+							}}
+							bolehMengubah={izin.canRun}
+						/>
+					) : (
+						dokumenDimuat && <AssessmentReadinessNotice items={kesiapan.items} />
+					)}
 
 					<AssessmentRunPanel
 						sesi={sesiAktif}
@@ -335,7 +353,7 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 							// URL harus dilepas — kalau tidak, halaman akan tetap
 							// memperlihatkan hasil lama sementara yang baru berjalan.
 							gantiParam({ sesi: null });
-							void jalankan(sumber, pemilihanIndikator.indikatorList);
+							void jalankan(sumber, pemilihanIndikator.indikatorList, pemilihanIndikator.subIndikatorList);
 						}}
 						onBatalkan={() => void batalkan()}
 						membatalkan={membatalkan}
@@ -345,7 +363,7 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 						baris={baris}
 						ringkasan={ringkasan}
 						barisTerpilihNo={indikatorDibuka}
-						onBuka={(row) => setIndikatorDibuka(row.kriteria.no)}
+						onBuka={(row) => setIndikatorDibuka(kunciIndikator(row.kriteria.no, row.kriteria.subNo))}
 						onDaftarTampilBerubah={setUrutanTampil}
 						pemilihan={pemilihanIndikator}
 						bolehMemilih={izin.canRun}
@@ -355,6 +373,7 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 				<TabsContent value="kualitas" className="pt-2">
 					<AssessmentQualityPanel
 						kualitas={kualitas.kualitas}
+						kriteriaSet={baris.map((row) => row.kriteria)}
 						status={kualitas.status}
 						pesanGagal={kualitas.pesanGagal}
 						bolehMengevaluasi={kualitas.bolehMengevaluasi}
@@ -383,18 +402,19 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 				onTutup={() => setIndikatorDibuka(null)}
 				onPindah={(arah) => {
 					const berikutnya = urutanTampil[posisiDibuka + arah];
-					if (berikutnya) setIndikatorDibuka(berikutnya.kriteria.no);
+					if (berikutnya) setIndikatorDibuka(kunciIndikator(berikutnya.kriteria.no, berikutnya.kriteria.subNo));
 				}}
 				onSimpan={({ skorFinal, catatan }) => {
 					if (!rowDibuka) return;
 					simpanKeputusan({
 						indikatorNo: rowDibuka.kriteria.no,
+						subNo: rowDibuka.kriteria.subNo,
 						skorFinal,
 						catatan,
 					});
 				}}
 				onCabut={() => {
-					if (rowDibuka) cabutKeputusan(rowDibuka.kriteria.no);
+					if (rowDibuka) cabutKeputusan(rowDibuka.kriteria.no, rowDibuka.kriteria.subNo ?? '');
 				}}
 			/>
 

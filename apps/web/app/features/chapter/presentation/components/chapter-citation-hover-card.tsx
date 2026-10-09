@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Popover } from '@base-ui/react/popover';
 import {
+	ArrowSquareOutIcon,
 	BookOpenIcon,
 	CaretLeftIcon,
 	CaretRightIcon,
@@ -8,6 +9,7 @@ import {
 } from '@phosphor-icons/react';
 import { type Editor } from '@tiptap/react';
 
+import { evidenceRepository } from '~/features/evidence/data/repositories/evidence.repository';
 import { type SectionSumber } from '../../domain/entities/chunk-sumber.entity';
 import { CITATION_LABEL_ATTR } from '../utils/citation-links';
 
@@ -137,7 +139,17 @@ export function ChapterCitationHoverCard({
 
 						<div className="flex items-center gap-1.5">
 							<Ikon className="size-4 shrink-0 text-muted-foreground" />
-							<span className="truncate text-sm font-medium">{aktif.label}</span>
+							<span className="min-w-0 flex-1 truncate text-sm font-medium">{aktif.label}</span>
+							{aktif.fileUrl && (
+								<button
+									type="button"
+									title="Buka berkas asli"
+									onClick={() => evidenceRepository.openFile(aktif.fileUrl!)}
+									className="shrink-0 cursor-pointer rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+								>
+									<ArrowSquareOutIcon className="size-3.5" />
+								</button>
+							)}
 						</div>
 						<p className="mt-1.5 line-clamp-6 text-xs leading-relaxed text-muted-foreground">
 							{aktif.teks}

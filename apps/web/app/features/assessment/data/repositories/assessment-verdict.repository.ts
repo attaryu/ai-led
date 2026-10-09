@@ -22,18 +22,20 @@ export const assessmentVerdictRepository = {
 	async upsert(input: {
 		dokumenId: string;
 		indikatorNo: number;
+		subNo?: string;
 		skorFinal: number;
 		catatan: string;
 	}): Promise<AssessmentVerdictEntity> {
 		const row = await assessmentRemoteSource.upsertVerdict(input.dokumenId, {
 			indicatorNo: input.indikatorNo,
+			subNo: input.subNo || undefined,
 			finalScore: input.skorFinal,
 			note: input.catatan.trim() === '' ? undefined : input.catatan,
 		});
 		return mapVerdict(row);
 	},
 
-	remove(dokumenId: string, indikatorNo: number): Promise<void> {
-		return assessmentRemoteSource.removeVerdict(dokumenId, indikatorNo);
+	remove(dokumenId: string, indikatorNo: number, subNo = ''): Promise<void> {
+		return assessmentRemoteSource.removeVerdict(dokumenId, indikatorNo, subNo);
 	},
 };

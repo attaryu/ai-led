@@ -117,7 +117,10 @@ def main():
 
     for no in indicator_nos:
         current_assessment_context.set(
-            AssessmentContext(tenant_id=_LOCAL_TENANT_ID, dokumen_id=_LOCAL_DOKUMEN_ID, indicator_no=no)
+            AssessmentContext(
+                tenant_id=_LOCAL_TENANT_ID, dokumen_id=_LOCAL_DOKUMEN_ID, indicator_no=no,
+                accreditation_set_id=_LOCAL_TENANT_ID,
+            )
         )
         dump_indicator(no, rubrics)
 

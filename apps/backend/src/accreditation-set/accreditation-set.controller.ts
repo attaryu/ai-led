@@ -7,11 +7,14 @@ import { CreateAccreditationSetDto } from './dto/create-accreditation-set.dto';
 import { UpdateAccreditationSetDto } from './dto/update-accreditation-set.dto';
 import { ReplaceCriteriaDto } from './dto/replace-criteria.dto';
 import { AttachSetDocumentDto } from './dto/attach-set-document.dto';
+import { ConfirmStructureDto } from './dto/confirm-structure.dto';
+import { AttachPanduanDto } from './dto/attach-panduan.dto';
 
 // Sama seperti dokumen-led/bab-dokumen: PIMPINAN cuma baca (governance/oversight),
 // PENJAMIN_MUTU dan PENYUSUN yang menyusun/mengelola. ADMIN tidak punya akses domain.
 const READ_ROLES = [Role.PIMPINAN, Role.PENJAMIN_MUTU, Role.PENYUSUN];
-const WRITE_ROLES = [Role.PENJAMIN_MUTU, Role.PENYUSUN];
+// Set & Panduan are tenant-wide: a prodi-scoped PENYUSUN must not edit what other prodi use.
+const WRITE_ROLES = [Role.PENJAMIN_MUTU];
 
 @ApiTags('accreditation-set')
 @ApiBearerAuth()
@@ -92,9 +95,34 @@ export class AccreditationSetController {
     return this.accreditationSetService.removeDocument(id, type);
   }
 
+  @Patch(':id/panduan')
+  @Protected(...WRITE_ROLES)
+  attachPanduan(@Param('id') id: string, @Body() dto: AttachPanduanDto) {
+    return this.accreditationSetService.attachPanduan(id, dto);
+  }
+
+  @Delete(':id/panduan')
+  @Protected(...WRITE_ROLES)
+  @HttpCode(204)
+  detachPanduan(@Param('id') id: string) {
+    return this.accreditationSetService.detachPanduan(id);
+  }
+
   @Get(':id/chapter-templates')
   @Protected(...READ_ROLES)
   findChapterTemplates(@Param('id') id: string) {
     return this.accreditationSetService.findChapterTemplates(id);
+  }
+
+  @Get(':id/structure/preview')
+  @Protected(...READ_ROLES)
+  previewStructure(@Param('id') id: string) {
+    return this.accreditationSetService.previewStructure(id);
+  }
+
+  @Post(':id/structure/confirm')
+  @Protected(...WRITE_ROLES)
+  confirmStructure(@Param('id') id: string, @Body() dto: ConfirmStructureDto) {
+    return this.accreditationSetService.confirmStructure(id, dto);
   }
 }

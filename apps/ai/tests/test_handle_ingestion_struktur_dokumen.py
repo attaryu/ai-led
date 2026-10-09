@@ -1,32 +1,40 @@
 """Integration-style tests for worker.py::_handle_ingestion_struktur_dokumen --
-LLM-based BAB/sub-bab structure extraction from an uploaded PANDUAN_LAM PDF,
-scoped per AccreditationSet. All R2/Postgres/LLM/PDF dependencies are mocked;
-no Redis/Postgres/real file needed.
+BAB/sub-bab structure extraction from an uploaded PANDUAN_LAM PDF, scoped per
+Panduan (ReferenceGuide, guideId) -- reusable across AccreditationSet, not
+owned 1:1 by one (migration `20260915140000_reusable_panduan_penulisan`). No
+LLM involved anymore -- extraction itself is
+ingestion.panduan_chunker.extract_panduan_structure (see its own tests);
+these tests only cover the handler's own orchestration: download, dedupe
+duplicate BAB titles, flatten to staged nodes, stage them, and error
+handling. All R2/Postgres/chunker dependencies are mocked; no Redis/Postgres/
+real file needed.
+
+Since the staging/confirm redesign (see api/routes/structure.py), this
+handler no longer writes ChapterTemplate/SubBabTemplate directly -- it
+flattens the parsed tree into guide_references.structure_staging via
+save_structure_staging and stops at MENUNGGU_KONFIRMASI, so these tests
+assert against the flat staged-node list, not a committed template.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 
-def _fake_job(accreditation_set_id="set-1", file_url="tenant-1/panduan.pdf"):
+def _fake_job(guide_id="guide-1", file_url="tenant-1/panduan.pdf"):
     job = MagicMock()
-    job.data = {"accreditationSetId": accreditation_set_id, "fileUrl": file_url}
+    job.data = {"guideId": guide_id, "fileUrl": file_url}
     return job
 
 
-def _run(job, llm_content, pdf_pages=None, **overrides):
-    llm = MagicMock()
-    llm.ainvoke = AsyncMock(return_value=MagicMock(content=llm_content))
-    llm.with_retry.return_value = llm  # worker.py wraps every .ainvoke() call in .with_retry()
-
+def _run(job, bab_list, **overrides):
     defaults = dict(
         download_to=MagicMock(),
-        get_accreditation_set_tenant=MagicMock(return_value="tenant-1"),
-        replace_chapter_templates_for_set=MagicMock(return_value=1),
-        extract_pdf_pages=MagicMock(return_value=pdf_pages if pdf_pages is not None else ["Teks pedoman contoh."]),
+        get_reference_guide_tenant=MagicMock(return_value="tenant-1"),
+        save_structure_staging=MagicMock(return_value=None),
+        extract_panduan_structure=MagicMock(return_value=bab_list),
         status_updates=MagicMock(),
     )
     defaults.update(overrides)
@@ -34,15 +42,16 @@ def _run(job, llm_content, pdf_pages=None, **overrides):
     from worker import _handle_ingestion_struktur_dokumen
 
     with contextlib.ExitStack() as stack:
-        stack.enter_context(patch("llm.chat_model.build_plain_llm", return_value=llm))
         stack.enter_context(patch("db.r2_client.download_to", defaults["download_to"]))
         stack.enter_context(
-            patch("db.postgres_client.get_accreditation_set_tenant", defaults["get_accreditation_set_tenant"])
+            patch("db.postgres_client.get_reference_guide_tenant", defaults["get_reference_guide_tenant"])
         )
         stack.enter_context(
-            patch("db.postgres_client.replace_chapter_templates_for_set", defaults["replace_chapter_templates_for_set"])
+            patch("db.postgres_client.save_structure_staging", defaults["save_structure_staging"])
         )
-        stack.enter_context(patch("worker._extract_pdf_pages", defaults["extract_pdf_pages"]))
+        stack.enter_context(
+            patch("ingestion.panduan_chunker.extract_panduan_structure", defaults["extract_panduan_structure"])
+        )
 
         fake_cursor = MagicMock()
         fake_cursor.__enter__ = MagicMock(return_value=fake_cursor)
@@ -55,11 +64,14 @@ def _run(job, llm_content, pdf_pages=None, **overrides):
 
         result = asyncio.run(_handle_ingestion_struktur_dokumen(job))
 
-    return result, {**defaults, "llm": llm}
+    return result, defaults
 
 
 def _status_calls(status_updates):
-    """Extract (status, error) pairs from the mocked cursor.execute calls."""
+    """Extract (status, error) pairs from the mocked cursor.execute calls
+    (only the GAGAL path still writes status through this closure now --
+    the success path's MENUNGGU_KONFIRMASI write happens inside the mocked
+    save_structure_staging instead)."""
     calls = []
     for call in status_updates.call_args_list:
         sql, params = call.args
@@ -68,189 +80,130 @@ def _status_calls(status_updates):
     return calls
 
 
-def test_extracts_structure_and_replaces_templates():
-    raw = """{"bab": [
-        {"urutan": 1, "judul": "Pendahuluan", "subbab": [
-            {"urutan": 1, "judul": "Latar Belakang", "panduan": "Jelaskan konteks institusi"}
-        ]},
-        {"urutan": 2, "judul": "Struktur LED", "subbab": []}
-    ]}"""
-    result, defaults = _run(_fake_job(), raw)
+def _staged_nodes(defaults):
+    ((_tenant_id, _guide_id, nodes),) = [
+        call.args for call in defaults["save_structure_staging"].call_args_list
+    ]
+    return nodes
 
-    assert result == {"status": "completed", "accreditationSetId": "set-1", "count": 1}
-    defaults["replace_chapter_templates_for_set"].assert_called_once_with(
+
+def test_extracts_structure_and_stages_it():
+    bab_list = [
+        {"order": 1, "title": "Pendahuluan", "subbab": [
+            {"order": 1, "title": "Latar Belakang", "guidance": "Jelaskan konteks institusi", "subbab": []},
+        ]},
+        {"order": 2, "title": "Struktur LED", "subbab": []},
+    ]
+    result, defaults = _run(_fake_job(), bab_list)
+
+    assert result == {"status": "menunggu_konfirmasi", "guideId": "guide-1", "count": 2}
+    defaults["save_structure_staging"].assert_called_once_with(
         "tenant-1",
-        "set-1",
+        "guide-1",
         [
             {
-                "order": 1,
-                "title": "Pendahuluan",
-                "subbab": [
-                    {
-                        "order": 1,
-                        "title": "Latar Belakang",
-                        "guidance": "Jelaskan konteks institusi",
-                        "subbab": [],
-                    }
-                ],
+                "id": "1", "parent_id": None, "level": 1, "order": 1, "title": "Pendahuluan", "guidance": None,
+                "lkps_needed": False, "lkps_list": [],
             },
-            {"order": 2, "title": "Struktur LED", "subbab": []},
+            {
+                "id": "1.1", "parent_id": "1", "level": 2, "order": 1,
+                "title": "Latar Belakang", "marker": None, "guidance": "Jelaskan konteks institusi",
+                "lkps_needed": False, "lkps_list": [],
+            },
+            {
+                "id": "2", "parent_id": None, "level": 1, "order": 2, "title": "Struktur LED", "guidance": None,
+                "lkps_needed": False, "lkps_list": [],
+            },
         ],
     )
-    assert _status_calls(defaults["status_updates"])[-1] == ("SIAP", None)
+    # MENUNGGU_KONFIRMASI is set inside save_structure_staging (mocked away
+    # here) -- the local status closure only ever writes GAGAL now.
+    assert _status_calls(defaults["status_updates"]) == []
 
 
-def test_nested_subsubbab_is_kept_one_level_deep_and_capped_below_that():
-    raw = """{"bab": [
-        {"urutan": 1, "judul": "Laporan Evaluasi Diri", "subbab": [
-            {"urutan": 1, "judul": "Kriteria Akreditasi", "panduan": "...", "subbab": [
-                {"urutan": 1, "judul": "Diferensiasi Misi", "panduan": "...", "subbab": [
-                    {"urutan": 1, "judul": "Harusnya tidak muncul (tingkat ke-4)", "panduan": "..."}
-                ]},
-                {"urutan": 2, "judul": "Akuntabilitas", "panduan": "..."}
-            ]}
-        ]}
-    ]}"""
-    result, defaults = _run(_fake_job(), raw)
-
-    assert result["status"] == "completed"
-    ((_tenant_id, _set_id, bab_list),) = [
-        call.args for call in defaults["replace_chapter_templates_for_set"].call_args_list
+def test_nested_subsubbab_flattens_to_dotted_ids_three_levels_deep():
+    """extract_panduan_structure already caps depth at 3 (see its own
+    tests) -- this only checks _flatten_bab_list turns that nested shape
+    into the dotted-id/level staged-node list correctly."""
+    bab_list = [
+        {"order": 1, "title": "Laporan Evaluasi Diri", "subbab": [
+            {"order": 1, "title": "Kriteria Akreditasi", "guidance": "...", "subbab": [
+                {"order": 1, "title": "Diferensiasi Misi", "guidance": "...", "subbab": []},
+                {"order": 2, "title": "Akuntabilitas", "guidance": "...", "subbab": []},
+            ]},
+        ]},
     ]
-    kriteria = bab_list[0]["subbab"][0]
-    assert kriteria["title"] == "Kriteria Akreditasi"
-    assert [s["title"] for s in kriteria["subbab"]] == ["Diferensiasi Misi", "Akuntabilitas"]
-    # Tingkat ke-4 (anak dari sub-sub-bab) tidak diekstrak sama sekali.
-    assert kriteria["subbab"][0]["subbab"] == []
+    result, defaults = _run(_fake_job(), bab_list)
+
+    assert result["status"] == "menunggu_konfirmasi"
+    nodes = _staged_nodes(defaults)
+    titles_by_id = {n["id"]: n["title"] for n in nodes}
+    levels_by_id = {n["id"]: n["level"] for n in nodes}
+    assert titles_by_id == {
+        "1": "Laporan Evaluasi Diri",
+        "1.1": "Kriteria Akreditasi",
+        "1.1.1": "Diferensiasi Misi",
+        "1.1.2": "Akuntabilitas",
+    }
+    assert levels_by_id == {"1": 1, "1.1": 2, "1.1.1": 3, "1.1.2": 3}
 
 
 def test_duplicate_bab_title_is_merged_not_listed_twice():
-    """Reproduces a real production case: the LLM listed "BAB II. LAPORAN
-    EVALUASI DIRI" twice -- once flat (compact daftar-isi overview), once
-    with real C.1-C.7 nesting (detailed breakdown further in the source
-    text) -- instead of recognizing both as the same chapter."""
-    raw = """{"bab": [
-        {"urutan": 1, "judul": "Pendahuluan", "subbab": []},
-        {"urutan": 2, "judul": "Laporan Evaluasi Diri", "subbab": [
-            {"urutan": 1, "judul": "Struktur Tim Penyusun", "panduan": "..."},
-            {"urutan": 2, "judul": "Kriteria Akreditasi", "panduan": "..."}
+    """Reproduces a real production case: the same BAB title appearing
+    twice in the extracted structure (once flat, once with real C.1-C.7
+    nesting) must be merged into one chapter, not listed twice --
+    _gabung_duplikat_judul is the safety net on top of the chunker's own
+    Daftar-Isi exclusion (see panduan_chunker's tests)."""
+    bab_list = [
+        {"order": 1, "title": "Pendahuluan", "subbab": []},
+        {"order": 2, "title": "Laporan Evaluasi Diri", "subbab": [
+            {"order": 1, "title": "Struktur Tim Penyusun", "guidance": "...", "subbab": []},
+            {"order": 2, "title": "Kriteria Akreditasi", "guidance": "...", "subbab": []},
         ]},
-        {"urutan": 3, "judul": "Laporan Evaluasi Diri", "subbab": [
-            {"urutan": 1, "judul": "Struktur Tim Penyusun", "panduan": "..."},
-            {"urutan": 2, "judul": "Kriteria Akreditasi", "panduan": "lebih rinci", "subbab": [
-                {"urutan": 1, "judul": "Diferensiasi Misi", "panduan": "..."},
-                {"urutan": 2, "judul": "Akuntabilitas", "panduan": "..."}
-            ]}
+        {"order": 3, "title": "Laporan Evaluasi Diri", "subbab": [
+            {"order": 1, "title": "Struktur Tim Penyusun", "guidance": "...", "subbab": []},
+            {"order": 2, "title": "Kriteria Akreditasi", "guidance": "lebih rinci", "subbab": [
+                {"order": 1, "title": "Diferensiasi Misi", "guidance": "...", "subbab": []},
+                {"order": 2, "title": "Akuntabilitas", "guidance": "...", "subbab": []},
+            ]},
         ]},
-        {"urutan": 4, "judul": "Penutup", "subbab": []}
-    ]}"""
-    result, defaults = _run(_fake_job(), raw)
-
-    assert result["status"] == "completed"
-    ((_tenant_id, _set_id, bab_list),) = [
-        call.args for call in defaults["replace_chapter_templates_for_set"].call_args_list
+        {"order": 4, "title": "Penutup", "subbab": []},
     ]
-    titles = [b["title"] for b in bab_list]
-    assert titles == ["Pendahuluan", "Laporan Evaluasi Diri", "Penutup"]
-    assert [b["order"] for b in bab_list] == [1, 2, 3]
+    result, defaults = _run(_fake_job(), bab_list)
 
-    ler = bab_list[1]
-    assert [s["title"] for s in ler["subbab"]] == ["Struktur Tim Penyusun", "Kriteria Akreditasi"]
-    kriteria = ler["subbab"][1]
-    assert [s["title"] for s in kriteria["subbab"]] == ["Diferensiasi Misi", "Akuntabilitas"]
+    assert result["status"] == "menunggu_konfirmasi"
+    assert result["count"] == 3  # merged down from 4 bab entries to 3 distinct chapters
+    nodes = _staged_nodes(defaults)
+    top_level_titles = [n["title"] for n in nodes if n["level"] == 1]
+    assert top_level_titles == ["Pendahuluan", "Laporan Evaluasi Diri", "Penutup"]
+
+    kriteria = next(n for n in nodes if n["title"] == "Kriteria Akreditasi")
+    assert [n["title"] for n in nodes if n["parent_id"] == kriteria["id"]] == ["Diferensiasi Misi", "Akuntabilitas"]
 
 
-def test_empty_pdf_text_marks_gagal_without_calling_llm():
-    result, defaults = _run(_fake_job(), llm_content="{}", pdf_pages=["   "])
+def test_empty_structure_marks_gagal():
+    result, defaults = _run(_fake_job(), bab_list=[])
     assert result["status"] == "empty"
     assert _status_calls(defaults["status_updates"])[-1][0] == "GAGAL"
-    defaults["replace_chapter_templates_for_set"].assert_not_called()
+    defaults["save_structure_staging"].assert_not_called()
 
 
-def test_uses_only_the_daftar_isi_page_when_found():
-    pages = [
-        "HALAMAN SAMPUL, bukan bagian penting" * 50,
-        "KATA PENGANTAR, juga bukan bagian penting" * 50,
-        "DAFTAR ISI\nBAB I. PENDAHULUAN....1\nBAB II. STRUKTUR LED....5",
-        "BAB I. PENDAHULUAN\nA. Rasional\n" + "isi bab sungguhan " * 500,
-    ]
-    _, defaults = _run(_fake_job(), llm_content='{"bab": []}', pdf_pages=pages)
-
-    prompt = defaults["llm"].ainvoke.call_args.args[0]
-    assert "DAFTAR ISI" in prompt
-    assert "BAB II. STRUKTUR LED" in prompt
-    assert "isi bab sungguhan" not in prompt
-
-
-def test_falls_back_to_whole_document_when_no_daftar_isi_page():
-    pages = ["BAB I. PENDAHULUAN\nA. Rasional\nIsi bab langsung tanpa daftar isi apa pun."]
-    _, defaults = _run(_fake_job(), llm_content='{"bab": []}', pdf_pages=pages)
-
-    prompt = defaults["llm"].ainvoke.call_args.args[0]
-    assert "Isi bab langsung tanpa daftar isi apa pun." in prompt
-
-
-def test_llm_returning_no_bab_marks_gagal():
-    result, defaults = _run(_fake_job(), llm_content='{"bab": []}')
-    assert result["status"] == "empty"
-    assert _status_calls(defaults["status_updates"])[-1][0] == "GAGAL"
-    defaults["replace_chapter_templates_for_set"].assert_not_called()
-    assert defaults["llm"].ainvoke.call_count == 3  # exhausted all 3 retry attempts
-
-
-def test_empty_result_on_first_attempt_retries_and_succeeds():
-    """Real production case: the model answered {"bab": []} for a
-    well-formed panduan on one sampling, then a clean structure on retry --
-    same flakiness _handle_rekomendasi_dokumen already retries around."""
-    job = _fake_job()
-    llm = MagicMock()
-    llm.ainvoke = AsyncMock(side_effect=[
-        MagicMock(content='{"bab": []}'),
-        MagicMock(content='{"bab": [{"urutan": 1, "judul": "Pendahuluan", "subbab": []}]}'),
-    ])
-    llm.with_retry.return_value = llm
-
-    defaults = dict(
-        download_to=MagicMock(),
-        get_accreditation_set_tenant=MagicMock(return_value="tenant-1"),
-        replace_chapter_templates_for_set=MagicMock(return_value=1),
-        extract_pdf_pages=MagicMock(return_value=["Teks pedoman contoh."]),
-        status_updates=MagicMock(),
+def test_extraction_exception_marks_gagal_with_message():
+    result, defaults = _run(
+        _fake_job(),
+        bab_list=[],
+        extract_panduan_structure=MagicMock(side_effect=RuntimeError("mineru gagal")),
     )
-
-    from worker import _handle_ingestion_struktur_dokumen
-
-    with contextlib.ExitStack() as stack:
-        stack.enter_context(patch("llm.chat_model.build_plain_llm", return_value=llm))
-        stack.enter_context(patch("db.r2_client.download_to", defaults["download_to"]))
-        stack.enter_context(
-            patch("db.postgres_client.get_accreditation_set_tenant", defaults["get_accreditation_set_tenant"])
-        )
-        stack.enter_context(
-            patch("db.postgres_client.replace_chapter_templates_for_set", defaults["replace_chapter_templates_for_set"])
-        )
-        stack.enter_context(patch("worker._extract_pdf_pages", defaults["extract_pdf_pages"]))
-        fake_cursor = MagicMock()
-        fake_cursor.__enter__ = MagicMock(return_value=fake_cursor)
-        fake_cursor.__exit__ = MagicMock(return_value=False)
-        fake_cursor.execute = defaults["status_updates"]
-        fake_tenant_cursor_cm = MagicMock()
-        fake_tenant_cursor_cm.__enter__ = MagicMock(return_value=fake_cursor)
-        fake_tenant_cursor_cm.__exit__ = MagicMock(return_value=False)
-        stack.enter_context(patch("db.connection.tenant_cursor", MagicMock(return_value=fake_tenant_cursor_cm)))
-
-        result = asyncio.run(_handle_ingestion_struktur_dokumen(job))
-
-    assert result == {"status": "completed", "accreditationSetId": "set-1", "count": 1}
-    assert llm.ainvoke.call_count == 2
-    assert _status_calls(defaults["status_updates"])[-1] == ("SIAP", None)
+    assert result["status"] == "error"
+    assert "mineru gagal" in result["reason"]
+    assert _status_calls(defaults["status_updates"])[-1][0] == "GAGAL"
 
 
 def test_unexpected_exception_marks_gagal_with_message():
     result, defaults = _run(
         _fake_job(),
-        llm_content='{"bab": [{"urutan": 1, "judul": "A", "subbab": []}]}',
-        replace_chapter_templates_for_set=MagicMock(side_effect=RuntimeError("db down")),
+        bab_list=[{"order": 1, "title": "A", "subbab": []}],
+        save_structure_staging=MagicMock(side_effect=RuntimeError("db down")),
     )
     assert result["status"] == "error"
     assert "db down" in result["reason"]
@@ -264,8 +217,8 @@ def test_exception_with_no_message_falls_back_to_class_name():
     so GAGAL is never blank."""
     result, defaults = _run(
         _fake_job(),
-        llm_content='{"bab": [{"urutan": 1, "judul": "A", "subbab": []}]}',
-        replace_chapter_templates_for_set=MagicMock(side_effect=RuntimeError()),
+        bab_list=[{"order": 1, "title": "A", "subbab": []}],
+        save_structure_staging=MagicMock(side_effect=RuntimeError()),
     )
     assert result["status"] == "error"
     assert result["reason"] == "RuntimeError"

@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Res,
 } from '@nestjs/common';
@@ -25,6 +26,7 @@ import { ConfirmRecommendationDto } from './dto/confirm-recommendation.dto';
 import { CreateBabDokumenDto } from './dto/create-bab-dokumen.dto';
 import { CreateBabDraftDto } from './dto/create-bab-draft.dto';
 import { CreateSectionDto } from './dto/create-section.dto';
+import { EvidenceSelectionDto } from './dto/evidence-selection.dto';
 import { GenerateBabDto } from './dto/generate-bab.dto';
 import { GenerateOutlineDto } from './dto/generate-outline.dto';
 import { UpdateSectionDto } from './dto/update-section.dto';
@@ -131,6 +133,17 @@ export class BabDokumenController {
     );
   }
 
+  @Put('bab/:id/sections/:sectionId/evidence-selection')
+  @Protected(...WRITE_ROLES)
+  @ApiOperation({ summary: 'Simpan centang bukti dukung untuk satu section (replace)' })
+  updateSectionEvidenceSelection(
+    @Param('id') id: string,
+    @Param('sectionId') sectionId: string,
+    @Body() dto: EvidenceSelectionDto,
+  ) {
+    return this.babPipelineService.updateSectionEvidenceSelection(id, sectionId, dto.evidenceIds);
+  }
+
   @Post('bab/:id/sections')
   @Protected(...WRITE_ROLES)
   createSection(@Param('id') id: string, @Body() dto: CreateSectionDto) {
@@ -154,6 +167,16 @@ export class BabDokumenController {
     return this.babPipelineService.deleteSection(id, sectionId);
   }
 
+  @Post('bab/:id/sections/:sectionId/evaluate-quality')
+  @Protected(...WRITE_ROLES)
+  @HttpCode(202)
+  @ApiOperation({
+    summary: 'Trigger penilaian kualitas RAGAS atas satu section (Producer PENILAIAN_RAGAS)',
+  })
+  evaluateQuality(@Param('id') id: string, @Param('sectionId') sectionId: string) {
+    return this.babPipelineService.triggerEvaluasiRagas(id, sectionId);
+  }
+
   @Post('bab/:id/recommend-documents')
   @Protected(...WRITE_ROLES)
   @HttpCode(202)
@@ -161,13 +184,17 @@ export class BabDokumenController {
     summary: 'Trigger rekomendasi dokumen untuk bab (Producer REKOMENDASI_DOKUMEN)',
   })
   recommendDocuments(@Param('id') id: string, @Body() dto: RecommendDocumentsDto) {
-    return this.babPipelineService.triggerRecommendDocuments(id, dto.draftId);
+    return this.babPipelineService.triggerRecommendDocuments(id, dto.draftId, dto.sectionId);
   }
 
   @Get('bab/:id/recommendation')
   @Protected(...READ_ROLES)
-  findRecommendation(@Param('id') id: string, @Query('draftId') draftId?: string) {
-    return this.babPipelineService.findRecommendation(id, draftId);
+  findRecommendation(
+    @Param('id') id: string,
+    @Query('draftId') draftId?: string,
+    @Query('sectionId') sectionId?: string,
+  ) {
+    return this.babPipelineService.findRecommendation(id, draftId, sectionId);
   }
 
   @Post('bab/:id/recommend-documents/confirm')
@@ -182,10 +209,36 @@ export class BabDokumenController {
     return this.babDraftService.findDrafts(id);
   }
 
-  @Post('bab/:id/drafts')
+  @Get('bab/:id/sections/:sectionId/drafts')
+  @Protected(...READ_ROLES)
+  findSectionDrafts(@Param('sectionId') sectionId: string) {
+    return this.babDraftService.findSectionDrafts(sectionId);
+  }
+
+  @Post('bab/:id/sections/:sectionId/drafts')
   @Protected(...WRITE_ROLES)
-  createDraft(@Param('id') id: string, @Body() dto: CreateBabDraftDto) {
-    return this.babDraftService.createDraft(id, dto);
+  createSectionDraft(@Param('sectionId') sectionId: string, @Body() dto: CreateBabDraftDto) {
+    return this.babDraftService.createSectionDraft(sectionId, dto);
+  }
+
+  @Post('bab/:id/sections/:sectionId/drafts/:draftId/restore')
+  @Protected(...WRITE_ROLES)
+  restoreSectionDraft(
+    @Param('sectionId') sectionId: string,
+    @Param('draftId') draftId: string,
+  ) {
+    return this.babDraftService.restoreSectionDraft(sectionId, draftId);
+  }
+
+  @Delete('bab/:id/sections/:sectionId/drafts/:draftId')
+  @Protected(...WRITE_ROLES)
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Hapus satu checkpoint section dari Riwayat Draft' })
+  deleteSectionDraft(
+    @Param('sectionId') sectionId: string,
+    @Param('draftId') draftId: string,
+  ) {
+    return this.babDraftService.deleteSectionDraft(sectionId, draftId);
   }
 
   @Get('bab/:id/rubrik')
@@ -204,15 +257,16 @@ export class BabDokumenController {
     return this.babPipelineService.triggerSimulateScore(id, dto.chapterDraftId);
   }
 
-  /** SSE passthrough proxy to apps/ai's POST /chat/:id — @Res() raw response since we're forwarding an existing byte stream, not emitting our own. apps/ai owns the chat_messages writes. */
-  @Post('bab/:id/chat')
+  /** SSE passthrough proxy to apps/ai's POST /chat/:sectionId — per-section (dimas parity), balasan asisten langsung revisi section.content di apps/ai. */
+  @Post('bab/:id/sections/:sectionId/chat')
   @Protected(...WRITE_ROLES)
   async chat(
     @Param('id') id: string,
+    @Param('sectionId') sectionId: string,
     @Body() dto: ChatMessageDto,
     @Res() res: Response,
   ): Promise<void> {
-    const { userId } = await this.babPipelineService.assertChatAccess(id);
+    const { userId } = await this.babPipelineService.assertSectionChatAccess(sectionId);
     const aiServiceUrl = requireEnv('AI_SERVICE_URL');
 
     const abortController = new AbortController();
@@ -220,7 +274,7 @@ export class BabDokumenController {
 
     let upstream: globalThis.Response;
     try {
-      upstream = await fetch(`${aiServiceUrl}/chat/${id}`, {
+      upstream = await fetch(`${aiServiceUrl}/chat/${sectionId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: dto.message, user_id: userId }),
@@ -251,19 +305,21 @@ export class BabDokumenController {
       }
     } finally {
       res.end();
+      // apps/ai sudah menulis revisi ke section.content -- susun ulang isi bab (sama seperti autosave section).
+      await this.babPipelineService.recompileChapterContent(id).catch(() => undefined);
     }
   }
 
-  /** Plain JSON passthrough to apps/ai's GET /chat/:id/history — same no-direct-access rule as the stream above. */
-  @Get('bab/:id/chat/history')
-  @Protected(...WRITE_ROLES)
-  async chatHistory(@Param('id') id: string) {
-    await this.babPipelineService.assertChatAccess(id);
+  /** Plain JSON passthrough to apps/ai's GET /chat/:sectionId/history — same no-direct-access rule as the stream above. */
+  @Get('bab/:id/sections/:sectionId/chat/history')
+  @Protected(...READ_ROLES)
+  async chatHistory(@Param('sectionId') sectionId: string) {
+    await this.babPipelineService.assertSectionChatAccess(sectionId);
     const aiServiceUrl = requireEnv('AI_SERVICE_URL');
 
     let upstream: globalThis.Response;
     try {
-      upstream = await fetch(`${aiServiceUrl}/chat/${id}/history`);
+      upstream = await fetch(`${aiServiceUrl}/chat/${sectionId}/history`);
     } catch {
       throw new BadGatewayException('AI service tidak dapat dihubungi');
     }
@@ -275,17 +331,17 @@ export class BabDokumenController {
     return upstream.json();
   }
 
-  @Post('bab/:id/submit-review')
+  @Post('bab/:id/sections/:sectionId/submit-review')
   @Protected(Role.PENYUSUN)
   @HttpCode(200)
-  submitForReview(@Param('id') id: string, @Body() dto: SubmitReviewDto) {
-    return this.babReviewService.submitForReview(id, dto);
+  submitForReview(@Param('sectionId') sectionId: string, @Body() dto: SubmitReviewDto) {
+    return this.babReviewService.submitForReview(sectionId, dto);
   }
 
-  @Patch('bab/:id/review-status')
+  @Patch('bab/:id/sections/:sectionId/review-status')
   @Protected(Role.PENJAMIN_MUTU)
-  setReviewStatus(@Param('id') id: string, @Body() dto: ReviewStatusDto) {
-    return this.babReviewService.setReviewStatus(id, dto);
+  setReviewStatus(@Param('sectionId') sectionId: string, @Body() dto: ReviewStatusDto) {
+    return this.babReviewService.setReviewStatus(sectionId, dto);
   }
 
   @Delete('bab/:id')

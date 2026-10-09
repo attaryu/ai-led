@@ -84,6 +84,41 @@ def fixture_ids(conn):
         cur.execute("DELETE FROM org_tenants WHERE id = %s", (tenant_id,))
 
 
+def test_sub_indicators_with_same_number_do_not_overwrite_each_other(fixture_ids, conn):
+    """43.I dan 43.II berbagi indicator_no: hasil, langkah penalaran, dan status 'selesai' dikunci
+    per (nomor, sub) -- sub kedua TIDAK menimpa sub pertama."""
+    import db.postgres_client as pc
+
+    tenant_id = fixture_ids["tenant_id"]
+    session_id = f"test-session-{uuid.uuid4().hex[:8]}"
+    pc.create_session(
+        session_id,
+        tenant_id=tenant_id,
+        dokumen_id=fixture_ids["dokumen_id"],
+        created_by_user_id=fixture_ids["user_id"],
+        total_indicators=2,
+    )
+    try:
+        pc.log_indicator_result(tenant_id, session_id, indicator_no=43, sub_no="I", score=3.0, justification="akademik", confidence=0.9)
+        pc.log_indicator_result(tenant_id, session_id, indicator_no=43, sub_no="II", score=1.0, justification="non akademik", confidence=0.8)
+        pc.log_reasoning_step(tenant_id, session_id, indicator_no=43, sub_no="II", step_index=0, content="langkah II")
+        # menilai ulang sub I menimpa sub I saja
+        pc.log_indicator_result(tenant_id, session_id, indicator_no=43, sub_no="I", score=4.0, justification="akademik v2", confidence=0.9)
+
+        hasil = {(r["indicator_no"], r["sub_no"]): r for r in pc.get_indicator_results(tenant_id, session_id)}
+        assert set(hasil) == {(43, "I"), (43, "II")}
+        assert hasil[(43, "I")]["score"] == 4.0 and hasil[(43, "I")]["justification"] == "akademik v2"
+        assert hasil[(43, "II")]["score"] == 1.0 and hasil[(43, "II")]["justification"] == "non akademik"
+        assert pc.get_completed_indicator_numbers(tenant_id, session_id) == {(43, "I"), (43, "II")}
+
+        pc.log_indicator_result(tenant_id, session_id, indicator_no=44, sub_no="I", score=None, justification=None, confidence=None, error="gagal")
+        assert pc.get_completed_indicator_numbers(tenant_id, session_id, retry_failed=True) == {(43, "I"), (43, "II")}
+        assert (44, "I") in pc.get_completed_indicator_numbers(tenant_id, session_id)
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM assessment_sessions WHERE id = %s", (session_id,))
+
+
 def test_session_lifecycle_and_upsert(fixture_ids, conn):
     import db.postgres_client as pc
 
@@ -110,7 +145,7 @@ def test_session_lifecycle_and_upsert(fixture_ids, conn):
         pc.log_indicator_result(tenant_id, session_id, indicator_no=2, score=2.0, justification="j2", confidence=0.5)
         pc.log_reasoning_step(tenant_id, session_id, indicator_no=1, step_index=0, content="step0")
 
-        assert pc.get_completed_indicator_numbers(tenant_id, session_id) == {1, 2}
+        assert pc.get_completed_indicator_numbers(tenant_id, session_id) == {(1, ""), (2, "")}
 
         results = pc.get_indicator_results(tenant_id, session_id)
         r1 = next(r for r in results if r["indicator_no"] == 1)
@@ -226,3 +261,289 @@ def test_get_rubric_criteria_for_set(fixture_ids, conn):
             cur.execute("DELETE FROM rubric_levels WHERE criterion_id = %s", (criterion_id,))
             cur.execute("DELETE FROM rubric_criteria WHERE id = %s", (criterion_id,))
             cur.execute("DELETE FROM accreditation_sets WHERE id = %s", (set_id,))
+
+
+def _staged_nodes_fixture():
+    """2 bab, "Laporan Evaluasi Diri" (2) has 2 sub-bab, "Kriteria" (2.2) has
+    2 sub-sub-bab -- enough depth to exercise cascade-exclusion."""
+    return [
+        {"id": "1", "parent_id": None, "level": 1, "order": 1, "title": "Pendahuluan", "guidance": None},
+        {"id": "2", "parent_id": None, "level": 1, "order": 2, "title": "Laporan Evaluasi Diri", "guidance": None},
+        {"id": "2.1", "parent_id": "2", "level": 2, "order": 1, "title": "Rasional", "guidance": "G1"},
+        {"id": "2.2", "parent_id": "2", "level": 2, "order": 2, "title": "Kriteria", "guidance": "G2"},
+        {"id": "2.2.1", "parent_id": "2.2", "level": 3, "order": 1, "title": "Diferensiasi Misi", "guidance": "G3"},
+        {"id": "2.2.2", "parent_id": "2.2", "level": 3, "order": 2, "title": "Akuntabilitas", "guidance": "G4"},
+    ]
+
+
+def test_confirm_structure_staging_commits_only_accepted_nodes(fixture_ids, conn):
+    import db.postgres_client as pc
+
+    tenant_id = fixture_ids["tenant_id"]
+    guide_id = f"test-guide-{uuid.uuid4().hex[:8]}"
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO guide_references (id, tenant_id, type, title, file_url, file_type)
+                VALUES (%s, %s, 'PANDUAN_LAM', %s, %s, 'pdf')
+                """,
+                (guide_id, tenant_id, "Test Panduan", "test/panduan.pdf"),
+            )
+
+        pc.save_structure_staging(tenant_id, guide_id, _staged_nodes_fixture())
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT structure_parse_status, structure_staging FROM guide_references WHERE id = %s",
+                (guide_id,),
+            )
+            row = cur.fetchone()
+        assert row["structure_parse_status"] == "MENUNGGU_KONFIRMASI"
+        assert len(row["structure_staging"]) == 6
+
+        preview = pc.get_structure_preview(tenant_id, guide_id)
+        assert preview["status"] == "MENUNGGU_KONFIRMASI"
+        assert len(preview["nodes"]) == 6
+
+        # Accept everything under "Laporan Evaluasi Diri" EXCEPT "Kriteria"
+        # (2.2) -- its checked children (2.2.1/2.2.2) stay, hung off the nearest
+        # checked ancestor (dimas confirm_panduan keeps every checked node).
+        # Drop "Pendahuluan" (1) outright.
+        accepted = {"2", "2.1", "2.2.1", "2.2.2"}
+        count = pc.confirm_structure_staging(tenant_id, guide_id, accepted)
+        assert count == 1  # 1 top-level chapter kept ("Laporan Evaluasi Diri")
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT title FROM chapter_templates WHERE guide_id = %s", (guide_id,)
+            )
+            assert [r["title"] for r in cur.fetchall()] == ["Laporan Evaluasi Diri"]
+
+            cur.execute(
+                """SELECT sb.title FROM sub_bab_templates sb
+                   JOIN chapter_templates ct ON ct.id = sb.chapter_template_id
+                   WHERE ct.guide_id = %s ORDER BY sb.title""",
+                (guide_id,),
+            )
+            # "Kriteria" itself is gone; its checked children moved up under the BAB.
+            assert [r["title"] for r in cur.fetchall()] == ["Akuntabilitas", "Diferensiasi Misi", "Rasional"]
+
+            cur.execute(
+                "SELECT structure_parse_status, structure_staging FROM guide_references WHERE id = %s",
+                (guide_id,),
+            )
+            row = cur.fetchone()
+        assert row["structure_parse_status"] == "SIAP"
+        assert row["structure_staging"] is None
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM guide_references WHERE id = %s", (guide_id,))
+
+
+def test_confirm_and_preview_keep_levels_beyond_three(fixture_ids, conn):
+    """dimas: every Panduan node is a section at any depth -- confirm must commit level 4/5 and the
+    committed preview must report their real depth."""
+    import db.postgres_client as pc
+
+    tenant_id = fixture_ids["tenant_id"]
+    guide_id = f"test-guide-{uuid.uuid4().hex[:8]}"
+    nodes = [
+        {"id": "1", "parent_id": None, "level": 1, "order": 1, "title": "BAB", "guidance": None},
+        {"id": "1.1", "parent_id": "1", "level": 2, "order": 1, "title": "A", "guidance": "g2"},
+        {"id": "1.1.1", "parent_id": "1.1", "level": 3, "order": 1, "title": "A.1", "guidance": "g3"},
+        {"id": "1.1.1.1", "parent_id": "1.1.1", "level": 4, "order": 1, "title": "Satu", "guidance": "g4"},
+        {"id": "1.1.1.1.1", "parent_id": "1.1.1.1", "level": 5, "order": 1, "title": "a", "guidance": "g5"},
+    ]
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO guide_references (id, tenant_id, type, title, file_url, file_type)
+                   VALUES (%s, %s, 'PANDUAN_LAM', 'Test Panduan', 'test/p.pdf', 'pdf')""",
+                (guide_id, tenant_id),
+            )
+        pc.save_structure_staging(tenant_id, guide_id, nodes)
+        pc.confirm_structure_staging(tenant_id, guide_id, {n["id"] for n in nodes})
+
+        preview = pc.get_structure_preview(tenant_id, guide_id)
+        assert sorted((n["title"], n["level"]) for n in preview["nodes"]) == [
+            ("A", 2), ("A.1", 3), ("BAB", 1), ("Satu", 4), ("a", 5),
+        ]
+    finally:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM sub_bab_templates WHERE chapter_template_id IN "
+                "(SELECT id FROM chapter_templates WHERE guide_id = %s)", (guide_id,),
+            )
+            cur.execute("DELETE FROM chapter_templates WHERE guide_id = %s", (guide_id,))
+            cur.execute("DELETE FROM guide_references WHERE id = %s", (guide_id,))
+
+
+def test_confirm_structure_staging_rejects_when_not_pending(fixture_ids, conn):
+    import db.postgres_client as pc
+
+    tenant_id = fixture_ids["tenant_id"]
+    guide_id = f"test-guide-{uuid.uuid4().hex[:8]}"
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO guide_references (id, tenant_id, type, title, file_url, file_type)
+                VALUES (%s, %s, 'PANDUAN_LAM', %s, %s, 'pdf')
+                """,
+                (guide_id, tenant_id, "Test Panduan", "test/panduan.pdf"),
+            )
+        with pytest.raises(ValueError):
+            pc.confirm_structure_staging(tenant_id, guide_id, {"1"})
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM guide_references WHERE id = %s", (guide_id,))
+
+
+def test_reference_guide_reusable_across_accreditation_sets(fixture_ids, conn):
+    """The whole point of gap #1: one committed Panduan (guide_references +
+    its chapter_templates) can be pointed at by many AccreditationSet rows
+    at once via AccreditationSet.panduanId -- no per-set copy needed."""
+    import db.postgres_client as pc
+
+    tenant_id = fixture_ids["tenant_id"]
+    guide_id = f"test-guide-{uuid.uuid4().hex[:8]}"
+    set_a = f"test-set-a-{uuid.uuid4().hex[:8]}"
+    set_b = f"test-set-b-{uuid.uuid4().hex[:8]}"
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO guide_references (id, tenant_id, type, title, file_url, file_type)
+                VALUES (%s, %s, 'PANDUAN_LAM', %s, %s, 'pdf')
+                """,
+                (guide_id, tenant_id, "Shared Panduan", "test/panduan.pdf"),
+            )
+            for set_id, nama in ((set_a, "Set A"), (set_b, "Set B")):
+                cur.execute(
+                    """
+                    INSERT INTO accreditation_sets
+                        (id, tenant_id, nama, lembaga, tahun_siklus, status, panduan_id, updated_at)
+                    VALUES (%s, %s, %s, %s, 2026, 'SIAP', %s, now())
+                    """,
+                    (set_id, tenant_id, nama, "Test Lembaga", guide_id),
+                )
+
+        pc.save_structure_staging(tenant_id, guide_id, _staged_nodes_fixture())
+        pc.confirm_structure_staging(tenant_id, guide_id, {"1", "2", "2.1", "2.2", "2.2.1", "2.2.2"})
+
+        assert pc.get_reference_guide_tenant(guide_id) == tenant_id
+
+        # Both sets resolve to the SAME committed structure -- one commit,
+        # two consumers, no duplication.
+        for set_id in (set_a, set_b):
+            with conn.cursor() as cur:
+                cur.execute("SELECT panduan_id FROM accreditation_sets WHERE id = %s", (set_id,))
+                assert cur.fetchone()["panduan_id"] == guide_id
+            struktur = pc.get_structure_preview(tenant_id, guide_id)
+            assert struktur["status"] == "SIAP"
+            assert len(struktur["nodes"]) == 6
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM accreditation_sets WHERE id IN (%s, %s)", (set_a, set_b))
+            cur.execute("DELETE FROM guide_references WHERE id = %s", (guide_id,))
+
+
+def test_get_chapter_template_subbab_excludes_inactive_nodes(fixture_ids, conn):
+    """gap #2: toggling SubBabTemplate.isActive off excludes that node (and,
+    since it's no longer in `rows` for a child to attach under, everything
+    beneath it) from future outline generation -- without touching
+    ChapterTemplate/committed data or re-extracting anything."""
+    import db.generation_client as gc
+    import db.postgres_client as pc
+
+    tenant_id = fixture_ids["tenant_id"]
+    guide_id = f"test-guide-{uuid.uuid4().hex[:8]}"
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO guide_references (id, tenant_id, type, title, file_url, file_type)
+                VALUES (%s, %s, 'PANDUAN_LAM', %s, %s, 'pdf')
+                """,
+                (guide_id, tenant_id, "Test Panduan", "test/panduan.pdf"),
+            )
+        pc.save_structure_staging(tenant_id, guide_id, _staged_nodes_fixture())
+        pc.confirm_structure_staging(tenant_id, guide_id, {"1", "2", "2.1", "2.2", "2.2.1", "2.2.2"})
+
+        struktur = gc.get_chapter_template_subbab(tenant_id, guide_id, 2)
+        assert {s["title"] for s in struktur} == {"Rasional", "Kriteria"}
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE sub_bab_templates SET is_active = false WHERE title = 'Kriteria'"
+            )
+
+        struktur = gc.get_chapter_template_subbab(tenant_id, guide_id, 2)
+        # "Kriteria" gone, and its 2 children ("Diferensiasi Misi"/"Akuntabilitas")
+        # went with it -- they'd have nothing to attach under.
+        assert {s["title"] for s in struktur} == {"Rasional"}
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM guide_references WHERE id = %s", (guide_id,))
+
+
+def test_lkps_needed_and_list_survive_confirm_and_outline_copy(fixture_ids, conn):
+    """Port of Dimas 140d8ae: lkps_needed/lkps_list (from
+    ingestion.panduan_chunker.detect_lkps) must flow staging -> committed
+    SubBabTemplate -> outline-copied ChapterSection unchanged."""
+    import db.generation_client as gc
+    import db.postgres_client as pc
+
+    tenant_id = fixture_ids["tenant_id"]
+    guide_id = f"test-guide-{uuid.uuid4().hex[:8]}"
+    chapter_id = f"test-chapter-{uuid.uuid4().hex[:8]}"
+    staged = [
+        {"id": "1", "parent_id": None, "level": 1, "order": 1, "title": "Laporan Evaluasi Diri",
+         "guidance": None, "lkps_needed": False, "lkps_list": []},
+        {"id": "1.1", "parent_id": "1", "level": 2, "order": 1, "title": "Rasional",
+         "guidance": "Butuh Tabel 2a LKPS.", "lkps_needed": True, "lkps_list": ["2a"]},
+        {"id": "1.2", "parent_id": "1", "level": 2, "order": 2, "title": "Peran Evaluasi Diri",
+         "guidance": "Naratif murni.", "lkps_needed": False, "lkps_list": []},
+    ]
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO guide_references (id, tenant_id, type, title, file_url, file_type)
+                VALUES (%s, %s, 'PANDUAN_LAM', %s, %s, 'pdf')
+                """,
+                (guide_id, tenant_id, "Test Panduan", "test/panduan.pdf"),
+            )
+        pc.save_structure_staging(tenant_id, guide_id, staged)
+        pc.confirm_structure_staging(tenant_id, guide_id, {"1", "1.1", "1.2"})
+
+        struktur = gc.get_chapter_template_subbab(tenant_id, guide_id, 1)
+        by_title = {s["title"]: s for s in struktur}
+        assert by_title["Rasional"]["lkps_needed"] is True
+        assert by_title["Rasional"]["lkps_list"] == ["2a"]
+        assert by_title["Peran Evaluasi Diri"]["lkps_needed"] is False
+        assert by_title["Peran Evaluasi Diri"]["lkps_list"] == []
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO writing_document_chapters
+                       (id, document_id, chapter_order, chapter_title, working_content, last_saved_at)
+                   VALUES (%s, %s, 1, 'Bab 1', '{}'::jsonb, NOW())""",
+                (chapter_id, fixture_ids["dokumen_id"]),
+            )
+        sections = [
+            {"title": s["title"], "guidance": s["guidance"] or "", "lkps_needed": s["lkps_needed"],
+             "lkps_list": s["lkps_list"], "subseksi": []}
+            for s in struktur
+        ]
+        created = gc.create_chapter_sections(tenant_id, chapter_id, sections)
+        by_title_section = {s["title"]: s for s in created}
+        assert by_title_section["Rasional"]["lkps_needed"] is True
+        assert by_title_section["Rasional"]["lkps_list"] == ["2a"]
+        assert by_title_section["Peran Evaluasi Diri"]["lkps_needed"] is False
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM writing_chapter_sections WHERE chapter_id = %s", (chapter_id,))
+            cur.execute("DELETE FROM writing_document_chapters WHERE id = %s", (chapter_id,))
+            cur.execute("DELETE FROM guide_references WHERE id = %s", (guide_id,))

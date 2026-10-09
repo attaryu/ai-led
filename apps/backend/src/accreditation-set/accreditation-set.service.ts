@@ -1,6 +1,8 @@
 import {
+  BadGatewayException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -10,6 +12,7 @@ import {
   StatusEkstraksi,
   TipePanduan,
 } from '@ai-led/db';
+import { requireEnv } from '../config/env';
 import { PrismaService } from '../database/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { JobsService } from '../jobs/jobs.service';
@@ -19,15 +22,13 @@ import { CreateAccreditationSetDto } from './dto/create-accreditation-set.dto';
 import { UpdateAccreditationSetDto } from './dto/update-accreditation-set.dto';
 import { ReplaceCriteriaDto } from './dto/replace-criteria.dto';
 import { AttachSetDocumentDto } from './dto/attach-set-document.dto';
+import { ConfirmStructureDto } from './dto/confirm-structure.dto';
+import { UploadPanduanDto } from './dto/upload-panduan.dto';
+import { AttachPanduanDto } from './dto/attach-panduan.dto';
+import { ToggleSectionDto } from './dto/toggle-section.dto';
 
 /// accreditation-set.entity.ts::MIN_KRITERIA_SIAP -- syarat minimum sebelum boleh SIAP.
 const MIN_KRITERIA_SIAP = 1;
-/// Set Akreditasi cukup Matriks Penilaian + Pedoman Penyusunan -- TipePanduan.TEMPLATE_LKPS
-/// (nilai ketiga di enum Prisma) sengaja tidak dipakai di sini.
-const SET_DOCUMENT_TYPES: TipePanduan[] = [
-  TipePanduan.DOKUMEN_RUBRIK,
-  TipePanduan.PANDUAN_LAM,
-];
 
 const CRITERION_INCLUDE = {
   levels: { orderBy: { score: 'desc' as const } },
@@ -59,9 +60,10 @@ export class AccreditationSetService {
       include: {
         criteria: {
           include: CRITERION_INCLUDE,
-          orderBy: { indicatorNo: 'asc' },
+          orderBy: [{ indicatorNo: 'asc' }, { subNo: 'asc' }],
         },
         documents: true,
+        panduan: true,
       },
     });
   }
@@ -92,6 +94,7 @@ export class AccreditationSetService {
       orderBy: { createdAt: 'desc' },
       include: {
         documents: { select: { type: true } },
+        panduan: { select: { id: true, title: true } },
         _count: { select: { criteria: true } },
       },
     });
@@ -159,9 +162,16 @@ export class AccreditationSetService {
       throw new BadRequestException('Set ini sudah ditandai siap.');
     }
 
-    const kosong = SET_DOCUMENT_TYPES.filter(
-      (tipe) => !set.documents.some((d) => d.type === tipe),
-    );
+    // PANDUAN_LAM tidak lagi lewat `documents` (ReferenceGuide reusable,
+    // dipasang lewat AccreditationSet.panduanId) -- DOKUMEN_RUBRIK tetap
+    // lewat documents seperti biasa.
+    const kosong: TipePanduan[] = [];
+    if (!set.documents.some((d) => d.type === TipePanduan.DOKUMEN_RUBRIK)) {
+      kosong.push(TipePanduan.DOKUMEN_RUBRIK);
+    }
+    if (!set.panduanId) {
+      kosong.push(TipePanduan.PANDUAN_LAM);
+    }
     if (kosong.length > 0) {
       throw new BadRequestException(
         `Set siap harus punya kedua berkas acuan — ${kosong.join(' dan ')} belum ada.`,
@@ -225,24 +235,35 @@ export class AccreditationSetService {
       urutan += 1;
     }
 
-    return this.prisma.accreditationSet.create({
+    const salinan = await this.prisma.accreditationSet.create({
       data: {
         tenantId,
         nama,
         lembaga: source.lembaga,
         tahunSiklus: source.tahunSiklus,
         status: AccreditationSetStatus.DRAF,
+        // Panduan reusable -- salin POINTER-nya (Set baru pakai Panduan yang
+        // sama, sumbernya identik), bukan baris ReferenceGuide-nya.
+        panduanId: source.panduanId,
         documents: {
-          create: source.documents.map((d) => ({
-            type: d.type,
-            title: d.title,
-            fileUrl: d.fileUrl,
-            fileType: d.fileType,
-          })),
+          // PANDUAN_LAM sudah tidak lagi lewat `documents` sejak jadi
+          // reusable -- baris lama (kalau masih ada, pra-migrasi) tidak ikut
+          // disalin, cuma jadi ReferenceGuide yatim yang tidak dipakai siapa pun.
+          create: source.documents
+            .filter((d) => d.type !== TipePanduan.PANDUAN_LAM)
+            .map((d) => ({
+              tenantId,
+              type: d.type,
+              title: d.title,
+              fileUrl: d.fileUrl,
+              fileType: d.fileType,
+            })),
         },
         criteria: {
           create: source.criteria.map((c) => ({
             indicatorNo: c.indicatorNo,
+            // Tanpa subNo, dua sub-indikator bernomor sama (43.I/43.II) bentrok di indeks unik saat disalin.
+            subNo: c.subNo,
             criterionCode: c.criterionCode,
             criterionGroup: c.criterionGroup,
             description: c.description,
@@ -266,6 +287,58 @@ export class AccreditationSetService {
       },
       include: { criteria: { include: CRITERION_INCLUDE }, documents: true },
     });
+    await this.salinGrupHierarki(source, salinan.id);
+    return salinan;
+  }
+
+  /**
+   * Menyalin pengelompokan hierarki rubrik (kelompok > kriteria > IKU) ke set salinan dan menautkan ulang
+   * tiap kriteria ke grup barunya. Tanpa ini salinan kehilangan struktur induk-anak rubrik (group_id kosong).
+   * Kriteria dicocokkan lewat (nomor indikator, sub-indikator), kunci yang sama dengan indeks unik rubric_criteria.
+   */
+  private async salinGrupHierarki(
+    source: { id: string; criteria: { indicatorNo: number; subNo: string | null; groupId: string | null }[] },
+    setBaruId: string,
+  ) {
+    const grup = await this.prisma.rubricCriterionGroup.findMany({
+      where: { accreditationSetId: source.id },
+      orderBy: { order: 'asc' },
+    });
+    if (grup.length === 0) return;
+
+    const peta = new Map<string, string>(); // id grup lama -> id grup baru
+    let sisa = grup;
+    // Induk lebih dulu: ulangi sampai semua grup yang induknya sudah tersalin habis (kedalaman terbatas, 3 tingkat).
+    for (let putaran = 0; sisa.length > 0 && putaran < 10; putaran += 1) {
+      const belum: typeof grup = [];
+      for (const g of sisa) {
+        if (g.parentId && !peta.has(g.parentId)) {
+          belum.push(g);
+          continue;
+        }
+        const baru = await this.prisma.rubricCriterionGroup.create({
+          data: {
+            accreditationSetId: setBaruId,
+            parentId: g.parentId ? peta.get(g.parentId)! : null,
+            level: g.level,
+            order: g.order,
+            marker: g.marker,
+            label: g.label,
+          },
+        });
+        peta.set(g.id, baru.id);
+      }
+      sisa = belum;
+    }
+
+    for (const c of source.criteria) {
+      const grupBaru = c.groupId ? peta.get(c.groupId) : undefined;
+      if (!grupBaru) continue;
+      await this.prisma.rubricCriterion.updateMany({
+        where: { accreditationSetId: setBaruId, indicatorNo: c.indicatorNo, subNo: c.subNo },
+        data: { groupId: grupBaru },
+      });
+    }
   }
 
   /**
@@ -279,19 +352,32 @@ export class AccreditationSetService {
     const { tenantId } = this.tenantContext.getOrThrow();
     await this.requireUnlocked(id, tenantId);
 
-    const nomorTerpakai = new Set<number>();
+    // Kunci keunikan = nomor + sub-indikator (sama dengan indeks unik rubric_criteria): 43.I dan 43.II sah.
+    // ponytail: dulu hanya `indicatorNo` -- menolak seluruh set yang punya sub-indikator.
+    const nomorTerpakai = new Set<string>();
     for (const k of dto.criteria) {
-      if (nomorTerpakai.has(k.indicatorNo)) {
+      const kunci = `${k.indicatorNo}|${k.subNo ?? ''}`;
+      if (nomorTerpakai.has(kunci)) {
         throw new BadRequestException(
-          `Nomor indikator ${k.indicatorNo} dipakai lebih dari satu kriteria dalam daftar ini.`,
+          `Nomor indikator ${k.indicatorNo}${k.subNo ? ` (sub ${k.subNo})` : ''} dipakai lebih dari satu kriteria dalam daftar ini.`,
         );
       }
-      nomorTerpakai.add(k.indicatorNo);
+      nomorTerpakai.add(kunci);
     }
 
     return this.prisma.$transaction(async (tx) => {
       return this.tenantContext.runInManagedTransaction(async () => {
         await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+        // Ingat grup hierarki tiap kriteria sebelum dihapus: payload tidak membawa group_id, jadi tanpa ini
+        // setiap penyuntingan lewat UI memutus kriteria dari induknya (kelompok > kriteria > IKU).
+        const grupLama = new Map(
+          (
+            await tx.rubricCriterion.findMany({
+              where: { accreditationSetId: id },
+              select: { indicatorNo: true, subNo: true, groupId: true },
+            })
+          ).map((c) => [`${c.indicatorNo}|${c.subNo ?? ''}`, c.groupId]),
+        );
         await tx.rubricCriterion.deleteMany({
           where: { accreditationSetId: id },
         });
@@ -300,6 +386,8 @@ export class AccreditationSetService {
             data: {
               accreditationSetId: id,
               indicatorNo: k.indicatorNo,
+              subNo: k.subNo || null,
+              groupId: grupLama.get(`${k.indicatorNo}|${k.subNo ?? ''}`) ?? null,
               criterionCode: k.criterionCode,
               criterionGroup: k.criterionGroup,
               description: k.description,
@@ -326,7 +414,7 @@ export class AccreditationSetService {
           include: {
             criteria: {
               include: CRITERION_INCLUDE,
-              orderBy: { indicatorNo: 'asc' },
+              orderBy: [{ indicatorNo: 'asc' }, { subNo: 'asc' }],
             },
           },
         });
@@ -348,6 +436,11 @@ export class AccreditationSetService {
 
   /** Mengosongkan satu slot acuan -- accreditation-set.repository.ts::removeDocument. No-op kalau slotnya memang sudah kosong. */
   async removeDocument(id: string, type: TipePanduan) {
+    if (type === TipePanduan.PANDUAN_LAM) {
+      throw new BadRequestException(
+        'Panduan Penulisan sekarang reusable antar Set -- pakai DELETE /accreditation-sets/:id/panduan.',
+      );
+    }
     const { tenantId } = this.tenantContext.getOrThrow();
     await this.requireUnlocked(id, tenantId);
 
@@ -357,15 +450,21 @@ export class AccreditationSetService {
   }
 
   /**
-   * Menyimpan metadata + berkas satu slot acuan (PANDUAN_LAM/TEMPLATE_LKPS/
-   * DOKUMEN_RUBRIK) ke ReferenceGuide -- fileKey sudah sampai di R2 lewat
-   * presigned PUT sebelum ini dipanggil, sama seperti BuktiDukungService.create.
+   * Menyimpan metadata + berkas satu slot acuan (TEMPLATE_LKPS/DOKUMEN_RUBRIK
+   * -- PANDUAN_LAM ditolak, lihat uploadPanduan/attachPanduan) ke
+   * ReferenceGuide -- fileKey sudah sampai di R2 lewat presigned PUT sebelum
+   * ini dipanggil, sama seperti BuktiDukungService.create.
    */
   async attachDocument(
     id: string,
     type: TipePanduan,
     dto: AttachSetDocumentDto,
   ) {
+    if (type === TipePanduan.PANDUAN_LAM) {
+      throw new BadRequestException(
+        'Panduan Penulisan sekarang reusable antar Set -- pakai POST /panduan (baru) atau PATCH /accreditation-sets/:id/panduan (pilih existing).',
+      );
+    }
     const { tenantId, userId } = this.tenantContext.getOrThrow();
     const set = await this.prisma.accreditationSet.findFirst({
       where: { id, tenantId },
@@ -374,7 +473,7 @@ export class AccreditationSetService {
 
     await this.requireUnlocked(id, tenantId);
 
-    const { sizeBytes } = await this.storage.headObject(dto.fileKey);
+    const { sizeBytes } = await this.headTenantObject(tenantId, dto.fileKey);
     const originalFileName = extractFileNameFromKey(dto.fileKey);
     const fileType = (originalFileName.split('.').pop() ?? '').toLowerCase();
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
@@ -397,6 +496,7 @@ export class AccreditationSetService {
         })
       : await this.prisma.referenceGuide.create({
           data: {
+            tenantId,
             accreditationSetId: id,
             type,
             title: dto.title,
@@ -424,46 +524,266 @@ export class AccreditationSetService {
       });
     }
 
-    // PANDUAN_LAM = dokumen Panduan Penulisan LED -- sumber struktur bab/sub-bab
-    // resmi (worker.py::_handle_ingestion_struktur_dokumen), dipakai menstempel
-    // DocumentChapter dokumen LED baru + konteks tambahan outline section.
-    if (type === TipePanduan.PANDUAN_LAM) {
-      await this.prisma.accreditationSet.update({
-        where: { id },
-        data: {
-          structureParseStatus: StatusEkstraksi.DIPROSES,
-          structureParseError: null,
-        },
-      });
-      await this.jobsService.enqueue(JobType.INGESTION_STRUKTUR_DOKUMEN, {
-        accreditationSetId: id,
-        fileUrl: dto.fileKey,
-      });
-    }
-
     return saved;
   }
 
-  /** Struktur bab/sub-bab resmi set ini (worker.py::_handle_ingestion_struktur_dokumen) -- kosong kalau belum pernah diekstrak. */
+  /** Semua Panduan Penulisan tenant ini -- dropdown "pilih existing" saat
+   * pasang ke Set, dan daftar utk kartu Panduan. jumlahSetPemakai dipakai FE
+   * sebagai peringatan sebelum replacePanduan ("akan mempengaruhi N Set
+   * lain"), bukan endpoint terpisah. */
+  async listPanduan() {
+    const { tenantId } = this.tenantContext.getOrThrow();
+    const panduan = await this.prisma.referenceGuide.findMany({
+      where: { tenantId, type: TipePanduan.PANDUAN_LAM },
+      orderBy: { createdAt: 'desc' },
+      include: { _count: { select: { chapterTemplates: true, usedBySets: true } } },
+    });
+    return panduan.map((p) => ({
+      id: p.id,
+      title: p.title,
+      structureParseStatus: p.structureParseStatus,
+      structureParseError: p.structureParseError,
+      createdAt: p.createdAt,
+      jumlahBab: p._count.chapterTemplates,
+      jumlahSetPemakai: p._count.usedBySets,
+    }));
+  }
+
+  /** Panduan yang tidak dipakai Set manapun lagi (mis. semua Set-nya dihapus)
+   * jadi orphan permanen tanpa ini -- panduanId.onDelete: SetNull sengaja
+   * cuma melepas tautan Set, tidak pernah menghapus baris Panduan-nya
+   * sendiri (lihat listPanduan). Ditolak selama masih dipakai >=1 Set -- FE
+   * menampilkan jumlahSetPemakai (dari listPanduan) supaya tombol hapus
+   * disabled duluan, bukan menunggu error ini. ChapterTemplate/GuideDetail
+   * ikut kehapus lewat onDelete: Cascade di schema, tidak perlu manual. */
+  async deletePanduan(id: string) {
+    const { tenantId } = this.tenantContext.getOrThrow();
+    const panduan = await this.prisma.referenceGuide.findFirst({
+      where: { id, tenantId, type: TipePanduan.PANDUAN_LAM },
+      include: { _count: { select: { usedBySets: true } } },
+    });
+    if (!panduan) throw new NotFoundException('Panduan tidak ditemukan');
+    if (panduan._count.usedBySets > 0) {
+      throw new ConflictException(
+        `Panduan ini masih dipakai ${panduan._count.usedBySets} Set Akreditasi, tidak bisa dihapus`,
+      );
+    }
+
+    await this.prisma.referenceGuide.delete({ where: { id } });
+    try {
+      await this.storage.deleteObject(panduan.fileUrl);
+    } catch {
+      // Object already gone (or a pre-R2 row) — not a reason to fail the row delete.
+    }
+  }
+
+  /** R2 key must sit under this tenant's prefix -- otherwise a leaked key would ingest (and later delete) another tenant's file. */
+  private headTenantObject(tenantId: string, fileKey: string) {
+    if (!fileKey.startsWith(`${tenantId}/`)) {
+      throw new ForbiddenException('fileKey ini bukan milik tenant Anda');
+    }
+    return this.storage.headObject(fileKey);
+  }
+
+  /** Upload Panduan BARU (mode "Baru" dimas, `57a55b0`) -- tenant-scoped,
+   * belum terpasang ke Set manapun sampai attachPanduan dipanggil terpisah
+   * (FE: upload lalu langsung attach ke Set yang sedang dibuka). */
+  async uploadPanduan(dto: UploadPanduanDto) {
+    const { tenantId, userId } = this.tenantContext.getOrThrow();
+    const { sizeBytes } = await this.headTenantObject(tenantId, dto.fileKey);
+    const fileType = (extractFileNameFromKey(dto.fileKey).split('.').pop() ?? '').toLowerCase();
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+
+    const panduan = await this.prisma.referenceGuide.create({
+      data: {
+        tenantId,
+        type: TipePanduan.PANDUAN_LAM,
+        title: dto.title,
+        fileUrl: dto.fileKey,
+        fileType,
+        sizeBytes,
+        uploadedByUserId: userId,
+        uploadedByName: user.fullName,
+        structureParseStatus: StatusEkstraksi.DIPROSES,
+      },
+    });
+    await this.jobsService.enqueue(JobType.INGESTION_STRUKTUR_DOKUMEN, {
+      guideId: panduan.id,
+      fileUrl: dto.fileKey,
+    });
+    return panduan;
+  }
+
+  /** Re-upload KE Panduan yang sudah ada (mode "Replace" dimas) -- wipe +
+   * re-extract, SEMUA Set yang menunjuknya (AccreditationSet.panduanId)
+   * otomatis ikut struktur baru begitu di-confirm ulang. FE menampilkan
+   * jumlahSetPemakai (dari listPanduan) sebagai peringatan sebelum memanggil ini. */
+  async replacePanduan(panduanId: string, dto: UploadPanduanDto) {
+    const { tenantId, userId } = this.tenantContext.getOrThrow();
+    const existing = await this.prisma.referenceGuide.findFirst({
+      where: { id: panduanId, tenantId, type: TipePanduan.PANDUAN_LAM },
+    });
+    if (!existing) throw new NotFoundException('Panduan tidak ditemukan');
+
+    const { sizeBytes } = await this.headTenantObject(tenantId, dto.fileKey);
+    const fileType = (extractFileNameFromKey(dto.fileKey).split('.').pop() ?? '').toLowerCase();
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+
+    const panduan = await this.prisma.referenceGuide.update({
+      where: { id: panduanId },
+      data: {
+        title: dto.title,
+        fileUrl: dto.fileKey,
+        fileType,
+        sizeBytes,
+        uploadedByUserId: userId,
+        uploadedByName: user.fullName,
+        structureParseStatus: StatusEkstraksi.DIPROSES,
+        structureParseError: null,
+      },
+    });
+    await this.jobsService.enqueue(JobType.INGESTION_STRUKTUR_DOKUMEN, {
+      guideId: panduan.id,
+      fileUrl: dto.fileKey,
+    });
+    return panduan;
+  }
+
+  /** Pasang Panduan (baru diupload ATAU sudah ada) ke Set ini -- pengganti
+   * attachDocument(PANDUAN_LAM) lama sekarang Panduan jadi entitas sendiri,
+   * bukan slot ReferenceGuide milik satu Set. */
+  async attachPanduan(id: string, dto: AttachPanduanDto) {
+    const { tenantId } = this.tenantContext.getOrThrow();
+    await this.requireUnlocked(id, tenantId);
+
+    const panduan = await this.prisma.referenceGuide.findFirst({
+      where: { id: dto.panduanId, tenantId, type: TipePanduan.PANDUAN_LAM },
+    });
+    if (!panduan) throw new NotFoundException('Panduan tidak ditemukan');
+
+    return this.prisma.accreditationSet.update({
+      where: { id },
+      data: { panduanId: panduan.id },
+    });
+  }
+
+  /** Lepas Panduan dari Set ini -- TIDAK menghapus baris Panduan-nya sendiri
+   * (Set lain masih boleh memakainya), cuma nol-in pointer-nya. Pengganti
+   * removeDocument(id, 'PANDUAN_LAM') lama. */
+  async detachPanduan(id: string) {
+    const { tenantId } = this.tenantContext.getOrThrow();
+    await this.requireUnlocked(id, tenantId);
+    await this.prisma.accreditationSet.update({
+      where: { id },
+      data: { panduanId: null },
+    });
+  }
+
+  /** gap: nyala/matiin 1 sub-bab yang SUDAH commit dari outline BARU, tanpa
+   * re-extract seluruh Panduan (lihat SubBabTemplate.isActive). Prisma
+   * langsung, bukan proxy ke apps/ai -- toggle boolean murni, tidak ada
+   * ekstraksi/LLM yang butuh Python. SubBabTemplate tidak punya tenantId
+   * langsung, jadi isolasi tenant dicek lewat rantai
+   * chapterTemplate->guide->tenantId. */
+  async toggleSection(subBabId: string, dto: ToggleSectionDto) {
+    const { tenantId } = this.tenantContext.getOrThrow();
+    const subBab = await this.prisma.subBabTemplate.findFirst({
+      where: { id: subBabId, chapterTemplate: { guide: { tenantId } } },
+    });
+    if (!subBab) throw new NotFoundException('Sub-bab tidak ditemukan');
+
+    return this.prisma.subBabTemplate.update({
+      where: { id: subBabId },
+      data: { isActive: dto.isActive },
+    });
+  }
+
+  /** Struktur bab/sub-bab resmi Panduan yang dipasang ke set ini
+   * (worker.py::_handle_ingestion_struktur_dokumen) -- [] kalau set belum
+   * punya Panduan terpasang, atau Panduan-nya belum pernah diekstrak. */
   async findChapterTemplates(id: string) {
     const { tenantId } = this.tenantContext.getOrThrow();
     const set = await this.prisma.accreditationSet.findFirst({
       where: { id, tenantId },
     });
     if (!set) throw new NotFoundException('Set akreditasi tidak ditemukan');
+    if (!set.panduanId) return [];
 
-    return this.prisma.chapterTemplate.findMany({
-      where: { accreditationSetId: id },
+    const templates = await this.prisma.chapterTemplate.findMany({
+      where: { guideId: set.panduanId },
       orderBy: { order: 'asc' },
-      include: {
-        // Cuma sub-bab teratas (parentId null) di sini -- anaknya (sub-sub-bab)
-        // ikut lewat `children`, satu tingkat, sama seperti schema.prisma.
-        subBab: {
-          where: { parentId: null },
-          orderBy: { order: 'asc' },
-          include: { children: { orderBy: { order: 'asc' } } },
-        },
-      },
+      include: { subBab: { orderBy: { order: 'asc' } } },
     });
+    // Nested to any depth (dimas: every Panduan node is a section) -- `subBab` = top level, rest via `children`.
+    return templates.map(({ subBab, ...template }) => {
+      type Node = (typeof subBab)[number] & { children: Node[] };
+      const byParent = new Map<string | null, Node[]>();
+      for (const row of subBab) {
+        const node: Node = { ...row, children: [] };
+        byParent.set(row.parentId, [...(byParent.get(row.parentId) ?? []), node]);
+      }
+      const attach = (nodes: Node[]): Node[] =>
+        nodes.map((node) => ({ ...node, children: attach(byParent.get(node.id) ?? []) }));
+      return { ...template, subBab: attach(byParent.get(null) ?? []) };
+    });
+  }
+
+  /** Proxy ke apps/ai's GET /structure/:guideId/preview, diresolve dari
+   * Panduan yang terpasang ke set ini (set.panduanId) -- pohon bab/sub-bab
+   * hasil ekstraksi MENUNGGU_KONFIRMASI (belum di-commit), atau struktur
+   * yang sudah commit kalau tidak sedang menunggu. Modal "Pilih Struktur
+   * Pedoman" di frontend baca dari sini, bukan dari findChapterTemplates. */
+  async previewStructure(id: string) {
+    const { tenantId } = this.tenantContext.getOrThrow();
+    const set = await this.prisma.accreditationSet.findFirst({ where: { id, tenantId } });
+    if (!set) throw new NotFoundException('Set akreditasi tidak ditemukan');
+    if (!set.panduanId) {
+      throw new BadRequestException('Set ini belum punya Panduan Penulisan terpasang');
+    }
+
+    const aiServiceUrl = requireEnv('AI_SERVICE_URL');
+    let upstream: globalThis.Response;
+    try {
+      upstream = await fetch(`${aiServiceUrl}/structure/${set.panduanId}/preview`);
+    } catch {
+      throw new BadGatewayException('AI service tidak dapat dihubungi');
+    }
+    if (!upstream.ok) {
+      throw new BadGatewayException('Gagal memuat preview struktur');
+    }
+    return upstream.json();
+  }
+
+  /** Proxy ke apps/ai's POST /structure/:guideId/confirm, diresolve dari
+   * set.panduanId -- commit HANYA node yang tercentang di modal ke
+   * ChapterTemplate/SubBabTemplate (milik Panduan itu, jadi berlaku utk
+   * semua Set lain yang menunjuknya juga); sisanya dibuang permanen
+   * (apps/ai/db/postgres_client.py::confirm_structure_staging). */
+  async confirmStructure(id: string, dto: ConfirmStructureDto) {
+    const { tenantId } = this.tenantContext.getOrThrow();
+    const set = await this.prisma.accreditationSet.findFirst({ where: { id, tenantId } });
+    if (!set) throw new NotFoundException('Set akreditasi tidak ditemukan');
+    if (!set.panduanId) {
+      throw new BadRequestException('Set ini belum punya Panduan Penulisan terpasang');
+    }
+
+    const aiServiceUrl = requireEnv('AI_SERVICE_URL');
+    let upstream: globalThis.Response;
+    try {
+      upstream = await fetch(`${aiServiceUrl}/structure/${set.panduanId}/confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accepted_ids: dto.acceptedIds }),
+      });
+    } catch {
+      throw new BadGatewayException('AI service tidak dapat dihubungi');
+    }
+    if (upstream.status === 409) {
+      throw new ConflictException('Struktur ini tidak sedang menunggu konfirmasi');
+    }
+    if (!upstream.ok) {
+      throw new BadGatewayException('Gagal menyimpan konfirmasi struktur');
+    }
+    return upstream.json();
   }
 }

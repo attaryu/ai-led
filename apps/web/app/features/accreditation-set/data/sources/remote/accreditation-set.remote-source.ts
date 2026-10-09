@@ -9,8 +9,16 @@ export type BackendSetStatus = 'DRAF' | 'SIAP';
 /** Nilai `StatusEkstraksi` Prisma -- dipakai ulang dari pipeline bukti dukung. */
 export type BackendCriteriaParseStatus = 'MENUNGGU' | 'DIPROSES' | 'SIAP' | 'GAGAL';
 
-/** Nilai `TipePanduan` Prisma -- sama dengan `SetDocumentType` frontend. */
-export type BackendDocumentType = 'DOKUMEN_RUBRIK' | 'PANDUAN_LAM';
+/**
+ * `StatusEkstraksi` Prisma juga, tapi hanya structureParseStatus pernah
+ * benar-benar bernilai MENUNGGU_KONFIRMASI -- ekstraksi PANDUAN_LAM berhenti
+ * dulu menunggu review user, criteriaParseStatus (DOKUMEN_RUBRIK) tidak
+ * pernah lewat tahap itu, jadi typenya sengaja tidak disatukan.
+ */
+export type BackendStructureParseStatus = BackendCriteriaParseStatus | 'MENUNGGU_KONFIRMASI';
+
+/** Nilai `TipePanduan` Prisma yang masih lewat slot `documents` 1:1 -- sama dengan `SetDocumentType` frontend (PANDUAN_LAM pindah ke endpoint /panduan, reusable). */
+export type BackendDocumentType = 'DOKUMEN_RUBRIK';
 
 export type BackendRubricLevel = {
 	id: string;
@@ -30,6 +38,8 @@ export type BackendRubricCriterion = {
 	id: string;
 	accreditationSetId: string;
 	indicatorNo: number;
+	/** Sub-indikator ("I", "II", ...); `null` = tanpa sub. */
+	subNo?: string | null;
 	criterionCode: string;
 	criterionGroup: string;
 	description: string;
@@ -55,6 +65,26 @@ export type BackendReferenceGuide = {
 	createdAt: string;
 };
 
+/** Panduan Penulisan (ReferenceGuide type=PANDUAN_LAM) -- baris `AccreditationSet.panduan`
+ * penuh (findById) atau ringkas (findAll, cuma id+title). */
+export type BackendSetPanduan = {
+	id: string;
+	title: string;
+	structureParseStatus?: BackendStructureParseStatus;
+	structureParseError?: string | null;
+};
+
+/** `GET /panduan` -- daftar Panduan tenant ini, lengkap dgn hitungan pemakaian. */
+export type BackendPanduanListItem = {
+	id: string;
+	title: string;
+	structureParseStatus: BackendStructureParseStatus;
+	structureParseError: string | null;
+	createdAt: string;
+	jumlahBab: number;
+	jumlahSetPemakai: number;
+};
+
 /** Baris Prisma `AccreditationSet` polos, seperti dikembalikan create/update/markReady. */
 export type BackendAccreditationSet = {
 	id: string;
@@ -65,9 +95,7 @@ export type BackendAccreditationSet = {
 	status: BackendSetStatus;
 	criteriaParseStatus: BackendCriteriaParseStatus;
 	criteriaParseError: string | null;
-	/** Status ekstraksi struktur bab/sub-bab dari PANDUAN_LAM -- worker.py::_handle_ingestion_struktur_dokumen. */
-	structureParseStatus: BackendCriteriaParseStatus;
-	structureParseError: string | null;
+	panduanId: string | null;
 	createdAt: string;
 	updatedAt: string;
 };
@@ -79,23 +107,51 @@ export type BackendSubBabTemplate = {
 	parentId: string | null;
 	order: number;
 	title: string;
+	/** Penomoran asli Panduan ("C.1", "a)") -- dimas marker. */
+	marker: string | null;
 	guidance: string;
-	/** Cuma ada di sub-bab teratas (`parentId: null`) -- lihat accreditation-set.service.ts::findChapterTemplates. */
+	/** Toggle gap #2 -- matiin 1 sub-bab dari outline BARU tanpa re-extract, lihat panduan.controller.ts::toggleSection. */
+	isActive: boolean;
+	/** Anak bersarang sedalam apa pun -- accreditation-set.service.ts::findChapterTemplates. */
 	children?: BackendSubBabTemplate[];
 };
 
 /** Baris Prisma `ChapterTemplate`, dengan `subBab` disertakan -- `GET /accreditation-sets/:id/chapter-templates`. */
 export type BackendChapterTemplate = {
 	id: string;
-	accreditationSetId: string;
+	guideId: string;
 	order: number;
 	title: string;
+	/** Teks pengantar BAB (dimas: isi_teks baris BAB), `null` bila tidak ada. */
+	guidance?: string | null;
 	subBab: BackendSubBabTemplate[];
+};
+
+/** Satu node dari `GET /accreditation-sets/:id/structure/preview` -- lihat apps/ai's StructureNode (Pydantic). */
+export type BackendStructureNode = {
+	id: string;
+	parent_id: string | null;
+	/** 1 = BAB, lalu sedalam apa pun (tiap node Panduan jadi section, seperti dimas). */
+	level: number;
+	order: number;
+	title: string;
+	marker?: string | null;
+	guidance: string | null;
+	lkps_needed?: boolean;
+	lkps_list?: string[];
+	/** gap #2 -- cuma berarti utk node yang sudah commit, lihat structure.py::StructureNode. */
+	is_active: boolean;
+};
+
+export type BackendStructurePreview = {
+	status: string;
+	nodes: BackendStructureNode[];
 };
 
 /** `GET /accreditation-sets` -- documents dipangkas ke `type`, criteria ke hitungannya (accreditation-set.service.ts::findAll). */
 export type BackendAccreditationSetListItem = BackendAccreditationSet & {
 	documents: { type: BackendDocumentType }[];
+	panduan: { id: string; title: string } | null;
 	_count: { criteria: number };
 };
 
@@ -103,6 +159,7 @@ export type BackendAccreditationSetListItem = BackendAccreditationSet & {
 export type BackendAccreditationSetDetail = BackendAccreditationSet & {
 	criteria: BackendRubricCriterion[];
 	documents: BackendReferenceGuide[];
+	panduan: BackendSetPanduan | null;
 	dipakaiProyek: number;
 };
 
@@ -110,6 +167,7 @@ export type BackendAccreditationSetDetail = BackendAccreditationSet & {
 export type BackendAccreditationSetWithCriteria = BackendAccreditationSet & {
 	criteria: BackendRubricCriterion[];
 	documents?: BackendReferenceGuide[];
+	panduan?: BackendSetPanduan | null;
 };
 
 export type CreateAccreditationSetPayload = {
@@ -124,6 +182,8 @@ export type UpdateAccreditationSetPayload = Partial<CreateAccreditationSetPayloa
 
 export type UpsertCriterionPayload = {
 	indicatorNo: number;
+	/** Sub-indikator; kosong = tanpa sub. */
+	subNo?: string;
 	criterionCode: string;
 	criterionGroup: string;
 	description: string;
@@ -220,5 +280,65 @@ export const accreditationSetRemoteSource = {
 	/** Struktur bab/sub-bab resmi set ini -- kosong kalau belum pernah diekstrak. */
 	findChapterTemplates(id: string): Promise<BackendChapterTemplate[]> {
 		return apiFetch<BackendChapterTemplate[]>(`/accreditation-sets/${id}/chapter-templates`);
+	},
+
+	/** Pohon staged (MENUNGGU_KONFIRMASI) atau, kalau sudah commit, struktur nyata -- modal "Pilih Struktur Pedoman". */
+	previewStructure(id: string): Promise<BackendStructurePreview> {
+		return apiFetch<BackendStructurePreview>(`/accreditation-sets/${id}/structure/preview`);
+	},
+
+	/** Commit HANYA node yang tercentang; sisanya dibuang permanen. */
+	confirmStructure(id: string, acceptedIds: string[]): Promise<{ guideId: string; count: number }> {
+		return apiFetch<{ guideId: string; count: number }>(
+			`/accreditation-sets/${id}/structure/confirm`,
+			{ method: 'POST', body: { acceptedIds } },
+		);
+	},
+
+	/** Pasang Panduan (baru diunggah ATAU sudah ada) ke set ini. */
+	attachPanduan(id: string, panduanId: string): Promise<BackendAccreditationSet> {
+		return apiFetch<BackendAccreditationSet>(`/accreditation-sets/${id}/panduan`, {
+			method: 'PATCH',
+			body: { panduanId },
+		});
+	},
+
+	/** Lepas Panduan dari set ini -- baris Panduan-nya sendiri tidak ikut terhapus. */
+	detachPanduan(id: string): Promise<void> {
+		return apiFetch<void>(`/accreditation-sets/${id}/panduan`, { method: 'DELETE' });
+	},
+
+	/** Semua Panduan tenant ini -- dropdown "pilih existing". */
+	listPanduan(): Promise<BackendPanduanListItem[]> {
+		return apiFetch<BackendPanduanListItem[]>('/panduan');
+	},
+
+	/** Upload Panduan BARU (tenant-scoped, belum terpasang ke set manapun). */
+	uploadPanduan(payload: { fileKey: string; title: string }): Promise<BackendPanduanListItem> {
+		return apiFetch<BackendPanduanListItem>('/panduan', { method: 'POST', body: payload });
+	},
+
+	/** Re-upload KE Panduan yang sudah ada -- wipe+re-extract, mempengaruhi semua set yang menunjuknya. */
+	replacePanduan(
+		panduanId: string,
+		payload: { fileKey: string; title: string },
+	): Promise<BackendPanduanListItem> {
+		return apiFetch<BackendPanduanListItem>(`/panduan/${panduanId}/replace`, {
+			method: 'POST',
+			body: payload,
+		});
+	},
+
+	/** gap #2: nyala/matiin 1 sub-bab yang sudah commit dari outline baru. */
+	toggleSection(subBabId: string, isActive: boolean): Promise<BackendSubBabTemplate> {
+		return apiFetch<BackendSubBabTemplate>(`/panduan/sections/${subBabId}`, {
+			method: 'PATCH',
+			body: { isActive },
+		});
+	},
+
+	/** Hapus Panduan permanen -- backend menolak (409) kalau masih dipakai Set manapun. */
+	deletePanduan(panduanId: string): Promise<void> {
+		return apiFetch<void>(`/panduan/${panduanId}`, { method: 'DELETE' });
 	},
 };

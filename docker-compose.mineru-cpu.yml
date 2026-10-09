@@ -1,0 +1,27 @@
+# SELURUH aplikasi (web, backend, database, AI, ...) dengan MinerU di CPU (mode `local`, tanpa GPU untuk MinerU).
+#
+#   docker compose -f docker-compose.mineru-cpu.yml up -d --build
+#
+# Tidak perlu menjalankan `docker compose up` biasa dulu: berkas ini memuat compose/base.yml (layanan bersama) lalu hanya
+# menimpa bagian MinerU (compose/mineru-cpu.override.yml): image tanpa torch/CUDA (apps/mineru/Dockerfile.cpu)
+# dan MINERU_DEVICE_MODE=cpu. `ai` dan `ai-worker` JUGA tanpa GPU (embedding di CPU), jadi varian ini jalan di mesin tanpa NVIDIA.
+#
+# Model: varian CPU memakai set ONNX (MinerU-4_models_onnx), BERBEDA dari folder torch milik varian GPU. Tanpa
+# model itu container tetap hidup, tapi mode lokal tidak aktif dan /health melaporkan
+# local_parse_server_healthy=false. Unduh SEKALI setelah container berjalan, lalu mulai ulang `mineru`:
+#   docker compose -f docker-compose.mineru-cpu.yml exec mineru mineru-kit models download --tier basic
+#   docker compose -f docker-compose.mineru-cpu.yml restart mineru
+# (Belum pernah dijalankan end-to-end di sini -- hanya image dan gateway-nya yang terbukti naik.)
+#
+# Nama proyek SAMA dengan stack utama (volume database dan model dipakai ulang). Jangan jalankan berkas varian
+# lain bersamaan: semuanya memakai satu service `mineru` dan port 8100.
+name: ai-led-dev-v2
+
+include:
+  - path:
+      - compose/base.yml
+      - compose/mineru-cpu.override.yml
+    # Path relatif di base.yml (./apps/ai, ./models, apps/*/.env) dihitung dari root proyek, bukan folder compose/.
+    project_directory: .
+    # VARIAN=cpu -> nama container ai-led-dev-v2-<service>-cpu (lihat container_name di compose/base.yml)
+    env_file: compose/varian-cpu.env

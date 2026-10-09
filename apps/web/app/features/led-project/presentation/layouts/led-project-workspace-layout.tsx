@@ -7,7 +7,7 @@ import {
 import { Navigate, Outlet, useParams } from 'react-router';
 
 import { AppShell, type AppShellBreadcrumb } from '~/core/components/app-shell';
-import { PlaceholderPage } from '~/core/components/placeholder-page';
+import { LoadFailedPage, PlaceholderPage } from '~/core/components/placeholder-page';
 import {
 	canAccessTenant,
 	useRoleGuard,
@@ -32,6 +32,7 @@ export function LedProjectWorkspaceLayout() {
 		LedProjectEntity | null | undefined
 	>(undefined);
 
+	const [gagalMuat, setGagalMuat] = React.useState(false);
 	React.useEffect(() => {
 		if (!projectId) {
 			setLedProject(null);
@@ -39,15 +40,23 @@ export function LedProjectWorkspaceLayout() {
 		}
 		setLedProject(undefined);
 		let cancelled = false;
-		ledProjectRepository.findById(projectId).then((found) => {
-			if (!cancelled) setLedProject(found ?? null);
-		});
+		setGagalMuat(false);
+		ledProjectRepository
+			.findById(projectId)
+			.then((found) => {
+				if (!cancelled) setLedProject(found ?? null);
+			})
+			.catch(() => {
+				if (!cancelled) setGagalMuat(true);
+			});
 		return () => {
 			cancelled = true;
 		};
 	}, [projectId]);
 
 	const guard = useRoleGuard('project', ledProject?.studyProgramId);
+
+	if (gagalMuat) return <LoadFailedPage />;
 
 	if (guard.status === 'pending' || ledProject === undefined) {
 		return (

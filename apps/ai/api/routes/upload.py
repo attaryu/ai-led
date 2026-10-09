@@ -22,6 +22,7 @@ import asyncio
 import logging
 import os
 import re
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, UploadFile
@@ -349,6 +350,8 @@ async def upload_lkps(
         set_lkps_registry(tenant_id, dokumen_id, registry)
         return registry
 
+    # Assessment only (ariel LKPSRegistry). The writing index (dimas chunks) is built per LKPS file by
+    # INGESTION_LKPS when an LKPS is uploaded through the product (backend /bukti-dukung kind=LKPS).
     registry = await asyncio.get_event_loop().run_in_executor(None, _load_and_inject, path)
 
     all_sheets = len(registry.sheets)

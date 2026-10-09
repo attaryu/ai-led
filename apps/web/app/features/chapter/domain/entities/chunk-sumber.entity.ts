@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { type RagasScore } from './ragas-score.entity';
+
 /**
  * Satu chunk (potongan sumber) yang benar-benar dipakai AI menyusun SATU
  * section — backing citation hover-card di editor (klik/hover "(sumber: X)"
@@ -14,7 +16,14 @@ import { z } from 'zod';
 export const chunkSumberSchema = z.object({
 	label: z.string(),
 	teks: z.string(),
-	jenis: z.enum(['led', 'evidence']),
+	/** `lkps` = sheet LKPS yang dipakai (dimas Referensi: LKPS per sheet + evidence). */
+	jenis: z.enum(['led', 'evidence', 'lkps']),
+	/** R2 object key (`EvidenceEntity.fileUrl`) -- `null` utk chunk LED atau evidence yang sudah dihapus. Dipakai hover-card utk tombol "Buka berkas". */
+	fileUrl: z.string().nullable(),
+	/** Id bukti dukung asal chunk evidence; `null` utk chunk LED. */
+	buktiDukungId: z.string().nullable(),
+	/** Judul bagian/heading chunk (tab Bukti); `null` bila tidak dicatat. */
+	bagian: z.string().nullable().optional(),
 });
 export type ChunkSumberEntity = z.infer<typeof chunkSumberSchema>;
 
@@ -26,4 +35,16 @@ export type ChunkSumberEntity = z.infer<typeof chunkSumberSchema>;
 export type SectionSumber = {
 	chunks: ChunkSumberEntity[];
 	digenerateAt: string;
+	/** Bukti dukung yang dipilih saat generate itu. */
+	selectedEvidenceIds: string[];
+	/** Judge milik generate section ini (dimas: Kualitas per section); `null` bila judge gagal/tidak ada. */
+	ragas: RagasScore | null;
+	judgeError: string | null;
+	/** `true` = skor RAGAS belum selesai dihitung (penilaian susulan masih berjalan atau tidak selesai). */
+	judgeTertunda: boolean;
+	/** Butir checklist pencarian fakta generate terakhir (yang dipakai retrieval); kosong bila tahapnya gagal. */
+	checklist: string[];
+	checklistError: string | null;
+	model: string | null;
+	latensiDetik: number | null;
 } | null;

@@ -60,13 +60,14 @@ export class UsersService {
   }
 
   /** Admin + Pimpinan — daftar untuk halaman Manajemen Pengguna. */
-  findAll() {
+  async findAll() {
     const { tenantId } = this.tenantContext.getOrThrow();
-    return this.prisma.user.findMany({
+    const users = await this.prisma.user.findMany({
       where: { tenantId },
       orderBy: { createdAt: 'desc' },
       include: { studyProgram: { select: { name: true } } },
     });
+    return users.map(toSafeUser);
   }
 
   /** PIMPINAN may only move a Penyusun to another prodi (§4.2); ADMIN can edit the full profile. */

@@ -27,6 +27,7 @@ from agent.tools.formula_tool import compute_formula_score
 from agent.tools.led_tool import search_led_evidence
 from agent.tools.lkps_tool import get_lkps_table
 from agent.tools.rubric_tool import get_indicator_rubric
+from ingestion.matrix_parser import sub_no_dari
 from llm.ollama_client import OllamaClient
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,13 @@ TOOLS = [
 ]
 
 _EMPTY_SOURCES: dict = {"led_chunks": [], "lkps_tables": [], "evidence_documents": []}
+
+
+def _effective_tools(disable_evidence: bool) -> list:
+    """TOOLS minus search_evidence_documents when disable_evidence=True (ariel 2f97285) -- used by both bind_tools and ToolNode."""
+    if not disable_evidence:
+        return TOOLS
+    return [t for t in TOOLS if t.name != "search_evidence_documents"]
 
 
 def _accumulate_sources(sources: dict, tool_name: str, args: dict, result_content: str) -> dict:
@@ -102,7 +110,7 @@ def is_reasoning_model(model_name: str) -> bool:
     return any(p in name_l for p in patterns)
 
 
-def build_graph_auto(ollama_client: OllamaClient):
+def build_graph_auto(ollama_client: OllamaClient, disable_evidence: bool = False):
     """Pick native or reasoning graph based on the active model name.
 
     ollama_client.model is the single source of truth for "which model is
@@ -112,12 +120,16 @@ def build_graph_auto(ollama_client: OllamaClient):
     instead of independently re-reading provider-specific env vars."""
     if is_reasoning_model(ollama_client.model):
         from agent.reasoning_graph import build_reasoning_graph
+        if disable_evidence:
+            return build_reasoning_graph(ollama_client, disable_evidence=True)
         return build_reasoning_graph(ollama_client)
 
+    if disable_evidence:
+        return build_graph(ollama_client, disable_evidence=True)
     return build_graph(ollama_client)
 
 
-def _build_llm(ollama_client: OllamaClient):
+def _build_llm(ollama_client: OllamaClient, disable_evidence: bool = False):
     """Return a tool-bound LangChain chat model.
 
     Provider is selected by LLM_PROVIDER env var (default: ollama):
@@ -130,6 +142,7 @@ def _build_llm(ollama_client: OllamaClient):
     create_ollama_client_from_env / get_available_models).
     """
     provider = os.environ.get("LLM_PROVIDER", "ollama").lower()
+    tools = _effective_tools(disable_evidence)
 
     if provider == "openrouter":
         from langchain_openai import ChatOpenAI
@@ -141,7 +154,7 @@ def _build_llm(ollama_client: OllamaClient):
                 model=ollama_client.model,
                 temperature=0.1,
             )
-            .bind_tools(TOOLS)
+            .bind_tools(tools)
             .with_retry(stop_after_attempt=3)
         )
 
@@ -166,9 +179,6 @@ def _build_llm(ollama_client: OllamaClient):
         # sessions run a few minutes apart — see llm/ollama_client.py.
         "keep_alive": os.environ.get("OLLAMA_KEEP_ALIVE", "30m"),
     }
-    # ollama_client.api_key already resolved ASSESSMENT_OLLAMA_API_KEY vs
-    # OLLAMA_API_KEY (llm/ollama_client.py::create_ollama_client_from_env) --
-    # re-reading OLLAMA_API_KEY here directly would silently ignore that.
     api_key = ollama_client.api_key
     if api_key and not api_key.startswith("<"):
         # Pass Bearer token to the underlying ollama Client
@@ -177,7 +187,7 @@ def _build_llm(ollama_client: OllamaClient):
     # Retry transient connection failures (e.g. connection reset mid-request
     # to the remote Ollama instance) instead of letting them propagate raw
     # into the indicator's error field with zero retry.
-    return ChatOllama(**kwargs).bind_tools(TOOLS).with_retry(stop_after_attempt=3)
+    return ChatOllama(**kwargs).bind_tools(tools).with_retry(stop_after_attempt=3)
 
 _SYSTEM_PROMPT = """Anda adalah AGEN OTONOM penilai akreditasi program studi (AMI).
 Anda BUKAN chatbot. Anda TIDAK bertanya balik ke user. Anda menyelesaikan
@@ -189,10 +199,12 @@ ALUR YANG WAJIB DIIKUTI per indikator:
    query WAJIB kaya konteks: masukkan nomor indikator + kata kunci konkret
    dari kriteria rubrik (bukan cuma topik umum seperti "visi misi"), supaya
    hasil pencarian semantik lebih relevan
-3. (Opsional) Panggil search_evidence_documents(query) untuk cek dokumen
-   Bukti Dukung (SK, sertifikat, MoU) yang sudah diunggah untuk prodi ini —
-   pakai ini untuk VERIFIKASI klaim LED terhadap sumber asli, bukan
-   pengganti search_led_evidence. Hasil kosong itu normal, lanjutkan tanpa itu.
+3. (Opsional) Panggil search_evidence_documents(query) untuk
+   cek dokumen bukti pendukung (SK, sertifikat, MoU) yang sudah di-tag ke
+   indikator ini — pakai ini untuk VERIFIKASI klaim LED terhadap sumber
+   asli, bukan pengganti search_led_evidence. Kalau hasilnya kosong, itu
+   normal (belum tentu ada evidence untuk setiap indikator) — lanjutkan
+   tanpa itu.
 4. (Opsional) Panggil get_lkps_table(table_id) jika rubrik merujuk tabel LKPS
 5. (Opsional) Panggil compute_formula_score(...) jika rubrik berbasis formula
 6. Output skor final dengan format yang dijelaskan di bawah
@@ -561,16 +573,8 @@ def build_judge_llm():
     from langchain_ollama import ChatOllama
     from llm.ollama_client import pick_ollama_endpoint
 
-    # Falls back through ASSESSMENT_OLLAMA_BASE_URL (not OLLAMA_BASE_URL) --
-    # this judge scores ASSESSMENT output, which runs on the assessment
-    # server, not the writing one.
     judge_base_url = pick_ollama_endpoint(
-        os.environ.get(
-            "RAGAS_OLLAMA_BASE_URL",
-            os.environ.get(
-                "ASSESSMENT_OLLAMA_BASE_URL", os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-            ),
-        )
+        os.environ.get("RAGAS_OLLAMA_BASE_URL", os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"))
     )
     logger.info("Grounding judge using Ollama endpoint %s", judge_base_url)
 
@@ -584,23 +588,21 @@ def build_judge_llm():
         "num_predict": 2048,
         "keep_alive": os.environ.get("OLLAMA_KEEP_ALIVE", "30m"),
     }
-    api_key = os.environ.get(
-        "RAGAS_OLLAMA_API_KEY", os.environ.get("ASSESSMENT_OLLAMA_API_KEY", os.environ.get("OLLAMA_API_KEY"))
-    )
+    api_key = os.environ.get("RAGAS_OLLAMA_API_KEY", os.environ.get("OLLAMA_API_KEY"))
     if api_key and not api_key.startswith("<"):
         kwargs["client_kwargs"]["headers"] = {"Authorization": f"Bearer {api_key}"}
     return ChatOllama(**kwargs)
 
 
-def build_graph(ollama_client: OllamaClient) -> StateGraph:
+def build_graph(ollama_client: OllamaClient, disable_evidence: bool = False) -> StateGraph:
     """Compile and return the assessment LangGraph.
 
     The LLM provider is chosen via LLM_PROVIDER env var — see _build_llm().
     ollama_client is only used when LLM_PROVIDER=ollama (default).
     """
-    llm = _build_llm(ollama_client)
+    llm = _build_llm(ollama_client, disable_evidence=disable_evidence)
 
-    tool_node = ToolNode(TOOLS)
+    tool_node = ToolNode(_effective_tools(disable_evidence))
 
     def tools_node(state: AssessmentState) -> AssessmentState:
         """Run ToolNode, reattach its delta onto full history (no reducer, else LangGraph drops it), track sources_used."""
@@ -628,11 +630,15 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
         state["_checklist_built"] = True
         indicator = state["indicator_row"]
 
-        try:
-            evidence_raw = search_evidence_documents.invoke({"query": indicator.kriteria})
-            evidence_items = json.loads(evidence_raw)
-        except Exception:
-            evidence_items = []
+        # disable_evidence=True: skip the lookup entirely, as if nothing were tagged (ariel 2f97285).
+        evidence_raw = "[]"
+        evidence_items = []
+        if not disable_evidence:
+            try:
+                evidence_raw = search_evidence_documents.invoke({"query": indicator.kriteria})
+                evidence_items = json.loads(evidence_raw)
+            except Exception:
+                evidence_items = []
 
         if evidence_items:
             entities = sorted({item.get("entity") for item in evidence_items if item.get("entity")})
@@ -699,7 +705,8 @@ def build_graph(ollama_client: OllamaClient) -> StateGraph:
                 SystemMessage(content=_SYSTEM_PROMPT),
                 HumanMessage(
                     content=(
-                        f"Nilai indikator nomor {indicator.indicator_no}.\n"
+                        f"Nilai indikator nomor {indicator.indicator_no}"
+                        f"{(' (sub-indikator ' + sub_no_dari(indicator) + ')') if sub_no_dari(indicator) else ''}.\n"
                         f"Deskripsi: {indicator.kriteria}\n\n"
                         f"Mulai dengan memanggil get_indicator_rubric({indicator.indicator_no})"
                     )

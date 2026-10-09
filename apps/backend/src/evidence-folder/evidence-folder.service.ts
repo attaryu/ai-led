@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { OwnerTipe, Role } from '@ai-led/db';
+import { EvidenceKind, OwnerTipe, Role } from '@ai-led/db';
 import { PrismaService } from '../database/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { CreateEvidenceFolderDto } from './dto/create-evidence-folder.dto';
@@ -295,7 +295,7 @@ export class EvidenceFolderService {
       : null;
 
     const evidences = await this.prisma.evidence.findMany({
-      where: { id: { in: evidenceIds }, tenantId },
+      where: { id: { in: evidenceIds }, tenantId, kind: EvidenceKind.BUKTI_DUKUNG },
     });
     if (evidences.length !== evidenceIds.length) {
       throw new NotFoundException('Sebagian bukti dukung tidak ditemukan');

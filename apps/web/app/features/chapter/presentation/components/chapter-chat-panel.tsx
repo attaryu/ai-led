@@ -1,4 +1,5 @@
 import * as React from 'react';
+import Markdown from 'react-markdown';
 import {
 	PaperPlaneRightIcon,
 	SpinnerGapIcon,
@@ -11,6 +12,7 @@ import { Textarea } from '~/core/components/ui/textarea';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import { frasaBlokir, type ChapterPermission } from '../hooks/use-chapter-permission';
 import { useChapterChat } from '../hooks/use-chapter-chat';
+import { type HasilPulihSection } from '../hooks/use-section-draft';
 
 /**
  * Isi tab "Chat" (tracker row 33-34): merevisi bab lewat obrolan dengan AI,
@@ -21,13 +23,21 @@ import { useChapterChat } from '../hooks/use-chapter-chat';
  */
 export function ChapterChatPanel({
 	chapter,
+	sectionId,
 	izin,
+	onRevised,
 }: {
 	chapter: ChapterEntity;
+	sectionId: string | null;
 	izin: ChapterPermission;
+	onRevised: (hasil: HasilPulihSection) => void;
 }) {
-	const { pesan, memuat, input, setInput, kirim, mengirim, pesanGagal } =
-		useChapterChat({ babId: chapter.id, enabled: izin.canEdit });
+	const { pesan, memuat, input, setInput, kirim, mengirim, pesanGagal } = useChapterChat({
+		babId: chapter.id,
+		sectionId,
+		enabled: izin.canEdit && !!sectionId,
+		onRevised,
+	});
 
 	const scrollRef = React.useRef<HTMLDivElement>(null);
 	React.useEffect(() => {
@@ -71,7 +81,11 @@ export function ChapterChatPanel({
 					</div>
 				)}
 
-				{izin.canEdit ? (
+				{!sectionId ? (
+					<p className="text-xs leading-relaxed text-muted-foreground">
+						Buka salah satu section untuk mulai chat.
+					</p>
+				) : izin.canEdit ? (
 					<form onSubmit={kirimDariForm} className="flex items-end gap-2">
 						<Textarea
 							value={input}
@@ -130,12 +144,25 @@ function BubbleChat({
 						: 'max-w-[85%] rounded-lg bg-muted px-3 py-2 text-sm'
 				}
 			>
-				<p className="leading-relaxed whitespace-pre-wrap">
-					{baris.message}
-					{baris.streaming && (
-						<span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-current align-middle" />
-					)}
-				</p>
+				{dariUser ? (
+					<p className="leading-relaxed whitespace-pre-wrap">{baris.message}</p>
+				) : (
+					// react-markdown tidak merender HTML mentah dan menyaring URL berbahaya secara bawaan.
+					<div className="space-y-2 leading-relaxed [&_ol]:list-decimal [&_ol]:pl-5 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-background [&_pre]:p-2 [&_pre]:font-mono [&_pre]:text-xs [&_:not(pre)>code]:rounded [&_:not(pre)>code]:bg-background [&_:not(pre)>code]:px-1 [&_:not(pre)>code]:font-mono [&_:not(pre)>code]:text-xs [&_a]:underline [&_h1]:text-base [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:font-semibold [&_ul]:list-disc [&_ul]:pl-5">
+						<Markdown
+							components={{
+								a: ({ node: _node, ...props }) => (
+									<a {...props} target="_blank" rel="noopener noreferrer" />
+								),
+							}}
+						>
+							{baris.message}
+						</Markdown>
+					</div>
+				)}
+				{baris.streaming && (
+					<span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-current align-middle" />
+				)}
 			</div>
 		</div>
 	);

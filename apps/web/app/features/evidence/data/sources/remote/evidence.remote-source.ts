@@ -12,14 +12,17 @@ export const evidenceRemoteSource = {
 	async findAll({
 		ownerTipe,
 		studyProgramId,
+		kind,
 	}: {
 		ownerTipe: EvidenceOwnerType;
 		studyProgramId?: string | null;
+		/** Default backend: Bukti Dukung saja. `LKPS` = Excel LKPS prodi. */
+		kind?: 'LKPS';
 	}): Promise<EvidenceEntity[]> {
-		const query =
-			ownerTipe === 'PROGRAM_STUDI' && studyProgramId
-				? `?programStudiId=${encodeURIComponent(studyProgramId)}`
-				: '';
+		const params = new URLSearchParams();
+		if (ownerTipe === 'PROGRAM_STUDI' && studyProgramId) params.set('programStudiId', studyProgramId);
+		if (kind) params.set('kind', kind);
+		const query = params.size ? `?${params}` : '';
 		const rows = await apiFetch<BuktiDukungApiRow[]>(`/bukti-dukung${query}`);
 		return rows.map(mapBuktiDukungToEvidence);
 	},
@@ -30,5 +33,13 @@ export const evidenceRemoteSource = {
 
 	async retry(id: string): Promise<void> {
 		await apiFetch(`/bukti-dukung/${id}/retry`, { method: 'POST' });
+	},
+
+	/** `GET storage/presigned-download` — `fileKey` adalah `EvidenceEntity.fileUrl` (R2 object key, bukan URL siap-pakai). Link 5 menit, jangan disimpan. */
+	async getDownloadUrl(fileKey: string): Promise<string> {
+		const { downloadUrl } = await apiFetch<{ downloadUrl: string }>(
+			`/storage/presigned-download?key=${encodeURIComponent(fileKey)}`,
+		);
+		return downloadUrl;
 	},
 };

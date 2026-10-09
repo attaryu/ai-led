@@ -17,6 +17,7 @@ import {
 	type ChapterEntity,
 	type ChapterProgress,
 } from '../../domain/entities/chapter.entity';
+import { type ChapterSectionEntity } from '../../domain/entities/chapter-section.entity';
 import { type ChapterPermission } from '../hooks/use-chapter-permission';
 import { useChapterReview } from '../hooks/use-chapter-review';
 
@@ -74,14 +75,25 @@ const statusVisual: Record<
  */
 export function ChapterReviewPanel({
 	chapter,
+	sectionId,
 	izin,
 	onReviewed,
 }: {
+	/** Tampilan review section yang terbuka (kunci/catatan/pengajuan milik section). */
 	chapter: ChapterEntity;
+	sectionId: string | null;
 	izin: ChapterPermission;
-	onReviewed: (diperbarui: ChapterEntity) => void;
+	onReviewed: (diperbarui: ChapterSectionEntity) => void;
 }) {
-	const review = useChapterReview(chapter, izin, onReviewed);
+	const review = useChapterReview(chapter, sectionId, izin, onReviewed);
+
+	if (!sectionId) {
+		return (
+			<p className="px-5 py-4 text-sm text-muted-foreground">
+				Review dilakukan per section. Buka salah satu section dari daftar isi.
+			</p>
+		);
+	}
 
 	const tersimpan = chapter.catatanPenjaminMutu ?? '';
 	/**

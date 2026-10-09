@@ -47,6 +47,8 @@ export const documentRecommendationSchema = z.object({
 	id: z.string(),
 	/** Checkpoint kosong yang jadi wadah rekomendasi ini — dikirim balik sebagai `draftId` saat generate. */
 	chapterDraftId: z.string(),
+	/** Section pemilik rekomendasi (dimas: per section); `null` = baris lama tingkat bab. */
+	chapterSectionId: z.string().nullable(),
 	/** Ringkasan naratif dari AI; `null` bila fallback (lihat `worker.py::_FALLBACK_RECOMMENDATION_TEXT`). */
 	recommendationText: z.string().nullable(),
 	/** Bukti dukung yang dipilih penyusun saat konfirmasi; kosong sebelum dikonfirmasi. */

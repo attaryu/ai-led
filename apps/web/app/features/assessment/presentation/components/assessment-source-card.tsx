@@ -23,7 +23,7 @@ import {
 import { Select } from '~/core/components/ui/select';
 import { cn } from '~/core/lib/utils';
 import { EvidenceUploadDialog } from '~/features/evidence/presentation/components/evidence-upload-dialog';
-import { evidenceScopeFor } from '~/features/evidence/data/repositories/evidence.repository';
+import { evidenceRepository, evidenceScopeFor } from '~/features/evidence/data/repositories/evidence.repository';
 import { type EvidenceEntity } from '~/features/evidence/domain/entities/evidence.entity';
 import { uploadLedPdf } from '../../data/sources/remote/led-upload.remote-source';
 import {
@@ -58,6 +58,7 @@ export function AssessmentSourceCard({
 	setSumber,
 	kesiapan,
 	kandidat,
+	kandidatLkps,
 	dokumenId,
 	studyProgramId,
 	studyProgramName,
@@ -67,8 +68,10 @@ export function AssessmentSourceCard({
 	sumber: AssessmentSource;
 	setSumber: (sumber: AssessmentSource) => void;
 	kesiapan: AssessmentReadiness;
-	/** Berkas tabular milik prodi yang bisa dipilih jadi LKPS / Laporan AK. */
+	/** Bukti Dukung tabular milik prodi yang bisa dipilih jadi Laporan AK. */
 	kandidat: EvidenceEntity[];
+	/** LKPS prodi (kartu "Data LKPS"), bukan Bukti Dukung. */
+	kandidatLkps: EvidenceEntity[];
 	/** Untuk mengaitkan unggahan PDF LED ke dokumen yang benar (R2 + indexing pgvector). */
 	dokumenId: string;
 	studyProgramId: string;
@@ -77,10 +80,29 @@ export function AssessmentSourceCard({
 	bolehMengubah: boolean;
 }) {
 	const [diminta, setDiminta] = React.useState(false);
-	const [unggahUntuk, setUnggahUntuk] = React.useState<
-		'lkps' | 'laporan' | null
-	>(null);
+	const [unggahUntuk, setUnggahUntuk] = React.useState<'laporan' | null>(null);
 	const ledInputRef = React.useRef<HTMLInputElement>(null);
+	const lkpsInputRef = React.useRef<HTMLInputElement>(null);
+	const [galatLkps, setGalatLkps] = React.useState<string | null>(null);
+
+	const unggahLkps = async (file: File) => {
+		setGalatLkps(null);
+		// ponytail: kartu ini DISEMBUNYIKAN (lihat TAMPILKAN_KARTU_SUMBER di
+		// led-project-assessment.tsx). LKPS kini wajib punya nama + tahun/periode dan
+		// terhubung ke Dokumen LED lewat pilihan di form dokumen -- unggah cepat dari sini
+		// akan membuat LKPS tanpa keduanya. Kode lama dipertahankan di bawah; kalau kartu ini
+		// diaktifkan lagi, ganti dengan dialog yang sama dengan kartu "Data LKPS".
+		void file;
+		setGalatLkps(
+			'Unggah LKPS lewat kartu "Data LKPS" di halaman Bukti Dukung program studi (perlu nama dan tahun/periode).',
+		);
+		// try {
+		// 	const lkps = await evidenceRepository.uploadLkps(file, studyProgramId);
+		// 	setSumber({ ...sumber, lkpsBuktiDukungId: lkps.id });
+		// } catch (e) {
+		// 	setGalatLkps(e instanceof Error ? e.message : 'Unggah LKPS gagal.');
+		// }
+	};
 
 	const terbuka = diminta || !kesiapan.siap;
 
@@ -94,9 +116,7 @@ export function AssessmentSourceCard({
 	 */
 	const pakaiHasilUnggah = React.useCallback(
 		(evidence: EvidenceEntity) => {
-			if (unggahUntuk === 'lkps') {
-				setSumber({ ...sumber, lkpsBuktiDukungId: evidence.id });
-			} else if (unggahUntuk === 'laporan') {
+			if (unggahUntuk === 'laporan') {
 				setSumber({ ...sumber, laporanBuktiDukungId: evidence.id });
 			}
 		},
@@ -175,11 +195,27 @@ export function AssessmentSourceCard({
 												onChange={(id) =>
 													setSumber({ ...sumber, lkpsBuktiDukungId: id })
 												}
-												kandidat={kandidat}
+												kandidat={kandidatLkps}
 												labelKosong="— pilih berkas LKPS —"
 												ariaLabel="Berkas data LKPS"
-												onUnggah={() => setUnggahUntuk('lkps')}
+												onUnggah={() => lkpsInputRef.current?.click()}
 											/>
+										)}
+										{item.kunci === 'lkps' && bolehMengubah && (
+											<>
+												<input
+													ref={lkpsInputRef}
+													type="file"
+													accept=".xlsx,.xls"
+													className="hidden"
+													onChange={(e) => {
+														const file = e.target.files?.[0];
+														e.target.value = '';
+														if (file) void unggahLkps(file);
+													}}
+												/>
+												{galatLkps && <p className="text-xs text-destructive">{galatLkps}</p>}
+											</>
 										)}
 
 										{item.kunci === 'laporan' && bolehMengubah && (

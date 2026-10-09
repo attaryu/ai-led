@@ -164,3 +164,22 @@ describe('UsersService.update — ADMIN', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
+
+describe('UsersService.findAll', () => {
+  it('never returns password hashes', async () => {
+    const prisma = {
+      user: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'u1', fullName: 'A', passwordHash: 'bcrypt$', studyProgram: { name: 'TI' } },
+        ]),
+      },
+    };
+    const tenantContext = { getOrThrow: () => ({ tenantId: 't1' }) };
+    const service = new UsersService(prisma as never, tenantContext as never, {} as never);
+
+    const [user] = await service.findAll();
+
+    expect(user).not.toHaveProperty('passwordHash');
+    expect(user).toMatchObject({ id: 'u1', studyProgram: { name: 'TI' } });
+  });
+});

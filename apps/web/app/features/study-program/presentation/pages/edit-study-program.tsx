@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate, useParams } from 'react-router';
 import { ArrowLeftIcon } from '@phosphor-icons/react';
 
-import { PlaceholderPage } from '~/core/components/placeholder-page';
+import { LoadFailedPage, PlaceholderPage } from '~/core/components/placeholder-page';
 import { Button } from '~/core/components/ui/button';
 import {
 	Card,
@@ -29,11 +29,14 @@ export function EditStudyProgram() {
 	const [program, setProgram] = React.useState<StudyProgramEntity | null>(null);
 	const [formError, setFormError] = React.useState<string | null>(null);
 	const [tidakAda, setTidakAda] = React.useState(false);
+	const [gagalMuat, setGagalMuat] = React.useState(false);
 
 	React.useEffect(() => {
 		if (!programId) return;
 		let cancelled = false;
-		studyProgramRepository.findById(programId).then((found) => {
+		studyProgramRepository
+			.findById(programId)
+			.then((found) => {
 			if (cancelled) return;
 			if (found) {
 				setProgram(found);
@@ -41,7 +44,10 @@ export function EditStudyProgram() {
 				// Lihat catatan di edit-user.tsx soal kenapa ini bukan `alert`.
 				setTidakAda(true);
 			}
-		});
+		})
+			.catch(() => {
+				if (!cancelled) setGagalMuat(true);
+			});
 		return () => {
 			cancelled = true;
 		};
@@ -99,6 +105,8 @@ export function EditStudyProgram() {
 			setFormError(e instanceof ApiError ? e.message : 'Gagal menyimpan perubahan.');
 		}
 	};
+
+	if (gagalMuat) return <LoadFailedPage />;
 
 	if (tidakAda) {
 		return (

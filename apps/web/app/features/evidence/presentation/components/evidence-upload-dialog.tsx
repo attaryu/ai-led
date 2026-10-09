@@ -208,7 +208,12 @@ export function EvidenceUploadDialog({
 			return;
 		}
 		accreditationSetRepository.findById(accreditationSetId).then((set) => {
-			setIndikatorList(set?.kriteria ?? []);
+			// ponytail: dulu `setIndikatorList(set?.kriteria ?? [])`. Dua belas indikator punya dua baris (sub-indikator
+			// dengan `no` sama, mis. 43.I/43.II): kuncinya kembar dan dua kotak centang berbagi satu pilihan.
+			// Penandaan bukti per NOMOR indikator, jadi satu entri per nomor (baris pertama).
+			const unik = new Map<number, NonNullable<typeof set>['kriteria'][number]>();
+			for (const k of set?.kriteria ?? []) if (!unik.has(k.no)) unik.set(k.no, k);
+			setIndikatorList([...unik.values()]);
 		});
 		setIndikatorTerpilih(new Set());
 	}, [accreditationSetId]);

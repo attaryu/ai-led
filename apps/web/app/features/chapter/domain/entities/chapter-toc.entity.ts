@@ -5,7 +5,7 @@ import { type ChapterTemplateEntity } from '~/features/accreditation-set/domain/
 import { rubricCriterionAmiRepository } from '~/features/assessment/data/repositories/rubric-criterion-ami.repository';
 import { chapterRepository } from '../../data/repositories/chapter.repository';
 import { type ChapterEntity } from './chapter.entity';
-import { type ChapterSectionEntity } from './chapter-section.entity';
+import { judulBermarker, type ChapterSectionEntity } from './chapter-section.entity';
 import { kelompokkanKriteria } from './guidance-point.entity';
 
 /**
@@ -146,14 +146,16 @@ function buildFallbackToc(
 }
 
 /** Sumber sub-bab netral — `ChapterSection` (nyata) ATAU `SubBabTemplate` (dekoratif); `anak` = sub-sub-bab, satu tingkat. */
-type SubBabItem = { urutan: number; judul: string; sectionId: string | null; anak: SubBabItem[] };
+type SubBabItem = { urutan: number; judul: string; marker: string | null; sectionId: string | null; anak: SubBabItem[] };
 
 const KRITERIA_RE = /kriteria/i;
 
 /** Simpul satu sub-bab beserta anak sub-sub-babnya, label mengikuti jalur (mis. "C" lalu "C.1", "C.2"). */
 function simpulSubBab(urutanBab: number, item: SubBabItem, jalurLabel: string): ChapterTocNode {
 	const anak = item.anak.map((a) => simpulSubBab(urutanBab, a, `${jalurLabel}.${a.urutan}`));
-	return simpul(`bab-${urutanBab}-sub-${jalurLabel}`, `${jalurLabel}. ${item.judul}`, null, anak, item.sectionId);
+	// Marker asli Panduan (dimas full_title) bila ada; label turunan urutan cuma utk data lama/manual.
+	const label = judulBermarker(item) ?? `${jalurLabel}. ${item.judul}`;
+	return simpul(`bab-${urutanBab}-sub-${jalurLabel}`, label, null, anak, item.sectionId);
 }
 
 /** Kelompok kriteria sintetis cuma dipasang kalau sub-bab "kriteria" BELUM punya anak nyata sendiri (hindari dobel). */
@@ -189,6 +191,7 @@ function pohonDariSections(sections: ChapterSectionEntity[]): SubBabItem[] {
 	const keItem = (s: (typeof sections)[number]): SubBabItem => ({
 		urutan: s.urutan,
 		judul: s.judul,
+		marker: s.marker,
 		sectionId: s.id,
 		anak: (anakDari.get(s.id) ?? []).map(keItem),
 	});
@@ -200,6 +203,7 @@ function pohonDariTemplate(subBab: ChapterTemplateEntity['subBab']): SubBabItem[
 	const keItem = (s: ChapterTemplateEntity['subBab'][number]): SubBabItem => ({
 		urutan: s.urutan,
 		judul: s.judul,
+		marker: s.marker,
 		sectionId: null,
 		anak: s.anak.map(keItem),
 	});

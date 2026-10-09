@@ -148,23 +148,35 @@ export type PenilaianFinalRow = {
  * dibuang: matriks menentukan apa yang **seharusnya** dinilai, jadi indikator
  * yang bolong adalah temuan, bukan baris yang tidak ada.
  */
+/** Kunci unik satu baris indikator: nomor + sub-indikator (43.I dan 43.II berbeda). */
+export function kunciIndikator(no: number, subNo: string | undefined): string {
+	return `${no}|${subNo ?? ''}`;
+}
+
 export function gabungPenilaian(input: {
 	kriteria: RubricCriterion[];
 	hasil: IndicatorResultEntity[];
 	keputusan: AssessmentVerdictEntity[];
 }): PenilaianFinalRow[] {
+	// Kunci = nomor + sub-indikator: 43.I dan 43.II punya hasil dan keputusan sendiri-sendiri.
+	// ponytail: dulu `baris.indikatorNo` saja, sehingga dua baris bernomor sama berbagi satu hasil/keputusan.
+	const kunci = kunciIndikator;
 	const hasilPerNo = new Map(
-		input.hasil.map((baris) => [baris.indikatorNo, baris]),
+		input.hasil.map((baris) => [kunci(baris.indikatorNo, baris.subNo), baris]),
 	);
 	const keputusanPerNo = new Map(
-		input.keputusan.map((baris) => [baris.indikatorNo, baris]),
+		input.keputusan.map((baris) => [kunci(baris.indikatorNo, baris.subNo), baris]),
 	);
 
 	return [...input.kriteria]
 		.sort((a, b) => a.no - b.no)
 		.map((kriteria) => {
-			const hasil = hasilPerNo.get(kriteria.no);
-			const keputusan = keputusanPerNo.get(kriteria.no);
+			// Fallback ke baris lama (sub kosong): hasil/keputusan yang tersimpan sebelum kunci sub-indikator ada
+			// tetap tampil di baris nomornya sampai dinilai ulang, bukan hilang dari layar.
+			const hasil =
+				hasilPerNo.get(kunci(kriteria.no, kriteria.subNo)) ?? hasilPerNo.get(kunci(kriteria.no, ''));
+			const keputusan =
+				keputusanPerNo.get(kunci(kriteria.no, kriteria.subNo)) ?? keputusanPerNo.get(kunci(kriteria.no, ''));
 			const skorMesin = hasil?.skor ?? null;
 			const skorFinal = keputusan ? keputusan.skorFinal : skorMesin;
 

@@ -5,6 +5,7 @@ import { initials } from '~/core/lib/initials';
 import { ProfileMenu } from '~/features/auth/presentation/components/profile-menu';
 import { useSession } from '~/features/auth/presentation/hooks/use-session';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
+import { type ChapterSectionEntity } from '../../domain/entities/chapter-section.entity';
 import { type AutosaveStatus } from '../hooks/use-chapter-autosave';
 import { type ChapterPermission } from '../hooks/use-chapter-permission';
 import { ChapterLockButton } from './chapter-lock-button';
@@ -18,6 +19,7 @@ export function ChapterEditorHeader({
 	judulDokumen,
 	chapter,
 	izin,
+	sectionId,
 	onReviewed,
 	status,
 	savedAt,
@@ -27,7 +29,8 @@ export function ChapterEditorHeader({
 	/** Bab yang sedang dibuka — dipakai tombol kunci review (§12.2). */
 	chapter: ChapterEntity;
 	izin: ChapterPermission;
-	onReviewed: (diperbarui: ChapterEntity) => void;
+	sectionId: string | null;
+	onReviewed: (diperbarui: ChapterSectionEntity) => void;
 	status: AutosaveStatus;
 	savedAt: string | null;
 }) {
@@ -77,6 +80,7 @@ export function ChapterEditorHeader({
 				<ChapterLockButton
 					chapter={chapter}
 					izin={izin}
+					sectionId={sectionId}
 					onReviewed={onReviewed}
 				/>
 

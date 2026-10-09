@@ -63,6 +63,9 @@ const POLL_INTERVAL_MS = 4000;
 const POLL_DURATION_MS = 960_000;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
+/** Dikirim setelah sebuah berkas diulang ekstraksinya; `detail` = `{ id, target }`. */
+export const EVIDENCE_PROSES_ULANG_EVENT = 'evidence-proses-ulang';
+
 function notify(): void {
 	window.dispatchEvent(new Event('storage-update'));
 }
@@ -243,9 +246,72 @@ export const evidenceRepository = {
 		return evidenceRemoteSource.findAll({ ownerTipe: 'PROGRAM_STUDI', studyProgramId });
 	},
 
+	/** LKPS milik satu prodi (dimas: kartu "LKPS" terpisah dari Bukti Dukung) -- tiap Dokumen LED memilih salah satu. */
+	async findLkpsByStudyProgram(studyProgramId: string): Promise<EvidenceEntity[]> {
+		return evidenceRemoteSource.findAll({ ownerTipe: 'PROGRAM_STUDI', studyProgramId, kind: 'LKPS' });
+	},
+
+	/**
+	 * Unggah satu Excel LKPS untuk prodi ini -- tanpa folder/tag indikator, tidak diekstrak
+	 * sebagai Bukti Dukung. `nama` dan `periode` (tahun/periode data) wajib: satu prodi bisa
+	 * punya beberapa LKPS dan tiap Dokumen LED memilih salah satunya, jadi LKPS harus bisa
+	 * dibedakan -- nama berkas saja tidak cukup.
+	 */
+	async uploadLkps(
+		file: File,
+		studyProgramId: string,
+		meta: { nama: string; periode: string },
+	): Promise<EvidenceEntity> {
+		const { uploadUrl, objectKey } = await requestPresignedUrl(file);
+		await uploadToStorage(file, uploadUrl, () => {});
+		const lkps = await reportUploadComplete({
+			kind: 'LKPS',
+			objectKey,
+			// namaDokumen: file.name,
+			namaDokumen: meta.nama.trim(),
+			periode: meta.periode.trim(),
+			target: { ownerTipe: 'PROGRAM_STUDI', studyProgramId },
+			folderId: null,
+		});
+		notify();
+		return lkps;
+	},
+
 	async delete(id: string): Promise<void> {
 		await evidenceRemoteSource.remove(id);
 		notify();
+	},
+
+	/** URL sekali-pakai (5 menit) buat buka/unduh berkas ini -- jangan disimpan, minta ulang tiap mau dipakai. */
+	async getDownloadUrl(fileKey: string): Promise<string> {
+		return evidenceRemoteSource.getDownloadUrl(fileKey);
+	},
+
+	/**
+	 * Buka berkas di tab baru. Tab kosong dibuka SEKARANG (sinkron, di dalam
+	 * pemanggil onClick) baru diarahkan setelah presigned URL-nya datang --
+	 * kalau `window.open` menunggu Promise dulu, sebagian besar browser
+	 * menganggap itu bukan hasil klik langsung dan memblokirnya sbg popup.
+	 *
+	 * TANPA `noopener`/`noreferrer` DI SINI SENGAJA -- keduanya bikin browser
+	 * mengembalikan `null` (bukan referensi tab), jadi tabnya tidak akan
+	 * pernah bisa diarahkan ke presigned URL (macet putih di about:blank
+	 * selamanya -- bug nyata yang kejadian). Tujuannya R2 (bukan sembarang
+	 * HTML pihak ketiga -- berkas Evidence yang sudah divalidasi saat
+	 * unggah), jadi risiko reverse-tabnabbing lewat `window.opener` dapat
+	 * diterima.
+	 */
+	openFile(fileKey: string): void {
+		const tab = window.open('', '_blank');
+		evidenceRemoteSource
+			.getDownloadUrl(fileKey)
+			.then((downloadUrl) => {
+				if (tab) tab.location.href = downloadUrl;
+			})
+			.catch((error: unknown) => {
+				tab?.close();
+				alert(error instanceof Error ? error.message : 'Gagal membuka berkas.');
+			});
 	},
 
 	/** Memindahkan sekumpulan berkas ke satu folder (`null` = akar cakupannya). */
@@ -319,11 +385,53 @@ export const evidenceRepository = {
 		}
 	},
 
-	/** Mengembalikan baris GAGAL ke MENUNGGU dan memicu ulang job ekstraksinya di backend. */
-	async retryIngestion(id: string): Promise<void> {
+	/**
+	 * Status terbaru sekumpulan berkas yang baru diunggah, untuk mendeteksi ekstraksi yang
+	 * gagal di worker. Backend tidak punya GET per-id, tapi daftar bisa diambil per cakupan
+	 * (prodi atau tenant) -- jadi satu permintaan per cakupan yang berbeda, bukan satu per berkas.
+	 *
+	 * Sengaja TIDAK menelan galat jaringan per cakupan: kalau satu cakupan gagal dimuat dan
+	 * dilewati, berkas-berkasnya tidak ada di hasil dan pemanggil akan mengira berkas itu
+	 * "hilang" lalu berhenti melacaknya. Galat dilempar utuh; pemanggil melewati putaran ini
+	 * dan mencoba lagi di putaran berikutnya.
+	 */
+	async findStatuses(
+		pelacak: Array<{ id: string; target: UploadEvidenceTargetDto }>,
+	): Promise<Map<string, EvidenceEntity>> {
+		const perCakupan = new Map<string, UploadEvidenceTargetDto>();
+		for (const { target } of pelacak) {
+			const kunci = target.ownerTipe === 'TENANT' ? 'TENANT' : `PRODI:${target.studyProgramId}`;
+			if (!perCakupan.has(kunci)) perCakupan.set(kunci, target);
+		}
+
+		const hasil = new Map<string, EvidenceEntity>();
+		await Promise.all(
+			[...perCakupan.values()].map(async (target) => {
+				const daftar = await evidenceRemoteSource.findAll({
+					ownerTipe: target.ownerTipe,
+					studyProgramId: target.studyProgramId,
+				});
+				for (const item of daftar) hasil.set(item.id, item);
+			}),
+		);
+		return hasil;
+	},
+
+	/**
+	 * Mengembalikan baris GAGAL ke MENUNGGU dan memicu ulang job ekstraksinya di backend.
+	 *
+	 * `target` opsional: bila diisi, pelacak kegagalan global (EvidenceFailureDialog) diberi
+	 * tahu lewat {@link EVIDENCE_PROSES_ULANG_EVENT} supaya berkas yang gagal LAGI setelah
+	 * diulang ditanyakan kembali ke pengguna -- tanpanya, berkas yang diulang dari tombol
+	 * "Proses ulang" di pustaka tidak lagi dipantau.
+	 */
+	async retryIngestion(id: string, target?: UploadEvidenceTargetDto): Promise<void> {
 		await evidenceRemoteSource.retry(id);
 		notify();
 		pollForIngestion();
+		if (target) {
+			window.dispatchEvent(new CustomEvent(EVIDENCE_PROSES_ULANG_EVENT, { detail: { id, target } }));
+		}
 	},
 
 	/**

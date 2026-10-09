@@ -2,6 +2,7 @@ import { useOutletContext, useParams } from 'react-router';
 
 import { type StudyProgramEntity } from '~/features/study-program/domain/entities/study-program.entity';
 import { EvidenceLibrary } from '../components/evidence-library';
+import { LkpsCard } from '../components/lkps-card';
 
 /**
  * Perpustakaan Bukti Dukung level prodi (docs/application_flow.md §5.2).
@@ -16,10 +17,13 @@ export function ProgramEvidenceLibrary() {
 	const studyProgram = useOutletContext<StudyProgramEntity>();
 
 	return (
-		<EvidenceLibrary
-			level="PROGRAM_STUDI"
-			studyProgramId={programId}
-			studyProgramName={studyProgram.studyProgramName}
-		/>
+		<div className="flex flex-col gap-6">
+			{programId && <LkpsCard studyProgramId={programId} />}
+			<EvidenceLibrary
+				level="PROGRAM_STUDI"
+				studyProgramId={programId}
+				studyProgramName={studyProgram.studyProgramName}
+			/>
+		</div>
 	);
 }

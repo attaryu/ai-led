@@ -83,8 +83,8 @@ export function EvidenceMoveDialog({
 			});
 		}
 		for (const baris of folderDipindah) {
-			evidenceFolderRepository.moveFolder(baris.id, tujuan).then((berhasil) => {
-				if (!berhasil) alert('Gagal memindahkan folder.');
+			evidenceFolderRepository.moveFolder(baris.id, tujuan).catch((error: unknown) => {
+				alert(error instanceof Error ? error.message : 'Gagal memindahkan folder.');
 			});
 		}
 

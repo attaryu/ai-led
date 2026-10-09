@@ -43,6 +43,7 @@ from agent.tools.formula_tool import compute_formula_score
 from agent.tools.led_tool import search_led_evidence
 from agent.tools.lkps_tool import get_lkps_table
 from agent.tools.rubric_tool import get_indicator_rubric
+from ingestion.matrix_parser import sub_no_dari
 from llm.ollama_client import OllamaClient
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,13 @@ _TOOL_REGISTRY = {
     "get_lkps_table": get_lkps_table,
     "compute_formula_score": compute_formula_score,
 }
+
+
+def _effective_tool_registry(disable_evidence: bool) -> dict:
+    """_TOOL_REGISTRY minus search_evidence_documents when disable_evidence=True (ariel 2f97285) -- dispatch AND execution."""
+    if not disable_evidence:
+        return _TOOL_REGISTRY
+    return {name: fn for name, fn in _TOOL_REGISTRY.items() if name != "search_evidence_documents"}
 
 MAX_ITERATIONS = 12  # hard cap on tool-call loops per indicator
 # After MAX_ITERATIONS, give the model FORCE_LIMIT extra nudges to emit a
@@ -76,7 +84,7 @@ Tool yang tersedia:
 
 1. get_indicator_rubric  — args: {"indicator_no": <int 1-64>}
 2. search_led_evidence   — args: {"query": "<id, WAJIB kaya konteks: nomor indikator + kata kunci konkret dari kriteria rubrik, bukan cuma topik umum>", "n_results": <int, default 5>}
-3. search_evidence_documents — args: {"query": "<id, sama seperti search_led_evidence>", "n_results": <int, default 5>} — cek dokumen Bukti Dukung (SK, sertifikat, MoU) yang diunggah untuk prodi ini; hasil kosong itu normal, bukan error
+3. search_evidence_documents — args: {"query": "<id>", "n_results": <int, default 5>} — cek dokumen bukti pendukung (SK, sertifikat, MoU) yang di-tag ke indikator ini; hasil kosong itu normal, bukan error
 4. get_lkps_table        — args: {"table_reference": "<misal 'Tabel 2.a. LKPS' atau '6.f.2'>"}
 5. compute_formula_score — args: {"formula_expression": "<expr Python: BOP / 5000000>", "variables": {<key: value>}}
 
@@ -85,7 +93,7 @@ ALUR WAJIB:
 2. Lanjut: search_led_evidence untuk bukti kualitatif — query harus kaya
    konteks (nomor indikator + kata kunci kriteria rubrik), bukan keyword pendek
 3. (Opsional) search_evidence_documents untuk verifikasi klaim LED terhadap
-   dokumen Bukti Dukung yang sudah diunggah untuk prodi ini
+   dokumen bukti asli yang sudah di-tag ke indikator ini
 4. (Opsional) get_lkps_table jika rubrik merujuk tabel LKPS
 5. (Opsional) compute_formula_score jika rubrik berbasis formula
 6. SELESAI dengan {"action": "final", ...}
@@ -103,6 +111,20 @@ LARANGAN KETAT:
 - Jika bukti tidak cukup → tetap kasih skor rendah (0 atau 1) dengan justifikasi "bukti tidak ditemukan"
 
 Setiap respons SATU JSON SATU BARIS saja."""
+
+# Stripped from _SYSTEM_PROMPT when disable_evidence=True so the model never learns the tool exists;
+# _effective_tool_registry is what actually blocks the call (ariel 2f97285).
+_EVIDENCE_TOOL_LISTING_RE = re.compile(r"^3\. search_evidence_documents.*\n", re.MULTILINE)
+_EVIDENCE_ALUR_STEP_RE = re.compile(
+    r"^3\. \(Opsional\) search_evidence_documents.*\n(?:^ {3}.*\n)?", re.MULTILINE
+)
+
+
+def _build_system_prompt(disable_evidence: bool) -> str:
+    if not disable_evidence:
+        return _SYSTEM_PROMPT
+    prompt = _EVIDENCE_TOOL_LISTING_RE.sub("", _SYSTEM_PROMPT)
+    return _EVIDENCE_ALUR_STEP_RE.sub("", prompt)
 
 
 # ---------------------------------------------------------------------------
@@ -237,9 +259,6 @@ def _build_reasoning_llm(ollama_client: OllamaClient):
         "num_predict": 8192,
         "keep_alive": os.environ.get("OLLAMA_KEEP_ALIVE", "30m"),
     }
-    # ollama_client.api_key already resolved ASSESSMENT_OLLAMA_API_KEY vs
-    # OLLAMA_API_KEY (llm/ollama_client.py::create_ollama_client_from_env) --
-    # re-reading OLLAMA_API_KEY here directly would silently ignore that.
     api_key = ollama_client.api_key
     if api_key and not api_key.startswith("<"):
         kwargs["client_kwargs"]["headers"] = {"Authorization": f"Bearer {api_key}"}
@@ -254,18 +273,21 @@ def _build_reasoning_llm(ollama_client: OllamaClient):
 # ---------------------------------------------------------------------------
 
 
-def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
+def build_reasoning_graph(ollama_client: OllamaClient, disable_evidence: bool = False) -> StateGraph:
     """Compile a graph that uses prompt-based tool calling for reasoning models."""
     llm = _build_reasoning_llm(ollama_client)
+    system_prompt = _build_system_prompt(disable_evidence)
+    tool_registry = _effective_tool_registry(disable_evidence)
 
     def agent_node(state: AssessmentState) -> AssessmentState:
         if not state.get("messages"):
             indicator = state["indicator_row"]
             state["messages"] = [
-                SystemMessage(content=_SYSTEM_PROMPT),
+                SystemMessage(content=system_prompt),
                 HumanMessage(
                     content=(
-                        f"Nilai indikator nomor {indicator.indicator_no}.\n"
+                        f"Nilai indikator nomor {indicator.indicator_no}"
+                        f"{(' (sub-indikator ' + sub_no_dari(indicator) + ')') if sub_no_dari(indicator) else ''}.\n"
                         f"Deskripsi: {indicator.kriteria}\n\n"
                         f"Mulai dengan: "
                         f'{{"action": "get_indicator_rubric", "args": {{"indicator_no": {indicator.indicator_no}}}}}'
@@ -338,7 +360,7 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
                     )
             return "finalize"
 
-        if action in _TOOL_REGISTRY:
+        if action in tool_registry:
             if len(iters) >= MAX_ITERATIONS:
                 return _force_or_give_up(state, f"Iteration limit reached while still calling tools ('{action}')")
             return "tool_call"
@@ -350,7 +372,7 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
             HumanMessage(
                 content=(
                     f"Action '{action}' tidak valid. "
-                    f"Pilih dari: {list(_TOOL_REGISTRY.keys())} atau 'final'."
+                    f"Pilih dari: {list(tool_registry.keys())} atau 'final'."
                 )
             )
         )
@@ -366,7 +388,7 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
         action = parsed.get("action", "")
         args = parsed.get("args", {})
 
-        tool = _TOOL_REGISTRY.get(action)
+        tool = tool_registry.get(action)
         if tool is None:
             return state
 
@@ -423,11 +445,15 @@ def build_reasoning_graph(ollama_client: OllamaClient) -> StateGraph:
         state["_checklist_built"] = True
         indicator = state["indicator_row"]
 
-        try:
-            evidence_raw = search_evidence_documents.invoke({"query": indicator.kriteria})
-            evidence_items = json.loads(evidence_raw)
-        except Exception:
-            evidence_items = []
+        # disable_evidence=True: skip the lookup entirely, as if nothing were tagged (ariel 2f97285).
+        evidence_raw = "[]"
+        evidence_items = []
+        if not disable_evidence:
+            try:
+                evidence_raw = search_evidence_documents.invoke({"query": indicator.kriteria})
+                evidence_items = json.loads(evidence_raw)
+            except Exception:
+                evidence_items = []
 
         if evidence_items:
             entities = sorted({item.get("entity") for item in evidence_items if item.get("entity")})

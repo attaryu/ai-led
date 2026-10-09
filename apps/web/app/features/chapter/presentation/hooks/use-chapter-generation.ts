@@ -26,7 +26,12 @@ import { type ChapterPermission } from './use-chapter-permission';
 type JobEvent = {
 	jobId: string;
 	status: 'progress' | 'completed' | 'failed';
-	result?: { status: 'completed' | 'error'; versi?: number; error?: string };
+	result?: {
+		status: 'completed' | 'error';
+		versi?: number;
+		error?: string;
+		checklistError?: string;
+	};
 	error?: string;
 };
 
@@ -76,9 +81,12 @@ export function useChapterGeneration({
 	chapter,
 	studyProgramId,
 	izin,
+	sectionId,
 	onGenerated,
 }: {
 	chapter: ChapterEntity;
+	/** Section yang dibuka -- centang bukti dukung milik section itu (dimas), `null` = gabungan bab. */
+	sectionId: string | null;
 	/** `studyProgramId` milik dokumennya — menentukan pustaka mana yang terbaca. */
 	studyProgramId: string;
 	/** Hak akses bab; `canEdit` mematikan generate, `session` mengisi pembuat draft. */
@@ -115,6 +123,13 @@ export function useChapterGeneration({
 	const [dasar, setDasar] = React.useState<ReadonlySet<string>>(() => new Set());
 	const [status, setStatus] = React.useState<StatusGenerate>('diam');
 	const [pesanGagal, setPesanGagal] = React.useState<string | null>(null);
+	/**
+	 * Terisi kalau generate TERAKHIR berhasil tapi tahap checklist-nya gagal 2x --
+	 * section itu tetap tersimpan, tapi tanpa panduan pencarian fakta (port dari
+	 * Dimas's `_checklist_error`, sebelumnya cuma di-log server, lihat worker.py).
+	 * Beda dari `pesanGagal`: ini peringatan atas hasil yang SUKSES, bukan kegagalan job.
+	 */
+	const [peringatanChecklist, setPeringatanChecklist] = React.useState<string | null>(null);
 	const [digenerateAt, setDigenerateAt] = React.useState<string | null>(null);
 	/**
 	 * Versi `BabDraft` dari generate terakhir. Beda dari draf percobaan
@@ -183,17 +198,38 @@ export function useChapterGeneration({
 	const babTerakhirRef = React.useRef<string | null>(null);
 	const [jumlahGugur, setJumlahGugur] = React.useState(0);
 
-	if (babTerakhirRef.current !== chapter.id && pustaka.length > 0) {
-		babTerakhirRef.current = chapter.id;
+	// Per section (dimas: centang milik draft section yang dibuka) -- tanpa ini section B ikut
+	// memakai centang section A. Tampilan bab penuh tetap memakai gabungan bab.
+	const kunciPilihan = `${chapter.id}:${sectionId ?? ''}`;
+	const [pilihanSection, setPilihanSection] = React.useState<{ kunci: string; ids: string[] } | null>(null);
+	React.useEffect(() => {
+		if (!sectionId) return;
+		let batal = false;
+		chapterRepository
+			.findSectionSelection(chapter.id, sectionId)
+			.catch(() => [])
+			.then((ids) => {
+				if (!batal) setPilihanSection({ kunci: kunciPilihan, ids });
+			});
+		return () => {
+			batal = true;
+		};
+	}, [chapter.id, sectionId, kunciPilihan]);
+	const idPilihanAwal = sectionId
+		? pilihanSection?.kunci === kunciPilihan
+			? pilihanSection.ids
+			: null
+		: chapter.buktiDukung.map((ref) => ref.id);
+
+	if (babTerakhirRef.current !== kunciPilihan && pustaka.length > 0 && idPilihanAwal) {
+		babTerakhirRef.current = kunciPilihan;
 
 		const masihBisaDipakai = new Set(
 			pustaka
 				.filter((bukti) => bukti.status === STATUS_TERPAKAI)
 				.map((bukti) => bukti.id),
 		);
-		const dipulihkan = chapter.buktiDukung
-			.map((ref) => ref.id)
-			.filter((id) => masihBisaDipakai.has(id));
+		const dipulihkan = idPilihanAwal.filter((id) => masihBisaDipakai.has(id));
 
 		setTerpilih(new Set(dipulihkan));
 		setDasar(new Set(dipulihkan));
@@ -215,9 +251,7 @@ export function useChapterGeneration({
 		 * dengan konteks lebih sedikit tanpa pemberitahuan.
 		 */
 		const adaDiPustaka = new Set(pustaka.map((bukti) => bukti.id));
-		setJumlahGugur(
-			chapter.buktiDukung.filter((ref) => !adaDiPustaka.has(ref.id)).length,
-		);
+		setJumlahGugur(idPilihanAwal.filter((id) => !adaDiPustaka.has(id)).length);
 	}
 
 	/**
@@ -337,6 +371,27 @@ export function useChapterGeneration({
 		return peta;
 	}, [pustaka, folderPustaka]);
 
+	/**
+	 * ponytail: centang DISIMPAN ke server, bukan cuma state lokal. Dulu
+	 * `toggle` hanya mengubah Set di memori, sementara centang awal dibaca dari
+	 * evidence_draft_links yang append-only -- jadi meng-uncheck bertahan sampai
+	 * muat ulang, lalu daftar lama yang tak pernah menyusut menang lagi.
+	 *
+	 * Di-debounce 600ms: `toggleFolderSelection` memanggil `toggle` dalam loop
+	 * (satu per berkas di folder), tanpa ini satu klik folder jadi N request.
+	 * Ref-nya dibaca saat timer menyala, jadi yang terkirim selalu Set terakhir.
+	 */
+	const simpanTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+	const terpilihRef = React.useRef<ReadonlySet<string>>(terpilih);
+	terpilihRef.current = terpilih;
+
+	React.useEffect(
+		() => () => {
+			if (simpanTimerRef.current) clearTimeout(simpanTimerRef.current);
+		},
+		[],
+	);
+
 	/** Penjagaan kedua di luar atribut `disabled` pada checkbox-nya. */
 	const toggle = React.useCallback(
 		(bukti: EvidenceEntity) => {
@@ -347,8 +402,19 @@ export function useChapterGeneration({
 				if (!berikutnya.delete(bukti.id)) berikutnya.add(bukti.id);
 				return berikutnya;
 			});
+
+			if (!sectionId) return;
+			if (simpanTimerRef.current) clearTimeout(simpanTimerRef.current);
+			const idSection = sectionId;
+			simpanTimerRef.current = setTimeout(() => {
+				void chapterRepository
+					.saveSectionSelection(chapter.id, idSection, [...terpilihRef.current])
+					// Gagal simpan tidak menghapus centang di layar: pengguna masih
+					// melihat pilihannya, dan percobaan berikutnya menimpa seluruh daftar.
+					.catch(() => undefined);
+			}, 600);
 		},
-		[],
+		[sectionId, chapter.id],
 	);
 
 	/**
@@ -408,7 +474,10 @@ export function useChapterGeneration({
 				// selesai — versinya langsung dari hasil job, tidak menunggu klik
 				// tambahan seperti draf manual dulu.
 				setVersiTersimpan(hasilJob.result?.versi ?? null);
+				setPeringatanChecklist(hasilJob.result?.checklistError ?? null);
 
+				// Worker baru saja membuat versi AI section ini -- tab Draft ikut memuat ulang daftarnya.
+				chapterRepository.notify();
 				const hasil: HasilGenerate = {
 					html: diperbarui.kontenKerja ?? '',
 					chapter: diperbarui,
@@ -454,6 +523,7 @@ export function useChapterGeneration({
 
 			setStatus('berjalan');
 			setPesanGagal(null);
+			setPeringatanChecklist(null);
 
 			try {
 				const job = await chapterRemoteSource.generateSection(
@@ -499,6 +569,7 @@ export function useChapterGeneration({
 		setPrompt,
 		status,
 		pesanGagal,
+		peringatanChecklist,
 		digenerateAt,
 		jalankanGenerate,
 		// Worker membuat checkpoint sendiri tiap generate (lihat `jalankanGenerate`

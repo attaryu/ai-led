@@ -73,6 +73,22 @@ export type BackendBabDokumen = {
 	hasilSkorKriteria?: BackendHasilSkorKriteria[];
 };
 
+/** Baris Prisma `SectionDraft` — checkpoint per-section, dikembalikan `GET bab/:id/sections/:sectionId/drafts`. Lebih tipis dari `BackendBabDraft`: tidak ada arsip bukti dukung/ragas per checkpoint. */
+export type BackendSectionDraft = {
+	id: string;
+	sectionId: string;
+	createdByUserId: string;
+	version: number;
+	label: string | null;
+	source: 'AI' | 'MANUAL';
+	createdByName: string;
+	createdAt: string;
+	/** Isi versi ini (dokumen ProseMirror) -- dipakai pratinjau baca-saja. */
+	contentSnapshot?: unknown;
+	/** Versi yang sekarang jadi isi section (bab-draft.service.ts::findSectionDrafts). */
+	isActive?: boolean;
+};
+
 /** Baris Prisma `BabDraft` — checkpoint, dikembalikan `GET bab/:id/drafts`. */
 export type BackendBabDraft = {
 	id: string;
@@ -138,6 +154,8 @@ export type GenerasiBabResult = {
 	versi?: number;
 	ragasScores?: Record<string, { nilai: number; alasan: string }>;
 	error?: string;
+	/** Terisi kalau tahap checklist (LLM) gagal 2x -- section ini digenerate TANPA panduan pencarian fakta. */
+	checklistError?: string;
 };
 
 /** Hasil job GENERASI_OUTLINE_BAB — lihat `worker.py::_handle_generasi_outline_bab`. */
@@ -154,12 +172,22 @@ export type BackendChapterSection = {
 	parentId: string | null;
 	order: number;
 	title: string;
+	marker: string | null;
 	guidance: string;
+	lkpsNeeded: boolean | null;
+	lkpsList: string[] | null;
 	status: 'PENDING' | 'GENERATING' | 'GENERATED' | 'ERROR';
-	content: { format: string; body: string; markdown: string } | null;
+	/** Dokumen ProseMirror; baris lama `{format, body, markdown}` masih mungkin muncul. */
+	content: Record<string, unknown> | null;
+	tableSpec: { id: string; caption: string; columns: string[] }[] | null;
 	model: string | null;
 	error: string | null;
 	generatedAt: string | null;
+	locked: boolean;
+	qualityAssuranceNote: string | null;
+	notedByName: string | null;
+	notedAt: string | null;
+	reviewSubmittedAt: string | null;
 };
 
 /**
@@ -169,14 +197,30 @@ export type BackendChapterSection = {
  */
 export type BackendChunkUsed = {
 	citation_label: string;
-	kind: 'led' | 'evidence';
+	kind: 'led' | 'evidence' | 'lkps';
 	text: string;
+	/** R2 object key (bukan URL siap-pakai) -- `null` utk chunk `kind: 'led'` atau evidence yang sudah dihapus. */
+	fileUrl: string | null;
+	/** Evidence asal chunk `kind: 'evidence'` (worker.py search_evidence). */
+	bukti_dukung_id?: string;
+	/** Judul bagian/heading chunk evidence (tab Bukti); tidak ada pada chunk LKPS/LED. */
+	entity?: string;
 };
 
 /** `GET bab/:id/sections/:sectionId/sumber` — `null` = section belum pernah digenerate lewat job ini. */
 export type BackendSectionSumber = {
 	chunksUsed: BackendChunkUsed[];
 	generatedAt: string;
+	/** Bukti dukung yang dipilih saat generate terakhir section ini. */
+	selectedEvidenceIds?: string[];
+	/** worker.py judge output: 4 metrik + `reasoning`, atau `{error}`. */
+	judgeResult?: Record<string, unknown> | null;
+	latencySec?: number | null;
+	model?: string | null;
+	/** Butir checklist pencarian fakta generate terakhir (`_SYSTEM_CHECKLIST`). */
+	checklist?: string[];
+	/** Terisi bila tahap checklist gagal 2x -- section digenerate tanpa panduan pencarian fakta. */
+	checklistError?: string | null;
 } | null;
 
 /** Hasil job REKOMENDASI_DOKUMEN — lihat `worker.py::_handle_rekomendasi_dokumen`. */
@@ -206,6 +250,7 @@ export type BackendRecommendationItem = {
 export type BackendDocumentRecommendation = {
 	id: string;
 	chapterDraftId: string;
+	chapterSectionId: string | null;
 	recommendationText: string | null;
 	/** `Json` di Prisma — larik id string. */
 	selectedEvidenceIds: unknown;
@@ -299,7 +344,12 @@ export const chapterRemoteSource = {
 	updateSection(
 		id: string,
 		sectionId: string,
-		payload: { title?: string; guidance?: string; content?: { format: 'html'; body: string } },
+		payload: {
+			title?: string;
+			guidance?: string;
+			content?: Record<string, unknown>;
+			tableSpec?: { id: string; caption: string; columns: string[] }[];
+		},
 	): Promise<BackendChapterSection> {
 		return apiFetch<BackendChapterSection>(`/bab/${id}/sections/${sectionId}`, {
 			method: 'PATCH',
@@ -311,11 +361,16 @@ export const chapterRemoteSource = {
 		return apiFetch<void>(`/bab/${id}/sections/${sectionId}`, { method: 'DELETE' });
 	},
 
+	/** Memicu penilaian RAGAS satu section (job PENILAIAN_RAGAS) -- tombol di tab Kualitas AI. */
+	evaluateQuality(id: string, sectionId: string): Promise<BackendJob> {
+		return apiFetch<BackendJob>(`/bab/${id}/sections/${sectionId}/evaluate-quality`, { method: 'POST' });
+	},
+
 	/** Memicu REKOMENDASI_DOKUMEN. `draftId` = "Rekomendasikan Ulang", memakai ulang draft kosong yang sama. */
-	recommendDocuments(id: string, draftId?: string): Promise<BackendJob> {
+	recommendDocuments(id: string, draftId?: string, sectionId?: string): Promise<BackendJob> {
 		return apiFetch<BackendJob>(`/bab/${id}/recommend-documents`, {
 			method: 'POST',
-			body: draftId ? { draftId } : {},
+			body: { ...(draftId ? { draftId } : {}), ...(sectionId ? { sectionId } : {}) },
 		});
 	},
 
@@ -329,8 +384,12 @@ export const chapterRemoteSource = {
 	findRecommendation(
 		id: string,
 		draftId?: string,
+		sectionId?: string,
 	): Promise<BackendDocumentRecommendation | null> {
-		const query = draftId ? `?draftId=${encodeURIComponent(draftId)}` : '';
+		const params = new URLSearchParams();
+		if (draftId) params.set('draftId', draftId);
+		if (sectionId) params.set('sectionId', sectionId);
+		const query = params.size ? `?${params}` : '';
 		return apiFetch<BackendDocumentRecommendation | null>(
 			`/bab/${id}/recommendation${query}`,
 		);
@@ -347,16 +406,56 @@ export const chapterRemoteSource = {
 		);
 	},
 
-	/** Riwayat checkpoint bab ini, terbaru dulu — tab Draft/Rujukan/Kualitas AI/Rubrik. */
+	/** Checkpoint AI bab (`ChapterDraft`) — tab Rujukan/Kualitas AI/Rubrik, read-only. */
 	findDrafts(id: string): Promise<BackendBabDraft[]> {
 		return apiFetch<BackendBabDraft[]>(`/bab/${id}/drafts`);
 	},
 
+	/** Riwayat checkpoint section ini, terbaru dulu — tab Draft di editor section. */
+	findSectionDrafts(id: string, sectionId: string): Promise<BackendSectionDraft[]> {
+		return apiFetch<BackendSectionDraft[]>(`/bab/${id}/sections/${sectionId}/drafts`);
+	},
+
 	/** Checkpoint manual — tombol "Simpan Draft" tab Draft. */
-	createDraft(id: string, label: string | null): Promise<BackendBabDraft> {
-		return apiFetch<BackendBabDraft>(`/bab/${id}/drafts`, {
+	createSectionDraft(
+		id: string,
+		sectionId: string,
+		label: string | null,
+	): Promise<BackendSectionDraft> {
+		return apiFetch<BackendSectionDraft>(`/bab/${id}/sections/${sectionId}/drafts`, {
 			method: 'POST',
 			body: label ? { label } : {},
+		});
+	},
+
+	/** Pulihkan section ke isi salah satu checkpoint-nya — mengembalikan section yang sudah diperbarui. */
+	restoreSectionDraft(
+		id: string,
+		sectionId: string,
+		draftId: string,
+	): Promise<BackendChapterSection> {
+		return apiFetch<BackendChapterSection>(
+			`/bab/${id}/sections/${sectionId}/drafts/${draftId}/restore`,
+			{ method: 'POST' },
+		);
+	},
+
+	/** Simpan centang bukti dukung section (replace penuh). */
+	updateSectionEvidenceSelection(
+		id: string,
+		sectionId: string,
+		evidenceIds: string[],
+	): Promise<{ selectedEvidenceIds: string[] }> {
+		return apiFetch<{ selectedEvidenceIds: string[] }>(
+			`/bab/${id}/sections/${sectionId}/evidence-selection`,
+			{ method: 'PUT', body: { evidenceIds } },
+		);
+	},
+
+	/** Hapus satu checkpoint dari Riwayat Draft section (204, tanpa isi balikan). */
+	deleteSectionDraft(id: string, sectionId: string, draftId: string): Promise<void> {
+		return apiFetch<void>(`/bab/${id}/sections/${sectionId}/drafts/${draftId}`, {
+			method: 'DELETE',
 		});
 	},
 
@@ -382,16 +481,20 @@ export const chapterRemoteSource = {
 	},
 
 	/** Ajukan review Penyusun; `diajukan: false` membatalkan (tombol "Batalkan Pengajuan"). */
-	submitForReview(id: string, diajukan = true): Promise<BackendBabDokumen> {
-		return apiFetch<BackendBabDokumen>(`/bab/${id}/submit-review`, {
+	submitForReview(id: string, sectionId: string, diajukan = true): Promise<BackendChapterSection> {
+		return apiFetch<BackendChapterSection>(`/bab/${id}/sections/${sectionId}/submit-review`, {
 			method: 'POST',
 			body: { diajukan },
 		});
 	},
 
-	/** Penjamin Mutu: kunci/buka bab dan/atau tulis catatan review. */
-	setReviewStatus(id: string, payload: ReviewStatusPayload): Promise<BackendBabDokumen> {
-		return apiFetch<BackendBabDokumen>(`/bab/${id}/review-status`, {
+	/** Penjamin Mutu: kunci/buka section dan/atau tulis catatan review. */
+	setReviewStatus(
+		id: string,
+		sectionId: string,
+		payload: ReviewStatusPayload,
+	): Promise<BackendChapterSection> {
+		return apiFetch<BackendChapterSection>(`/bab/${id}/sections/${sectionId}/review-status`, {
 			method: 'PATCH',
 			body: payload,
 		});

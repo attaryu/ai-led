@@ -36,7 +36,17 @@ def chunk_led_docx(docx_path: str):
     3. Sliding-window chunk the combined text (shared with the PDF path).
     4. Resolve paragraph-index positions and headings for each chunk window.
     """
-    combined_text, para_offsets, heading_offsets = _extract_docx(docx_path)
+    doc = Document(docx_path)
+    return chunk_led_paragraphs(
+        (p.text, ((p.style.name or "") if p.style else "").startswith("Heading"))
+        for p in doc.paragraphs
+    )
+
+
+def chunk_led_paragraphs(paragraphs) -> list:
+    """Chunk (text, is_heading) paragraphs like a LED .docx -- also the Editor's
+    chapters (sumberLed EDITOR), which have no file to upload."""
+    combined_text, para_offsets, heading_offsets = _combine_paragraphs(paragraphs)
     sorted_heading_offsets = sorted(heading_offsets.keys())
 
     def heading_resolver(_text: str, char_start: int, _char_end: int) -> Optional[str]:
@@ -55,30 +65,25 @@ def chunk_led_docx(docx_path: str):
 # ---------------------------------------------------------------------------
 
 
-def _extract_docx(docx_path: str) -> tuple[str, dict[int, int], dict[int, str]]:
+def _combine_paragraphs(paragraphs) -> tuple[str, dict[int, int], dict[int, str]]:
     """Return (combined_text, {char_offset: paragraph_index}, {char_offset: heading_text}).
 
-    para_offsets records the char offset where each paragraph starts, keyed
-    to its 0-based paragraph index. heading_offsets records only paragraphs
-    whose style is "Heading N" (the document title, added via add_heading at
-    level 0 -> style "Title", is intentionally excluded — it is not a LED
-    section).
+    para_offsets records the char offset where each non-empty paragraph starts,
+    keyed to its 0-based index. heading_offsets records only heading paragraphs
+    (docx "Heading N" style; the "Title" style is intentionally excluded -- it
+    is not a LED section).
     """
-    doc = Document(docx_path)
     parts: list[str] = []
     para_offsets: dict[int, int] = {}
     heading_offsets: dict[int, str] = {}
     current_offset = 0
 
-    paragraphs = [p for p in doc.paragraphs if p.text.strip()]
-    for para_idx, para in enumerate(paragraphs):
+    paragraphs = [(t, h) for t, h in paragraphs if t.strip()]
+    for para_idx, (raw, is_heading) in enumerate(paragraphs):
         para_offsets[current_offset] = para_idx
+        if is_heading:
+            heading_offsets[current_offset] = raw.strip()
 
-        style_name = (para.style.name or "") if para.style else ""
-        if style_name.startswith("Heading"):
-            heading_offsets[current_offset] = para.text.strip()
-
-        raw = para.text
         parts.append(raw)
         current_offset += len(raw)
 

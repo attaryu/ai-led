@@ -42,11 +42,6 @@ export const authRemoteSource = {
 		return apiFetch<AuthResult>('/auth/login', { method: 'POST', body: payload });
 	},
 
-	/** `skipAuthRetry` mencegah loop tak berujung — ini fungsi yang dipanggil api-client saat 401. */
-	refresh(): Promise<AuthResult> {
-		return apiFetch<AuthResult>('/auth/refresh', { method: 'POST', skipAuthRetry: true });
-	},
-
 	logout(): Promise<{ success: boolean }> {
 		return apiFetch<{ success: boolean }>('/auth/logout', { method: 'POST' });
 	},

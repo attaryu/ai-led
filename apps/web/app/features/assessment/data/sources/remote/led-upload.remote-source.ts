@@ -3,9 +3,8 @@ import { apiFetch } from '~/core/lib/api-client';
 /**
  * Unggah PDF LED lewat presigned URL R2 (tracker: Cloudflare R2 Storage
  * Module) — browser PUT langsung ke R2, backend tidak pernah memegang isi
- * filenya. `POST dokumen/:id/led-upload` lalu meneruskannya (server-side)
- * ke apps/ai's `/upload/led`, yang mengekstraksi+mengindeks pgvector-nya
- * sendiri, tidak berubah.
+ * filenya. `POST dokumen/:id/led-upload` lalu mengantrekan job INGESTION_LED
+ * berisi file key; worker mengunduh dari R2 dan mengindeks pgvector-nya.
  */
 export async function uploadLedPdf(file: File, dokumenId: string): Promise<void> {
 	const { key, uploadUrl } = await apiFetch<{ key: string; uploadUrl: string }>(

@@ -110,14 +110,18 @@ export async function findPanduanForBab(
 	const sumber: SumberPanduan = {
 		id: `panduan-set-${accreditationSetId}`,
 		tipe: 'PANDUAN_LAM',
-		judul: set?.dokumen.find((d) => d.tipe === 'PANDUAN_LAM')?.namaBerkas ?? 'Panduan Penyusunan LED',
+		judul: set?.panduan?.judul ?? 'Panduan Penyusunan LED',
 		tipeFile: 'pdf',
 	};
 
-	return ratakanSubBab(bab.subBab)
+	// dimas: teks langsung di bawah judul BAB ikut tampil (tidak di-generate).
+	const pengantar = bab.pengantar?.trim()
+		? [{ kode: '', judul: `Pengantar ${bab.judul}`, panduan: bab.pengantar }]
+		: [];
+	return [...pengantar, ...ratakanSubBab(bab.subBab)]
 		.filter((s) => s.panduan.trim().length > 0)
 		.map((s) => ({
-			id: `poin-pedoman-${urutanBab}-${s.kode}`,
+			id: `poin-pedoman-${urutanBab}-${s.kode || 'pengantar'}`,
 			sumber,
 			kodePoin: s.kode,
 			judulPoin: s.judul,

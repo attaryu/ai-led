@@ -1,6 +1,9 @@
 import * as React from 'react';
 
-import { type PenilaianFinalRow } from '../../domain/entities/assessment-session.entity';
+import {
+	kunciIndikator,
+	type PenilaianFinalRow,
+} from '../../domain/entities/assessment-session.entity';
 
 /**
  * Indikator mana yang ikut dinilai saat "Mulai Penilaian Otomatis"/"Nilai
@@ -21,35 +24,48 @@ import { type PenilaianFinalRow } from '../../domain/entities/assessment-session
  * perilaku lama.
  */
 export function useAssessmentIndicatorPicks(baris: PenilaianFinalRow[]) {
-	const [terpilih, setTerpilih] = React.useState<Set<number>>(() => new Set());
+	// Kunci = nomor + sub-indikator ("43|I"): 43.I dan 43.II dipilih dan dinilai terpisah.
+	// ponytail: dulu Set<number> (per nomor indikator saja).
+	const [terpilih, setTerpilih] = React.useState<Set<string>>(() => new Set());
 	const sudahDiinit = React.useRef(false);
 
 	React.useEffect(() => {
 		if (baris.length > 0 && !sudahDiinit.current) {
-			setTerpilih(new Set(baris.map((row) => row.kriteria.no)));
+			setTerpilih(new Set(baris.map((row) => kunciIndikator(row.kriteria.no, row.kriteria.subNo))));
 			sudahDiinit.current = true;
 		}
 	}, [baris]);
 
-	const toggle = (no: number) =>
+	const toggle = (kunci: string) =>
 		setTerpilih((sebelumnya) => {
 			const berikutnya = new Set(sebelumnya);
-			if (!berikutnya.delete(no)) berikutnya.add(no);
+			if (!berikutnya.delete(kunci)) berikutnya.add(kunci);
 			return berikutnya;
 		});
 
 	const pilihSemua = () =>
-		setTerpilih(new Set(baris.map((row) => row.kriteria.no)));
+		setTerpilih(new Set(baris.map((row) => kunciIndikator(row.kriteria.no, row.kriteria.subNo))));
 	const kosongkan = () => setTerpilih(new Set());
 
-	/** `undefined` = "semua" — dikirim apa adanya ke backend (indikatorList kosong berarti nilai semua). */
+	const semua = baris.length > 0 && terpilih.size === baris.length;
+
+	/** `undefined` = "semua" — dikirim apa adanya ke backend. Nomor indikator unik dari baris terpilih (kompatibilitas). */
 	const indikatorList = React.useMemo(
 		() =>
-			baris.length > 0 && terpilih.size === baris.length
+			semua
 				? undefined
-				: [...terpilih],
-		[baris, terpilih],
+				: [
+						...new Set(
+							baris
+								.filter((row) => terpilih.has(kunciIndikator(row.kriteria.no, row.kriteria.subNo)))
+								.map((row) => row.kriteria.no),
+						),
+					],
+		[baris, terpilih, semua],
 	);
 
-	return { terpilih, toggle, pilihSemua, kosongkan, indikatorList };
+	/** Kunci "nomor|sub" baris yang dipilih; menentukan sub-indikator mana yang dinilai. `undefined` = semua. */
+	const subIndikatorList = React.useMemo(() => (semua ? undefined : [...terpilih]), [terpilih, semua]);
+
+	return { terpilih, toggle, pilihSemua, kosongkan, indikatorList, subIndikatorList };
 }

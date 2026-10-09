@@ -13,7 +13,7 @@ from langchain_core.tools import tool
 
 from agent.context import require_current_context
 from db.postgres_client import get_rubric_criteria_for_set
-from ingestion.matrix_parser import load_cached_rubrics
+from ingestion.matrix_parser import load_cached_rubrics, sub_no_dari
 
 # Module-level lazy cache — loaded once per process
 _rubric_cache: dict = {}
@@ -25,7 +25,11 @@ _rubric_cache_by_set: dict[str, list] = {}
 _rubric_load_errors_by_set: dict[str, str] = {}
 
 
-def _get_rubrics_for_set(accreditation_set_id: str, tenant_id: str | None = None) -> list:
+def _get_rubrics_for_set(accreditation_set_id: str, tenant_id: str | None = None, refresh: bool = False) -> list:
+    # refresh: ariel cleared its cache on every /upload/matrix; here each assessment job re-reads the set.
+    if refresh:
+        _rubric_cache_by_set.pop(accreditation_set_id, None)
+        _rubric_load_errors_by_set.pop(accreditation_set_id, None)
     if accreditation_set_id not in _rubric_cache_by_set:
         try:
             _rubric_cache_by_set[accreditation_set_id] = get_rubric_criteria_for_set(
@@ -73,10 +77,12 @@ def get_indicator_rubric(indicator_no: int) -> str:
     accreditation_set_id = ctx.accreditation_set_id
     rubrics = _get_rubrics_for_set(accreditation_set_id, ctx.tenant_id)
     for r in rubrics:
-        if r.no == indicator_no:
+        # Satu nomor bisa punya beberapa sub-indikator: pilih yang sedang dinilai (ctx.sub_no); tanpa sub = baris pertama.
+        if r.no == indicator_no and (not ctx.sub_no or sub_no_dari(r) == ctx.sub_no):
             return json.dumps(
                 {
                     "no": r.no,
+                    "sub_no": sub_no_dari(r),
                     "kriteria": r.kriteria,
                     "indikator": r.indikator,
                     "score_type": r.score_type,

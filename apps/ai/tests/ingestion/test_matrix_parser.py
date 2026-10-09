@@ -315,3 +315,17 @@ def test_propagate_floor_note_does_not_touch_distinct_per_band_text():
     }
     result = _propagate_floor_note(scores)
     assert result == scores
+
+
+def test_repeated_score_text_is_not_appended_twice():
+    """Composite indicator no. 46: sub-indicators I and II carry the SAME rubric sentence, and a row split
+    across a page break re-emits its cell -- the stored level text used to read as duplicated nonsense."""
+    from ingestion.matrix_parser import _RowAccumulator
+
+    acc = _RowAccumulator(no=46, kriteria="Prestasi", indikator="I. akademik")
+    acc.append_score(3, "Jika 0 < RI, maka Skor = 3,75")
+    acc.append_score(3, "Jika 0 < RI, maka Skor = 3,75")  # sub-indikator II, kalimat identik
+    acc.append_score(4, "Jika RI > a maka Skor = 4")
+    acc.append_score(4, "Faktor: a = 0,2%")  # isi berbeda tetap disambung
+    assert acc.scores[3] == "Jika 0 < RI, maka Skor = 3,75"
+    assert acc.scores[4] == "Jika RI > a maka Skor = 4 Faktor: a = 0,2%"

@@ -1,5 +1,6 @@
 import {
 	ArrowClockwiseIcon,
+	ArrowSquareOutIcon,
 	CheckIcon,
 	TrashIcon,
 	WarningCircleIcon,
@@ -61,6 +62,7 @@ export function EvidenceDetailPanel({
 	onClose,
 	onDelete,
 	onRetry,
+	onOpenFile,
 }: {
 	/** `null` → panel tertutup. */
 	evidence: EvidenceEntity | null;
@@ -78,6 +80,8 @@ export function EvidenceDetailPanel({
 	onClose: () => void;
 	onDelete: (evidence: EvidenceEntity) => void;
 	onRetry: (evidence: EvidenceEntity) => void;
+	/** Buka berkas asli di tab baru (presigned URL R2, diminta fresh tiap klik). */
+	onOpenFile: (evidence: EvidenceEntity) => void;
 }) {
 	if (!evidence) return null;
 
@@ -203,8 +207,18 @@ export function EvidenceDetailPanel({
 					</ol>
 			</SheetBody>
 
-			{(canDelete || (canRetry && isFailed)) && (
+			{(evidence.status === 'SIAP' || canDelete || (canRetry && isFailed)) && (
 				<SheetFooter className="flex items-center justify-end gap-2">
+					{evidence.status === 'SIAP' && (
+						<Button
+							variant="outline"
+							onClick={() => onOpenFile(evidence)}
+							className="cursor-pointer gap-2"
+						>
+							<ArrowSquareOutIcon className="size-4" />
+							Buka berkas
+						</Button>
+					)}
 					{canRetry && isFailed && (
 						<Button
 							variant="outline"

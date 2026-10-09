@@ -33,6 +33,7 @@ export function AssessmentResultRow({
 	onBuka,
 	untukDinilai,
 	onToggleUntukDinilai,
+	ikutIndikator,
 }: {
 	row: PenilaianFinalRow;
 	/** Sedang dibuka di laci; barisnya ditandai supaya tempatnya tidak hilang. */
@@ -45,6 +46,13 @@ export function AssessmentResultRow({
 	 * berlaku di sini (izin.canRun false), checkbox-nya tidak dirender. */
 	untukDinilai: boolean | undefined;
 	onToggleUntukDinilai: () => void;
+	/**
+	 * `true` = baris ini saudara (sub-indikator, mis. 43.II) dari baris di atasnya dengan nomor indikator
+	 * yang sama. Pemilihan penilaian berlaku per NOMOR indikator (worker menilai `r.no in wanted`), jadi
+	 * kotak centangnya cuma ada di baris pertama; di sini diganti penyeimbang kosong supaya tidak ada
+	 * dua kotak yang tampak independen padahal bergerak bersamaan.
+	 */
+	ikutIndikator?: boolean;
 }) {
 	const { kriteria } = row;
 
@@ -56,13 +64,17 @@ export function AssessmentResultRow({
 				terpilih && 'border-primary/30 bg-primary/5 hover:bg-primary/10',
 			)}
 		>
-			{untukDinilai !== undefined && (
+			{untukDinilai !== undefined && !ikutIndikator && (
 				<Checkbox
 					checked={untukDinilai}
 					onCheckedChange={onToggleUntukDinilai}
 					aria-label={`Pilih indikator ${kriteria.no} untuk dinilai`}
 					className="ml-3 shrink-0"
 				/>
+			)}
+			{untukDinilai !== undefined && ikutIndikator && (
+				// Penyeimbang selebar kotak centang supaya isi baris tetap sejajar dengan saudaranya.
+				<span aria-hidden className="ml-3 size-4 shrink-0" />
 			)}
 
 			<button

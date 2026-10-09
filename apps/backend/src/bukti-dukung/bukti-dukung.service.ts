@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { JobType, OwnerTipe, Role, StatusEkstraksi } from '@ai-led/db';
+import { EvidenceKind, JobType, OwnerTipe, Role, StatusEkstraksi } from '@ai-led/db';
 import { PrismaService } from '../database/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { JobsService } from '../jobs/jobs.service';
@@ -37,6 +37,27 @@ export class BuktiDukungService {
     // accreditationSetId wajib bareng indicatorNos -- indicatorNo polos ambigu begitu
     // prodi punya proyek di lebih dari satu set (lihat komentar schema.prisma). Dicek
     // di awal, sebelum ada efek samping (R2 read, insert row), supaya gagal cepat.
+    const kind = dto.kind ?? EvidenceKind.BUKTI_DUKUNG;
+    if (kind === EvidenceKind.LKPS) {
+      if (dto.ownerType !== OwnerTipe.PROGRAM_STUDI) {
+        throw new BadRequestException('LKPS selalu milik satu program studi');
+      }
+      if (!['.xlsx', '.xls'].some((ext) => dto.fileKey.toLowerCase().endsWith(ext))) {
+        throw new BadRequestException('Berkas LKPS harus Excel (.xlsx atau .xls)');
+      }
+      if (dto.folderId || dto.indicatorNos?.length) {
+        throw new BadRequestException('LKPS tidak memakai folder maupun tag indikator');
+      }
+      // Satu prodi boleh punya beberapa LKPS dan tiap Dokumen LED memilih salah satunya,
+      // jadi LKPS baru harus bisa dibedakan: nama yang bermakna + tahun/periode.
+      if (!dto.documentName?.trim()) {
+        throw new BadRequestException('Nama LKPS wajib diisi');
+      }
+      if (!dto.period?.trim()) {
+        throw new BadRequestException('Tahun/periode LKPS wajib diisi');
+      }
+    }
+
     if (dto.indicatorNos?.length && !dto.accreditationSetId) {
       throw new BadRequestException(
         'accreditationSetId wajib diisi bila indicatorNos disertakan',
@@ -100,10 +121,13 @@ export class BuktiDukungService {
     const bukti = await this.prisma.evidence.create({
       data: {
         id,
+        kind,
         ownerType: dto.ownerType,
         tenantId,
         studyProgramId: dto.ownerType === OwnerTipe.PROGRAM_STUDI ? dto.studyProgramId : null,
-        documentName: dto.documentName || originalFileName,
+        documentName: dto.documentName?.trim() || originalFileName,
+        // Periode hanya bermakna untuk LKPS; Bukti Dukung selalu null.
+        period: kind === EvidenceKind.LKPS ? dto.period!.trim() : null,
         fileUrl: dto.fileKey,
         fileType: tipeFile,
         sizeBytes,
@@ -114,12 +138,7 @@ export class BuktiDukungService {
       },
     });
 
-    await this.jobsService.enqueue(JobType.INGESTION_BUKTI_DUKUNG, {
-      buktiDukungId: bukti.id,
-      tenantId,
-      fileUrl: dto.fileKey,
-      tipeFile,
-    });
+    await this.enqueueIngestion(bukti, tenantId);
 
     if (dto.indicatorNos?.length) {
       // skipDuplicates so re-uploading/re-tagging the same evidence+indicator pair doesn't 500.
@@ -136,7 +155,28 @@ export class BuktiDukungService {
     return bukti;
   }
 
-  async findAll(studyProgramId?: string) {
+  /** Bukti Dukung -> evidence chunks; LKPS -> dimas per-sheet chunks keyed by this file (like dimas process_lkps on upload). */
+  private async enqueueIngestion(
+    bukti: { id: string; kind: EvidenceKind; fileUrl: string; fileType: string },
+    tenantId: string,
+  ) {
+    if (bukti.kind === EvidenceKind.LKPS) {
+      await this.jobsService.enqueue(JobType.INGESTION_LKPS, {
+        evidenceId: bukti.id,
+        tenantId,
+        fileUrl: bukti.fileUrl,
+      });
+      return;
+    }
+    await this.jobsService.enqueue(JobType.INGESTION_BUKTI_DUKUNG, {
+      buktiDukungId: bukti.id,
+      tenantId,
+      fileUrl: bukti.fileUrl,
+      tipeFile: bukti.fileType,
+    });
+  }
+
+  async findAll(studyProgramId?: string, kind: EvidenceKind = EvidenceKind.BUKTI_DUKUNG) {
     const { tenantId, role, studyProgramId: ownProdiId } =
       this.tenantContext.getOrThrow();
 
@@ -148,7 +188,7 @@ export class BuktiDukungService {
         );
       }
       return this.prisma.evidence.findMany({
-        where: { tenantId, ownerType: OwnerTipe.TENANT },
+        where: { tenantId, ownerType: OwnerTipe.TENANT, kind: EvidenceKind.BUKTI_DUKUNG },
         orderBy: { uploadedAt: 'desc' },
       });
     }
@@ -159,7 +199,7 @@ export class BuktiDukungService {
       );
     }
     return this.prisma.evidence.findMany({
-      where: { tenantId, studyProgramId },
+      where: { tenantId, studyProgramId, kind },
       orderBy: { uploadedAt: 'desc' },
     });
   }
@@ -179,7 +219,23 @@ export class BuktiDukungService {
       );
     }
 
-    await this.prisma.evidence.delete({ where: { id } });
+    // ponytail: baris penaut diputus LEBIH DULU. evidence_chapter_links dan
+    // evidence_draft_links dua-duanya FK ON DELETE RESTRICT, jadi begitu sebuah
+    // berkas pernah dipakai generate ia terkunci permanen -- tombol Hapus selalu
+    // gagal "Foreign key constraint violated" (P2003). Tabel lain (chunk
+    // embeddings, indicator tags) sudah CASCADE, dan writing_led_documents.
+    // lkps_evidence_id SET NULL, jadi hanya dua ini yang perlu dibereskan.
+    // Urutan anak-ke-induk + transaksi, pola yang sama dengan
+    // dokumen-led.service.ts::remove.
+    await this.prisma.$transaction(async (tx) => {
+      await this.tenantContext.runInManagedTransaction(async () => {
+        await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+        await tx.evidenceDraftLink.deleteMany({ where: { evidenceId: id } });
+        await tx.evidenceChapterLink.deleteMany({ where: { evidenceId: id } });
+        await tx.evidence.delete({ where: { id } });
+      });
+    });
+
     try {
       await this.storage.deleteObject(bukti.fileUrl);
     } catch {
@@ -227,12 +283,7 @@ export class BuktiDukungService {
       data: { extractionStatus: StatusEkstraksi.MENUNGGU, failureNote: null },
     });
 
-    await this.jobsService.enqueue(JobType.INGESTION_BUKTI_DUKUNG, {
-      buktiDukungId: bukti.id,
-      tenantId,
-      fileUrl: bukti.fileUrl,
-      tipeFile: bukti.fileType,
-    });
+    await this.enqueueIngestion(bukti, tenantId);
 
     return updated;
   }

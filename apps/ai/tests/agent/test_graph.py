@@ -1179,3 +1179,26 @@ def test_formula_data_confirmed_unavailable_false_cases():
     assert formula_data_confirmed_unavailable(qualitative, not_found) is False
     # A successful (non-error) LKPS result must not be mistaken for "missing".
     assert formula_data_confirmed_unavailable(quantitative, "| DPD |\n|---|\n| 9000000 |") is False
+
+
+def test_disable_evidence_drops_the_evidence_tool_everywhere():
+    """ariel 2f97285: disable_evidence removes the tool from bind_tools/ToolNode, dispatch, and the reasoning prompt."""
+    from agent.graph import TOOLS, _effective_tools
+    from agent.reasoning_graph import _SYSTEM_PROMPT, _TOOL_REGISTRY, _build_system_prompt, _effective_tool_registry
+
+    assert _effective_tools(False) is TOOLS
+    assert "search_evidence_documents" not in {t.name for t in _effective_tools(True)}
+    assert _effective_tool_registry(False) is _TOOL_REGISTRY
+    assert "search_evidence_documents" not in _effective_tool_registry(True)
+    assert _build_system_prompt(False) is _SYSTEM_PROMPT
+    assert "search_evidence_documents" not in _build_system_prompt(True)
+
+
+def test_build_graph_auto_forwards_disable_evidence(monkeypatch):
+    import agent.graph as graph_mod
+
+    seen = {}
+    monkeypatch.setattr(graph_mod, "is_reasoning_model", lambda m: False)
+    monkeypatch.setattr(graph_mod, "build_graph", lambda client, **kw: seen.update(kw))
+    graph_mod.build_graph_auto(MagicMock(model="x"), disable_evidence=True)
+    assert seen == {"disable_evidence": True}

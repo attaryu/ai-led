@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { AccreditationSetStatus, RubricScoreType, TipePanduan } from '@ai-led/db';
 import { AccreditationSetService } from './accreditation-set.service';
 import type { TenantContextService } from '../tenant/tenant-context.service';
@@ -13,6 +13,7 @@ function makeSet(overrides: Partial<Record<string, unknown>> = {}) {
     lembaga: 'LAM Teknik',
     tahunSiklus: 2025,
     status: AccreditationSetStatus.DRAF,
+    panduanId: null,
     ...overrides,
   };
 }
@@ -67,14 +68,22 @@ function makeService(tenantId = 't1') {
     },
     rubricCriterion: {
       findFirst: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       delete: jest.fn().mockResolvedValue(undefined),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       create: jest.fn().mockResolvedValue(undefined),
     },
+    rubricCriterionGroup: {
+      findMany: jest.fn().mockResolvedValue([]),
+      create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: `baru-${data.label}`, ...data })),
+    },
     referenceGuide: {
       findFirst: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
       update: jest.fn(),
       create: jest.fn(),
+      delete: jest.fn(),
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     user: {
@@ -82,6 +91,10 @@ function makeService(tenantId = 't1') {
     },
     chapterTemplate: {
       findMany: jest.fn().mockResolvedValue([]),
+    },
+    subBabTemplate: {
+      findFirst: jest.fn(),
+      update: jest.fn(),
     },
     $transaction: jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(prisma)),
     $executeRaw: jest.fn().mockResolvedValue(undefined),
@@ -139,6 +152,49 @@ describe('AccreditationSetService.replaceCriteria (lock check)', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
+  it('mengizinkan nomor indikator sama bila sub-indikatornya berbeda, dan menyimpan subNo', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet());
+    prisma.ledDocument.count.mockResolvedValue(0);
+    prisma.accreditationSet.findFirstOrThrow.mockResolvedValue({ ...makeSet(), criteria: [makeCriterion()] });
+
+    const satu = { ...makeCriterionInput(), subNo: 'I', criterionCode: '43.I' };
+    const dua = { ...makeCriterionInput(), subNo: 'II', criterionCode: '43.II' };
+    await service.replaceCriteria('s1', { criteria: [satu as never, dua as never] });
+
+    expect(prisma.rubricCriterion.create).toHaveBeenCalledTimes(2);
+    expect(prisma.rubricCriterion.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ subNo: 'II', criterionCode: '43.II' }) }),
+    );
+  });
+
+  it('mempertahankan group_id kriteria saat daftar diganti (replace-all tidak memutus hierarki)', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet());
+    prisma.ledDocument.count.mockResolvedValue(0);
+    prisma.accreditationSet.findFirstOrThrow.mockResolvedValue({ ...makeSet(), criteria: [] });
+    prisma.rubricCriterion.findMany.mockResolvedValue([{ indicatorNo: 43, subNo: 'II', groupId: 'g1' }]);
+
+    await service.replaceCriteria('s1', {
+      criteria: [{ ...makeCriterionInput(), indicatorNo: 43, subNo: 'II' } as never],
+    });
+
+    expect(prisma.rubricCriterion.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ indicatorNo: 43, groupId: 'g1' }) }),
+    );
+  });
+
+  it('tetap menolak pasangan nomor + sub-indikator yang kembar', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet());
+    prisma.ledDocument.count.mockResolvedValue(0);
+
+    const satu = { ...makeCriterionInput(), subNo: 'I' };
+    await expect(
+      service.replaceCriteria('s1', { criteria: [satu as never, { ...satu } as never] }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
   it('replaces the whole criteria list when unlocked', async () => {
     const { service, prisma } = makeService();
     prisma.accreditationSet.findFirst.mockResolvedValue(makeSet());
@@ -190,12 +246,17 @@ describe('AccreditationSetService.remove (delete)', () => {
 });
 
 describe('AccreditationSetService.duplicate', () => {
-  it('copies all criteria (with levels and chapters) into a new DRAF set', async () => {
+  it('copies all criteria (with levels and chapters) and the Panduan pointer into a new DRAF set', async () => {
     const { service, prisma } = makeService();
     const source = {
-      ...makeSet(),
+      ...makeSet({ panduanId: 'g1' }),
       lembaga: 'LAM Teknik',
-      documents: [{ type: TipePanduan.DOKUMEN_RUBRIK, title: 'Rubrik', fileUrl: 'k', fileType: 'pdf' }],
+      documents: [
+        { type: TipePanduan.DOKUMEN_RUBRIK, title: 'Rubrik', fileUrl: 'k', fileType: 'pdf' },
+        // Legacy pre-migration row -- must NOT be copied, Panduan is reusable
+        // via panduanId now, not a per-set ReferenceGuide.
+        { type: TipePanduan.PANDUAN_LAM, title: 'Panduan lama', fileUrl: 'p', fileType: 'pdf' },
+      ],
       criteria: [makeCriterion(), makeCriterion({ id: 'c2', indicatorNo: 2 })],
     };
     prisma.accreditationSet.findFirstOrThrow.mockResolvedValue(source);
@@ -206,8 +267,37 @@ describe('AccreditationSetService.duplicate', () => {
     const callArg = prisma.accreditationSet.create.mock.calls[0][0];
     expect(callArg.data.status).toBe(AccreditationSetStatus.DRAF);
     expect(callArg.data.nama).toBe(`${source.nama} (salinan)`);
+    expect(callArg.data.panduanId).toBe('g1');
     expect(callArg.data.criteria.create).toHaveLength(2);
     expect(callArg.data.documents.create).toHaveLength(1);
+    expect(callArg.data.documents.create[0].type).toBe(TipePanduan.DOKUMEN_RUBRIK);
+  });
+
+  it('menyalin grup hierarki (induk lebih dulu) dan menautkan ulang kriterianya', async () => {
+    const { service, prisma } = makeService();
+    const source = {
+      ...makeSet(),
+      documents: [],
+      criteria: [makeCriterion({ id: 'c1', indicatorNo: 43, subNo: 'I', groupId: 'g-anak' })],
+    };
+    prisma.accreditationSet.findFirstOrThrow.mockResolvedValue(source);
+    prisma.accreditationSet.findMany.mockResolvedValue([]);
+    prisma.accreditationSet.create.mockResolvedValue({ id: 'baru', criteria: [] });
+    // anak tercantum SEBELUM induknya -- salinan tetap harus membuat induk lebih dulu
+    prisma.rubricCriterionGroup.findMany.mockResolvedValue([
+      { id: 'g-anak', parentId: 'g-induk', level: 'IKU', order: 1, marker: null, label: 'Anak' },
+      { id: 'g-induk', parentId: null, level: 'KRITERIA', order: 0, marker: 'III', label: 'Induk' },
+    ]);
+
+    await service.duplicate('s1');
+
+    const urutanBuat = prisma.rubricCriterionGroup.create.mock.calls.map((c: any) => c[0].data.label);
+    expect(urutanBuat).toEqual(['Induk', 'Anak']);
+    expect(prisma.rubricCriterionGroup.create.mock.calls[1][0].data.parentId).toBe('baru-Induk');
+    expect(prisma.rubricCriterion.updateMany).toHaveBeenCalledWith({
+      where: { accreditationSetId: 'baru', indicatorNo: 43, subNo: 'I' },
+      data: { groupId: 'baru-Anak' },
+    });
   });
 });
 
@@ -224,6 +314,7 @@ describe('AccreditationSetService.findAll', () => {
       expect.objectContaining({
         include: {
           documents: { select: { type: true } },
+          panduan: { select: { id: true, title: true } },
           _count: { select: { criteria: true } },
         },
       }),
@@ -255,6 +346,13 @@ describe('AccreditationSetService.removeDocument (lock check)', () => {
       where: { accreditationSetId: 's1', type: TipePanduan.DOKUMEN_RUBRIK },
     });
   });
+
+  it('rejects PANDUAN_LAM -- reusable now, use detachPanduan instead', async () => {
+    const { service } = makeService();
+    await expect(service.removeDocument('s1', TipePanduan.PANDUAN_LAM)).rejects.toThrow(
+      BadRequestException,
+    );
+  });
 });
 
 describe('AccreditationSetService.attachDocument', () => {
@@ -266,7 +364,7 @@ describe('AccreditationSetService.attachDocument', () => {
     prisma.referenceGuide.create.mockResolvedValue({ id: 'rg1' });
 
     await service.attachDocument('s1', TipePanduan.DOKUMEN_RUBRIK, {
-      fileKey: 'tenant/s1/matriks.pdf',
+      fileKey: 't1/s1/matriks.pdf',
       title: 'Matriks Penilaian',
     });
 
@@ -276,30 +374,18 @@ describe('AccreditationSetService.attachDocument', () => {
     });
     expect(jobsService.enqueue).toHaveBeenCalledWith('INGESTION_RUBRIK_DOKUMEN', {
       accreditationSetId: 's1',
-      fileUrl: 'tenant/s1/matriks.pdf',
+      fileUrl: 't1/s1/matriks.pdf',
     });
   });
 
-  it('enqueues INGESTION_STRUKTUR_DOKUMEN and marks structureParseStatus DIPROSES for PANDUAN_LAM', async () => {
-    const { service, prisma, jobsService } = makeService();
-    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet());
-    prisma.ledDocument.count.mockResolvedValue(0);
-    prisma.referenceGuide.findFirst.mockResolvedValue(null);
-    prisma.referenceGuide.create.mockResolvedValue({ id: 'rg1' });
-
-    await service.attachDocument('s1', TipePanduan.PANDUAN_LAM, {
-      fileKey: 'tenant/s1/panduan.pdf',
-      title: 'Panduan LAM',
-    });
-
-    expect(prisma.accreditationSet.update).toHaveBeenCalledWith({
-      where: { id: 's1' },
-      data: { structureParseStatus: 'DIPROSES', structureParseError: null },
-    });
-    expect(jobsService.enqueue).toHaveBeenCalledWith('INGESTION_STRUKTUR_DOKUMEN', {
-      accreditationSetId: 's1',
-      fileUrl: 'tenant/s1/panduan.pdf',
-    });
+  it('rejects PANDUAN_LAM -- reusable now, use uploadPanduan/attachPanduan instead', async () => {
+    const { service } = makeService();
+    await expect(
+      service.attachDocument('s1', TipePanduan.PANDUAN_LAM, {
+        fileKey: 't1/s1/panduan.pdf',
+        title: 'Panduan LAM',
+      }),
+    ).rejects.toThrow(BadRequestException);
   });
 
   it('does not enqueue anything for TEMPLATE_LKPS', async () => {
@@ -310,7 +396,7 @@ describe('AccreditationSetService.attachDocument', () => {
     prisma.referenceGuide.create.mockResolvedValue({ id: 'rg1' });
 
     await service.attachDocument('s1', TipePanduan.TEMPLATE_LKPS, {
-      fileKey: 'tenant/s1/lkps.xlsx',
+      fileKey: 't1/s1/lkps.xlsx',
       title: 'Template LKPS',
     });
 
@@ -320,11 +406,22 @@ describe('AccreditationSetService.attachDocument', () => {
 });
 
 describe('AccreditationSetService.markReady', () => {
-  it('rejects when a reference document slot is still empty', async () => {
+  it('rejects when Matriks Penilaian is missing (panduanId set but no DOKUMEN_RUBRIK)', async () => {
     const { service, prisma } = makeService();
     prisma.accreditationSet.findFirst.mockResolvedValue({
-      ...makeSet(),
-      documents: [{ type: TipePanduan.DOKUMEN_RUBRIK }],
+      ...makeSet({ panduanId: 'g1' }),
+      documents: [],
+      criteria: [makeCriterion()],
+    });
+
+    await expect(service.markReady('s1')).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects when Panduan Penulisan is not attached (panduanId null)', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue({
+      ...makeSet({ panduanId: null }),
+      documents: [{ type: TipePanduan.DOKUMEN_RUBRIK }, { type: TipePanduan.TEMPLATE_LKPS }],
       criteria: [makeCriterion()],
     });
 
@@ -334,10 +431,9 @@ describe('AccreditationSetService.markReady', () => {
   it('rejects when there are no criteria yet', async () => {
     const { service, prisma } = makeService();
     prisma.accreditationSet.findFirst.mockResolvedValue({
-      ...makeSet(),
+      ...makeSet({ panduanId: 'g1' }),
       documents: [
         { type: TipePanduan.DOKUMEN_RUBRIK },
-        { type: TipePanduan.PANDUAN_LAM },
         { type: TipePanduan.TEMPLATE_LKPS },
       ],
       criteria: [],
@@ -345,30 +441,61 @@ describe('AccreditationSetService.markReady', () => {
 
     await expect(service.markReady('s1')).rejects.toThrow(BadRequestException);
   });
+
+  it('marks SIAP when Panduan is attached, DOKUMEN_RUBRIK present, and criteria exist', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue({
+      ...makeSet({ panduanId: 'g1' }),
+      documents: [{ type: TipePanduan.DOKUMEN_RUBRIK }],
+      criteria: [makeCriterion()],
+    });
+
+    await service.markReady('s1');
+
+    expect(prisma.accreditationSet.update).toHaveBeenCalledWith({
+      where: { id: 's1' },
+      data: { status: AccreditationSetStatus.SIAP },
+    });
+  });
 });
 
 describe('AccreditationSetService.findChapterTemplates', () => {
-  it('returns the ordered chapter/sub-bab structure for this set', async () => {
+  it("returns the ordered chapter/sub-bab structure for this set's Panduan", async () => {
     const { service, prisma } = makeService();
-    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet());
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet({ panduanId: 'g1' }));
     prisma.chapterTemplate.findMany.mockResolvedValue([
-      { id: 'ct1', order: 1, title: 'Pendahuluan', subBab: [] },
+      {
+        id: 'ct1', order: 1, title: 'Pendahuluan',
+        subBab: [
+          { id: 'a', parentId: null, order: 1, title: 'A' },
+          { id: 'a1', parentId: 'a', order: 1, title: 'A.1' },
+          { id: 'a1x', parentId: 'a1', order: 1, title: '1' },
+          { id: 'a1xa', parentId: 'a1x', order: 1, title: 'a)' },
+        ],
+      },
     ]);
 
     const result = await service.findChapterTemplates('s1');
 
     expect(prisma.chapterTemplate.findMany).toHaveBeenCalledWith({
-      where: { accreditationSetId: 's1' },
+      where: { guideId: 'g1' },
       orderBy: { order: 'asc' },
-      include: {
-        subBab: {
-          where: { parentId: null },
-          orderBy: { order: 'asc' },
-          include: { children: { orderBy: { order: 'asc' } } },
-        },
-      },
+      include: { subBab: { orderBy: { order: 'asc' } } },
     });
-    expect(result).toEqual([{ id: 'ct1', order: 1, title: 'Pendahuluan', subBab: [] }]);
+    // Any depth (dimas), not capped at sub-sub-bab.
+    const a = result[0].subBab[0];
+    expect(a.children[0].children[0].children[0]).toMatchObject({ id: 'a1xa', children: [] });
+    expect(result[0].subBab).toHaveLength(1);
+  });
+
+  it('returns [] without querying when the set has no Panduan attached', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet({ panduanId: null }));
+
+    const result = await service.findChapterTemplates('s1');
+
+    expect(result).toEqual([]);
+    expect(prisma.chapterTemplate.findMany).not.toHaveBeenCalled();
   });
 
   it('rejects when the set does not exist for this tenant', async () => {
@@ -376,5 +503,268 @@ describe('AccreditationSetService.findChapterTemplates', () => {
     prisma.accreditationSet.findFirst.mockResolvedValue(null);
 
     await expect(service.findChapterTemplates('s1')).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe('AccreditationSetService.previewStructure / confirmStructure', () => {
+  const originalEnv = process.env.AI_SERVICE_URL;
+  const originalFetch = global.fetch;
+
+  beforeEach(() => {
+    process.env.AI_SERVICE_URL = 'http://ai-service.test';
+  });
+
+  afterEach(() => {
+    process.env.AI_SERVICE_URL = originalEnv;
+    global.fetch = originalFetch;
+  });
+
+  it("previewStructure proxies to GET /structure/:panduanId/preview, resolved from the set's panduanId", async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet({ panduanId: 'g1' }));
+    const body = { status: 'MENUNGGU_KONFIRMASI', nodes: [{ id: '1', parent_id: null, level: 1, order: 1, title: 'Pendahuluan' }] };
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => body });
+
+    const result = await service.previewStructure('s1');
+
+    expect(global.fetch).toHaveBeenCalledWith('http://ai-service.test/structure/g1/preview');
+    expect(result).toEqual(body);
+  });
+
+  it('previewStructure rejects when the set does not exist for this tenant', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(null);
+    global.fetch = jest.fn();
+
+    await expect(service.previewStructure('s1')).rejects.toThrow(NotFoundException);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('previewStructure rejects when the set has no Panduan attached', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet({ panduanId: null }));
+    global.fetch = jest.fn();
+
+    await expect(service.previewStructure('s1')).rejects.toThrow(BadRequestException);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('previewStructure raises a bad gateway when the AI service is unreachable', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet({ panduanId: 'g1' }));
+    global.fetch = jest.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+
+    await expect(service.previewStructure('s1')).rejects.toThrow(BadGatewayException);
+  });
+
+  it('confirmStructure posts accepted_ids to the panduanId and returns the commit count', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet({ panduanId: 'g1' }));
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({ guideId: 'g1', count: 2 }) });
+
+    const result = await service.confirmStructure('s1', { acceptedIds: ['1', '1.1'] });
+
+    expect(global.fetch).toHaveBeenCalledWith('http://ai-service.test/structure/g1/confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accepted_ids: ['1', '1.1'] }),
+    });
+    expect(result).toEqual({ guideId: 'g1', count: 2 });
+  });
+
+  it('confirmStructure raises Conflict when the set is not pending confirmation', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet({ panduanId: 'g1' }));
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 409 });
+
+    await expect(service.confirmStructure('s1', { acceptedIds: [] })).rejects.toThrow(ConflictException);
+  });
+});
+
+describe('AccreditationSetService Panduan library (reusable across sets)', () => {
+  it('listPanduan returns tenant-scoped Panduan with bab/set-usage counts', async () => {
+    const { service, prisma } = makeService();
+    prisma.referenceGuide.findMany.mockResolvedValue([
+      {
+        id: 'g1',
+        title: 'Pedoman LAM Teknik',
+        structureParseStatus: 'SIAP',
+        structureParseError: null,
+        createdAt: new Date('2026-09-01'),
+        _count: { chapterTemplates: 4, usedBySets: 2 },
+      },
+    ]);
+
+    const result = await service.listPanduan();
+
+    expect(prisma.referenceGuide.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { tenantId: 't1', type: TipePanduan.PANDUAN_LAM } }),
+    );
+    expect(result).toEqual([
+      {
+        id: 'g1',
+        title: 'Pedoman LAM Teknik',
+        structureParseStatus: 'SIAP',
+        structureParseError: null,
+        createdAt: new Date('2026-09-01'),
+        jumlahBab: 4,
+        jumlahSetPemakai: 2,
+      },
+    ]);
+  });
+
+  it('uploadPanduan creates a tenant-scoped ReferenceGuide and enqueues extraction by guideId', async () => {
+    const { service, prisma, jobsService } = makeService();
+    prisma.referenceGuide.create.mockResolvedValue({ id: 'g1' });
+
+    await service.uploadPanduan({ fileKey: 't1/panduan.pdf', title: 'Pedoman Baru' });
+
+    expect(prisma.referenceGuide.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          tenantId: 't1',
+          type: TipePanduan.PANDUAN_LAM,
+          title: 'Pedoman Baru',
+          structureParseStatus: 'DIPROSES',
+        }),
+      }),
+    );
+    expect(jobsService.enqueue).toHaveBeenCalledWith('INGESTION_STRUKTUR_DOKUMEN', {
+      guideId: 'g1',
+      fileUrl: 't1/panduan.pdf',
+    });
+  });
+
+  it('replacePanduan re-uploads into an existing Panduan and re-enqueues extraction', async () => {
+    const { service, prisma, jobsService } = makeService();
+    prisma.referenceGuide.findFirst.mockResolvedValue({ id: 'g1', tenantId: 't1' });
+    prisma.referenceGuide.update.mockResolvedValue({ id: 'g1' });
+
+    await service.replacePanduan('g1', { fileKey: 't1/panduan-v2.pdf', title: 'Pedoman v2' });
+
+    expect(prisma.referenceGuide.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'g1' },
+        data: expect.objectContaining({ title: 'Pedoman v2', structureParseStatus: 'DIPROSES' }),
+      }),
+    );
+    expect(jobsService.enqueue).toHaveBeenCalledWith('INGESTION_STRUKTUR_DOKUMEN', {
+      guideId: 'g1',
+      fileUrl: 't1/panduan-v2.pdf',
+    });
+  });
+
+  it('replacePanduan rejects a Panduan from another tenant', async () => {
+    const { service, prisma } = makeService();
+    prisma.referenceGuide.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.replacePanduan('g1', { fileKey: 't1/x.pdf', title: 'x' }),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('deletePanduan removes an unused Panduan and its storage object', async () => {
+    const { service, prisma, storage } = makeService();
+    prisma.referenceGuide.findFirst.mockResolvedValue({
+      id: 'g1',
+      tenantId: 't1',
+      fileUrl: 'tenant/panduan.pdf',
+      _count: { usedBySets: 0 },
+    });
+    prisma.referenceGuide.delete.mockResolvedValue({ id: 'g1' });
+
+    await service.deletePanduan('g1');
+
+    expect(prisma.referenceGuide.delete).toHaveBeenCalledWith({ where: { id: 'g1' } });
+    expect(storage.deleteObject).toHaveBeenCalledWith('tenant/panduan.pdf');
+  });
+
+  it('deletePanduan rejects a Panduan still used by any Set', async () => {
+    const { service, prisma } = makeService();
+    prisma.referenceGuide.findFirst.mockResolvedValue({
+      id: 'g1',
+      tenantId: 't1',
+      fileUrl: 'tenant/panduan.pdf',
+      _count: { usedBySets: 2 },
+    });
+
+    await expect(service.deletePanduan('g1')).rejects.toThrow(ConflictException);
+    expect(prisma.referenceGuide.delete).not.toHaveBeenCalled();
+  });
+
+  it('deletePanduan rejects a Panduan from another tenant', async () => {
+    const { service, prisma } = makeService();
+    prisma.referenceGuide.findFirst.mockResolvedValue(null);
+
+    await expect(service.deletePanduan('g1')).rejects.toThrow(NotFoundException);
+  });
+
+  it('attachPanduan points the set at an existing Panduan', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet());
+    prisma.ledDocument.count.mockResolvedValue(0);
+    prisma.referenceGuide.findFirst.mockResolvedValue({ id: 'g1', tenantId: 't1' });
+
+    await service.attachPanduan('s1', { panduanId: 'g1' });
+
+    expect(prisma.accreditationSet.update).toHaveBeenCalledWith({
+      where: { id: 's1' },
+      data: { panduanId: 'g1' },
+    });
+  });
+
+  it('attachPanduan rejects when the set is already in use', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet());
+    prisma.ledDocument.count.mockResolvedValue(1);
+
+    await expect(service.attachPanduan('s1', { panduanId: 'g1' })).rejects.toThrow(ConflictException);
+  });
+
+  it('detachPanduan nulls the pointer without touching the Panduan row itself', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet());
+    prisma.ledDocument.count.mockResolvedValue(0);
+
+    await service.detachPanduan('s1');
+
+    expect(prisma.accreditationSet.update).toHaveBeenCalledWith({
+      where: { id: 's1' },
+      data: { panduanId: null },
+    });
+    expect(prisma.referenceGuide.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('toggleSection flips isActive on a sub-bab scoped to the caller tenant', async () => {
+    const { service, prisma } = makeService();
+    prisma.subBabTemplate.findFirst.mockResolvedValue({ id: 'sb1' });
+
+    await service.toggleSection('sb1', { isActive: false });
+
+    expect(prisma.subBabTemplate.findFirst).toHaveBeenCalledWith({
+      where: { id: 'sb1', chapterTemplate: { guide: { tenantId: 't1' } } },
+    });
+    expect(prisma.subBabTemplate.update).toHaveBeenCalledWith({
+      where: { id: 'sb1' },
+      data: { isActive: false },
+    });
+  });
+
+  it('toggleSection rejects a sub-bab outside the caller tenant', async () => {
+    const { service, prisma } = makeService();
+    prisma.subBabTemplate.findFirst.mockResolvedValue(null);
+
+    await expect(service.toggleSection('sb1', { isActive: false })).rejects.toThrow(NotFoundException);
+    expect(prisma.subBabTemplate.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('AccreditationSetService file keys', () => {
+  it("rejects another tenant's R2 key before touching storage", async () => {
+    const { service, storage } = makeService();
+    await expect(service.uploadPanduan({ fileKey: 't2/panduan.pdf', title: 'x' })).rejects.toThrow('bukan milik tenant');
+    expect(storage.headObject).not.toHaveBeenCalled();
   });
 });

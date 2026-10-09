@@ -58,6 +58,8 @@ export const assessmentVerdictSchema = z.object({
 	id: z.string(),
 	dokumenId: z.string(),
 	indikatorNo: z.number().int().positive(),
+	/** Sub-indikator; "" = tanpa sub. Kunci keputusan = (dokumen, indikatorNo, subNo). */
+	subNo: z.string().optional(),
 	/** Skor yang berlaku menurut Penjamin Mutu, 0–4. */
 	skorFinal: z.number().min(0, 'Skor tidak boleh negatif'),
 	/** Wajib untuk koreksi, boleh kosong untuk persetujuan. */

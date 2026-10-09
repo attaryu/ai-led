@@ -290,14 +290,15 @@ def test_led_tool_no_context_raises():
 def test_search_evidence_documents_returns_json_list(monkeypatch):
     from agent.tools import evidence_tool
 
-    def fake_ids(tenant_id, accreditation_set_id, indicator_no):
+    def fake_ids(tenant_id, accreditation_set_id, indicator_no, study_program_id=None):
         assert tenant_id == "tenant-x"
         assert accreditation_set_id == "set-x"
         assert indicator_no == 1
         return ["ev1"]
 
-    def fake_search(query, tenant_id, bukti_dukung_ids, n_results):
+    def fake_search(query, tenant_id, bukti_dukung_ids, n_results, ami=False):
         assert bukti_dukung_ids == ["ev1"]
+        assert ami is True  # AMI assessment reads ariel's MiniLM column, never writing's bge-m3
         return [
             {
                 "text": "Sertifikat akreditasi B untuk program studi",
@@ -346,7 +347,7 @@ def test_search_evidence_documents_scoped_to_current_indicator_only(monkeypatch)
 
     tags_by_indicator = {2: ["ev-for-indicator-2"]}
 
-    def fake_ids(tenant_id, accreditation_set_id, indicator_no):
+    def fake_ids(tenant_id, accreditation_set_id, indicator_no, study_program_id=None):
         return tags_by_indicator.get(indicator_no, [])
 
     monkeypatch.setattr(evidence_tool, "list_available_evidence_ids", fake_ids)
@@ -372,3 +373,22 @@ def test_search_evidence_documents_no_context_raises():
             evidence_tool.search_evidence_documents.invoke({"query": "apapun"})
     finally:
         current_assessment_context.reset(token)
+
+
+def test_search_evidence_documents_passes_document_prodi(monkeypatch):
+    from agent.context import AssessmentContext, current_assessment_context
+    from agent.tools import evidence_tool
+
+    seen = {}
+
+    def fake_ids(tenant_id, accreditation_set_id, indicator_no, study_program_id=None):
+        seen["prodi"] = study_program_id
+        return []
+
+    monkeypatch.setattr(evidence_tool, "list_available_evidence_ids", fake_ids)
+    token = current_assessment_context.set(AssessmentContext("t", "d", 1, "s", "prodi-1"))
+    try:
+        evidence_tool.search_evidence_documents.invoke({"query": "x"})
+    finally:
+        current_assessment_context.reset(token)
+    assert seen["prodi"] == "prodi-1"

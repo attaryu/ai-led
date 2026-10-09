@@ -52,19 +52,14 @@ export const evidenceFolderRepository = {
 	},
 
 	/**
-	 * Memindahkan satu folder. `false` bila tujuannya folder itu sendiri atau
-	 * salah satu keturunannya — ditegakkan backend
+	 * Memindahkan satu folder. Melempar galat backend bila tujuannya folder itu
+	 * sendiri atau salah satu keturunannya — ditegakkan backend
 	 * (`evidence-folder.service.ts::move`), bukan dihitung ulang di sini. Pemilih
 	 * di UI sudah menyembunyikan cabang itu (lapis pertama); ini lapis kedua.
 	 */
-	async moveFolder(id: string, tujuanId: string | null): Promise<boolean> {
-		try {
-			await evidenceFolderRemoteSource.move(id, tujuanId);
-			notify();
-			return true;
-		} catch {
-			return false;
-		}
+	async moveFolder(id: string, tujuanId: string | null): Promise<void> {
+		await evidenceFolderRemoteSource.move(id, tujuanId);
+		notify();
 	},
 
 	/**

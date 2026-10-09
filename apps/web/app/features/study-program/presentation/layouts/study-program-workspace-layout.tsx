@@ -6,7 +6,7 @@ import {
 	AppShell,
 	type AppShellBreadcrumb,
 } from '~/core/components/app-shell';
-import { PlaceholderPage } from '~/core/components/placeholder-page';
+import { LoadFailedPage, PlaceholderPage } from '~/core/components/placeholder-page';
 import {
 	canAccessTenant,
 	useRoleGuard,
@@ -32,6 +32,7 @@ export function StudyProgramWorkspaceLayout() {
 		StudyProgramEntity | null | undefined
 	>(undefined);
 
+	const [gagalMuat, setGagalMuat] = React.useState(false);
 	React.useEffect(() => {
 		if (!programId) {
 			setStudyProgram(null);
@@ -39,13 +40,21 @@ export function StudyProgramWorkspaceLayout() {
 		}
 		setStudyProgram(undefined);
 		let cancelled = false;
-		studyProgramRepository.findById(programId).then((found) => {
-			if (!cancelled) setStudyProgram(found ?? null);
-		});
+		setGagalMuat(false);
+		studyProgramRepository
+			.findById(programId)
+			.then((found) => {
+				if (!cancelled) setStudyProgram(found ?? null);
+			})
+			.catch(() => {
+				if (!cancelled) setGagalMuat(true);
+			});
 		return () => {
 			cancelled = true;
 		};
 	}, [programId]);
+
+	if (gagalMuat) return <LoadFailedPage />;
 
 	if (guard.status === 'pending' || studyProgram === undefined) {
 		return (

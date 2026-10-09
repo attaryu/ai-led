@@ -98,6 +98,15 @@ export function useChapterSections(chapterId: string) {
 		[chapterId, refetch],
 	);
 
+	/** Ubah instruksi tabel section — jalur independen dari title/guidance. */
+	const updateSectionTableSpec = React.useCallback(
+		async (sectionId: string, tableSpec: { id: string; caption: string; columns: string[] }[]) => {
+			await chapterRepository.updateSectionTableSpec(chapterId, sectionId, tableSpec);
+			await refetch();
+		},
+		[chapterId, refetch],
+	);
+
 	return {
 		sections,
 		dimuat,
@@ -108,5 +117,6 @@ export function useChapterSections(chapterId: string) {
 		createSection,
 		updateSection,
 		deleteSection,
+		updateSectionTableSpec,
 	};
 }

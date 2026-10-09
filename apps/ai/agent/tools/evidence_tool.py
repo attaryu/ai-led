@@ -13,25 +13,23 @@ from agent.context import require_current_context
 from vectorstore.pgvector_evidence_store import list_available_evidence_ids, search_evidence
 
 
+# Docstring below is ariel's verbatim (LLM-visible tool description); only indicator_no moved to the
+# run context. Scope (not told to the model): tenant + AccreditationSet + indicator tags, plus the
+# document's own prodi or tenant-wide evidence -- no fallback to an untagged search.
 @tool
 def search_evidence_documents(query: str, n_results: int = 5) -> str:
-    """Cari dokumen Bukti Dukung (SK, sertifikat, MoU, dll) yang sudah
-    ditag ke indikator yang SEDANG dinilai saat ini, pakai semantic search.
+    """Cari dokumen bukti pendukung (SK, sertifikat, MoU, dll) yang sudah
+    di-tag ke indikator ini, pakai semantic search.
 
     Beda dengan search_led_evidence: tool ini mencari dokumen bukti
     FISIK/independen (bukan narasi LED), untuk verifikasi klaim LED
-    terhadap sumber aslinya. Query harus KAYA KONTEKS (nomor indikator +
-    kata kunci konkret dari kriteria rubrik), sama seperti search_led_evidence.
-    Scope: tenant-isolated, dan HANYA evidence yang sudah ditag eksplisit ke
-    indikator ini (evidence_indicator_tags) — evidence tenant/prodi lain yang
-    tidak ditag ke indikator ini TIDAK ikut, tidak ada fallback ke pencarian
-    tenant/prodi secara umum. Kalau hasilnya list kosong, berarti belum ada
-    Bukti Dukung yang ditag untuk indikator ini — itu BUKAN error, lanjutkan
+    terhadap sumber aslinya. Kalau hasilnya list kosong, berarti belum ada
+    dokumen bukti yang di-tag ke indikator ini — itu BUKAN error, lanjutkan
     penilaian dengan LED+LKPS seperti biasa.
     """
     ctx = require_current_context()
     evidence_ids = list_available_evidence_ids(
-        ctx.tenant_id, ctx.accreditation_set_id, ctx.indicator_no
+        ctx.tenant_id, ctx.accreditation_set_id, ctx.indicator_no, ctx.study_program_id
     )
     if not evidence_ids:
         return json.dumps([], ensure_ascii=False)
@@ -41,6 +39,10 @@ def search_evidence_documents(query: str, n_results: int = 5) -> str:
         tenant_id=ctx.tenant_id,
         bukti_dukung_ids=evidence_ids,
         n_results=n_results,
+        # ponytail: MiniLM dihapus -- satu kolom `embedding` (bge-m3) untuk semua.
+        # `ami` tidak lagi memilih kolom; dibiarkan True agar perilaku lain
+        # (top-k polos tanpa ambang jarak) tetap sama seperti sebelumnya.
+        ami=True,
     )
     return json.dumps(
         [

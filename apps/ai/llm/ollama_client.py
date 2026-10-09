@@ -147,11 +147,7 @@ def get_available_models() -> list[str]:
     assessment pipeline only (start/resume, RAGAS eval), NOT writing (that's
     llm/chat_model.py::build_plain_llm, which reads OLLAMA_MODEL directly).
 
-    Derived from ASSESSMENT_OLLAMA_MODEL if set, else OLLAMA_MODEL, or
-    OPENROUTER_MODEL (comma-separated; the first entry is the default) --
-    same override-with-fallback as ASSESSMENT_OLLAMA_BASE_URL, since the
-    assessment server can have a different model set installed than
-    whatever OLLAMA_MODEL names for the writing server.
+    OLLAMA_MODEL or OPENROUTER_MODEL (comma-separated; the first entry is the default).
     """
     import os
 
@@ -159,7 +155,7 @@ def get_available_models() -> list[str]:
     if provider == "openrouter":
         raw = os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-r1")
     else:
-        raw = os.environ.get("ASSESSMENT_OLLAMA_MODEL", os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b"))
+        raw = os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b")
     return [m.strip() for m in raw.split(",") if m.strip()]
 
 
@@ -170,21 +166,17 @@ def create_ollama_client_from_env(model: Optional[str] = None) -> OllamaClient:
     `model` overrides the configured default (first of get_available_models())
     — used when the caller lets the user pick a model at request time.
 
-    `ASSESSMENT_OLLAMA_BASE_URL`/`ASSESSMENT_OLLAMA_API_KEY` override
-    `OLLAMA_BASE_URL`/`OLLAMA_API_KEY` when set -- writing (worker.py via
-    llm/chat_model.py) and assessment run on genuinely different physical
-    Ollama servers, so one shared pair of vars can't describe both. Falls
-    back to the shared vars when unset, so a single-server setup still works
-    unchanged.
+    Writing and assessment share one Ollama server (OLLAMA_*).
     """
     import os
 
     return OllamaClient(
+        # Optional: with LLM_PROVIDER=openrouter only .model is read (agent/graph.py _build_llm).
         base_url=pick_ollama_endpoint(
-            os.environ.get("ASSESSMENT_OLLAMA_BASE_URL", os.environ["OLLAMA_BASE_URL"])
+            os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
         ),
         model=model or get_available_models()[0],
         timeout_seconds=int(os.environ.get("OLLAMA_TIMEOUT_SECONDS", "300")),
-        api_key=os.environ.get("ASSESSMENT_OLLAMA_API_KEY", os.environ.get("OLLAMA_API_KEY")),
+        api_key=os.environ.get("OLLAMA_API_KEY"),
         keep_alive=os.environ.get("OLLAMA_KEEP_ALIVE", "30m"),
     )

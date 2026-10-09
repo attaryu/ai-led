@@ -33,6 +33,8 @@ import types
 from dataclasses import dataclass, field
 from typing import Optional
 
+from ingestion.matrix_parser import sub_no_dari
+
 logger = logging.getLogger(__name__)
 
 # ragas==0.4.3 unconditionally imports langchain_community.chat_models.vertexai
@@ -91,7 +93,7 @@ def get_available_judge_models() -> list[str]:
         )
     else:
         raw = os.environ.get(
-            "RAGAS_OLLAMA_MODEL", os.environ.get("ASSESSMENT_OLLAMA_MODEL", os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b"))
+            "RAGAS_OLLAMA_MODEL", os.environ.get("OLLAMA_MODEL", "deepseek-r1:7b")
         )
     return [m.strip() for m in raw.split(",") if m.strip()]
 
@@ -203,12 +205,7 @@ def _build_ragas_llm(model: Optional[str] = None):
         from llm.ollama_client import pick_ollama_endpoint
 
         ragas_base_url = pick_ollama_endpoint(
-            os.environ.get(
-                "RAGAS_OLLAMA_BASE_URL",
-                os.environ.get(
-                    "ASSESSMENT_OLLAMA_BASE_URL", os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-                ),
-            )
+            os.environ.get("RAGAS_OLLAMA_BASE_URL", os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"))
         )
         logger.info("RAGAS judge using Ollama endpoint %s", ragas_base_url)
 
@@ -224,10 +221,7 @@ def _build_ragas_llm(model: Optional[str] = None):
             "num_predict": 4096,
             "keep_alive": os.environ.get("OLLAMA_KEEP_ALIVE", "30m"),
         }
-        api_key = os.environ.get(
-            "RAGAS_OLLAMA_API_KEY",
-            os.environ.get("ASSESSMENT_OLLAMA_API_KEY", os.environ.get("OLLAMA_API_KEY")),
-        )
+        api_key = os.environ.get("RAGAS_OLLAMA_API_KEY", os.environ.get("OLLAMA_API_KEY"))
         if api_key and not api_key.startswith("<"):
             kwargs["client_kwargs"]["headers"] = {"Authorization": f"Bearer {api_key}"}
         chat = ChatOllama(**kwargs)
@@ -243,14 +237,25 @@ def _build_ragas_llm(model: Optional[str] = None):
 
 
 def _build_ragas_embeddings():
-    """Return a LangchainEmbeddingsWrapper for AnswerRelevancy metric."""
-    from langchain_community.embeddings import SentenceTransformerEmbeddings
+    """Return a LangchainEmbeddingsWrapper for AnswerRelevancy metric.
+
+    Memakai instance bge-m3 yang SAMA dengan pgvector_store (`embed_documents`), bukan
+    memuat salinan kedua via SentenceTransformerEmbeddings -- pada worker yang sudah
+    memegang bge-m3 di GPU, salinan kedua memboroskan VRAM (risiko OOM)."""
+    from langchain_core.embeddings import Embeddings
     from ragas.embeddings import LangchainEmbeddingsWrapper
 
-    emb = SentenceTransformerEmbeddings(
-        model_name="paraphrase-multilingual-MiniLM-L12-v2"
-    )
-    return LangchainEmbeddingsWrapper(emb)
+    from vectorstore.pgvector_store import embed_documents
+
+    class _SharedBgeEmbeddings(Embeddings):
+        def embed_documents(self, texts: list[str]) -> list[list[float]]:
+            return [[float(x) for x in v] for v in embed_documents(list(texts))]
+
+        def embed_query(self, text: str) -> list[float]:
+            return self.embed_documents([text])[0]
+
+    # ponytail: dulu `SentenceTransformerEmbeddings(model_name=AMI_EMBED_MODEL)` -- memuat bge-m3 lagi.
+    return LangchainEmbeddingsWrapper(_SharedBgeEmbeddings())
 
 
 # ---------------------------------------------------------------------------
@@ -331,9 +336,8 @@ def build_eval_samples(
     n_indicators: int = 5,
     session_id: Optional[str] = None,
     reference_path: Optional[str] = None,
-    # Single-machine eval tool, not a real tenant/document — defaults match
-    # the "local" identity used by scripts/fetch_indicator_context.py, since
-    # pgvector_store.search_led is scoped per (tenant_id, dokumen_id).
+    # "local" only for the offline no-session path (scripts/fetch_indicator_context.py);
+    # with session_id, tenant/document/set/prodi are resolved from that session below.
     tenant_id: str = "local",
     dokumen_id: str = "local",
     accreditation_set_id: str = "local",
@@ -350,10 +354,33 @@ def build_eval_samples(
             Format: [{"indicator_no": int, "reference": str}, ...].
             Falls back to synthetic generation for missing indicators.
     """
-    from agent.tools.rubric_tool import _get_rubrics
+    from agent.context import AssessmentContext, current_assessment_context
+    from agent.tools.rubric_tool import _get_rubrics, _get_rubrics_for_set
     from vectorstore.pgvector_store import search_led
 
-    rubrics = _get_rubrics()
+    study_program_id: Optional[str] = None
+    sess = None
+    if session_id:
+        from db.postgres_client import get_session  # noqa: PLC0415
+
+        sess = get_session(None, session_id)
+    if sess and sess.get("accreditation_set_id"):
+        # Real session: same scope the assessment itself ran with (ariel had one global
+        # Chroma/registry; dev-v1 is per tenant/document/AccreditationSet).
+        tenant_id, dokumen_id = sess["tenant_id"], sess["document_id"]
+        accreditation_set_id = sess["accreditation_set_id"]
+        study_program_id = sess.get("study_program_id")
+        rubrics = _get_rubrics_for_set(accreditation_set_id, tenant_id)
+        try:
+            from agent.tools.lkps_tool import load_lkps_for_document  # noqa: PLC0415
+
+            load_lkps_for_document(
+                tenant_id, dokumen_id, sess.get("lkps_evidence_id") or sess.get("document_lkps_evidence_id")
+            )
+        except Exception as exc:
+            logger.warning("Could not load LKPS for session %s: %s", session_id, exc)
+    else:
+        rubrics = _get_rubrics()
     llm = _build_ragas_llm(model=model)
 
     # Load actual ground-truth references from JSON file if provided
@@ -369,21 +396,23 @@ def build_eval_samples(
             logger.warning("Could not load references from %s: %s", reference_path, exc)
 
     # Optionally load real justifications from Postgres
-    real_justifications: dict[int, str] = {}
+    # Kunci (nomor, sub): 43.I dan 43.II punya justifikasi sendiri -- nomor saja membuat salah satunya hilang.
+    real_justifications: dict[tuple[int, str], str] = {}
     if session_id:
         try:
-            from db.postgres_client import get_indicator_results, get_session  # noqa: PLC0415
+            from db.postgres_client import get_indicator_results  # noqa: PLC0415
 
-            sess = get_session(None, session_id)
             for row in get_indicator_results(sess["tenant_id"] if sess else None, session_id):
                 if row.get("justification"):
-                    real_justifications[row["indicator_no"]] = row["justification"]
+                    real_justifications[(row["indicator_no"], row.get("sub_no") or "")] = row["justification"]
         except Exception as exc:
             logger.warning("Could not load real justifications: %s", exc)
 
     # Evaluate the indicators actually scored in the session, not blindly the first n_indicators
     if real_justifications:
-        target_rubrics = [r for r in rubrics if r.no in real_justifications][:n_indicators]
+        target_rubrics = [
+            r for r in rubrics if (r.no, sub_no_dari(r)) in real_justifications
+        ][:n_indicators]
     else:
         target_rubrics = rubrics[:n_indicators]
     total = len(target_rubrics)
@@ -413,14 +442,17 @@ def build_eval_samples(
         try:
             from vectorstore.pgvector_evidence_store import list_available_evidence_ids, search_evidence
 
-            evidence_ids = list_available_evidence_ids(tenant_id, accreditation_set_id, rubric.no)
-            evidence_raw = search_evidence(question, tenant_id, evidence_ids, n_results=3)
+            evidence_ids = list_available_evidence_ids(tenant_id, accreditation_set_id, rubric.no, study_program_id)
+            evidence_raw = search_evidence(question, tenant_id, evidence_ids, n_results=3, ami=True)
             contexts += [r["text"][:1000] for r in evidence_raw]
         except Exception as exc:
             logger.warning("Evidence search failed for indicator %d: %s", rubric.no, exc)
 
         # LKPS table data for quantitative/composite indicators, same reason as evidence above
         for table_ref in rubric.lkps_table_ref or []:
+            token = current_assessment_context.set(
+                AssessmentContext(tenant_id, dokumen_id, rubric.no, accreditation_set_id, study_program_id)
+            )
             try:
                 from agent.tools.lkps_tool import get_lkps_table
 
@@ -429,10 +461,13 @@ def build_eval_samples(
                 logger.warning(
                     "LKPS lookup failed for indicator %d table %s: %s", rubric.no, table_ref, exc
                 )
+            finally:
+                current_assessment_context.reset(token)
 
         # Response: real session OR synthetic
-        if rubric.no in real_justifications:
-            response = real_justifications[rubric.no]
+        chave = (rubric.no, sub_no_dari(rubric))
+        if chave in real_justifications:
+            response = real_justifications[chave]
         else:
             response = _generate_synthetic_response(question, contexts, llm)
 
@@ -644,18 +679,20 @@ def score_single_sample(
     question: str,
     answer: str,
     contexts: list[str],
+    reference: Optional[str] = None,
 ) -> dict[str, float]:
     """Score one real (question, answer, retrieved contexts) triple —
-    faithfulness/answer_relevancy/context_precision only (the 3 metrics
-    GENERASI_BAB needs; no context_recall, which needs a reference answer
-    this call doesn't have). Unlike run_ragas_evaluation, this scores an
+    faithfulness/answer_relevancy/context_precision, plus context_recall ONLY when
+    `reference` is given (RAGAS menghitung recall terhadap jawaban acuan; narasi LED tidak
+    punya, jadi pemanggil menurunkannya dari pedoman section + butir checklist). Unlike run_ragas_evaluation, this scores an
     actual generation, not a synthetic AMI-indicator sample.
     """
     import warnings
 
     from ragas import evaluate, EvaluationDataset
     from ragas.dataset_schema import SingleTurnSample
-    from ragas.metrics import AnswerRelevancy, Faithfulness, LLMContextPrecisionWithoutReference
+    from ragas.metrics import AnswerRelevancy, ContextRecall, Faithfulness, LLMContextPrecisionWithoutReference
+    from ragas.run_config import RunConfig
 
     llm_wrapper = _build_ragas_llm()
     emb_wrapper = _build_ragas_embeddings()
@@ -668,17 +705,28 @@ def score_single_sample(
         # against the response instead, same as this function's docstring says.
         LLMContextPrecisionWithoutReference(llm=llm_wrapper),
     ]
+    if reference and reference.strip():
+        metrics.append(ContextRecall(llm=llm_wrapper))
     dataset = EvaluationDataset(samples=[
         SingleTurnSample(
             user_input=question,
             retrieved_contexts=contexts if contexts else [""],
             response=answer,
+            reference=(reference or None),
         )
     ])
 
+    # RunConfig bawaan RAGAS (timeout 180 dtk) terlalu pendek untuk LLM via jaringan: job yang
+    # kena timeout jadi NaN. Sama seperti run_ragas_evaluation, timeout diikat ke anggaran satu
+    # panggilan LLM kita; 3 metrik berjalan paralel.
+    run_config = RunConfig(
+        timeout=int(os.environ.get("OLLAMA_TIMEOUT_SECONDS", "300")) + 60,
+        max_retries=2,
+        max_workers=int(os.environ.get("RAGAS_MAX_WORKERS", "3")),
+    )
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        result = evaluate(dataset=dataset, metrics=metrics)
+        result = evaluate(dataset=dataset, metrics=metrics, run_config=run_config)
 
     # Stable output keys regardless of ragas's internal metric.name (e.g.
     # LLMContextPrecisionWithoutReference.name isn't "context_precision").
@@ -686,6 +734,7 @@ def score_single_sample(
         "faithfulness": Faithfulness,
         "answer_relevancy": AnswerRelevancy,
         "context_precision": LLMContextPrecisionWithoutReference,
+        "context_recall": ContextRecall,
     }
     result_df = result.to_pandas()
     scores: dict[str, float] = {}
@@ -693,5 +742,8 @@ def score_single_sample(
         col = next((m.name for m in metrics if isinstance(m, metric_cls)), None)
         if col and col in result_df.columns:
             val = result_df[col].iloc[0]
-            scores[key] = round(float(val), 4) if val == val else 0.0  # NaN guard
+            # ponytail: dulu `... if val == val else 0.0`. NaN = metrik GAGAL dihitung (timeout/parse),
+            # bukan skor nol -- angka 0.0 palsu menyesatkan; metrik yang gagal dibiarkan tidak ada.
+            if val == val:
+                scores[key] = round(float(val), 4)
     return scores

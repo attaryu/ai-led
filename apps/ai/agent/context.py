@@ -24,6 +24,9 @@ class AssessmentContext:
     # get_indicator_rubric scopes to THIS set, never the old global matrix.json.
     accreditation_set_id: str
     study_program_id: str | None = None
+    # Sub-indikator yang sedang dinilai ("I", "II", ...); "" = tanpa sub. get_indicator_rubric memakainya
+    # untuk memilih baris rubrik yang tepat bila satu nomor indikator punya beberapa baris (43.I / 43.II).
+    sub_no: str = ""
 
 
 current_assessment_context: contextvars.ContextVar[AssessmentContext | None] = (

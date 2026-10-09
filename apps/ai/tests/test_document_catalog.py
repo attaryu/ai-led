@@ -3,60 +3,45 @@
 from __future__ import annotations
 
 
-def test_catalog_for_prompt_numbers_match_catalog_order():
+def test_catalog_for_prompt_is_plain_labels_in_catalog_order():
+    """dimas: no numbers -- the model copies labels, it can't renumber them."""
     from document_catalog import DOCUMENT_CATALOG, catalog_for_prompt
 
-    entries = catalog_for_prompt()
-    assert len(entries) == len(DOCUMENT_CATALOG)
-    for i, entry in enumerate(entries, start=1):
-        assert entry["no"] == i
-        assert entry["label"] == DOCUMENT_CATALOG[i - 1]["label"]
-        # id/parent_id/aliases are internal-only, must never leak to the prompt view.
-        assert "id" not in entry
-        assert "aliases" not in entry
-        assert "parent_id" not in entry
+    assert catalog_for_prompt() == list(DOCUMENT_CATALOG)
 
 
-def test_parse_items_accepts_matching_no_and_label():
+def test_parse_items_accepts_an_exact_label():
     from document_catalog import DOCUMENT_CATALOG, parse_items
 
-    entry = DOCUMENT_CATALOG[3]
-    accepted, rejected = parse_items([{"no": 4, "label": entry["label"], "reason": "cocok"}])
-    assert len(accepted) == 1
-    assert accepted[0]["id"] == entry["id"]
-    assert accepted[0]["reason"] == "cocok"
+    label = DOCUMENT_CATALOG[3]
+    accepted, rejected = parse_items([{"label": label}])
+    assert accepted == [{"label": label, "reason": ""}]
     assert rejected == []
+
+
+def test_parse_items_ignores_a_stray_number():
+    """The failure dimas removed: a correct label is no longer dropped over a wrong/"string" number."""
+    from document_catalog import DOCUMENT_CATALOG, parse_items
+
+    accepted, _ = parse_items([{"no": "3", "label": DOCUMENT_CATALOG[0]}])
+    assert [a["label"] for a in accepted] == [DOCUMENT_CATALOG[0]]
 
 
 def test_parse_items_tolerates_case_and_whitespace_differences():
     from document_catalog import DOCUMENT_CATALOG, parse_items
 
-    entry = DOCUMENT_CATALOG[0]
-    messy_label = "  ".join(entry["label"].upper().split(" "))
-    accepted, rejected = parse_items([{"no": 1, "label": messy_label}])
-    assert len(accepted) == 1
+    messy_label = "  ".join(DOCUMENT_CATALOG[0].upper().split(" "))
+    accepted, rejected = parse_items([{"label": messy_label}])
+    assert accepted[0]["label"] == DOCUMENT_CATALOG[0]
     assert rejected == []
 
 
-def test_parse_items_rejects_no_out_of_range():
-    from document_catalog import DOCUMENT_CATALOG, parse_items
-
-    accepted, rejected = parse_items([{"no": len(DOCUMENT_CATALOG) + 1, "label": "apapun"}])
-    assert accepted == []
-    assert len(rejected) == 1
-    assert "di luar katalog" in rejected[0]["why"]
-
-
-def test_parse_items_rejects_no_and_label_disagreeing():
-    """Regression guard for the exact bug Dimas documented: a model that
-    paraphrases the label or gets the number wrong must be dropped, not
-    silently accepted with a made-up identity."""
+def test_parse_items_rejects_a_paraphrased_label():
     from document_catalog import parse_items
 
-    accepted, rejected = parse_items([{"no": 1, "label": "Dokumen yang dikarang model"}])
+    accepted, rejected = parse_items([{"label": "Dokumen yang dikarang model"}])
     assert accepted == []
-    assert len(rejected) == 1
-    assert rejected[0]["why"] == "nomor dan label tidak cocok"
+    assert rejected[0]["why"] == "label tidak ditemukan di katalog"
 
 
 def test_parse_items_rejects_non_dict_items():

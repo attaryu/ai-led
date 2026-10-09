@@ -18,7 +18,7 @@ const ACCESS_TOKEN_TTL = '15m';
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const REFRESH_TOKEN_TTL = '7d';
 
-export function toSafeUser(user: User) {
+export function toSafeUser<T extends User>(user: T): Omit<T, 'passwordHash'> {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit it
   const { passwordHash, ...safe } = user;
   return safe;

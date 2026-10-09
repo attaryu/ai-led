@@ -1,8 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
-import { OwnerTipe } from '@ai-led/db';
+import { EvidenceKind, OwnerTipe } from '@ai-led/db';
 
 export class CreateBuktiDukungDto {
+  // LKPS = a prodi's LKPS Excel (dimas `lkps`), kept out of the Bukti Dukung library and never indexed as evidence.
+  @ApiPropertyOptional({ enum: EvidenceKind, default: EvidenceKind.BUKTI_DUKUNG })
+  @IsOptional()
+  @IsEnum(EvidenceKind)
+  kind?: EvidenceKind;
+
   @ApiProperty({ enum: OwnerTipe })
   @IsEnum(OwnerTipe)
   ownerType!: OwnerTipe;
@@ -19,6 +25,14 @@ export class CreateBuktiDukungDto {
   @IsString()
   @MaxLength(255)
   documentName?: string;
+
+  // Tahun / periode data, teks bebas (mis. "2024/2025", "TS 2024"). Wajib untuk kind = LKPS
+  // (divalidasi di service) supaya satu prodi bisa membedakan beberapa LKPS; diabaikan untuk Bukti Dukung.
+  @ApiPropertyOptional({ example: '2024/2025' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  period?: string;
 
   // R2 object key from POST /storage/presigned-upload — size/type are re-read from R2 in the service, not trusted here.
   @ApiProperty({ example: 'uploads/2026/sk-tim-penyusun.pdf' })

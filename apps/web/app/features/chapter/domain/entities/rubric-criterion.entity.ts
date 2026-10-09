@@ -72,6 +72,11 @@ export const rubricCriterionSchema = z.object({
 	 * ("C1" bisa memayungi beberapa indikator), nomor mengidentifikasi.
 	 */
 	no: z.number().int().positive(),
+	/**
+	 * Sub-indikator ("I", "II", ...) bila satu nomor punya beberapa baris rubrik (43.I / 43.II); `""` = tanpa sub.
+	 * Bersama `no` ini kunci baris -- nomor saja tidak unik.
+	 */
+	subNo: z.string().optional(),
 	/** Kode sesuai rubrik asli, misal "C1" atau "4.1a". */
 	kodeKriteria: z.string(),
 	/** Nama kelompok kriteria yang memayungi indikator ini, untuk pengelompokan. */

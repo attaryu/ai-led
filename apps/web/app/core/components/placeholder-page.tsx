@@ -57,3 +57,13 @@ export function PlaceholderPage({
 		</Card>
 	);
 }
+
+/** A load failed (network / 5xx) — shown instead of leaving the page on "Memuat…" forever. */
+export function LoadFailedPage() {
+	return (
+		<PlaceholderPage
+			title="Gagal memuat data"
+			description="Server tidak merespons. Muat ulang halaman untuk mencoba lagi."
+		/>
+	);
+}

@@ -17,6 +17,7 @@ export const updateLedProjectSchema = ledProjectSchema
 	.extend({
 		tahunMulai: tahunMulaiSchema,
 		tenggat: z.string(),
+		lkpsEvidenceId: z.string(),
 	});
 
 export type UpdateLedProjectDto = z.infer<typeof updateLedProjectSchema>;

@@ -103,24 +103,35 @@ async function rawFetch(path: string, opts: ApiFetchOptions): Promise<Response> 
  * Backend merotasi token tiap kali dipanggil, jadi kelimanya saling menimpa
  * cookie dan yang menang belum tentu yang tokennya kita simpan.
  */
-let refreshInFlight: Promise<boolean> | null = null;
+let refreshInFlight: Promise<RefreshOutcome> | null = null;
 
 /**
- * Menukar refresh-token cookie dengan access token baru.
+ * Hasil satu `POST /auth/refresh`. `body` utuh dikembalikan (bukan cuma token)
+ * karena `sessionRepository.restore()` butuh `user`-nya juga.
  *
- * `true` bila berhasil. `false` bila gagal — dan cara gagalnya menentukan siapa
- * yang diberi tahu:
- *
- * | Sebab                        | Sesi dihapus? | Alasan                                    |
- * | ---------------------------- | ------------- | ----------------------------------------- |
- * | 401 / 403 dari `/auth/refresh` | ya          | cookie hilang atau kedaluwarsa — sesi mati |
- * | 5xx                          | tidak         | backend yang bermasalah, bukan sesinya    |
- * | fetch melempar (offline)     | tidak         | jaringan, bukan sesinya                   |
+ * | Sebab                          | status        | Sesi dihapus? | Alasan                                     |
+ * | ------------------------------ | ------------- | ------------- | ------------------------------------------ |
+ * | 2xx                            | `ok`          | —             |                                            |
+ * | 401 / 403 dari `/auth/refresh` | `dead`        | ya            | cookie hilang atau kedaluwarsa — sesi mati |
+ * | 5xx                            | `unavailable` | tidak         | backend yang bermasalah, bukan sesinya     |
+ * | fetch melempar (offline)       | `unavailable` | tidak         | jaringan, bukan sesinya                    |
  */
-async function refreshAccessToken(): Promise<boolean> {
+export type RefreshOutcome =
+	| { status: 'ok'; body: { accessToken: string; expiresIn: number } }
+	| { status: 'dead' }
+	| { status: 'unavailable'; error: unknown };
+
+/**
+ * Satu-satunya pintu ke `/auth/refresh` — dipakai jalur proaktif
+ * (`sessionRepository.restore`) DAN jalur reaktif (retry 401 di `apiFetch`).
+ * Keduanya bisa terpicu di tick yang sama saat reload halaman terlindungi;
+ * backend merotasi cookie tiap panggilan, jadi dua request paralel membuat
+ * yang kalah memakai token yang sudah di-denylist (401) padahal sesinya sehat.
+ */
+export function refreshSession(): Promise<RefreshOutcome> {
 	if (refreshInFlight) return refreshInFlight;
 
-	refreshInFlight = (async () => {
+	refreshInFlight = (async (): Promise<RefreshOutcome> => {
 		try {
 			const res = await rawFetch('/auth/refresh', {
 				method: 'POST',
@@ -128,26 +139,24 @@ async function refreshAccessToken(): Promise<boolean> {
 			});
 
 			if (res.ok) {
-				const { accessToken: token, expiresIn } = (await res.json()) as {
-					accessToken: string;
-					expiresIn: number;
-				};
-				setAccessToken(token, expiresIn);
-				return true;
+				const body = (await res.json()) as { accessToken: string; expiresIn: number };
+				setAccessToken(body.accessToken, body.expiresIn);
+				return { status: 'ok', body };
 			}
 
 			if (res.status === 401 || res.status === 403) {
 				setAccessToken(null);
 				onAuthFailure?.();
+				return { status: 'dead' };
 			}
 
 			// 5xx dan sisanya: token lama dibiarkan apa adanya. Ia memang sudah
 			// tidak terpakai, tapi membuangnya tidak menolong siapa pun dan
 			// menghapus satu-satunya petunjuk `exp` untuk penjadwalan ulang.
-			return false;
-		} catch {
+			return { status: 'unavailable', error: new ApiError(res.status, await parseErrorMessage(res)) };
+		} catch (error) {
 			// Jaringan putus — jangan sentuh sesi.
-			return false;
+			return { status: 'unavailable', error };
 		} finally {
 			// Dilepas supaya 401 berikutnya bisa memicu percobaan baru; tanpa ini
 			// satu kegagalan sementara akan mengunci refresh selamanya.
@@ -174,7 +183,7 @@ export async function apiFetch<T = unknown>(
 	let res = await rawFetch(path, opts);
 
 	if (res.status === 401 && !opts.skipAuthRetry) {
-		if (await refreshAccessToken()) {
+		if ((await refreshSession()).status === 'ok') {
 			res = await rawFetch(path, opts);
 		}
 	}

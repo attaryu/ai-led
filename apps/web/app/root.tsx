@@ -13,6 +13,7 @@ import "./app.css";
 import { queryClient } from "~/core/lib/query-client";
 import { TooltipProvider } from "~/core/components/ui/tooltip";
 import { EvidenceUploadPanel } from "~/features/evidence/presentation/components/evidence-upload-panel";
+import { EvidenceFailureDialog } from "~/features/evidence/presentation/components/evidence-failure-dialog";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -56,6 +57,12 @@ export default function App() {
           kerja. Ia merender dirinya hanya ketika ada antrean unggahan.
         */}
         <EvidenceUploadPanel />
+        {/*
+          Modal konfirmasi "ulangi atau tidak" saat proses bukti dukung gagal -- unggahan
+          gagal di klien maupun ekstraksi gagal di worker. Di akar karena kegagalannya bisa
+          muncul di halaman mana pun; ia hanya tampil ketika ada yang gagal.
+        */}
+        <EvidenceFailureDialog />
       </TooltipProvider>
       {import.meta.env.DEV && <ReactQueryDevtools buttonPosition="bottom-left" />}
     </QueryClientProvider>

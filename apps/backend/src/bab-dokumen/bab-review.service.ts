@@ -6,7 +6,7 @@ import { BabAccessService } from './bab-access.service';
 import { ReviewStatusDto } from './dto/review-status.dto';
 import { SubmitReviewDto } from './dto/submit-review.dto';
 
-/** PENYUSUN submit-for-review / PENJAMIN_MUTU lock+review-note workflow. */
+/** PENYUSUN submit-for-review / PENJAMIN_MUTU lock+review-note workflow -- per-section (dimas parity). */
 @Injectable()
 export class BabReviewService {
   constructor(
@@ -16,30 +16,30 @@ export class BabReviewService {
   ) {}
 
   /** PENYUSUN-only: mark ready for review, or cancel it (dto.diajukan = false). */
-  async submitForReview(id: string, dto: SubmitReviewDto = {}) {
+  async submitForReview(sectionId: string, dto: SubmitReviewDto = {}) {
     const diajukan = dto.diajukan ?? true;
-    const bab = await this.access.findOneScoped(id);
-    if (bab.locked) {
-      throw new ForbiddenException('Bab ini sedang terkunci untuk direview');
+    const section = await this.access.findSectionScoped(sectionId);
+    if (section.locked) {
+      throw new ForbiddenException('Section ini sedang terkunci untuk direview');
     }
-    if (diajukan && bab.reviewSubmittedAt) {
-      throw new ConflictException('Bab ini sudah diajukan untuk review');
+    if (diajukan && section.reviewSubmittedAt) {
+      throw new ConflictException('Section ini sudah diajukan untuk review');
     }
-    if (!diajukan && !bab.reviewSubmittedAt) {
-      throw new ConflictException('Bab ini belum diajukan untuk review');
+    if (!diajukan && !section.reviewSubmittedAt) {
+      throw new ConflictException('Section ini belum diajukan untuk review');
     }
-    return this.prisma.documentChapter.update({
-      where: { id },
+    return this.prisma.chapterSection.update({
+      where: { id: sectionId },
       data: { reviewSubmittedAt: diajukan ? new Date() : null },
     });
   }
 
   /** PENJAMIN_MUTU-only: lock/unlock and/or write a review note; either action clears reviewSubmittedAt. */
-  async setReviewStatus(id: string, dto: ReviewStatusDto) {
+  async setReviewStatus(sectionId: string, dto: ReviewStatusDto) {
     const { userId } = this.tenantContext.getOrThrow();
-    await this.access.findOneScoped(id);
+    await this.access.findSectionScoped(sectionId);
 
-    const data: Prisma.DocumentChapterUpdateInput = { reviewSubmittedAt: null };
+    const data: Prisma.ChapterSectionUpdateInput = { reviewSubmittedAt: null };
 
     if (dto.locked !== undefined) {
       data.locked = dto.locked;
@@ -61,6 +61,6 @@ export class BabReviewService {
       }
     }
 
-    return this.prisma.documentChapter.update({ where: { id }, data });
+    return this.prisma.chapterSection.update({ where: { id: sectionId }, data });
   }
 }

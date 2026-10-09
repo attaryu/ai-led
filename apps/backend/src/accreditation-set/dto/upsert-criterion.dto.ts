@@ -23,6 +23,12 @@ export class UpsertCriterionDto {
   @Min(1)
   indicatorNo!: number;
 
+  // Sub-indikator ("I", "II", ...) bila satu nomor indikator punya beberapa baris rubrik; kosong = tanpa sub.
+  @ApiPropertyOptional({ example: 'II' })
+  @IsOptional()
+  @IsString()
+  subNo?: string;
+
   @ApiProperty({ example: 'C.4.1' })
   @IsString()
   @IsNotEmpty()

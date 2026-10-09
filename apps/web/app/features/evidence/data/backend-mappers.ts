@@ -20,6 +20,8 @@ export type BuktiDukungApiRow = {
 	uploadedByName: string;
 	uploadedAt: string;
 	folderId: string | null;
+	/** Tahun/periode LKPS; `null` untuk Bukti Dukung. Baris lama bisa tidak memuatnya sama sekali. */
+	period?: string | null;
 };
 
 /**
@@ -42,6 +44,7 @@ export function mapBuktiDukungToEvidence(row: BuktiDukungApiRow): EvidenceEntity
 		ukuranBytes: row.sizeBytes,
 		status: row.extractionStatus,
 		catatanGagal: row.failureNote,
+		periode: row.period ?? null,
 		uploadedByUserId: row.uploadedByUserId,
 		uploadedByName: row.uploadedByName,
 		waktuDiunggah: row.uploadedAt,

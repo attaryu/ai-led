@@ -22,6 +22,7 @@ import { useEvidencePermission } from '~/features/evidence/presentation/hooks/us
 import { formatBytes } from '~/features/evidence/presentation/utils/evidence-format';
 import { type EvidenceEntity } from '~/features/evidence/domain/entities/evidence.entity';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
+import { type ChapterSectionEntity } from '../../domain/entities/chapter-section.entity';
 import {
 	frasaBlokir,
 	type ChapterPermission,
@@ -33,7 +34,6 @@ import {
 import { useChapterRecommendation } from '../hooks/use-chapter-recommendation';
 import { useChapterSections } from '../hooks/use-chapter-sections';
 import { ChapterDocumentRecommendation } from './chapter-document-recommendation';
-import { ChapterSectionList } from './chapter-section-list';
 
 /**
  * Isi tab "Generasi" (docs/application_flow.md §12.1): memilih bukti dukung yang
@@ -46,20 +46,42 @@ import { ChapterSectionList } from './chapter-section-list';
  * terunggah dan tinggal ditunggu — statusnya sendirilah penjelasan kenapa ia
  * belum bisa dicentang.
  */
+/** Aksi Generate section terbuka yang dipasang di toolbar editor. */
+export type KontrolGenerate = { jalankan: () => Promise<void>; berjalan: boolean };
+
 export function ChapterGenerationPanel({
 	chapter,
 	studyProgramId,
 	izin,
+	section,
 	onGenerated,
+	onKontrolGenerate,
 }: {
 	chapter: ChapterEntity;
 	studyProgramId: string;
 	izin: ChapterPermission;
+	/** Section yang dibuka di kanvas — pemilik rekomendasi dokumen (dimas: per section). */
+	section: ChapterSectionEntity | null;
 	/** Dipanggil setelah hasilnya tersimpan; halaman editor yang mendorongnya ke Tiptap. */
 	onGenerated: (hasil: HasilGenerate) => void;
+	/**
+	 * dimas: satu tombol Generate untuk section yang dibuka, di toolbar editor (bukan daftar tombol per
+	 * section di sini). Panel ini yang memegang centang bukti & rekomendasi, jadi ia yang menyerahkan aksinya.
+	 */
+	onKontrolGenerate?: (kontrol: KontrolGenerate | null) => void;
 }) {
-	const generasi = useChapterGeneration({ chapter, studyProgramId, izin, onGenerated });
-	const rekomendasiDokumen = useChapterRecommendation({ chapter, izin });
+	const generasi = useChapterGeneration({
+		chapter,
+		studyProgramId,
+		izin,
+		sectionId: section?.id ?? null,
+		onGenerated,
+	});
+	const rekomendasiDokumen = useChapterRecommendation({
+		chapter,
+		izin,
+		sectionId: section?.id ?? null,
+	});
 	const sections = useChapterSections(chapter.id);
 
 	const {
@@ -82,6 +104,7 @@ export function ChapterGenerationPanel({
 		setPrompt,
 		status,
 		pesanGagal,
+		peringatanChecklist,
 		digenerateAt,
 		jalankanGenerate,
 		bisaSimpanDraft,
@@ -107,20 +130,55 @@ export function ChapterGenerationPanel({
 	 * jadi satu kotak scroll sendiri (lihat `h-64` di bawah) dibagi per
 	 * folder, bukan satu list datar raksasa. Berkas di akar (tanpa folder)
 	 * dirender lepas duluan, sebelum kelompok folder.
+	 *
+	 * Berkas yg SEDANG dicentang dipisah ke grup "Terpilih" tersendiri di
+	 * paling atas (`terpilihAkar`/`terpilihKelompok`) -- lepas dari folder
+	 * asalnya, tapi tetap dikelompokkan per-folder DI DALAM grup itu --
+	 * supaya user langsung lihat semua pilihannya tanpa expand folder
+	 * (port lanjutan pola dimas, commit `9ae4fad`). `kelompok`/`akar` di
+	 * bawah cuma berisi SISA yg belum tercentang; `kelompokSemua` tetap
+	 * dihitung terpisah supaya state checkbox header folder (checked/
+	 * indeterminate) akurat walau sebagian isinya sudah pindah ke atas.
 	 */
 	const folderGroups = React.useMemo(() => {
-		const akar: EvidenceEntity[] = [];
-		const kelompok = new Map<string, EvidenceEntity[]>();
+		const akarSemua: EvidenceEntity[] = [];
+		const kelompokSemua = new Map<string, EvidenceEntity[]>();
 		for (const bukti of daftar) {
-			const namaFolderAkar = jalurBukti.get(bukti.id)?.split(' / ')[0];
-			if (!namaFolderAkar) {
-				akar.push(bukti);
+			// ponytail: dikelompokkan per JALUR LENGKAP, bukan segmen pertama.
+			// Dulu `.split(' / ')[0]` melipat "sertifikat mahasiswa / akademik" dan
+			// "sertifikat mahasiswa / non akademik" jadi satu kelompok, jadi
+			// subfoldernya tidak pernah terlihat dan tidak bisa dicentang terpisah.
+			const jalurPenuh = jalurBukti.get(bukti.id);
+			if (!jalurPenuh) {
+				akarSemua.push(bukti);
 				continue;
 			}
-			(kelompok.get(namaFolderAkar) ?? kelompok.set(namaFolderAkar, []).get(namaFolderAkar)!).push(bukti);
+			(kelompokSemua.get(jalurPenuh) ?? kelompokSemua.set(jalurPenuh, []).get(jalurPenuh)!).push(
+				bukti,
+			);
 		}
-		return { akar, kelompok, namaFolder: [...kelompok.keys()].sort() };
-	}, [daftar, jalurBukti]);
+
+		const terpilihAkar = akarSemua.filter((b) => terpilih.has(b.id));
+		const akar = akarSemua.filter((b) => !terpilih.has(b.id));
+		const terpilihKelompok = new Map<string, EvidenceEntity[]>();
+		const kelompok = new Map<string, EvidenceEntity[]>();
+		for (const [nama, dokumen] of kelompokSemua) {
+			const dipilih = dokumen.filter((b) => terpilih.has(b.id));
+			const sisa = dokumen.filter((b) => !terpilih.has(b.id));
+			if (dipilih.length > 0) terpilihKelompok.set(nama, dipilih);
+			if (sisa.length > 0) kelompok.set(nama, sisa);
+		}
+
+		return {
+			akar,
+			kelompok,
+			kelompokSemua,
+			namaFolder: [...kelompok.keys()].sort(),
+			terpilihAkar,
+			terpilihKelompok,
+			namaFolderTerpilih: [...terpilihKelompok.keys()].sort(),
+		};
+	}, [daftar, jalurBukti, terpilih]);
 
 	const [folderTerbuka, setFolderTerbuka] = React.useState<Record<string, boolean>>({});
 
@@ -146,43 +204,41 @@ export function ChapterGenerationPanel({
 	 */
 	const [promptTerbuka, setPromptTerbuka] = React.useState(false);
 
-	/**
-	 * Gerbang konfirmasi (§ port origin/led-wiriting(dimas)): begitu ada
-	 * `DocumentRecommendation` untuk checkpoint aktif bab ini, Generate menunggu
-	 * sampai statusnya `DIKONFIRMASI`. Bab yang tidak pernah memicu
-	 * "Rekomendasikan Dokumen" — `rekomendasi === null` — sama sekali tidak
-	 * melewati gerbang ini; Generate berjalan seperti sebelum fitur ini ada.
-	 */
 	const { rekomendasi } = rekomendasiDokumen;
-	const menungguKonfirmasi =
-		rekomendasi !== null && rekomendasi.status !== 'DIKONFIRMASI';
 
 	// `onGenerated` sekarang dipanggil dari DALAM `useChapterGeneration`
 	// (lihat JSDoc `onGenerated` di sana) supaya jalur menyambung ulang job
 	// lama setelah refresh juga mendorong hasilnya ke editor, bukan cuma
 	// jalur klik manual ini.
+	//
+	// Konfirmasi + generate satu aksi (persis `confirmAndGenerate` milik
+	// dimas) -- tidak ada tombol Konfirmasi terpisah. Kalau rekomendasi masih
+	// DIREKOMENDASIKAN (belum pernah dikonfirmasi), konfirmasi dulu dengan
+	// `terpilih` SEKARANG sebelum generate; `confirmRecommendation` menolak
+	// (403) rekomendasi yang sudah DIKONFIRMASI, jadi ini cuma jalan sekali.
 	async function handleGenerateSection(sectionId: string) {
-		// `draftId` cuma dipakai kalau user BELUM nyentang apa pun baru sejak
-		// rekomendasi dikonfirmasi (jumlahBaru === 0) -- sebelum ini draftId
-		// selalu dikirim selama rekomendasi masih DIKONFIRMASI, jadi centang
-		// manual baru diam-diam diabaikan worker (bug nyata, terpilih != apa
-		// yang benar-benar dipakai).
-		const pakaiRekomendasi = rekomendasi?.status === 'DIKONFIRMASI' && jumlahBaru === 0;
-		await jalankanGenerate(sectionId, pakaiRekomendasi ? rekomendasi.chapterDraftId : undefined);
+		// Rekomendasi milik section yang dibuka saja; section lain generate dengan centang manual.
+		// dimas confirmAndGenerate: selalu konfirmasi ulang dengan centang SEKARANG, jadi rekomendasi
+		// ikut pilihan terbaru dan cross-check status dokumen tetap jalan sesudah centang diubah.
+		const pakaiRekomendasi = rekomendasi?.chapterSectionId === sectionId;
+		if (pakaiRekomendasi) await rekomendasiDokumen.konfirmasi([...terpilih]);
+		await jalankanGenerate(sectionId, pakaiRekomendasi ? rekomendasi!.chapterDraftId : undefined);
 		await sections.refetch();
 	}
 
-	async function handleCreateSection(title: string, guidance: string, parentId?: string) {
-		await sections.createSection(title, guidance, parentId);
-	}
-
-	async function handleUpdateSection(sectionId: string, title: string, guidance: string) {
-		await sections.updateSection(sectionId, { title, guidance });
-	}
-
-	async function handleDeleteSection(sectionId: string) {
-		await sections.deleteSection(sectionId);
-	}
+	// Ref supaya kontrol yang diserahkan ke toolbar selalu memanggil closure terbaru (centang/rekomendasi sekarang).
+	const generateRef = React.useRef(handleGenerateSection);
+	generateRef.current = handleGenerateSection;
+	const sectionId = section?.id ?? null;
+	React.useEffect(() => {
+		if (!onKontrolGenerate) return;
+		onKontrolGenerate(
+			sectionId && izin.canEdit
+				? { jalankan: () => generateRef.current(sectionId), berjalan: sedangBerjalan }
+				: null,
+		);
+	}, [onKontrolGenerate, sectionId, izin.canEdit, sedangBerjalan]);
+	React.useEffect(() => () => onKontrolGenerate?.(null), [onKontrolGenerate]);
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
@@ -259,9 +315,27 @@ export function ChapterGenerationPanel({
 				</div>
 			</div>
 
-			{/* Satu ScrollArea buat daftar bukti + blok generate -- daftar section 3-level bisa panjang, gak muat kalau blok generate dipaksa shrink-0. */}
-			<ScrollArea className="min-h-0 flex-1">
-				<div className="px-5">
+			{/* Daftar bukti mengisi sisa tinggi panel; prompt tambahan menempel di bawah (bukan menyisakan ruang kosong). */}
+			<div className="flex min-h-0 flex-1 flex-col">
+				<div className="flex min-h-0 flex-1 flex-col px-5 pb-2">
+					{/*
+					 * Nempel langsung di atas daftar Bukti Dukung, bukan di kaki panel
+					 * dekat Generate (posisi lama) -- menjawab pertanyaan sebaliknya
+					 * dari daftar di bawahnya: satu memerikan yang dimiliki, satu yang
+					 * dibutuhkan bab ini, jadi keduanya bertetangga (pola mockup-only
+					 * attar, `chapter-generation-panel.tsx`).
+					 */}
+					{izin.canEdit && (
+						<ChapterDocumentRecommendation
+							judulSection={section ? section.judul || 'section ini' : null}
+							rekomendasi={rekomendasi}
+							status={rekomendasiDokumen.status}
+							pesanGagal={rekomendasiDokumen.pesanGagal}
+							dimatikan={sedangBerjalan}
+							onTrigger={rekomendasiDokumen.trigger}
+						/>
+					)}
+
 					{daftar.length === 0 ? (
 						<KeadaanKosong
 							totalPustaka={totalPustaka}
@@ -270,8 +344,48 @@ export function ChapterGenerationPanel({
 							onUnggah={() => setUnggahTerbuka(true)}
 						/>
 					) : (
-						<ScrollArea className="h-64 rounded-md border border-border">
+						<ScrollArea className="min-h-40 flex-1 rounded-md border border-border">
 							<ul className="space-y-0.5 p-1.5">
+								{(folderGroups.terpilihAkar.length > 0 || folderGroups.namaFolderTerpilih.length > 0) && (
+									<li>
+										<p className="px-1.5 py-1 text-[11px] font-semibold tracking-wider text-primary uppercase">
+											Terpilih ({terpilih.size})
+										</p>
+										<ul className="space-y-0.5">
+											{folderGroups.terpilihAkar.map((bukti) => (
+												<BarisBukti
+													key={bukti.id}
+													bukti={bukti}
+													jalur={jalurBukti.get(bukti.id)}
+													terpilih
+													dimatikan={sedangBerjalan}
+													onToggle={() => toggle(bukti)}
+												/>
+											))}
+											{folderGroups.namaFolderTerpilih.map((nama) => (
+												<li key={nama}>
+													<p className="flex items-center gap-1.5 px-2 py-1 pl-6 text-[11px] text-muted-foreground">
+														<FolderIcon className="size-3 shrink-0" />
+														<span className="truncate">{nama}</span>
+													</p>
+													<ul className="space-y-0.5 pl-4">
+														{folderGroups.terpilihKelompok.get(nama)!.map((bukti) => (
+															<BarisBukti
+																key={bukti.id}
+																bukti={bukti}
+																jalur={jalurBukti.get(bukti.id)}
+																terpilih
+																dimatikan={sedangBerjalan}
+																onToggle={() => toggle(bukti)}
+															/>
+														))}
+													</ul>
+												</li>
+											))}
+										</ul>
+									</li>
+								)}
+
 								{folderGroups.akar.map((bukti) => (
 									<BarisBukti
 										key={bukti.id}
@@ -285,11 +399,13 @@ export function ChapterGenerationPanel({
 
 								{folderGroups.namaFolder.map((nama) => {
 									const dokumen = folderGroups.kelompok.get(nama)!;
+									const dokumenLengkap = folderGroups.kelompokSemua.get(nama)!;
 									return (
 										<GrupFolderBukti
 											key={nama}
 											nama={nama}
 											dokumen={dokumen}
+											dokumenLengkap={dokumenLengkap}
 											jalurBukti={jalurBukti}
 											terpilih={terpilih}
 											dimatikan={sedangBerjalan}
@@ -298,7 +414,7 @@ export function ChapterGenerationPanel({
 												setFolderTerbuka((s) => ({ ...s, [nama]: !s[nama] }))
 											}
 											onToggleBukti={toggle}
-											onToggleSemua={() => toggleFolderSelection(dokumen)}
+											onToggleSemua={() => toggleFolderSelection(dokumenLengkap)}
 										/>
 									);
 								})}
@@ -307,7 +423,7 @@ export function ChapterGenerationPanel({
 					)}
 				</div>
 
-				<div className="space-y-2 border-t border-border px-5 py-3">
+				<div className="shrink-0 space-y-2 border-t border-border px-5 py-3">
 					{/*
 					 * Auto-centang tanpa keterangan terbaca seperti perilaku hantu: berkas
 					 * yang barusan diunggah tampil mati beberapa detik, lalu tiba-tiba
@@ -341,21 +457,6 @@ export function ChapterGenerationPanel({
 					 */}
 					{izin.canEdit ? (
 						<>
-							{/*
-							 * Blok gerbang konfirmasi, di kaki panel dekat tombol yang
-							 * digerbanginya — keputusan yang langsung menentukan apakah tombol
-							 * di bawahnya bisa ditekan, jadi keduanya harus terlihat sekaligus.
-							 */}
-							<ChapterDocumentRecommendation
-								rekomendasi={rekomendasi}
-								status={rekomendasiDokumen.status}
-								pesanGagal={rekomendasiDokumen.pesanGagal}
-								jumlahDipilih={terpilih.size}
-								dimatikan={sedangBerjalan}
-								onTrigger={rekomendasiDokumen.trigger}
-								onKonfirmasi={() => rekomendasiDokumen.konfirmasi([...terpilih])}
-							/>
-
 							<div className="flex items-center justify-between gap-2">
 								<button
 									type="button"
@@ -387,8 +488,7 @@ export function ChapterGenerationPanel({
 										type="button"
 										size="sm"
 										onClick={() => sections.generateOutline()}
-										// Outline tidak pernah baca bukti dukung, jadi tidak digerbang `terpilih`.
-										disabled={sedangBerjalan || menungguKonfirmasi}
+										disabled={sedangBerjalan}
 										className="shrink-0"
 									>
 										{sections.status === 'berjalan' ? (
@@ -406,12 +506,6 @@ export function ChapterGenerationPanel({
 								)}
 							</div>
 
-							{menungguKonfirmasi && (
-								<p className="text-xs leading-relaxed text-muted-foreground">
-									Konfirmasi rekomendasi dokumen di atas dulu sebelum generate.
-								</p>
-							)}
-
 							{sections.status === 'gagal' && sections.pesanGagal && (
 								<div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-2.5">
 									<WarningCircleIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
@@ -421,17 +515,10 @@ export function ChapterGenerationPanel({
 								</div>
 							)}
 
-							{sections.dimuat && (
-								<ChapterSectionList
-									sections={sections.sections}
-									dimatikanEdit={sedangBerjalan}
-									// Boleh generate tanpa bukti dukung dicentang (mis. section naratif).
-									dimatikanGenerate={sedangBerjalan || menungguKonfirmasi}
-									onGenerate={handleGenerateSection}
-									onCreate={handleCreateSection}
-									onUpdate={handleUpdateSection}
-									onDelete={handleDeleteSection}
-								/>
+							{sections.dimuat && sections.sections.length > 0 && !section && (
+								<p className="text-xs leading-relaxed text-muted-foreground">
+									Buka satu section di Daftar Isi, lalu tekan Generate di toolbar editor.
+								</p>
 							)}
 
 							{/*
@@ -464,6 +551,15 @@ export function ChapterGenerationPanel({
 									<WarningCircleIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
 									<p className="text-xs leading-relaxed text-destructive">
 										{pesanGagal}
+									</p>
+								</div>
+							)}
+
+							{status === 'diam' && peringatanChecklist && (
+								<div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5">
+									<WarningCircleIcon className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+									<p className="text-xs leading-relaxed text-amber-700 dark:text-amber-400">
+										Section ini digenerate tanpa panduan pencarian fakta (checklist gagal disusun): {peringatanChecklist}
 									</p>
 								</div>
 							)}
@@ -511,7 +607,7 @@ export function ChapterGenerationPanel({
 						</p>
 					)}
 				</div>
-			</ScrollArea>
+			</div>
 
 			{/*
 			 * Modal yang sama persis dengan yang dipakai kedua Perpustakaan Bukti
@@ -614,6 +710,7 @@ const FOLDER_PREVIEW_COUNT = 5;
 function GrupFolderBukti({
 	nama,
 	dokumen,
+	dokumenLengkap,
 	jalurBukti,
 	terpilih,
 	dimatikan,
@@ -623,7 +720,10 @@ function GrupFolderBukti({
 	onToggleSemua,
 }: {
 	nama: string;
+	/** Sisa yg BELUM tercentang -- yg dirender sbg baris di bawah header. */
 	dokumen: EvidenceEntity[];
+	/** SELURUH isi folder ini (termasuk yg sudah pindah ke grup "Terpilih") -- dipakai utk state checkbox header & hitungan supaya tetap akurat. */
+	dokumenLengkap: EvidenceEntity[];
 	jalurBukti: Map<string, string>;
 	terpilih: ReadonlySet<string>;
 	dimatikan: boolean;
@@ -632,30 +732,32 @@ function GrupFolderBukti({
 	onToggleBukti: (bukti: EvidenceEntity) => void;
 	onToggleSemua: () => void;
 }) {
+	if (dokumen.length === 0) return null; // seluruh isi folder ini sudah tercentang, tak perlu render grup kosong
+
 	const ditampilkan = terbuka ? dokumen : dokumen.slice(0, FOLDER_PREVIEW_COUNT);
 	const sisaTersembunyi = dokumen.length - ditampilkan.length;
-	const bisaDipilih = dokumen.filter((bukti) => bukti.status === 'SIAP');
-	const jumlahTerpilih = bisaDipilih.filter((bukti) => terpilih.has(bukti.id)).length;
+	const bisaDipilihLengkap = dokumenLengkap.filter((bukti) => bukti.status === 'SIAP');
+	const jumlahTerpilihLengkap = bisaDipilihLengkap.filter((bukti) => terpilih.has(bukti.id)).length;
 
 	return (
 		<li>
 			<label
 				className={
-					dimatikan || bisaDipilih.length === 0
+					dimatikan || bisaDipilihLengkap.length === 0
 						? 'flex cursor-not-allowed items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground opacity-60'
 						: 'flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted/60'
 				}
 			>
 				<Checkbox
-					checked={bisaDipilih.length > 0 && jumlahTerpilih === bisaDipilih.length}
-					indeterminate={jumlahTerpilih > 0 && jumlahTerpilih < bisaDipilih.length}
+					checked={bisaDipilihLengkap.length > 0 && jumlahTerpilihLengkap === bisaDipilihLengkap.length}
+					indeterminate={jumlahTerpilihLengkap > 0 && jumlahTerpilihLengkap < bisaDipilihLengkap.length}
 					onCheckedChange={onToggleSemua}
-					disabled={dimatikan || bisaDipilih.length === 0}
+					disabled={dimatikan || bisaDipilihLengkap.length === 0}
 					aria-label={`Pilih semua file di folder ${nama}`}
 				/>
 				<FolderIcon className="size-3.5 shrink-0" />
 				<span className="min-w-0 flex-1 truncate">{nama}</span>
-				<span className="shrink-0 text-muted-foreground/70">({dokumen.length})</span>
+				<span className="shrink-0 text-muted-foreground/70">({dokumenLengkap.length})</span>
 			</label>
 
 			<ul className="space-y-0.5 pl-4">

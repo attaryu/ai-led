@@ -19,11 +19,14 @@ global reference data with no tenant column at all (get_pedoman_for_bab).
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
 from db.connection import tenant_cursor
+
+logger = logging.getLogger(__name__)
 
 
 def get_user_nama(user_id: str) -> str:
@@ -36,15 +39,18 @@ def get_user_nama(user_id: str) -> str:
 def get_bab_dokumen(bab_id: str) -> Optional[dict]:
     """Return {id, document_id, chapter_order, chapter_title, working_content,
     tenant_id, study_program_id, study_program_name, university_name,
-    accreditation_set_id}, or None.
+    accreditation_set_id, guide_id, lkps_evidence_id}, or None.
 
     study_program_name/university_name (port of Dimas's 766de26 institution
     context) let the checklist/generate prompts know which prodi/university
     this LED is for instead of writing fully generic narration.
 
     accreditation_set_id (nullable — LedDocument may not have picked a set)
-    scopes get_rubrik_for_bab/get_chapter_template_subbab to THIS document's
-    own set, not whichever set happens to share the same chapter_order.
+    scopes get_rubrik_for_bab to THIS document's own set, not whichever set
+    happens to share the same chapter_order. guide_id (nullable — the set may
+    not have a Panduan attached, or have none at all) is that set's
+    AccreditationSet.panduanId, what actually scopes get_chapter_template_subbab
+    now that ChapterTemplate lives on the Panduan (ReferenceGuide), not the set.
 
     Bootstrap lookup — this is what callers use to DISCOVER tenant_id from
     a bab_id in the first place, so it runs with no tenant scoped yet.
@@ -53,12 +59,21 @@ def get_bab_dokumen(bab_id: str) -> Optional[dict]:
         cur.execute(
             """
             SELECT bd.id, bd.document_id, bd.chapter_order, bd.chapter_title, bd.working_content,
-                   ps.tenant_id, ps.id AS study_program_id, ps.name AS study_program_name,
-                   t.university_name, dl.accreditation_set_id
+                   bd.active_checkpoint_id AS checkpoint_aktif_id, ps.tenant_id, ps.id AS study_program_id, ps.name AS study_program_name,
+                   t.university_name, dl.accreditation_set_id, acs.panduan_id AS guide_id,
+                   -- dimas: pedoman sudah menyebut sheet LKPS yang dibutuhkan, jadi datanya harus ikut terlampir
+                   -- walau dokumen belum memilih berkas LKPS -> jatuh ke LKPS prodi ini yang sudah SIAP.
+                   COALESCE(dl.lkps_evidence_id, (
+                       SELECT ef.id FROM evidence_files ef
+                       WHERE ef.kind = 'LKPS' AND ef.study_program_id = ps.id
+                         AND ef.extraction_status = 'SIAP'
+                       ORDER BY ef.uploaded_at DESC LIMIT 1
+                   )) AS lkps_evidence_id
             FROM writing_document_chapters bd
             JOIN writing_led_documents dl ON dl.id = bd.document_id
             JOIN org_study_programs ps ON ps.id = dl.study_program_id
             JOIN org_tenants t ON t.id = ps.tenant_id
+            LEFT JOIN accreditation_sets acs ON acs.id = dl.accreditation_set_id
             WHERE bd.id = %s
             """,
             (bab_id,),
@@ -120,30 +135,39 @@ def get_rubrik_for_bab(
 
 
 def get_chapter_template_subbab(
-    tenant_id: str, accreditation_set_id: Optional[str], urutan_bab: int
+    tenant_id: str, guide_id: Optional[str], urutan_bab: int
 ) -> list[dict]:
-    """Sub-bab resmi dari struktur pedoman yang di-extract LLM untuk bab ini
-    (worker.py::_handle_ingestion_struktur_dokumen) — dipakai sebagai konteks
-    TAMBAHAN di _build_outline_prompt, bukan pengganti kelompok kriteria.
-    Kosong kalau dokumen belum punya set, atau set-nya belum pernah
-    diekstrak strukturnya (fallback diam-diam, sama seperti sebelum fitur
-    ini ada — outline tetap jalan tanpa blok ini).
+    """Sub-bab resmi (dikonfirmasi user, lihat api/routes/structure.py) dari
+    struktur Panduan (ReferenceGuide, guide_id = AccreditationSet.panduanId)
+    untuk bab ini -- worker.py::_handle_generasi_outline_bab menyalinnya APA
+    ADANYA jadi ChapterSection, sumber TUNGGAL outline (bukan lagi konteks
+    tambahan buat LLM -- tidak ada LLM di outline sejak penghapusan
+    _build_outline_prompt). Kosong kalau dokumen belum punya set, set-nya
+    belum pilih/upload Panduan, atau Panduan itu belum dikonfirmasi
+    strukturnya -- _handle_generasi_outline_bab menolak (bukan fallback diam-diam)
+    saat itu.
+
+    Node dengan is_active=false (lihat SubBabTemplate.isActive) DIKECUALIKAN --
+    toggle murah reviewer utk matiin 1 sub-bab dari outline BARU tanpa
+    re-extract Panduan; matiin parent otomatis ikut ngilangin children-nya
+    juga (children jadi tidak ke-attach ke mana pun karena parent-nya tidak
+    ada di `rows`), tidak perlu cascading write terpisah.
 
     Cuma sub-bab teratas yang dibalikin, tiap satu bawa `children` (list
     dict serupa) buat sub-sub-bab-nya -- satu tingkat, sama seperti
     SubBabTemplate.parentId di schema.prisma."""
-    if not accreditation_set_id:
+    if not guide_id:
         return []
     with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
-            SELECT sbt.id, sbt.parent_id, sbt.title, sbt.guidance
+            SELECT sbt.id, sbt.parent_id, sbt.title, sbt.marker, sbt.guidance, sbt.lkps_needed, sbt.lkps_list
             FROM sub_bab_templates sbt
             JOIN chapter_templates ct ON ct.id = sbt.chapter_template_id
-            WHERE ct.accreditation_set_id = %s AND ct."order" = %s
+            WHERE ct.guide_id = %s AND ct."order" = %s AND sbt.is_active = true
             ORDER BY sbt."order"
             """,
-            (accreditation_set_id, urutan_bab),
+            (guide_id, urutan_bab),
         )
         rows = [dict(r) for r in cur.fetchall()]
 
@@ -277,6 +301,39 @@ def create_bab_draft(
         return dict(cur.fetchone())
 
 
+def create_section_draft_ai(
+    tenant_id: str, section_id: str, user_id: str, user_nama: str, content: dict
+) -> dict:
+    """dimas: every generate is a bab_draft version of THAT section -- new AI SectionDraft (version max+1)
+    made the section's active checkpoint, so regenerating never loses the previous narrative."""
+    draft_id = str(uuid.uuid4())
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute(
+            "SELECT COALESCE(MAX(version), 0) AS v FROM writing_section_drafts WHERE section_id = %s",
+            (section_id,),
+        )
+        version = cur.fetchone()["v"] + 1
+        cur.execute(
+            """
+            INSERT INTO writing_section_drafts
+                (id, section_id, created_by_user_id, version, content_snapshot, source, created_by_name)
+            VALUES (%s, %s, %s, %s, %s, 'AI', %s)
+            """,
+            (draft_id, section_id, user_id, version, json.dumps(content), user_nama),
+        )
+        cur.execute(
+            "UPDATE writing_chapter_sections SET active_checkpoint_id = %s WHERE id = %s",
+            (draft_id, section_id),
+        )
+    return {"id": draft_id, "version": version}
+
+
+def clear_section_chat(tenant_id: str, section_id: str) -> None:
+    """dimas generate_section deletes bab_chat_message on regenerate -- old turns are about the old text."""
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute("DELETE FROM writing_chat_messages WHERE section_id = %s", (section_id,))
+
+
 def update_bab_dokumen_aktif(
     tenant_id: str, bab_id: str, konten_kerja: dict, checkpoint_aktif_id: str
 ) -> None:
@@ -301,13 +358,23 @@ def update_bab_dokumen_aktif(
         )
 
 
+def set_bab_dokumen_checkpoint_aktif(tenant_id: str, bab_id: str, checkpoint_aktif_id: str) -> None:
+    """Point the chapter at a checkpoint without touching `working_content` (Dimas moves only the pointer)."""
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute(
+            "UPDATE writing_document_chapters SET active_checkpoint_id = %s, last_saved_at = NOW() WHERE id = %s",
+            (checkpoint_aktif_id, bab_id),
+        )
+
+
 def get_chapter_sections(tenant_id: str, chapter_id: str) -> list[dict]:
     """Outline rows for one bab, in display order — empty list means no
     outline has been generated yet."""
     with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
-            SELECT id, chapter_id, parent_id, "order", title, guidance, status, content, model, error, generated_at
+            SELECT id, chapter_id, parent_id, "order", title, marker, guidance, status, content, model, error,
+                   generated_at, lkps_needed, lkps_list
             FROM writing_chapter_sections
             WHERE chapter_id = %s
             ORDER BY "order" ASC
@@ -321,7 +388,8 @@ def get_chapter_section(tenant_id: str, section_id: str) -> Optional[dict]:
     with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
-            SELECT id, chapter_id, "order", title, guidance, status, content, model, error, generated_at
+            SELECT id, chapter_id, "order", title, marker, guidance, status, content, table_spec, model, error,
+                   generated_at, lkps_needed, lkps_list
             FROM writing_chapter_sections
             WHERE id = %s
             """,
@@ -331,18 +399,65 @@ def get_chapter_section(tenant_id: str, section_id: str) -> Optional[dict]:
     return dict(row) if row else None
 
 
+def get_section_for_chat(section_id: str) -> Optional[dict]:
+    """Bootstrap lookup for the chat endpoint (section-scoped, dimas parity) —
+    same no-tenant-yet pattern as get_bab_dokumen, joined one level deeper."""
+    with tenant_cursor(None) as cur:
+        cur.execute(
+            """
+            SELECT cs.id, cs.chapter_id, cs.title AS section_title, cs.content,
+                   bd.document_id, bd.chapter_title, ps.tenant_id,
+                   dl.study_program_id, dl.lkps_evidence_id
+            FROM writing_chapter_sections cs
+            JOIN writing_document_chapters bd ON bd.id = cs.chapter_id
+            JOIN writing_led_documents dl ON dl.id = bd.document_id
+            JOIN org_study_programs ps ON ps.id = dl.study_program_id
+            WHERE cs.id = %s
+            """,
+            (section_id,),
+        )
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def get_prodi_evidence_ids(tenant_id: str, study_program_id: str) -> list[str]:
+    """Bukti Dukung a prodi's chapter may draw from: its own files + tenant-wide ones (no prodi)."""
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute(
+            """SELECT id FROM evidence_files
+               WHERE tenant_id = %s AND kind = 'BUKTI_DUKUNG'
+                 AND (study_program_id = %s OR study_program_id IS NULL)""",
+            (tenant_id, study_program_id),
+        )
+        return [r["id"] for r in cur.fetchall()]
+
+
+def update_section_content(tenant_id: str, section_id: str, content: dict) -> None:
+    """In-place revision by chat (dimas parity) -- no new SectionDraft version per turn."""
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute(
+            "UPDATE writing_chapter_sections SET content = %s WHERE id = %s",
+            (json.dumps(content), section_id),
+        )
+
+
 def _insert_chapter_section(cur, chapter_id: str, parent_id: str | None, order: int, s: dict) -> list[dict]:
-    """Insert satu writing_chapter_sections row, lalu anak-anaknya (satu
-    tingkat sub-sub-bab, `s["subseksi"]`) dengan parent_id mengarah ke row
+    """Insert satu writing_chapter_sections row, lalu anak-anaknya (rekursif,
+    `s["subseksi"]`, sedalam apa pun) dengan parent_id mengarah ke row
     ini. Balikan: [row ini, *semua anaknya] (flat, buat dikumpulkan pemanggil)."""
     section_id = str(uuid.uuid4())
     cur.execute(
         """
-        INSERT INTO writing_chapter_sections (id, chapter_id, parent_id, "order", title, guidance, status)
-        VALUES (%s, %s, %s, %s, %s, %s, 'PENDING')
-        RETURNING id, chapter_id, parent_id, "order", title, guidance, status, content, model, error, generated_at
+        INSERT INTO writing_chapter_sections
+            (id, chapter_id, parent_id, "order", title, marker, guidance, status, lkps_needed, lkps_list)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, 'PENDING', %s, %s)
+        RETURNING id, chapter_id, parent_id, "order", title, marker, guidance, status, content, model, error,
+                  generated_at, lkps_needed, lkps_list
         """,
-        (section_id, chapter_id, parent_id, order, s["title"], s["guidance"]),
+        (
+            section_id, chapter_id, parent_id, order, s["title"], s.get("marker"), s["guidance"],
+            s.get("lkps_needed"), json.dumps(s.get("lkps_list") or []),
+        ),
     )
     created = [dict(cur.fetchone())]
     for i, anak in enumerate(s.get("subseksi") or [], start=1):
@@ -353,9 +468,10 @@ def _insert_chapter_section(cur, chapter_id: str, parent_id: str | None, order: 
 def create_chapter_sections(
     tenant_id: str, chapter_id: str, sections: list[dict], overwrite: bool = False
 ) -> list[dict]:
-    """Writes the LLM-generated outline as ordered PENDING rows. `sections`
-    items may carry `subseksi` (one level of nested sub-sub-bab sections,
-    mis. C.1/C.2 di bawah "Kriteria Akreditasi") -- worker.py::_parse_outline.
+    """Writes the outline (copied from ChapterTemplate/SubBabTemplate, see
+    worker.py::_handle_generasi_outline_bab) as ordered PENDING rows.
+    `sections` items may carry `subseksi` (one level of nested sub-sub-bab
+    sections, mis. C.1/C.2 di bawah "Kriteria Akreditasi").
 
     Raises ValueError if the chapter already has sections and `overwrite` is
     not set (v1 rule — see plan: outline regenerate resets everything, no
@@ -385,11 +501,23 @@ def update_chapter_section(
     model: Optional[str] = None,
     error: Optional[str] = None,
 ) -> None:
+    # ponytail: COALESCE utk content/model -- dulu ketiganya ditulis apa adanya,
+    # jadi pemanggilan yang HANYA mengubah status (mis. status="GENERATING" di
+    # awal _handle_generasi_bab) ikut menimpa content jadi NULL. Biasanya tidak
+    # terasa karena beberapa detik kemudian generate menulisnya lagi -- tapi
+    # kalau generate GAGAL, section tinggal kosong permanen walau narasinya
+    # masih utuh di writing_section_drafts (kasus nyata 2026-10-01: section
+    # "Prestasi mahasiswa di bidang non akademik", status ERROR, content kosong,
+    # snapshot draft 2188 char). `error` sengaja TIDAK di-COALESCE: ia memang
+    # harus bisa dikosongkan saat generate berikutnya berhasil.
     with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
             UPDATE writing_chapter_sections
-            SET status = %s, content = %s, model = %s, error = %s,
+            SET status = %s,
+                content = COALESCE(%s, content),
+                model = COALESCE(%s, model),
+                error = %s,
                 generated_at = CASE WHEN %s = 'GENERATED' THEN NOW() ELSE generated_at END
             WHERE id = %s
             """,
@@ -409,9 +537,9 @@ def link_evidence_to_chapter_and_draft(
     which silently broke both of those regardless of whether evidence was
     actually retrieved for the prompt.
 
-    evidence_chapter_links is the chapter's ACTIVE state (docs/database.md
-    §8) — replaced wholesale each regenerate, same 'always overwrite'
-    policy as update_bab_dokumen_aktif. evidence_draft_links is this one
+    evidence_chapter_links = union of what every section of the chapter used
+    (generate is per section now, so replacing it wholesale made the chapter
+    show only the last section's evidence). evidence_draft_links is this one
     draft's permanent record — inserted once, never touched again.
     """
     if not evidence_ids:
@@ -426,15 +554,13 @@ def link_evidence_to_chapter_and_draft(
         if not rows:
             return
 
-        cur.execute(
-            "DELETE FROM evidence_chapter_links WHERE chapter_id = %s", (chapter_id,)
-        )
         for row in rows:
             cur.execute(
                 """
                 INSERT INTO evidence_chapter_links
                     (id, evidence_id, chapter_id, document_name, file_type)
                 VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (evidence_id, chapter_id) DO NOTHING
                 """,
                 (str(uuid.uuid4()), row["id"], chapter_id, row["document_name"], row["file_type"]),
             )
@@ -462,6 +588,7 @@ def create_generation_run(
     latency_sec: float,
     token_count: int,
     section_id: Optional[str] = None,
+    checklist_error: Optional[str] = None,
 ) -> dict:
     """`section_id` -- the ONE section this call actually generated (worker.py's
     `_handle_generasi_bab` is per-section) -- backs the citation hover-card
@@ -474,8 +601,8 @@ def create_generation_run(
             """
             INSERT INTO writing_generation_runs
                 (id, chapter_draft_id, section_id, model, guidelines_used, rubric_used, checklist,
-                 chunks_used, judge_result, prompt_full, latency_sec, token_count)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 checklist_error, chunks_used, judge_result, prompt_full, latency_sec, token_count)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -486,6 +613,7 @@ def create_generation_run(
                 json.dumps(pedoman_used),
                 json.dumps(rubric_used),
                 json.dumps(checklist),
+                checklist_error,
                 json.dumps(chunks_used),
                 json.dumps(judge_result) if judge_result is not None else None,
                 prompt_full,
@@ -494,6 +622,50 @@ def create_generation_run(
             ),
         )
         return dict(cur.fetchone())
+
+
+def get_latest_generation_run_for_section(tenant_id: str, section_id: str) -> Optional[dict]:
+    """Generate TERAKHIR satu section: id, draft-nya, chunk konteks, pedoman & checklist yang dipakainya.
+    Dipakai penilaian RAGAS atas permintaan pengguna (worker.py::_handle_penilaian_ragas)."""
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute(
+            """
+            SELECT id, chapter_draft_id, chunks_used, guidelines_used, checklist
+            FROM writing_generation_runs
+            WHERE section_id = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (section_id,),
+        )
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def update_generation_run_judge(tenant_id: str, run_id: str, judge_result: dict) -> None:
+    """Menimpa `judge_result` satu GenerationRun -- dipakai penilaian RAGAS susulan
+    (worker.py::_nilai_ragas_susulan) yang selesai SESUDAH generate-nya."""
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute(
+            "UPDATE writing_generation_runs SET judge_result = %s WHERE id = %s",
+            (json.dumps(judge_result), run_id),
+        )
+
+
+def get_latest_section_judges(tenant_id: str, chapter_id: str) -> list[dict]:
+    """judge_result of each section's most recent generate in this chapter (one per section)."""
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT ON (gr.section_id) gr.judge_result
+            FROM writing_generation_runs gr
+            JOIN writing_chapter_drafts d ON d.id = gr.chapter_draft_id
+            WHERE d.chapter_id = %s AND gr.section_id IS NOT NULL AND gr.judge_result IS NOT NULL
+            ORDER BY gr.section_id, gr.created_at DESC
+            """,
+            (chapter_id,),
+        )
+        return [r["judge_result"] for r in cur.fetchall()]
 
 
 def create_ragas_score(
@@ -523,32 +695,32 @@ def create_ragas_score(
         return dict(cur.fetchone())
 
 
-def save_chat_message(tenant_id: str, bab_id: str, user_id: str, role: str, message: str) -> dict:
+def save_chat_message(tenant_id: str, section_id: str, user_id: str, role: str, message: str) -> dict:
     """role is 'USER' or 'ASSISTANT' (ChatRole enum)."""
     msg_id = str(uuid.uuid4())
     with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
-            INSERT INTO writing_chat_messages (id, chapter_id, user_id, role, message)
+            INSERT INTO writing_chat_messages (id, section_id, user_id, role, message)
             VALUES (%s, %s, %s, %s, %s)
             RETURNING id, created_at
             """,
-            (msg_id, bab_id, user_id, role, message),
+            (msg_id, section_id, user_id, role, message),
         )
         return dict(cur.fetchone())
 
 
-def get_chat_history(tenant_id: str, bab_id: str, limit: int = 50) -> list[dict]:
+def get_chat_history(tenant_id: str, section_id: str, limit: int = 50) -> list[dict]:
     with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
             SELECT id, user_id, role, message, created_at
             FROM writing_chat_messages
-            WHERE chapter_id = %s
+            WHERE section_id = %s
             ORDER BY created_at ASC
             LIMIT %s
             """,
-            (bab_id, limit),
+            (section_id, limit),
         )
         return [dict(r) for r in cur.fetchall()]
 
@@ -583,22 +755,27 @@ def get_evidence_citation_labels(tenant_id: str, evidence_ids: list[str]) -> dic
         }
 
 
-def get_confirmed_recommendation(tenant_id: str, chapter_draft_id: str) -> Optional[dict]:
+def get_confirmed_recommendation(
+    tenant_id: str, chapter_draft_id: str, section_id: Optional[str] = None
+) -> Optional[dict]:
     """The DIKONFIRMASI DocumentRecommendation row for this draft — evidence
-    scope for GENERASI_BAB (selectedEvidenceIds). None if this chapter was
-    generated without going through recommend-documents first (manual
-    generate, still supported — see worker.py::_handle_generasi_bab)."""
+    scope for GENERASI_BAB (selectedEvidenceIds). With `section_id`, that
+    section's own recommendation (dimas: per section) wins over a legacy
+    chapter-level row (chapter_section_id NULL); another section's row never
+    matches. None if generated without recommend-documents (manual generate)."""
     with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
-            SELECT id, document_query, lkps_needed, lkps_sufficient, lkps_evidence_query,
+            SELECT id, chapter_section_id, document_query, lkps_needed, lkps_sufficient, lkps_evidence_query,
                    candidate_folders, recommendation_text, selected_evidence_ids,
                    pedoman_used, rubric_used, lkps_used, status, created_at
             FROM writing_document_recommendations
             WHERE chapter_draft_id = %s AND status = 'DIKONFIRMASI'
+              AND (chapter_section_id IS NULL OR chapter_section_id = %s)
+            ORDER BY chapter_section_id NULLS LAST, created_at DESC
             LIMIT 1
             """,
-            (chapter_draft_id,),
+            (chapter_draft_id, section_id),
         )
         row = cur.fetchone()
     return dict(row) if row else None
@@ -609,14 +786,13 @@ def create_document_recommendation(
     chapter_draft_id: str,
     document_query: list[str],
     lkps_needed: bool,
-    lkps_sufficient: Optional[bool],
-    lkps_evidence_query: Optional[list[str]],
     candidate_folders: list[dict],
     recommendation_text: str,
     pedoman_used: list[dict],
     rubric_used: list[dict],
     lkps_used: list[dict],
     items: list[dict],
+    chapter_section_id: Optional[str] = None,
 ) -> dict:
     """Supersede any prior DIKONFIRMASI recommendation on this draft (Dimas's
     reuse-draft-then-supersede semantics — a no-op UPDATE when there isn't
@@ -625,27 +801,34 @@ def create_document_recommendation(
     (separate) confirm step."""
     rec_id = str(uuid.uuid4())
     with tenant_cursor(tenant_id) as cur:
-        cur.execute(
-            """UPDATE writing_document_recommendations SET status = 'DIGANTIKAN'
-               WHERE chapter_draft_id = %s AND status = 'DIKONFIRMASI'""",
-            (chapter_draft_id,),
-        )
+        # Per section: supersede that section's confirmed row (any draft); legacy chapter-level: by draft.
+        if chapter_section_id:
+            cur.execute(
+                """UPDATE writing_document_recommendations SET status = 'DIGANTIKAN'
+                   WHERE chapter_section_id = %s AND status = 'DIKONFIRMASI'""",
+                (chapter_section_id,),
+            )
+        else:
+            cur.execute(
+                """UPDATE writing_document_recommendations SET status = 'DIGANTIKAN'
+                   WHERE chapter_draft_id = %s AND chapter_section_id IS NULL AND status = 'DIKONFIRMASI'""",
+                (chapter_draft_id,),
+            )
         cur.execute(
             """
             INSERT INTO writing_document_recommendations
-                (id, chapter_draft_id, document_query, lkps_needed, lkps_sufficient,
-                 lkps_evidence_query, candidate_folders, recommendation_text,
+                (id, chapter_draft_id, chapter_section_id, document_query, lkps_needed,
+                 candidate_folders, recommendation_text,
                  selected_evidence_ids, pedoman_used, rubric_used, lkps_used, status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'DIREKOMENDASIKAN')
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'DIREKOMENDASIKAN')
             RETURNING id, created_at
             """,
             (
                 rec_id,
                 chapter_draft_id,
+                chapter_section_id,
                 json.dumps(document_query),
                 lkps_needed,
-                lkps_sufficient,
-                json.dumps(lkps_evidence_query) if lkps_evidence_query is not None else None,
                 json.dumps(candidate_folders),
                 recommendation_text,
                 json.dumps([]),
@@ -691,6 +874,12 @@ def update_recommendation_item_status(tenant_id: str, item_id: str, status: str)
             'UPDATE writing_recommendation_items SET status = %s WHERE id = %s',
             (status, item_id),
         )
+
+
+def delete_recommendation_item(tenant_id: str, item_id: str) -> None:
+    """Cross-check concluded the document is not needed (Dimas deletes the row instead of keeping status 2)."""
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute("DELETE FROM writing_recommendation_items WHERE id = %s", (item_id,))
 
 
 def insert_recommendation_items(

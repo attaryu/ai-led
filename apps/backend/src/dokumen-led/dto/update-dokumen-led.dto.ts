@@ -18,4 +18,10 @@ export class UpdateDokumenLedDto extends PartialType(CreateDokumenLedDto) {
   @IsOptional()
   @IsString()
   accreditationSetId?: string;
+
+  // LKPS dokumen ini (Evidence .xlsx/.xls milik prodinya) -- diindeks ke apps/ai /upload/lkps.
+  @ApiPropertyOptional({ example: 'clx1a2b3c4d5e6f7g8h9i0j1' })
+  @IsOptional()
+  @IsString()
+  lkpsEvidenceId?: string;
 }

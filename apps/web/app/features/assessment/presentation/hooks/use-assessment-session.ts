@@ -187,7 +187,7 @@ export function useAssessmentSession({
 		sesiAktif !== undefined && sesiAktif.id === daftarSesi[0]?.id;
 
 	const jalankan = React.useCallback(
-		async (sumber: AssessmentSource, indikatorList?: number[]) => {
+		async (sumber: AssessmentSource, indikatorList?: number[], subIndikatorList?: string[]) => {
 			if (!izin.canRun || status === 'berjalan') return;
 
 			setStatus('berjalan');
@@ -197,6 +197,7 @@ export function useAssessmentSession({
 			try {
 				const job = await assessmentSessionRepository.trigger(projectId, {
 					indikatorList,
+					subIndikatorList,
 					sumberLed: sumber.sumberLed,
 					ledFileName: sumber.ledFileName ?? undefined,
 					lkpsBuktiDukungId: sumber.lkpsBuktiDukungId ?? undefined,

@@ -75,6 +75,14 @@ class IndicatorRubric:
     formula: Optional[str]               # e.g. "BOP / 5000000"
     lkps_table_ref: list[str]            # e.g. ["Tabel 2.b. LKPS"]
     sub_score_formula: Optional[str]     # e.g. "((I x 2) + II) / 3"
+    sub_no: str = ""                     # sub-indikator ("I", "II", ...) bila satu nomor punya beberapa baris rubrik; "" = tanpa sub
+
+
+def sub_no_dari(obj) -> str:
+    """Sub-indikator suatu baris rubrik/indikator ("I", "II", ...); "" bila tidak ada atau bukan string
+    (mis. objek tiruan di tes). Satu pintu supaya semua pemakai memperlakukan "tanpa sub" sama."""
+    nilai = getattr(obj, "sub_no", "")
+    return nilai if isinstance(nilai, str) else ""
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +220,12 @@ class _RowAccumulator:
 
     def append_score(self, key: int, text: str) -> None:
         existing = self.scores[key]
+        # Composite indicators repeat the SAME rubric sentence per sub-indicator (e.g. no. 46's
+        # "I. Prestasi akademik" and "II. Prestasi non akademik" both carry "Jika RI > a ..."), and a row
+        # split across a page break re-emits its cell. Appending those verbatim made the stored level text
+        # read as duplicated nonsense, so an exact repeat is dropped.
+        if existing and text and text in existing:
+            return
         if existing and text:
             self.scores[key] = existing + " " + text
         elif text:

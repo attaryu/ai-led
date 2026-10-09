@@ -3,12 +3,22 @@ import { type RubricCriterion } from '~/features/chapter/domain/entities/rubric-
 import {
 	cekSyaratSiap,
 	type AccreditationSetEntity,
+	type PanduanLibraryItem,
 	type SetDocumentType,
 } from '../../domain/entities/accreditation-set.entity';
 import { type CreateAccreditationSetDto } from '../../domain/dtos/create-accreditation-set.dto';
 import { type UpdateAccreditationSetDto } from '../../domain/dtos/update-accreditation-set.dto';
 import { type ChapterTemplateEntity } from '../../domain/entities/chapter-template.entity';
-import { mapChapterTemplate, mapCriterion, toCriterionPayload, toEntity, toListEntity } from '../backend-mappers';
+import { type StructurePreviewEntity } from '../../domain/entities/structure-preview.entity';
+import {
+	mapChapterTemplate,
+	mapCriterion,
+	mapPanduanLibraryItem,
+	mapStructurePreview,
+	toCriterionPayload,
+	toEntity,
+	toListEntity,
+} from '../backend-mappers';
 import {
 	accreditationSetRemoteSource,
 	type BackendDocumentType,
@@ -39,11 +49,17 @@ function assertNomorBebas(
 	set: AccreditationSetEntity,
 	no: number,
 	abaikanId: string,
+	subNo = '',
 ): void {
-	const bentrok = set.kriteria.some((k) => k.no === no && k.id !== abaikanId);
+	// ponytail: dulu bentrok bila `no` sama saja. Sejak ada sub-indikator, kuncinya nomor + sub (43.I dan 43.II sah).
+	const bentrok = set.kriteria.some(
+		(k) => k.no === no && (k.subNo ?? '') === (subNo ?? '') && k.id !== abaikanId,
+	);
 
 	if (bentrok) {
-		throw new Error(`Nomor indikator ${no} sudah dipakai kriteria lain di set ini.`);
+		throw new Error(
+			`Nomor indikator ${no}${subNo ? ` (sub ${subNo})` : ''} sudah dipakai kriteria lain di set ini.`,
+		);
 	}
 }
 
@@ -187,7 +203,7 @@ export const accreditationSetRepository = {
 		input: CriterionInput,
 	): Promise<AccreditationSetEntity> {
 		const current = await getEntity(setId);
-		assertNomorBebas(current, input.no, criterionId);
+		assertNomorBebas(current, input.no, criterionId, input.subNo ?? current.kriteria.find((k) => k.id === criterionId)?.subNo ?? '');
 
 		if (!current.kriteria.some((k) => k.id === criterionId)) {
 			throw new Error('Kriteria tidak ditemukan');
@@ -243,5 +259,61 @@ export const accreditationSetRepository = {
 	async findChapterTemplates(setId: string): Promise<ChapterTemplateEntity[]> {
 		const rows = await accreditationSetRemoteSource.findChapterTemplates(setId);
 		return rows.map(mapChapterTemplate).sort((a, b) => a.urutan - b.urutan);
+	},
+
+	/** Pohon staged (MENUNGGU_KONFIRMASI) atau struktur nyata -- modal "Pilih Struktur Pedoman". */
+	async previewStructure(setId: string): Promise<StructurePreviewEntity> {
+		const row = await accreditationSetRemoteSource.previewStructure(setId);
+		return mapStructurePreview(row);
+	},
+
+	/** Commit HANYA node yang tercentang; sisanya dibuang permanen. */
+	async confirmStructure(setId: string, acceptedIds: string[]): Promise<void> {
+		await accreditationSetRemoteSource.confirmStructure(setId, acceptedIds);
+	},
+
+	/** gap #2: nyala/matiin 1 sub-bab yang sudah commit dari outline BARU, tanpa re-extract. */
+	async toggleSection(subBabId: string, isActive: boolean): Promise<void> {
+		await accreditationSetRemoteSource.toggleSection(subBabId, isActive);
+	},
+
+	/** Semua Panduan tenant ini -- dropdown "pilih existing". */
+	async listPanduan(): Promise<PanduanLibraryItem[]> {
+		const rows = await accreditationSetRemoteSource.listPanduan();
+		return rows.map(mapPanduanLibraryItem);
+	},
+
+	/** Upload Panduan BARU (belum terpasang ke set manapun), lalu langsung pasang ke set ini. */
+	async uploadAndAttachPanduan(setId: string, file: File): Promise<AccreditationSetEntity> {
+		const { fileKey } = await uploadDocument(file);
+		const panduan = await accreditationSetRemoteSource.uploadPanduan({ fileKey, title: file.name });
+		await accreditationSetRemoteSource.attachPanduan(setId, panduan.id);
+		return getEntity(setId);
+	},
+
+	/** Pasang Panduan yang sudah ada (dari listPanduan) ke set ini, tanpa upload/ekstraksi ulang. */
+	async attachPanduan(setId: string, panduanId: string): Promise<AccreditationSetEntity> {
+		await accreditationSetRemoteSource.attachPanduan(setId, panduanId);
+		return getEntity(setId);
+	},
+
+	/** Lepas Panduan dari set ini -- baris Panduan-nya sendiri (dan set lain yang memakainya) tidak tersentuh. */
+	async detachPanduan(setId: string): Promise<AccreditationSetEntity> {
+		const current = await getEntity(setId);
+		assertMasihSahSebagaiSiap({ ...current, panduan: null });
+
+		await accreditationSetRemoteSource.detachPanduan(setId);
+		return getEntity(setId);
+	},
+
+	/** Re-upload KE Panduan yang sudah ada -- wipe+re-extract, mempengaruhi SEMUA set yang menunjuknya. */
+	async replacePanduan(panduanId: string, file: File): Promise<void> {
+		const { fileKey } = await uploadDocument(file);
+		await accreditationSetRemoteSource.replacePanduan(panduanId, { fileKey, title: file.name });
+	},
+
+	/** Hapus Panduan yang sudah tidak dipakai Set manapun -- backend menolak (409) kalau masih dipakai. */
+	async deletePanduan(panduanId: string): Promise<void> {
+		await accreditationSetRemoteSource.deletePanduan(panduanId);
 	},
 };

@@ -76,6 +76,13 @@ class LKPSRegistry:
         """
         normalized = _normalize_ref(ref_text)
 
+        # Cocokkan LANGSUNG ke nama sheet yang benar-benar ada di berkas ("Tabel 6.c.1" -> sheet "6c1";
+        # "Tabel 6.c" -> semua "6c*"). Peta statis di bawah basi terhadap templat LKPS yang berubah (mis.
+        # "6c" kini terpecah jadi 6c1/6c2), dan menjadikan tabel itu "tidak ditemukan" padahal ada.
+        langsung = self._frames_dari_nama_sheet(normalized)
+        if langsung:
+            return pd.concat(langsung, ignore_index=True) if len(langsung) > 1 else langsung[0]
+
         best_key = None
         best_key_norm = None
         for key_norm, sheets in _REF_TO_SHEETS_NORMALIZED.items():
@@ -96,6 +103,19 @@ class LKPSRegistry:
         if not frames:
             return None
         return pd.concat(frames, ignore_index=True) if len(frames) > 1 else frames[0]
+
+    def _frames_dari_nama_sheet(self, normalized_ref: str) -> list[pd.DataFrame]:
+        """Sheet tak-kosong yang namanya cocok dengan rujukan ternormalkan ("tabel 6 c 1"). Nama sheet dibandingkan
+        tanpa tanda baca ("4f-1" -> "4f1"). Token berhuruf ("6c", "4f") juga mencakup turunannya ("6c1", "4f1");
+        token angka saja ("1") hanya cocok persis supaya "1" tidak menyeret sheet lain."""
+        token = re.sub(r"[^a-z0-9]", "", re.sub(r"^\s*tabel\b", "", normalized_ref))
+        if not token:
+            return []
+        nama = {name: re.sub(r"[^a-z0-9]", "", name.lower()) for name in self.sheets}
+        cocok = [name for name, n in nama.items() if n == token]
+        if not cocok and re.search(r"[a-z]", token):
+            cocok = [name for name, n in nama.items() if n.startswith(token)]
+        return [self.sheets[name] for name in sorted(cocok) if not self.sheets[name].empty]
 
     def get_summary(self) -> dict[str, dict]:
         """Return dict of {sheet_name: {rows, columns}} for non-empty sheets."""

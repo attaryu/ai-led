@@ -112,20 +112,16 @@ export function formatRelativeTimeLong(iso: string): string {
  * karena input HTML tidak mengenal nilai kosong selain itu.
  */
 export function toDateInputValue(iso: string | null): string {
-	if (!iso) return '';
-	const date = new Date(iso);
-	if (Number.isNaN(date.getTime())) return '';
-	// Dibangun dari komponen waktu lokal, bukan `toISOString()`, supaya tanggal
-	// tidak bergeser sehari untuk zona waktu di timur UTC.
-	const bulan = `${date.getMonth() + 1}`.padStart(2, '0');
-	const hari = `${date.getDate()}`.padStart(2, '0');
-	return `${date.getFullYear()}-${bulan}-${hari}`;
+	if (!iso || Number.isNaN(new Date(iso).getTime())) return '';
+	// Kolom @db.Date dikirim sebagai tengah malam UTC -- ambil tanggalnya apa adanya, tanpa zona waktu.
+	return iso.slice(0, 10);
 }
 
 /** Nilai `<input type="date">` → ISO; `null` bila dikosongkan. */
 export function fromDateInputValue(value: string): string | null {
 	if (!value.trim()) return null;
-	const date = new Date(`${value}T00:00:00`);
+	// Tengah malam UTC, bukan lokal: di WIB tengah malam lokal = 17:00Z hari sebelumnya, dan @db.Date menyimpan tanggal itu.
+	const date = new Date(`${value}T00:00:00Z`);
 	return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 

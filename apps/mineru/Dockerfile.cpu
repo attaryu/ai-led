@@ -1,0 +1,37 @@
+# syntax=docker/dockerfile:1
+# MinerU 4.x tanpa CUDA -- dipakai varian CPU dan API (docker-compose.mineru-cpu.yml, docker-compose.mineru-api.yml).
+#
+# Beda dari Dockerfile (GPU): torch, torchvision, triton, dan seluruh paket nvidia-* DIBUANG dari
+# requirements.lock. Paket `mineru` sendiri hanya mewajibkan onnxruntime (bukan torch), dan tanpa torch
+# MinerU otomatis memakai CPU dengan model kecil berbasis ONNX (mineru/model/runtime/device.py). Hasilnya
+# image jauh lebih kecil (tanpa ~3 GB torch + CUDA) dan bisa jalan di mesin tanpa GPU.
+#
+# Versi paket lainnya TETAP sama dengan requirements.lock, jadi perilaku ekstraksinya sama dengan varian GPU.
+FROM python:3.12-slim
+
+# libgl1/libglib2.0-0: dibutuhkan opencv; libgomp1: dibutuhkan onnxruntime.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /srv
+
+COPY requirements.lock .
+RUN grep -viE '^(torch|torchvision|triton|nvidia-)' requirements.lock > requirements.cpu.txt
+# --no-deps WAJIB: requirements.lock sudah membekukan SEMUA dependensi, dan tanpa flag ini pip melihat ada paket
+# (bukan `mineru` sendiri) yang bergantung pada torch lalu mengunduh torch default ~900 MB beserta CUDA --
+# persis yang dibuang di atas.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-deps -r requirements.cpu.txt
+
+COPY gateway.py entrypoint.sh ./
+RUN chmod +x entrypoint.sh
+
+# MINERU_DEVICE_MODE=cpu: eksplisit, supaya tidak bergantung pada deteksi otomatis.
+ENV MINERU_MODE=local \
+    MINERU_TIER=basic \
+    MINERU_DEVICE_MODE=cpu \
+    PYTHONUNBUFFERED=1
+
+EXPOSE 8100
+ENTRYPOINT ["/srv/entrypoint.sh"]

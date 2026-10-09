@@ -21,7 +21,7 @@ import psycopg2.extras
 from pgvector.psycopg2 import register_vector
 
 from db.connection import tenant_connection
-from vectorstore.pgvector_store import _get_model
+from vectorstore.pgvector_store import embed_documents, embed_documents_ami, embed_query, embed_query_ami
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,6 @@ def index_evidence_chunks(chunks: list[dict], tenant_id: str, bukti_dukung_id: s
     """
     import time
 
-    model = _get_model()
 
     with _cursor(tenant_id) as cur:
         cur.execute(
@@ -58,8 +57,22 @@ def index_evidence_chunks(chunks: list[dict], tenant_id: str, bukti_dukung_id: s
     if total == 0:
         return
 
+    # Pengaman terakhir: Postgres menolak NUL (0x00) dan satu chunk bernul menggagalkan
+    # seluruh berkas. Jalur PDF sudah membersihkannya di sumber (evidence_pipeline.
+    # _bersihkan_nul); ini menutup jalur lain (Excel/CSV/teks) dan regresi di masa depan.
+    chunks = [
+        {**c, "text": c["text"].replace("\x00", ""), "entity": (c.get("entity") or "").replace("\x00", "")}
+        for c in chunks
+    ]
+
     t0 = time.time()
-    embeddings = model.encode([c["text"] for c in chunks], show_progress_bar=False)
+    texts = [c["text"] for c in chunks]
+    # ponytail: dulu DUA kali embed -- bge-m3 ke `embedding` dan MiniLM ke
+    # `embedding_ami`. MiniLM dihapus (kolomnya di-DROP), jadi sekali saja:
+    # biaya embedding tiap unggahan turun separuh, dan tidak ada lagi vektor
+    # yang hanya mewakili 128 token pertama chunk.
+    embeddings = embed_documents(texts)
+    # embeddings_ami = embed_documents_ami(texts)
     logger.info("Embedded %d evidence chunks in %.1fs", total, time.time() - t0)
 
     rows = [
@@ -96,7 +109,7 @@ def index_evidence_chunks(chunks: list[dict], tenant_id: str, bukti_dukung_id: s
 
 
 def list_available_evidence_ids(
-    tenant_id: str, accreditation_set_id: str, indicator_no: int
+    tenant_id: str, accreditation_set_id: str, indicator_no: int, study_program_id: str | None = None
 ) -> list[str]:
     """Evidence ids explicitly tagged to this indicator, hard-scoped to tenant
     AND accreditation_set_id (evidence_indicator_tags) -- indicator_no alone
@@ -105,16 +118,24 @@ def list_available_evidence_ids(
     -> caller returns immediately, no fallback to a blanket tenant/prodi search
     (matches origin/ariel's design; tenant filter is dev-v1-only, Ariel's
     prototype has no tenant concept at all).
+
+    study_program_id (the assessed document's prodi) further limits to that
+    prodi's own evidence or tenant-wide evidence (study_program_id NULL) --
+    otherwise two prodi sharing a set would see each other's tagged files.
     """
+    prodi_filter = "AND (ef.study_program_id = %s OR ef.study_program_id IS NULL)" if study_program_id else ""
+    params = (tenant_id, accreditation_set_id, indicator_no) + ((study_program_id,) if study_program_id else ())
     with _cursor(tenant_id) as cur:
         cur.execute(
-            """
+            f"""
             SELECT ef.id
             FROM evidence_files ef
             JOIN evidence_indicator_tags eit ON eit.evidence_id = ef.id
-            WHERE ef.tenant_id = %s AND eit.accreditation_set_id = %s AND eit.indicator_no = %s
+            WHERE ef.tenant_id = %s AND ef.kind = 'BUKTI_DUKUNG'
+              AND eit.accreditation_set_id = %s AND eit.indicator_no = %s
+            {prodi_filter}
             """,
-            (tenant_id, accreditation_set_id, indicator_no),
+            params,
         )
         return [row["id"] for row in cur.fetchall()]
 
@@ -124,17 +145,28 @@ def search_evidence(
     tenant_id: str,
     bukti_dukung_ids: list[str] | None = None,
     n_results: int = 5,
+    ami: bool = False,
 ) -> list[dict]:
     """Search evidence chunks by semantic similarity, scoped to a tenant and
     optionally to a specific set of bukti_dukung_ids (e.g. the evidence
     available to one program studi's generate context).
 
+    `ami` DEPRECATED: dulu memilih kolom MiniLM `embedding_ami`. Sejak MiniLM
+    dihapus hanya ada satu kolom (`embedding`, bge-m3), jadi parameter ini tidak
+    lagi berpengaruh -- dipertahankan supaya pemanggil lama (agent/tools/
+    evidence_tool.py, eval/) tidak pecah. Ambang jarak tetap TIDAK diterapkan di
+    jalur AMI (top-k polos), sama seperti sebelumnya.
+
     Returns [{text, entity, chunk_id, bukti_dukung_id, confidence, distance}].
     """
-    model = _get_model()
-    query_embedding = model.encode([query], show_progress_bar=False)[0]
+    # ponytail: satu kolom saja sejak MiniLM dihapus.
+    # kolom = "embedding_ami" if ami else "embedding"
+    kolom = "embedding"
+    # ponytail: satu model saja -- embed_query_ami kini alias bge-m3.
+    # query_embedding = embed_query_ami(query) if ami else embed_query(query)
+    query_embedding = embed_query(query)
 
-    where = ["tenant_id = %s"]
+    where = ["tenant_id = %s", f"{kolom} IS NOT NULL"]
     params: list = [tenant_id]
     if bukti_dukung_ids is not None:
         if not bukti_dukung_ids:
@@ -146,10 +178,10 @@ def search_evidence(
         cur.execute(
             f"""
             SELECT chunk_id, evidence_id, entity, text, confidence,
-                   embedding <=> %s AS distance
+                   {kolom} <=> %s AS distance
             FROM evidence_chunk_embeddings
             WHERE {" AND ".join(where)}
-            ORDER BY embedding <=> %s
+            ORDER BY {kolom} <=> %s
             LIMIT %s
             """,
             [query_embedding, *params, query_embedding, n_results],

@@ -2,6 +2,7 @@ import { LockSimpleIcon, LockSimpleOpenIcon } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
+import { type ChapterSectionEntity } from '../../domain/entities/chapter-section.entity';
 import { type ChapterPermission } from '../hooks/use-chapter-permission';
 import { useChapterReview } from '../hooks/use-chapter-review';
 
@@ -22,19 +23,22 @@ import { useChapterReview } from '../hooks/use-chapter-review';
  */
 export function ChapterLockButton({
 	chapter,
+	sectionId,
 	izin,
 	onReviewed,
 }: {
+	/** Tampilan review section yang terbuka (`terkunci` milik section). */
 	chapter: ChapterEntity;
+	sectionId: string | null;
 	izin: ChapterPermission;
-	onReviewed: (diperbarui: ChapterEntity) => void;
+	onReviewed: (diperbarui: ChapterSectionEntity) => void;
 }) {
-	const review = useChapterReview(chapter, izin, onReviewed);
+	const review = useChapterReview(chapter, sectionId, izin, onReviewed);
 
 	if (!review.boleh) return null;
 
 	const Ikon = chapter.terkunci ? LockSimpleOpenIcon : LockSimpleIcon;
-	const label = chapter.terkunci ? 'Buka Kunci' : 'Kunci Bab';
+	const label = chapter.terkunci ? 'Buka Kunci' : 'Kunci Section';
 
 	return (
 		<Button

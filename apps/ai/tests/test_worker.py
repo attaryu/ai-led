@@ -3,55 +3,6 @@
 from __future__ import annotations
 
 
-def test_lkps_refs_in_pedoman_finds_explicit_mention():
-    from worker import _lkps_refs_in_pedoman
-
-    pedoman = [
-        {"point_title": "Rasio dosen", "content_text": "Jelaskan rasio dosen (Tabel 2.a LKPS) terhadap mahasiswa."},
-    ]
-    refs = _lkps_refs_in_pedoman(pedoman)
-    assert len(refs) == 1
-    assert "2.a" in refs[0]
-
-
-def test_lkps_refs_in_pedoman_empty_when_no_mention():
-    from worker import _lkps_refs_in_pedoman
-
-    pedoman = [{"point_title": "Visi", "content_text": "Jelaskan proses penyusunan visi program studi."}]
-    assert _lkps_refs_in_pedoman(pedoman) == []
-
-
-def test_lkps_refs_in_pedoman_dedupes_repeated_mentions():
-    from worker import _lkps_refs_in_pedoman
-
-    pedoman = [
-        {"point_title": "A", "content_text": "Lihat Tabel 2.a LKPS untuk rincian."},
-        {"point_title": "B", "content_text": "Bandingkan dengan Tabel 2.a LKPS pada bagian lain."},
-    ]
-    assert len(_lkps_refs_in_pedoman(pedoman)) == 1
-
-
-def test_led_citation_label_prefers_page():
-    from worker import _led_citation_label
-
-    chunk = {"metadata": {"page_start": 5, "para_start": -1}}
-    assert _led_citation_label(chunk) == "LED hal. 5"
-
-
-def test_led_citation_label_falls_back_to_paragraph():
-    from worker import _led_citation_label
-
-    chunk = {"metadata": {"page_start": -1, "para_start": 3}}
-    assert _led_citation_label(chunk) == "LED para. 3"
-
-
-def test_led_citation_label_falls_back_to_plain_led():
-    from worker import _led_citation_label
-
-    chunk = {"metadata": {"page_start": -1, "para_start": -1}}
-    assert _led_citation_label(chunk) == "LED"
-
-
 def test_evidence_citation_label_uses_real_filename():
     from worker import _evidence_citation_label
 
@@ -137,17 +88,17 @@ def test_build_checklist_prompt_includes_selected_document_names_as_hint_only():
     from worker import _build_checklist_prompt
 
     prompt = _build_checklist_prompt(
-        "Tata Pamong", [], [], selected_document_names=["Renstra 2020-2024"]
+        "Tata Pamong", [], selected_document_names=["Renstra 2020-2024"]
     )
     assert "Renstra 2020-2024" in prompt
-    assert "checklist TETAP harus diturunkan dari PEDOMAN" in prompt
+    assert "Jangan membuat kebutuhan informasi baru berdasarkan nama atau isi dokumen" in prompt
 
 
 def test_build_checklist_prompt_omits_selected_documents_block_when_none():
     from worker import _build_checklist_prompt
 
-    prompt = _build_checklist_prompt("Tata Pamong", [], [])
-    assert "DOKUMEN YANG SUDAH DIPILIH USER" not in prompt
+    prompt = _build_checklist_prompt("Tata Pamong", [])
+    assert "DOKUMEN YANG TERSEDIA" not in prompt
 
 
 def test_build_section_prompt_forbids_any_heading():
@@ -155,51 +106,54 @@ def test_build_section_prompt_forbids_any_heading():
     _compile_chapter_from_sections — the LLM must not add its own."""
     from worker import _build_section_prompt
 
-    prompt = _build_section_prompt("Kebijakan Tata Pamong", "Tata Pamong", [], [], [], [], [])
-    assert "TANPA heading/judul apapun" in prompt
-    assert "3-5 paragraf" in prompt
+    prompt = _build_section_prompt("Kebijakan Tata Pamong", [], [])
+    assert "Tidak ada judul, heading" in prompt
+    assert "minimum 3 paragraf" in prompt
+    assert "PEMERIKSAAN" in prompt
 
 
 def test_build_assess_and_recommend_prompt_uses_closed_set_catalog():
-    """Port of Dimas's 332ab2f: document picks come from the closed-set
-    catalog, not a per-tenant registry search — the prompt must instruct
-    the LLM accordingly and include the full numbered catalog."""
-    from document_catalog import DOCUMENT_CATALOG
+    """Pilihan dokumen datang dari katalog tertutup BERKATEGORI (document_catalog_kategori), bukan pencarian
+    registry per-tenant: prompt memuat judul kategori [..] dan label dokumen berkutip, tanpa nomor."""
+    from document_catalog_kategori import catalog_by_category
     from worker import _build_assess_and_recommend_prompt
 
     prompt = _build_assess_and_recommend_prompt(
         "Tata Pamong",
         [{"content_text": "Pedoman contoh."}],
-        [{"description": "Rubrik skor 4 contoh."}],
         [],
         False,
     )
-    assert "CLOSED SET" in prompt
+    assert "closed set" in prompt
+    assert "TS-1" in prompt  # _KONTEKS_PROMPT injected
     assert "Pedoman contoh." in prompt
-    assert "Rubrik skor 4 contoh." in prompt
-    assert f"{len(DOCUMENT_CATALOG)}. " in prompt
-    assert DOCUMENT_CATALOG[0]["label"] in prompt
-    # No leftover reference to the old registry-search inputs.
+    kategori = catalog_by_category()
+    for nama, labels in kategori.items():
+        assert f"[{nama}]" in prompt
+        assert f'"{labels[0]}"' in prompt  # label berkutip, tanpa nomor
+    semua = [lab for labels in kategori.values() for lab in labels]
+    assert f"{len(semua)}. " not in prompt
     assert "FOLDER KANDIDAT" not in prompt
     assert "QUERY KEBUTUHAN DOKUMEN" not in prompt
 
 
-def test_build_assess_and_recommend_prompt_flags_missing_pedoman():
+def test_build_assess_and_recommend_prompt_has_no_invented_missing_pedoman_text():
+    """dimas emits just the PEDOMAN header when empty -- no extra instruction of our own."""
     from worker import _build_assess_and_recommend_prompt
 
-    prompt = _build_assess_and_recommend_prompt("Tata Pamong", [], [], [], False)
-    assert "PEDOMAN PENULISAN: TIDAK TERSEDIA" in prompt
-    assert "JANGAN menebak dokumen dari judul SECTION" in prompt
+    prompt = _build_assess_and_recommend_prompt("Tata Pamong", [], [], False)
+    assert "TIDAK TERSEDIA" not in prompt
+    assert "Untuk SECTION ini tidak perlu ada LKPS" in prompt
 
 
 def test_build_assess_and_recommend_prompt_includes_lkps_results_when_needed():
     from worker import _build_assess_and_recommend_prompt
 
     prompt = _build_assess_and_recommend_prompt(
-        "Tata Pamong", [], [], ["Tabel 3.a.1: contoh data"], True,
+        "Tata Pamong", [], [{"sheet": "3a1", "text": "Tabel 3.a.1: contoh data"}], True,
     )
-    assert "HASIL PENCARIAN LKPS" in prompt
-    assert "Tabel 3.a.1: contoh data" in prompt
+    assert "sebagai bukti pendukung data LKPS berikut" in prompt
+    assert "[1] Tabel 3.a.1: contoh data" in prompt
 
 
 def test_build_suggest_custom_document_prompt_is_a_fallback_outside_catalog():
@@ -208,77 +162,34 @@ def test_build_suggest_custom_document_prompt_is_a_fallback_outside_catalog():
     from worker import _build_suggest_custom_document_prompt
 
     prompt = _build_suggest_custom_document_prompt(
-        "Tata Pamong", [{"content_text": "Pedoman contoh."}], []
+        "Tata Pamong", [{"content_text": "Pedoman contoh."}]
     )
-    assert "TIDAK ADA satu pun entri" in prompt
+    assert "belum tersedia dalam KATALOG" in prompt
+    assert "TS-1" in prompt  # _KONTEKS_PROMPT injected
     assert "Pedoman contoh." in prompt
 
 
-def test_group_rubric_by_criterion_group_preserves_first_seen_order():
-    from worker import _group_rubric_by_criterion_group
-
-    rubric = [
-        {"criterion_code": "1.1", "criterion_group": "Tata Pamong", "description": "a"},
-        {"criterion_code": "2.1", "criterion_group": "Kerjasama", "description": "b"},
-        {"criterion_code": "1.2", "criterion_group": "Tata Pamong", "description": "c"},
-    ]
-    grouped = _group_rubric_by_criterion_group(rubric)
-    assert [g["name"] for g in grouped] == ["Tata Pamong", "Kerjasama"]
-    assert len(grouped[0]["criteria"]) == 2
-
-
-def test_build_outline_prompt_grounds_in_criterion_groups():
-    from worker import _build_outline_prompt
-
-    kelompok = [{"name": "Tata Pamong", "criteria": [{"criterion_code": "1.1", "description": "desc"}]}]
-    prompt = _build_outline_prompt("Tata Pamong", kelompok, [])
-    assert "KELOMPOK KRITERIA" in prompt
-    assert "Tata Pamong" in prompt
-    assert "1.1: desc" in prompt
-
-
-def test_parse_outline_drops_items_missing_title_or_guidance():
-    from worker import _parse_outline
-
-    raw = """{"sections": [
-        {"judul": "Kebijakan", "panduan": "Bahas dasar hukum"},
-        {"judul": "", "panduan": "kosong judul"},
-        {"judul": "Tanpa panduan"}
-    ]}"""
-    sections = _parse_outline(raw)
-    assert sections == [{"title": "Kebijakan", "guidance": "Bahas dasar hukum", "subseksi": []}]
-
-
-def test_parse_outline_nests_subseksi_one_level():
-    from worker import _parse_outline
-
-    raw = """{"sections": [
-        {"judul": "Kriteria Akreditasi", "panduan": "Bahas kriteria", "subseksi": [
-            {"judul": "Diferensiasi Misi", "panduan": "Bahas VMTS"},
-            {"judul": "Akuntabilitas", "panduan": "Bahas akuntabilitas"}
-        ]}
-    ]}"""
-    sections = _parse_outline(raw)
-    assert [s["title"] for s in sections[0]["subseksi"]] == ["Diferensiasi Misi", "Akuntabilitas"]
-
-
 def test_compile_chapter_from_sections_skips_ungenerated_and_orders_by_input():
+    from prose import text_to_doc
     from worker import _compile_chapter_from_sections
 
     sections = [
-        {"id": "s1", "parent_id": None, "title": "Kebijakan", "status": "GENERATED", "content": {"markdown": "Isi kebijakan."}},
+        {"id": "s1", "parent_id": None, "title": "Kebijakan", "status": "GENERATED", "content": text_to_doc("Isi kebijakan.")},
         {"id": "s2", "parent_id": None, "title": "Belum jadi", "status": "PENDING", "content": None},
-        {"id": "s3", "parent_id": None, "title": "Pelaksanaan", "status": "GENERATED", "content": {"markdown": "Isi pelaksanaan."}},
+        {"id": "s3", "parent_id": None, "title": "Pelaksanaan", "status": "GENERATED", "content": {"markdown": "Isi pelaksanaan (data lama)."}},
     ]
-    markdown_text, html = _compile_chapter_from_sections(sections)
+    markdown_text, doc = _compile_chapter_from_sections(sections)
     assert "## Kebijakan" in markdown_text
     assert "Isi kebijakan." in markdown_text
     assert "Belum jadi" not in markdown_text
     assert "## Pelaksanaan" in markdown_text
-    assert "<h2>Kebijakan</h2>" in html
+    assert [n["type"] for n in doc["content"]] == ["heading", "paragraph", "heading", "paragraph"]
+    assert doc["content"][0]["attrs"] == {"level": 2}
+    assert "Isi pelaksanaan (data lama)." in markdown_text
 
 
 def test_compile_chapter_from_sections_nests_children_as_h3():
+    from prose import text_to_doc
     from worker import _compile_chapter_from_sections
 
     sections = [
@@ -288,30 +199,74 @@ def test_compile_chapter_from_sections_nests_children_as_h3():
             "parent_id": "top",
             "title": "Diferensiasi Misi",
             "status": "GENERATED",
-            "content": {"markdown": "Isi VMTS."},
+            "content": text_to_doc("Isi VMTS."),
         },
     ]
-    markdown_text, html = _compile_chapter_from_sections(sections)
+    markdown_text, doc = _compile_chapter_from_sections(sections)
     assert "### Diferensiasi Misi" in markdown_text
     assert "Isi VMTS." in markdown_text
-    assert "<h3>Diferensiasi Misi</h3>" in html
+    assert doc["content"][0] == {
+        "type": "heading",
+        "attrs": {"level": 3},
+        "content": [{"type": "text", "text": "Diferensiasi Misi"}],
+    }
 
 
-def test_find_daftar_isi_text_returns_just_that_page():
-    from worker import _find_daftar_isi_text
+def test_flatten_bab_list_keeps_every_level_like_dimas():
+    from worker import _flatten_bab_list
 
-    pages = ["Sampul", "Kata Pengantar", "DAFTAR ISI\nBAB I....1", "BAB I. PENDAHULUAN"]
-    assert _find_daftar_isi_text(pages) == "DAFTAR ISI\nBAB I....1"
+    leaf = {"order": 1, "title": "a", "guidance": "g5", "subbab": []}
+    bab_list = [{"order": 1, "title": "BAB", "subbab": [
+        {"order": 1, "title": "A", "guidance": "g2", "subbab": [
+            {"order": 1, "title": "A.1", "guidance": "g3", "subbab": [
+                {"order": 1, "title": "1", "guidance": "g4", "subbab": [leaf]},
+            ]},
+        ]},
+    ]}]
+    nodes = _flatten_bab_list(bab_list)
+    assert [(n["id"], n["parent_id"], n["level"]) for n in nodes] == [
+        ("1", None, 1), ("1.1", "1", 2), ("1.1.1", "1.1", 3), ("1.1.1.1", "1.1.1", 4), ("1.1.1.1.1", "1.1.1.1", 5),
+    ]
 
 
-def test_find_daftar_isi_text_is_case_insensitive():
-    from worker import _find_daftar_isi_text
+def test_bukti_dukung_with_zero_chunks_is_gagal_not_siap():
+    import asyncio
+    from unittest.mock import MagicMock, patch
 
-    pages = ["Sampul", "daftar   isi\nBAB I....1"]
-    assert _find_daftar_isi_text(pages) is not None
+    from worker import _handle_ingestion_bukti_dukung
+
+    job = MagicMock()
+    job.data = {"buktiDukungId": "ev-1", "tenantId": "tenant-1", "fileUrl": "tenant-1/kosong.pdf"}
+    cur = MagicMock()
+    with (
+        patch("db.r2_client.download_to"),
+        patch("ingestion.evidence_pipeline.process_file", return_value=[]),
+        patch("vectorstore.pgvector_evidence_store.index_evidence_chunks") as index,
+        patch("db.connection.tenant_cursor") as tc,
+    ):
+        tc.return_value.__enter__.return_value = cur
+        result = asyncio.run(_handle_ingestion_bukti_dukung(job))
+
+    index.assert_not_called()
+    assert result["status"] == "error"
+    status, note, evidence_id = cur.execute.call_args.args[1]
+    assert (status, evidence_id) == ("GAGAL", "ev-1") and "teks" in note
 
 
-def test_find_daftar_isi_text_returns_none_when_no_toc_page():
-    from worker import _find_daftar_isi_text
+def test_pilih_rubrik_per_sub_indikator_per_nomor_dan_semua():
+    from ingestion.matrix_parser import IndicatorRubric
+    from worker import _pilih_rubrik
 
-    assert _find_daftar_isi_text(["Sampul", "BAB I. PENDAHULUAN\nIsi bab."]) is None
+    def r(no, sub):
+        return IndicatorRubric(no=no, kriteria="k", indikator="i", score_type="qualitative",
+                               score_criteria={}, formula=None, lkps_table_ref=[], sub_score_formula=None, sub_no=sub)
+
+    rubrik = [r(5, "I"), r(43, "I"), r(43, "II")]
+    # satu sub saja: 43.I tanpa 43.II
+    assert [(x.no, x.sub_no) for x in _pilih_rubrik(rubrik, None, ["43|I"])] == [(43, "I")]
+    # kunci sub mengalahkan daftar nomor
+    assert [(x.no, x.sub_no) for x in _pilih_rubrik(rubrik, [5], ["43|II"])] == [(43, "II")]
+    # hanya nomor: seluruh sub dari nomor itu (perilaku lama)
+    assert [(x.no, x.sub_no) for x in _pilih_rubrik(rubrik, [43], None)] == [(43, "I"), (43, "II")]
+    # keduanya kosong: semua
+    assert len(_pilih_rubrik(rubrik, None, None)) == 3

@@ -62,24 +62,24 @@ export const RAGAS_METRIK_INFO: Record<
 	{ label: string; diukur: string }
 > = {
 	faithfulness: {
-		label: 'Kesetiaan pada sumber',
+		label: 'Faithfulness',
 		diukur:
 			'Seberapa banyak pernyataan di hasil generate yang benar-benar bisa ditelusuri ke bukti dukung dan panduan yang diambil. Nilai rendah berarti AI menambahkan hal yang tidak ada di sumbernya.',
 	},
 	answer_relevancy: {
-		label: 'Relevansi jawaban',
+		label: 'Answer Relevancy',
 		diukur:
 			'Seberapa nyambung hasilnya dengan bab yang diminta beserta arahan tambahan penyusun. Nilai rendah berarti tulisannya melebar ke hal yang tidak ditanyakan.',
 	},
 	context_precision: {
-		label: 'Ketepatan konteks',
+		label: 'Context Precision',
 		diukur:
 			'Seberapa besar bagian potongan sumber yang diambil ternyata memang terpakai. Nilai rendah berarti retrieval membawa banyak potongan yang tidak relevan.',
 	},
 	context_recall: {
-		label: 'Cakupan konteks',
+		label: 'Context Recall',
 		diukur:
-			'Seberapa lengkap potongan sumber yang diambil menutupi fakta yang seharusnya dibahas bagian ini. Nilai rendah berarti ada fakta relevan yang tidak ter-retrieve.',
+			'Seberapa lengkap potongan sumber yang diambil menutupi apa yang diminta pedoman bagian ini beserta butir checklist pencariannya (acuan dari pedoman, bukan jawaban acuan buatan ahli). Nilai rendah berarti ada kebutuhan informasi yang tidak ter-retrieve.',
 	},
 };
 

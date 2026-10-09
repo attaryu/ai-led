@@ -1,4 +1,4 @@
-import { ApiError, setAccessToken } from '~/core/lib/api-client';
+import { refreshSession, setAccessToken } from '~/core/lib/api-client';
 import { type UserRole } from '~/features/users/domain/entities/user.entity';
 import {
 	sessionSchema,
@@ -66,15 +66,11 @@ export const sessionRepository = {
 	 * sendiri dan tetap memegang sesi yang terakhir berhasil.
 	 */
 	async restore(): Promise<SessionEntity | null> {
-		try {
-			return toSession(await authRemoteSource.refresh());
-		} catch (e) {
-			if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
-				setAccessToken(null);
-				return null;
-			}
-			throw e;
-		}
+		// Lewat refreshSession() yang sama dengan retry 401 di apiFetch -- satu HTTP call bersama, bukan dua yang saling rotasi cookie.
+		const outcome = await refreshSession();
+		if (outcome.status === 'ok') return toSession(outcome.body as AuthResult);
+		if (outcome.status === 'dead') return null;
+		throw outcome.error;
 	},
 
 	/**

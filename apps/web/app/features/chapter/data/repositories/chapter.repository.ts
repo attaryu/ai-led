@@ -132,66 +132,58 @@ export const chapterRepository = {
 		}
 	},
 
-	/**
-	 * Restore checkpoint (§8.1) lewat `PATCH bab/:id`, sama seperti autosave.
-	 *
-	 * ponytail: hanya `kontenKerja` ditulis balik — DTO backend belum bisa
-	 * restore `checkpointAktifId`/`buktiDukung`/`ragas`. Tab Rujukan/Kualitas AI
-	 * jadi tetap pakai punya kondisi aktif lama. Upgrade: endpoint restore khusus.
-	 */
-	async restoreFromDraft(
+	/** Kunci review Penjamin Mutu (§12.2) — `PATCH bab/:id/sections/:sectionId/review-status`. Error dilempar apa adanya, tombol klik sengaja. */
+	async setTerkunci(
 		chapterId: string,
-		kontenSnapshot: string,
-	): Promise<ChapterEntity | undefined> {
-		try {
-			const row = await chapterRemoteSource.update(chapterId, {
-				workingContent: toKontenBody(kontenSnapshot),
-			});
-			return toEntityFromBackend(row);
-		} catch (err) {
-			if (err instanceof ApiError && err.status === 403) return undefined;
-			throw err;
-		}
-	},
-
-	/** Kunci review Penjamin Mutu (§12.2) — `PATCH bab/:id/review-status`. Error dilempar apa adanya, tombol klik sengaja. */
-	async setTerkunci(chapterId: string, terkunci: boolean): Promise<ChapterEntity> {
-		const row = await chapterRemoteSource.setReviewStatus(chapterId, { locked: terkunci });
-		return toEntityFromBackend(row);
+		sectionId: string,
+		terkunci: boolean,
+	): Promise<ChapterSectionEntity> {
+		const row = await chapterRemoteSource.setReviewStatus(chapterId, sectionId, {
+			locked: terkunci,
+		});
+		return mapChapterSection(row);
 	},
 
 	/** Catatan review PM, endpoint sama dengan `setTerkunci`. Catatan kosong -> `null`, bukan `""`. */
 	async setCatatanPenjaminMutu(
 		chapterId: string,
+		sectionId: string,
 		catatan: string | null,
-	): Promise<ChapterEntity> {
+	): Promise<ChapterSectionEntity> {
 		const isi = catatan?.trim() ? catatan.trim() : null;
-		const row = await chapterRemoteSource.setReviewStatus(chapterId, {
+		const row = await chapterRemoteSource.setReviewStatus(chapterId, sectionId, {
 			qualityAssuranceNote: isi,
 		});
-		return toEntityFromBackend(row);
+		return mapChapterSection(row);
 	},
 
-	/** Ajukan/batalkan review Penyusun — `POST bab/:id/submit-review`, `diajukan: false` untuk batal. */
+	/** Ajukan/batalkan review Penyusun — `POST bab/:id/sections/:sectionId/submit-review`, `diajukan: false` untuk batal. */
 	async setDiajukanReview(
 		chapterId: string,
+		sectionId: string,
 		diajukan: boolean,
-	): Promise<ChapterEntity> {
-		const row = await chapterRemoteSource.submitForReview(chapterId, diajukan);
-		return toEntityFromBackend(row);
+	): Promise<ChapterSectionEntity> {
+		const row = await chapterRemoteSource.submitForReview(chapterId, sectionId, diajukan);
+		return mapChapterSection(row);
+	},
+
+	/** Memicu penilaian RAGAS satu section — lihat `useChapterQuality`. */
+	async triggerQualityEvaluation(chapterId: string, sectionId: string) {
+		return chapterRemoteSource.evaluateQuality(chapterId, sectionId);
 	},
 
 	/** Memicu REKOMENDASI_DOKUMEN — lihat `useChapterRecommendation`. */
-	async triggerRecommendDocuments(chapterId: string, draftId?: string) {
-		return chapterRemoteSource.recommendDocuments(chapterId, draftId);
+	async triggerRecommendDocuments(chapterId: string, draftId?: string, sectionId?: string) {
+		return chapterRemoteSource.recommendDocuments(chapterId, draftId, sectionId);
 	},
 
 	/** `GET bab/:id/recommendation` — `null` bila belum ada rekomendasi untuk `draftId` (bila diisi) atau untuk bab ini (lihat sumbernya). */
 	async findRecommendation(
 		chapterId: string,
 		draftId?: string,
+		sectionId?: string,
 	): Promise<DocumentRecommendationEntity | null> {
-		const row = await chapterRemoteSource.findRecommendation(chapterId, draftId);
+		const row = await chapterRemoteSource.findRecommendation(chapterId, draftId, sectionId);
 		return row ? mapDocumentRecommendation(row) : null;
 	},
 
@@ -221,6 +213,25 @@ export const chapterRepository = {
 	},
 
 	/** Chunk asli yang dipakai AI menyusun satu section — backing citation hover-card. */
+	/** Bukti dukung yang dipilih saat generate terakhir section ini (dimas: pilihan milik draft section). */
+	/** Simpan centang bukti dukung section -- replace, jadi uncheck ikut tersimpan. */
+	async saveSectionSelection(
+		chapterId: string,
+		sectionId: string,
+		evidenceIds: string[],
+	): Promise<void> {
+		await chapterRemoteSource.updateSectionEvidenceSelection(
+			chapterId,
+			sectionId,
+			evidenceIds,
+		);
+	},
+
+	async findSectionSelection(chapterId: string, sectionId: string): Promise<string[]> {
+		const row = await chapterRemoteSource.findSourcesForSection(chapterId, sectionId);
+		return row?.selectedEvidenceIds ?? [];
+	},
+
 	async findSourcesForSection(chapterId: string, sectionId: string): Promise<SectionSumber> {
 		const row = await chapterRemoteSource.findSourcesForSection(chapterId, sectionId);
 		return mapSectionSumber(row);
@@ -247,6 +258,20 @@ export const chapterRepository = {
 		return mapChapterSection(row);
 	},
 
+	/**
+	 * Ubah instruksi tabel section (bukan hasil isian) — jalur independen dari
+	 * judul/panduan, backend tidak mereset status/content narasi. Lihat
+	 * ChapterSection.tableSpec di schema.prisma.
+	 */
+	async updateSectionTableSpec(
+		chapterId: string,
+		sectionId: string,
+		tableSpec: { id: string; caption: string; columns: string[] }[],
+	): Promise<ChapterSectionEntity> {
+		const row = await chapterRemoteSource.updateSection(chapterId, sectionId, { tableSpec });
+		return mapChapterSection(row);
+	},
+
 	async deleteSection(chapterId: string, sectionId: string): Promise<void> {
 		await chapterRemoteSource.deleteSection(chapterId, sectionId);
 	},
@@ -260,6 +285,11 @@ export const chapterRepository = {
 	async updateSectionKonten(chapterId: string, sectionId: string, html: string): Promise<boolean> {
 		try {
 			await chapterRemoteSource.updateSection(chapterId, sectionId, { content: toKontenBody(html) });
+			// ponytail: autosave bisa MEMBUAT Draft 1 di backend (section yang belum
+			// punya draft sama sekali), dan memperbarui isi draft terpilih. Panel
+			// Riwayat Draft mendengarkan event ini -- tanpa notify, draft barunya
+			// baru terlihat setelah halaman dimuat ulang manual.
+			this.notify();
 			return true;
 		} catch (err) {
 			if (err instanceof ApiError && err.status === 403) return false;

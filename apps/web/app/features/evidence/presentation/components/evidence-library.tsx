@@ -144,9 +144,19 @@ export function EvidenceLibrary({
 	);
 
 	const handleRetry = React.useCallback((evidence: EvidenceEntity) => {
-		evidenceRepository.retryIngestion(evidence.id).catch((error: unknown) => {
-			alert(error instanceof Error ? error.message : 'Coba proses ulang gagal.');
-		});
+		// target ikut dikirim supaya pelacak kegagalan global memantau berkas ini lagi.
+		evidenceRepository
+			.retryIngestion(evidence.id, {
+				ownerTipe: evidence.ownerTipe,
+				studyProgramId: evidence.studyProgramId,
+			})
+			.catch((error: unknown) => {
+				alert(error instanceof Error ? error.message : 'Coba proses ulang gagal.');
+			});
+	}, []);
+
+	const handleOpenFile = React.useCallback((evidence: EvidenceEntity) => {
+		evidenceRepository.openFile(evidence.fileUrl);
 	}, []);
 
 	/**
@@ -528,6 +538,7 @@ export function EvidenceLibrary({
 				onClose={() => setSelectedId(null)}
 				onDelete={handleDelete}
 				onRetry={handleRetry}
+				onOpenFile={handleOpenFile}
 			/>
 
 			{confirmDialog}

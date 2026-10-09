@@ -147,7 +147,7 @@ def save_session_quality(tenant_id: str, session_id: str, quality: dict) -> None
     try:
         with tenant_cursor(tenant_id) as cur:
             cur.execute(
-                "UPDATE assessment_sessions SET kualitas = %s WHERE id = %s",
+                "UPDATE assessment_sessions SET kualitas = %s, updated_at = now() WHERE id = %s",
                 (psycopg2.extras.Json(quality), session_id),
             )
     except Exception:
@@ -165,8 +165,13 @@ def get_session(tenant_id: Optional[str], session_id: str) -> Optional[dict]:
     with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
-            SELECT id AS session_id, tenant_id, document_id, status, total_indicators, completed_indicators, error
-            FROM assessment_sessions WHERE id = %s
+            SELECT s.id AS session_id, s.tenant_id, s.document_id, s.status, s.total_indicators,
+                   s.completed_indicators, s.error, s.lkps_evidence_id,
+                   d.accreditation_set_id, d.study_program_id, d.lkps_evidence_id AS document_lkps_evidence_id,
+                   (SELECT r2.model FROM assessment_indicator_results r2 WHERE r2.session_id = s.id AND r2.model IS NOT NULL LIMIT 1) AS model
+            FROM assessment_sessions s
+            JOIN writing_led_documents d ON d.id = s.document_id
+            WHERE s.id = %s
             """,
             (session_id,),
         )
@@ -187,7 +192,7 @@ def list_sessions(limit: int = 50) -> list[dict]:
             """
             SELECT s.id AS session_id, s.status, s.total_indicators,
                    s.completed_indicators, s.created_at, s.updated_at, s.error,
-                   AVG(r.score) AS avg_score
+                   AVG(r.score) AS avg_score, (SELECT r2.model FROM assessment_indicator_results r2 WHERE r2.session_id = s.id AND r2.model IS NOT NULL LIMIT 1) AS model
             FROM assessment_sessions s
             LEFT JOIN assessment_indicator_results r ON r.session_id = s.id AND r.score IS NOT NULL
             GROUP BY s.id
@@ -220,17 +225,19 @@ def log_indicator_result(
     error: Optional[str] = None,
     model: Optional[str] = None,
     sources_used: Optional[dict] = None,
+    sub_no: str = "",
 ) -> None:
-    """Upsert a scored indicator into assessment_indicator_results."""
+    """Upsert a scored indicator into assessment_indicator_results. Kuncinya (session, indicator_no, sub_no):
+    sub-indikator dengan nomor sama (43.I / 43.II) tidak saling menimpa."""
     try:
         with tenant_cursor(tenant_id) as cur:
             cur.execute(
                 """
                 INSERT INTO assessment_indicator_results
-                    (id, session_id, indicator_no, score, justification,
+                    (id, session_id, indicator_no, sub_no, score, justification,
                      confidence, recommendation, error, model, sources_used)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (session_id, indicator_no) DO UPDATE SET
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (session_id, indicator_no, sub_no) DO UPDATE SET
                     score = EXCLUDED.score,
                     justification = EXCLUDED.justification,
                     confidence = EXCLUDED.confidence,
@@ -243,6 +250,7 @@ def log_indicator_result(
                     str(uuid.uuid4()),
                     session_id,
                     indicator_no,
+                    sub_no or "",
                     score,
                     justification,
                     confidence,
@@ -263,9 +271,9 @@ def get_indicator_results(tenant_id: str, session_id: str) -> list[dict]:
     with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
-            SELECT indicator_no, score, justification, confidence, recommendation, error,
+            SELECT indicator_no, sub_no, score, justification, confidence, recommendation, error,
                    model, sources_used
-            FROM assessment_indicator_results WHERE session_id = %s ORDER BY indicator_no
+            FROM assessment_indicator_results WHERE session_id = %s ORDER BY indicator_no, sub_no
             """,
             (session_id,),
         )
@@ -278,8 +286,10 @@ def get_indicator_results(tenant_id: str, session_id: str) -> list[dict]:
     return rows
 
 
-def get_completed_indicator_numbers(tenant_id: str, session_id: str) -> set[int]:
-    """Return the set of indicator_no that already have a row in
+def get_completed_indicator_numbers(
+    tenant_id: str, session_id: str, retry_failed: bool = False
+) -> set[tuple[int, str]]:
+    """Return the set of (indicator_no, sub_no) that already have a row in
     assessment_indicator_results for this session — i.e. their graph run finished
     (successfully or with a logged error), as opposed to never having
     started or being cut off mid-run by a crash/restart. Used by resume to
@@ -292,10 +302,12 @@ def get_completed_indicator_numbers(tenant_id: str, session_id: str) -> set[int]
     try:
         with tenant_cursor(tenant_id) as cur:
             cur.execute(
-                "SELECT indicator_no FROM assessment_indicator_results WHERE session_id = %s",
+                "SELECT indicator_no, sub_no FROM assessment_indicator_results WHERE session_id = %s"
+                # retry_failed: baris yang berakhir error dianggap BELUM selesai (diproses ulang saat resume).
+                + (" AND error IS NULL" if retry_failed else ""),
                 (session_id,),
             )
-            return {row["indicator_no"] for row in cur.fetchall()}
+            return {(row["indicator_no"], row["sub_no"] or "") for row in cur.fetchall()}
     except Exception:
         logger.exception("Failed to fetch completed indicators for session %s", session_id)
         return set()
@@ -307,16 +319,17 @@ def log_reasoning_step(
     indicator_no: int,
     step_index: int,
     content: str,
+    sub_no: str = "",
 ) -> None:
     """Append one reasoning step to the assessment_reasoning_steps table."""
     try:
         with tenant_cursor(tenant_id) as cur:
             cur.execute(
                 """
-                INSERT INTO assessment_reasoning_steps (id, session_id, indicator_no, step_index, content)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO assessment_reasoning_steps (id, session_id, indicator_no, sub_no, step_index, content)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 """,
-                (str(uuid.uuid4()), session_id, indicator_no, step_index, content),
+                (str(uuid.uuid4()), session_id, indicator_no, sub_no or "", step_index, content),
             )
     except Exception:
         logger.exception(
@@ -356,15 +369,30 @@ def get_document_accreditation_set(dokumen_id: str) -> Optional[str]:
 
 
 def get_accreditation_set_tenant(accreditation_set_id: str) -> Optional[str]:
-    """Bootstrap lookup — worker.py's INGESTION_RUBRIK_DOKUMEN/
-    INGESTION_STRUKTUR_DOKUMEN jobs only carry accreditationSetId in their
-    BullMQ payload (accreditation-set.service.ts's enqueue calls), not
-    tenantId, so this discovers it the same way get_document_accreditation_set
-    does for dokumen_id."""
+    """Bootstrap lookup — worker.py's INGESTION_RUBRIK_DOKUMEN job only
+    carries accreditationSetId in its BullMQ payload (accreditation-set.
+    service.ts's enqueue call), not tenantId, so this discovers it the same
+    way get_document_accreditation_set does for dokumen_id."""
     with tenant_cursor(None) as cur:
         cur.execute(
             "SELECT tenant_id FROM accreditation_sets WHERE id = %s",
             (accreditation_set_id,),
+        )
+        row = cur.fetchone()
+    return row["tenant_id"] if row else None
+
+
+def get_reference_guide_tenant(guide_id: str) -> Optional[str]:
+    """Bootstrap lookup, same reasoning as get_accreditation_set_tenant --
+    INGESTION_STRUKTUR_DOKUMEN now carries guideId (the Panduan, a
+    ReferenceGuide row), not accreditationSetId, since a Panduan is reusable
+    across sets and owns its own extraction status. guide_references.tenant_id
+    is a direct column (migration `20260915140000_reusable_panduan_penulisan`),
+    no join needed."""
+    with tenant_cursor(None) as cur:
+        cur.execute(
+            "SELECT tenant_id FROM guide_references WHERE id = %s",
+            (guide_id,),
         )
         row = cur.fetchone()
     return row["tenant_id"] if row else None
@@ -377,9 +405,9 @@ def get_rubric_criteria_for_set(tenant_id: str, accreditation_set_id: str) -> li
     with tenant_cursor(tenant_id) as cur:
         cur.execute(
             """
-            SELECT id, indicator_no, criterion_group, description, score_type,
+            SELECT id, indicator_no, sub_no, criterion_group, description, score_type,
                    lkps_table_refs, formula, sub_score_formula
-            FROM rubric_criteria WHERE accreditation_set_id = %s ORDER BY indicator_no
+            FROM rubric_criteria WHERE accreditation_set_id = %s ORDER BY indicator_no, sub_no
             """,
             (accreditation_set_id,),
         )
@@ -390,7 +418,7 @@ def get_rubric_criteria_for_set(tenant_id: str, accreditation_set_id: str) -> li
         cur.execute(
             """
             SELECT criterion_id, score, description FROM rubric_levels
-            WHERE criterion_id = ANY(%s)
+            WHERE criterion_id = ANY(%s) ORDER BY score DESC
             """,
             ([c["id"] for c in criteria],),
         )
@@ -408,6 +436,7 @@ def get_rubric_criteria_for_set(tenant_id: str, accreditation_set_id: str) -> li
             formula=c["formula"],
             lkps_table_ref=list(c["lkps_table_refs"] or []),
             sub_score_formula=c["sub_score_formula"],
+            sub_no=c["sub_no"] or "",
         )
         for c in criteria
     ]
@@ -497,34 +526,155 @@ def replace_rubric_criteria_for_set(
     return len(rubrics)
 
 
+def replace_rubric_hierarchy_for_set(
+    tenant_id: str, accreditation_set_id: str, records: list[dict]
+) -> int:
+    """Wipe and rewrite rubric_criterion_groups + rubric_criteria (+levels) for
+    this set from `ingestion.matrix_mineru.parse_matrix_mineru` records.
+
+    ponytail: pengganti replace_rubric_criteria_for_set untuk jalur MinerU. Beda
+    pokok:
+      - Tiga tingkat teratas (kelompok > kriteria > IKU, urutan kunci SEBELUM
+        `sub_kriteria` pada record) ditulis ke rubric_criterion_groups sebagai
+        adjacency list; rubric_criteria.group_id menunjuk node terdalamnya.
+        `sub_kriteria` (teks kolom "Kriteria" baris itu) tetap di
+        rubric_criteria.criterion_group, seperti permintaan pengguna.
+      - Satu `no` bisa jadi beberapa record (sub-indikator komposit I, II,
+        dibedakan `sub_no`) -> beberapa baris dengan indicator_no sama.
+        criterion_code dibuat unik ("4" atau "4.I") karena worker.py::
+        kode_ke_id memakainya sebagai kunci kamus.
+      - Judul grup yang sama di induk BERBEDA tetap dua node (unique index
+        ada di (set, COALESCE(parent_id,''), label)).
+
+    Penjaga RubricSetInUseError dipertahankan: set yang sudah punya riwayat skor
+    tidak ditimpa. rubric_criterion_chapters dikosongkan seperti sebelumnya
+    (pemetaan bab diisi manual lewat form kriteria).
+    """
+    from ingestion.matrix_mineru import parse_markers
+
+    def _marker(label: str) -> str | None:
+        kandidat = parse_markers(label)
+        return kandidat[0].raw if kandidat else None
+
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute(
+            """
+            SELECT count(*) AS n FROM rubric_score_results
+            WHERE criterion_id IN (SELECT id FROM rubric_criteria WHERE accreditation_set_id = %s)
+            """,
+            (accreditation_set_id,),
+        )
+        if cur.fetchone()["n"] > 0:
+            raise RubricSetInUseError(
+                "Set ini sudah punya riwayat skor tersimpan, tidak bisa ditimpa otomatis — hubungi admin."
+            )
+
+        cur.execute(
+            "DELETE FROM rubric_criterion_chapters WHERE criterion_id IN "
+            "(SELECT id FROM rubric_criteria WHERE accreditation_set_id = %s)",
+            (accreditation_set_id,),
+        )
+        cur.execute(
+            "DELETE FROM rubric_levels WHERE criterion_id IN "
+            "(SELECT id FROM rubric_criteria WHERE accreditation_set_id = %s)",
+            (accreditation_set_id,),
+        )
+        cur.execute("DELETE FROM rubric_criteria WHERE accreditation_set_id = %s", (accreditation_set_id,))
+        cur.execute("DELETE FROM rubric_criterion_groups WHERE accreditation_set_id = %s", (accreditation_set_id,))
+
+        # (parent_id, label) -> group id ; urutan saudara dihitung per induk
+        grup_id: dict[tuple, str] = {}
+        urutan: dict[object, int] = {}
+
+        def _grup(parent_id: str | None, level: str, label: str) -> str:
+            kunci = (parent_id, label)
+            if kunci in grup_id:
+                return grup_id[kunci]
+            urutan[parent_id] = urutan.get(parent_id, 0) + 1
+            gid = str(uuid.uuid4())
+            cur.execute(
+                """
+                INSERT INTO rubric_criterion_groups
+                    (id, accreditation_set_id, parent_id, level, "order", marker, label)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (gid, accreditation_set_id, parent_id, level, urutan[parent_id], _marker(label), label),
+            )
+            grup_id[kunci] = gid
+            return gid
+
+        for rec in sorted(records, key=lambda r: (r["no"], r.get("sub_no") or "")):
+            # kunci hierarki = semua kunci record SEBELUM "sub_kriteria"
+            kunci_level = list(rec)[: list(rec).index("sub_kriteria")]
+            parent: str | None = None
+            for k in kunci_level:
+                if rec.get(k):
+                    parent = _grup(parent, k.upper(), rec[k])
+
+            sub_no = rec.get("sub_no")
+            criterion_id = str(uuid.uuid4())
+            cur.execute(
+                """
+                INSERT INTO rubric_criteria
+                    (id, accreditation_set_id, indicator_no, sub_no, group_id, criterion_code, criterion_group,
+                     description, score_type, lkps_table_refs, formula, sub_score_formula)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    criterion_id,
+                    accreditation_set_id,
+                    rec["no"],
+                    sub_no,
+                    parent,
+                    str(rec["no"]) if not sub_no else f"{rec['no']}.{sub_no}",
+                    rec.get("sub_kriteria") or "",
+                    rec.get("indikator") or "",
+                    _SCORE_TYPE_FROM_ENGLISH[rec["score_type"]],
+                    rec.get("lkps_table_ref") or [],
+                    rec.get("formula"),
+                    rec.get("sub_score_formula"),
+                ),
+            )
+            for score, description in rec["score_criteria"].items():
+                cur.execute(
+                    "INSERT INTO rubric_levels (id, criterion_id, score, description) VALUES (%s, %s, %s, %s)",
+                    (str(uuid.uuid4()), criterion_id, int(score), description or ""),
+                )
+
+    return len(records)
+
+
 def _insert_sub_bab_template(cur, chapter_template_id: str, parent_id: str | None, sub: dict) -> None:
-    """Insert satu sub_bab_templates row, lalu anak-anaknya (satu tingkat
-    sub-sub-bab, `sub["subbab"]`) dengan `parent_id` mengarah ke row ini."""
+    """Insert satu sub_bab_templates row, lalu anak-anaknya (`sub["subbab"]`, rekursif sedalam apa pun)."""
     sub_bab_id = str(uuid.uuid4())
     cur.execute(
         """
-        INSERT INTO sub_bab_templates (id, chapter_template_id, parent_id, "order", title, guidance)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO sub_bab_templates
+            (id, chapter_template_id, parent_id, "order", title, marker, guidance, lkps_needed, lkps_list)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
-        (sub_bab_id, chapter_template_id, parent_id, sub["order"], sub["title"], sub["guidance"]),
+        (
+            sub_bab_id, chapter_template_id, parent_id, sub["order"], sub["title"], sub.get("marker"), sub["guidance"],
+            sub.get("lkps_needed"), psycopg2.extras.Json(sub.get("lkps_list") or []),
+        ),
     )
     for anak in sub.get("subbab", []):
         _insert_sub_bab_template(cur, chapter_template_id, sub_bab_id, anak)
 
 
-def replace_chapter_templates_for_set(
-    tenant_id: str, accreditation_set_id: str, bab_list: list[dict]
+def replace_chapter_templates_for_guide(
+    tenant_id: str, guide_id: str, bab_list: list[dict]
 ) -> int:
     """Wipe and rewrite every chapter_templates(+sub_bab_templates) row for
-    this set from a freshly parsed PANDUAN_LAM PDF
-    (worker.py::_handle_ingestion_struktur_dokumen).
+    this Panduan (ReferenceGuide) from a freshly parsed PANDUAN_LAM PDF
+    (worker.py::_handle_ingestion_struktur_dokumen). Scoped to the Panduan,
+    not one AccreditationSet -- every set pointing at this guide_id (many,
+    since a Panduan is reusable, see AccreditationSet.panduanId) shares the
+    same rewritten structure.
 
     `bab_list`: [{"order": int, "title": str, "subbab": [{"order": int,
-    "title": str, "guidance": str, "subbab": [...]}]}], already normalized
-    from the LLM's Indonesian JSON keys by worker.py::_parse_struktur_dokumen.
-    Nested "subbab" (sub-sub-bab, mis. "C.1" di bawah "C. Kriteria
-    Akreditasi") cuma satu tingkat -- lihat SubBabTemplate.parentId di
-    schema.prisma.
+    "title": str, "guidance": str, "subbab": [...]}]}], nested to any depth
+    (SubBabTemplate.parentId), like dimas's panduan_detail.
 
     No "in use" guard like replace_rubric_criteria_for_set -- a document's
     DocumentChapter rows are stamped ONCE at creation time from whatever
@@ -535,24 +685,164 @@ def replace_chapter_templates_for_set(
     with tenant_cursor(tenant_id) as cur:
         cur.execute(
             "DELETE FROM sub_bab_templates WHERE chapter_template_id IN "
-            "(SELECT id FROM chapter_templates WHERE accreditation_set_id = %s)",
-            (accreditation_set_id,),
+            "(SELECT id FROM chapter_templates WHERE guide_id = %s)",
+            (guide_id,),
         )
         cur.execute(
-            "DELETE FROM chapter_templates WHERE accreditation_set_id = %s",
-            (accreditation_set_id,),
+            "DELETE FROM chapter_templates WHERE guide_id = %s",
+            (guide_id,),
         )
 
         for bab in bab_list:
             chapter_template_id = str(uuid.uuid4())
             cur.execute(
                 """
-                INSERT INTO chapter_templates (id, accreditation_set_id, "order", title)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO chapter_templates (id, guide_id, "order", title, guidance)
+                VALUES (%s, %s, %s, %s, %s)
                 """,
-                (chapter_template_id, accreditation_set_id, bab["order"], bab["title"]),
+                (chapter_template_id, guide_id, bab["order"], bab["title"], bab.get("guidance") or None),
             )
             for sub in bab.get("subbab", []):
                 _insert_sub_bab_template(cur, chapter_template_id, None, sub)
 
     return len(bab_list)
+
+
+def save_structure_staging(tenant_id: str, guide_id: str, staged_nodes: list[dict]) -> None:
+    """Park a freshly parsed PANDUAN_LAM structure in guide_references.structure_staging
+    instead of committing it (worker.py::_handle_ingestion_struktur_dokumen) --
+    ChapterTemplate/SubBabTemplate stay untouched until confirm_structure_staging.
+
+    `staged_nodes`: flat [{"id", "parent_id", "level" (1 = BAB, any depth), "order",
+    "title", "guidance"}, ...] -- worker.py::_flatten_bab_list assigns
+    stable dotted ids ("1", "1.2", "1.2.3") so parent/child survive the
+    round trip without real ChapterTemplate/SubBabTemplate rows yet.
+    """
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute(
+            """UPDATE guide_references
+               SET structure_staging = %s, structure_parse_status = 'MENUNGGU_KONFIRMASI',
+                   structure_parse_error = NULL
+               WHERE id = %s""",
+            (psycopg2.extras.Json(staged_nodes), guide_id),
+        )
+
+
+def get_structure_preview(tenant_id: str, guide_id: str) -> Optional[dict]:
+    """Read-side for the "Pilih Struktur Pedoman" confirm modal. While
+    structure_parse_status is MENUNGGU_KONFIRMASI, reads the staged (not yet
+    committed) tree; otherwise falls back to the real committed
+    ChapterTemplate/SubBabTemplate rows (so re-opening the modal after
+    confirm, or before any extraction ran, still shows something sane) --
+    same dual-mode as dimas's GET /panduan/{id}/preview."""
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute(
+            """SELECT structure_parse_status, structure_staging
+               FROM guide_references WHERE id = %s""",
+            (guide_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+
+        if row["structure_parse_status"] == "MENUNGGU_KONFIRMASI" and row["structure_staging"]:
+            nodes = row["structure_staging"]
+        else:
+            cur.execute(
+                """SELECT id, NULL::text AS parent_id, 1 AS level, "order", title, NULL::text AS marker,
+                          guidance, true AS is_active,
+                          false AS lkps_needed, '[]'::jsonb AS lkps_list
+                   FROM chapter_templates WHERE guide_id = %s
+                   UNION ALL
+                   SELECT sb.id, COALESCE(sb.parent_id, sb.chapter_template_id),
+                          0,
+                          sb."order", sb.title, sb.marker, sb.guidance, sb.is_active,
+                          COALESCE(sb.lkps_needed, false), sb.lkps_list
+                   FROM sub_bab_templates sb
+                   JOIN chapter_templates ct ON ct.id = sb.chapter_template_id
+                   WHERE ct.guide_id = %s
+                   ORDER BY level DESC, "order" """,
+                (guide_id, guide_id),
+            )
+            nodes = [dict(r) for r in cur.fetchall()]
+            # Real depth from the parent chain (any depth), chapters are level 1.
+            parent_of = {n["id"]: n["parent_id"] for n in nodes}
+
+            def depth(node_id: str) -> int:
+                parent = parent_of.get(node_id)
+                return 1 if parent is None else depth(parent) + 1
+
+            for n in nodes:
+                n["level"] = depth(n["id"])
+            nodes.sort(key=lambda n: (n["level"], n["order"]))
+
+    return {"status": row["structure_parse_status"], "nodes": nodes}
+
+
+def confirm_structure_staging(tenant_id: str, guide_id: str, accepted_ids: set[str]) -> int:
+    """Commit ONLY the checked nodes from structure_staging into
+    ChapterTemplate/SubBabTemplate (worker.py exposes this via
+    POST /structure/{guideId}/confirm). Unchecked nodes are discarded; a checked
+    node under an unchecked parent is kept under its nearest checked ancestor.
+
+    Raises ValueError if this Panduan isn't actually MENUNGGU_KONFIRMASI
+    (stale double-submit, or confirm called before any extraction ran)."""
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute(
+            """SELECT structure_parse_status, structure_staging
+               FROM guide_references WHERE id = %s""",
+            (guide_id,),
+        )
+        row = cur.fetchone()
+    if not row or row["structure_parse_status"] != "MENUNGGU_KONFIRMASI":
+        raise ValueError("Struktur ini tidak sedang menunggu konfirmasi")
+
+    nodes = row["structure_staging"] or []
+    # dimas confirm_panduan keeps every checked node on its own: a checked node under an unchecked
+    # parent hangs off its nearest checked ancestor. Only a BAB (level 1) makes a chapter, so nodes
+    # whose whole chain up to the BAB is unchecked have nowhere to go and are dropped.
+    by_id = {n["id"]: n for n in nodes}
+    position = {n["id"]: i for i, n in enumerate(nodes)}  # staging is in document order
+
+    def _kept_parent(n: dict) -> Optional[str]:
+        p = n["parent_id"]
+        while p is not None and p not in accepted_ids:
+            p = by_id[p]["parent_id"] if p in by_id else None
+        return p
+
+    by_parent: dict[Optional[str], list[dict]] = {}
+    for n in nodes:
+        if n["id"] not in accepted_ids:
+            continue
+        parent = None if n["parent_id"] is None else _kept_parent(n)
+        if n["parent_id"] is not None and parent is None:
+            continue
+        by_parent.setdefault(parent, []).append(n)
+    for siblings in by_parent.values():
+        siblings.sort(key=lambda n: position[n["id"]])
+
+    def _to_subbab(parent_id: str) -> list[dict]:
+        return [
+            {
+                "order": i, "title": n["title"], "marker": n.get("marker"), "guidance": n.get("guidance") or "",
+                "lkps_needed": bool(n.get("lkps_needed")), "lkps_list": n.get("lkps_list") or [],
+                "subbab": _to_subbab(n["id"]),
+            }
+            for i, n in enumerate(by_parent.get(parent_id, []), start=1)
+        ]
+
+    bab_list = [
+        {"order": i, "title": n["title"], "guidance": n.get("guidance"), "subbab": _to_subbab(n["id"])}
+        for i, n in enumerate(by_parent.get(None, []), start=1)
+    ]
+
+    count = replace_chapter_templates_for_guide(tenant_id, guide_id, bab_list)
+
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute(
+            """UPDATE guide_references
+               SET structure_staging = NULL, structure_parse_status = 'SIAP'
+               WHERE id = %s""",
+            (guide_id,),
+        )
+    return count

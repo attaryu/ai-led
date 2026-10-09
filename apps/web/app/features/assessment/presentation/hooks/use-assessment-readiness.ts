@@ -29,11 +29,20 @@ export function useAssessmentReadiness({
 	projectId,
 	studyProgramId,
 	sumberTerakhir,
+	kunciKeDokumen = false,
 }: {
 	projectId: string;
 	studyProgramId: string;
 	/** Sumber sesi terakhir; dipakai sebagai nilai awal. */
 	sumberTerakhir: AssessmentSource | undefined;
+	/**
+	 * `true` = sumber penilaian DIKUNCI ke dokumen, bukan dipilih di halaman: LED selalu
+	 * "Dari editor" dan LKPS selalu LKPS yang terhubung ke dokumen LED ini. Sesi terakhir
+	 * dan pilihan manual diabaikan -- kalau tidak, mengganti LKPS dokumen tidak berpengaruh
+	 * ke penilaian berikutnya karena sesi lama masih "menang". Dipakai selama kartu
+	 * "Sumber & Kesiapan" disembunyikan.
+	 */
+	kunciKeDokumen?: boolean;
 }) {
 	/**
 	 * `null` berarti pengguna belum menyentuh apa pun, sehingga pilihannya
@@ -45,9 +54,25 @@ export function useAssessmentReadiness({
 	 * memilih ulang berkas yang sama tiap kali membuka halaman.
 	 */
 	const [dipilih, setDipilih] = React.useState<AssessmentSource | null>(null);
-	const sumber = dipilih ?? sumberTerakhir ?? SUMBER_AWAL;
+	/** LKPS dokumen ini (kartu "Data LKPS" / Edit Dokumen) -- default pilihan supaya tidak diunggah/dipilih dua kali. */
+	const [lkpsDokumen, setLkpsDokumen] = React.useState<string | null>(null);
+	const awal = sumberTerakhir ?? SUMBER_AWAL;
+	// const sumber = dipilih ?? { ...awal, lkpsBuktiDukungId: awal.lkpsBuktiDukungId ?? lkpsDokumen };
+	const sumberBebas = dipilih ?? { ...awal, lkpsBuktiDukungId: awal.lkpsBuktiDukungId ?? lkpsDokumen };
+	const sumber: AssessmentSource = kunciKeDokumen
+		? {
+				sumberLed: 'EDITOR',
+				ledFileName: null,
+				lkpsBuktiDukungId: lkpsDokumen,
+				// Laporan AK ikut tersembunyi bersama kartunya: tanpa ia, seluruh indikator dinilai.
+				laporanBuktiDukungId: null,
+			}
+		: sumberBebas;
+	/** `lkpsDokumen === null` berarti "belum dimuat" ATAU "dokumen tanpa LKPS" -- ini yang membedakannya. */
+	const [dokumenDimuat, setDokumenDimuat] = React.useState(false);
 
 	const [berkas, setBerkas] = React.useState<EvidenceEntity[]>([]);
+	const [lkps, setLkps] = React.useState<EvidenceEntity[]>([]);
 	const [babTerisi, setBabTerisi] = React.useState(0);
 	const [totalBab, setTotalBab] = React.useState(0);
 	const [jumlahIndikator, setJumlahIndikator] = React.useState(0);
@@ -60,16 +85,25 @@ export function useAssessmentReadiness({
 		// Hanya berkas prodi ini: LKPS adalah Laporan Kinerja **Program Studi**,
 		// jadi berkas milik tenant tidak pernah jadi kandidat yang benar walau
 		// kebetulan berupa Excel.
-		setBerkas(await evidenceRepository.findOwnedByStudyProgram(studyProgramId));
+		const [buktiDukung, daftarLkps] = await Promise.all([
+			evidenceRepository.findOwnedByStudyProgram(studyProgramId),
+			evidenceRepository.findLkpsByStudyProgram(studyProgramId),
+		]);
+		setBerkas(buktiDukung);
+		setLkps(daftarLkps);
 	}, [projectId, studyProgramId]);
 
 	React.useEffect(() => {
 		let dibatalkan = false;
-		ledProjectRepository.findById(projectId).then((proyek) =>
-			rubricCriterionAmiRepository.findAll(proyek?.accreditationSetId).then((kriteria) => {
+		ledProjectRepository.findById(projectId).then((proyek) => {
+			if (!dibatalkan) {
+				setLkpsDokumen(proyek?.lkpsEvidenceId ?? null);
+				setDokumenDimuat(true);
+			}
+			return rubricCriterionAmiRepository.findAll(proyek?.accreditationSetId).then((kriteria) => {
 				if (!dibatalkan) setJumlahIndikator(kriteria.length);
-			}),
-		);
+			});
+		});
 		return () => {
 			dibatalkan = true;
 		};
@@ -104,8 +138,8 @@ export function useAssessmentReadiness({
 
 	const cariNama = React.useCallback(
 		(id: string | null) =>
-			id ? (berkas.find((item) => item.id === id)?.namaDokumen ?? null) : null,
-		[berkas],
+			id ? ([...berkas, ...lkps].find((item) => item.id === id)?.namaDokumen ?? null) : null,
+		[berkas, lkps],
 	);
 
 	const kesiapan = React.useMemo(
@@ -116,18 +150,49 @@ export function useAssessmentReadiness({
 				babTerisi,
 				totalBab,
 				namaLkps: cariNama(sumber.lkpsBuktiDukungId),
+				statusLkps: [...berkas, ...lkps].find((item) => item.id === sumber.lkpsBuktiDukungId)?.status ?? null,
 				namaLaporan: cariNama(sumber.laporanBuktiDukungId),
 				projectId,
 				studyProgramId,
 			}),
-		[sumber, jumlahIndikator, babTerisi, totalBab, cariNama, projectId, studyProgramId],
+		[sumber, jumlahIndikator, babTerisi, totalBab, cariNama, berkas, lkps, projectId, studyProgramId],
 	);
+
+	/**
+	 * Mode terkunci: pemilihan di halaman ini sudah tidak ada, jadi tautan dan keterangan
+	 * prasyarat diarahkan ke tempat yang sekarang benar -- LKPS dipilih di Edit Dokumen LED,
+	 * dan satu-satunya sumber LED adalah editor (unggah PDF LED tidak ditawarkan).
+	 */
+	const kesiapanTampil = React.useMemo(() => {
+		if (!kunciKeDokumen) return kesiapan;
+		const items = kesiapan.items.map((item) => {
+			if (item.kunci === 'lkps' && item.state === 'KURANG') {
+				return {
+					...item,
+					keterangan: lkpsDokumen
+						? item.keterangan
+						: 'Dokumen LED ini belum terhubung ke LKPS. Indikator kuantitatif tidak bisa dinilai tanpa data ini.',
+					tautan: { label: 'Pilih LKPS di Edit Dokumen LED', to: `/dashboard/led-projects/${projectId}/edit` },
+				};
+			}
+			if (item.kunci === 'led' && item.state === 'KURANG') {
+				return { ...item, keterangan: 'Belum satu pun bab punya tulisan. Tulis di editor.' };
+			}
+			return item;
+		});
+		return { ...kesiapan, items };
+	}, [kesiapan, kunciKeDokumen, lkpsDokumen, projectId]);
 
 	return {
 		sumber,
+		/** Sudah tahu apakah dokumen punya LKPS; sebelum itu jangan tampilkan peringatan "belum terhubung". */
+		dokumenDimuat,
 		setSumber: setDipilih,
 		kandidat,
-		kesiapan,
+		/** LKPS prodi (kind LKPS) -- terpisah dari kandidat Bukti Dukung tabular untuk Laporan AK. */
+		kandidatLkps: lkps,
+		// kesiapan,
+		kesiapan: kesiapanTampil,
 		babTerisi,
 		totalBab,
 	};

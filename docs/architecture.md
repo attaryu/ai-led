@@ -1,252 +1,378 @@
 # Dokumentasi Arsitektur Sistem — Platform Penyusunan Dokumen LED LAM-Teknik
 
+> **Revisi 2026-09-22.** Dokumen ini menggantikan rancangan awal. Prinsip yang berubah beserta alasannya dicatat di [bagian 12](#12-riwayat-perubahan-rancangan). Rancangan di bagian 1–8 adalah **arah yang sudah diputuskan**. Kondisi kode saat ini belum sepenuhnya mengikutinya; selisihnya dicatat di [bagian 9](#9-status-implementasi-terhadap-rancangan). Usulan yang belum dikonfirmasi dan hal yang belum diputuskan dipisah di [bagian 10](#10-usulan-yang-belum-dikonfirmasi) dan [bagian 11](#11-hal-yang-belum-diputuskan).
+
 ## Daftar Isi
 
-1. [Gambaran Umum](#1-gambaran-umum)
+1. [Gambaran Umum & Prinsip](#1-gambaran-umum--prinsip)
 2. [Diagram Arsitektur](#2-diagram-arsitektur)
 3. [Komponen Sistem](#3-komponen-sistem)
-   - [Client-side (Web Interface)](#31-client-side-web-interface)
-   - [NestJS — Main Thread](#32-nestjs--main-thread)
-   - [NestJS — Second Thread/Worker](#33-nestjs--second-threadworker)
-   - [Redis](#34-redis)
-   - [PostgreSQL](#35-postgresql)
-   - [Cloudflare R2](#36-cloudflare-r2)
-   - [FastAPI — Tiga RAG Pipeline](#37-fastapi--tiga-rag-pipeline)
-   - [ChromaDB](#38-chromadb)
-   - [LLM Layer](#39-llm-layer)
-4. [Makna "Other Caching Checking/Storing"](#4-makna-other-caching-checkingstoring)
-5. [Alur Kerja Utama](#5-alur-kerja-utama)
-   - [Upload & Ingest File (Bukti Dukung/Panduan)](#51-upload--ingest-file-bukti-dukungpanduan)
-   - [Generate Konten LED](#52-generate-konten-led)
-   - [Skoring Rubrik LLM](#53-skoring-rubrik-llm)
-   - [Skor RAGAS](#54-skor-ragas)
-   - [AMI Assessment](#55-ami-assessment)
-   - [Notifikasi Real-time via SSE](#56-notifikasi-real-time-via-sse)
-6. [Kanal Komunikasi via Redis](#6-kanal-komunikasi-via-redis)
-7. [Alternatif: RabbitMQ untuk Queue & Pub/Sub](#7-alternatif-rabbitmq-untuk-queue--pubsub)
-8. [Opsi Multi-Deploy / Scaling ke Depan](#8-opsi-multi-deploy--scaling-ke-depan)
-9. [Autentikasi, Keamanan, & Logging](#9-autentikasi-keamanan--logging)
-10. [Hal yang Masih Ditunda](#10-hal-yang-masih-ditunda)
+4. [Kepemilikan Data](#4-kepemilikan-data)
+5. [Aturan Komunikasi Antar Komponen](#5-aturan-komunikasi-antar-komponen)
+6. [Alur Kerja Utama](#6-alur-kerja-utama)
+7. [Chat & Revisi Konten](#7-chat--revisi-konten)
+8. [Model Eksekusi Worker & Scaling](#8-model-eksekusi-worker--scaling)
+9. [Status Implementasi terhadap Rancangan](#9-status-implementasi-terhadap-rancangan)
+10. [Usulan yang Belum Dikonfirmasi](#10-usulan-yang-belum-dikonfirmasi)
+11. [Hal yang Belum Diputuskan](#11-hal-yang-belum-diputuskan)
+12. [Riwayat Perubahan Rancangan](#12-riwayat-perubahan-rancangan)
+13. [Autentikasi, Keamanan, & Logging](#13-autentikasi-keamanan--logging)
 
 ---
 
-## 1. Gambaran Umum
+## 1. Gambaran Umum & Prinsip
 
-Arsitektur sistem terdiri dari **NestJS** sebagai backend utama (menangani seluruh interaksi client, autentikasi, orkestrasi bisnis, dan CRUD), dan **FastAPI** sebagai backend RAG terpisah (menangani seluruh pekerjaan berat: ingest dokumen, retrieval, dan pemanggilan LLM). Kedua backend ini **tidak pernah berkomunikasi langsung** satu sama lain — seluruh komunikasi selalu melalui **Redis** sebagai perantara (job queue + pub/sub + cache), sehingga masing-masing bisa berkembang dan di-scale secara independen.
+Sistem terdiri dari **backend NestJS** sebagai pemilik seluruh state domain dan pintu masuk client, serta **AI worker Python** yang mengerjakan pekerjaan AI yang panjang dan berat. Keduanya berkomunikasi lewat **antrean job BullMQ di Redis**.
 
-Di dalam NestJS sendiri, ada dua "alur pendengar" berbeda yang berjalan berdampingan dalam satu proses (bukan proses OS terpisah): **Main Thread** yang melayani request HTTP/SSE dari client secara cepat, dan **Second Thread/Worker** yang mendengarkan laporan hasil job dari FastAPI lalu menuliskannya ke PostgreSQL.
+Prinsip utamanya satu kalimat:
+
+> **Backend = pemilik seluruh state domain. AI worker = compute + pemilik tabel vektor.**
+
+Turunannya:
+
+1. **Worker boleh membaca tabel domain, tapi hanya menulis tabel vektor** (`*_chunk_embeddings`). Hasil generasi, skoring AMI, dan status ingestion dikirim balik ke backend, lalu **backend yang menulisnya**. Alasannya: skema dikelola dari satu pintu (Prisma), sehingga perubahan skema tidak diam-diam mematahkan penulis lain.
+2. **Worker tidak melayani CRUD atau baca domain untuk client.** Semua data domain yang dibutuhkan client disajikan backend langsung dari Postgres, tanpa hop tambahan client → backend → worker.
+3. **Semua upload berkas: client → R2 langsung.** Backend hanya menerbitkan presigned URL dan memverifikasi berkas, lalu mengirim job berisi **file key**. Worker mengunduh sendiri dari R2. Tidak ada endpoint upload di backend maupun di sisi AI.
+4. **Cakupan AI worker: ingestion, generasi konten, dan skoring AMI.** Chat bukan tugas worker; chat dimiliki backend (lihat [bagian 7](#7-chat--revisi-konten)).
 
 ---
 
 ## 2. Diagram Arsitektur
 
-![Diagram Arsitektur Sistem](./assets/top-level-architecture.png)
+![Diagram Arsitektur Sistem (rancangan awal)](./assets/top-level-architecture.png)
 
-Diagram menggambarkan alur dari Client-side (React) → NestJS (Main Thread + Second Thread) → Redis (sebagai hub komunikasi) → FastAPI (tiga pipeline RAG: AMI Assessment, Content Generation/Scoring, File Processing) → ChromaDB & LLM Layer, dengan PostgreSQL dan Cloudflare R2 sebagai penyimpanan data dan file.
+> Gambar di atas masih rancangan awal (ChromaDB, "Second Thread", Redis Streams) dan belum diperbarui. Gambaran terkini:
+
+```
+                    ┌───────────────────── Client (React SPA) ─────────────────────┐
+                    │  HTTP (CRUD, aksi, chat)      SSE (status job)    PUT berkas │
+                    └──────────┬──────────────────────────┬───────────────┬────────┘
+                               │                          │               │ presigned URL
+                               ▼                          │               ▼
+┌──────────────────────── Backend (NestJS) ───────────────┴──┐     ┌───────────────┐
+│ REST API · validasi · auth · tenant                         │     │ Cloudflare R2 │
+│ Chat agent (LLM cepat + tool calling)                       │     └───────▲───────┘
+│ Penerima laporan hasil job → tulis tabel domain             │             │ unduh by file key
+│ Relay status job → SSE                                      │             │
+└───────┬─────────────────────────────┬───────────────────────┘             │
+        │ Prisma (baca/tulis domain)  │ enqueue job / terima hasil          │
+        ▼                             ▼                                     │
+┌──────────────────┐        ┌───────────────── Redis ─────────────────┐     │
+│ PostgreSQL       │        │ BullMQ: generation · assessment ·       │     │
+│ + pgvector       │        │         ingestion (+ laporan hasil)     │     │
+└───────▲──────────┘        │ lock / cache                            │     │
+        │                   └──────────────────┬──────────────────────┘     │
+        │ baca domain                          ▼                            │
+        │ tulis vektor only   ┌──── AI Worker: Ingestion (terpisah) ───────┐│
+        ├─────────────────────┤ MinerU, chunk, embed · batas CPU/RAM       ├┘
+        │                     └────────────────────────────────────────────┘
+        │                     ┌──── AI Worker: Generasi · AMI ─────────────┐
+        └─────────────────────┤ satu service, atau dua (opsional)          │
+                              └──────────────────┬─────────────────────────┘
+                                                 ▼
+                                        LLM (OpenRouter)
+```
 
 ---
 
 ## 3. Komponen Sistem
 
-### 3.1 Client-side (Web Interface)
+### 3.1 Client (Web)
 
-- Dibangun dengan **React**.
-- Berkomunikasi dengan NestJS lewat dua jalur:
-  - **HTTP** — untuk seluruh request transaksional (login, CRUD, submit form, klik tombol generate/simulasi, dst).
-  - **SSE** — koneksi terbuka satu arah (server → client) untuk menerima notifikasi real-time (status job selesai, dst).
-- **Upload file** dilakukan langsung dari client ke **Cloudflare R2** menggunakan presigned URL yang diterbitkan NestJS — file tidak melewati NestJS sama sekali, hanya proses validasi dan penerbitan URL yang lewat backend.
+- React (React Router SPA).
+- **HTTP** ke backend untuk seluruh transaksi, termasuk chat.
+- **SSE** dari backend untuk status job (progres, selesai, gagal).
+- **Upload berkas langsung ke R2** lewat presigned URL. Byte berkas tidak pernah melewati backend maupun worker.
 
-### 3.2 NestJS — Main Thread
+### 3.2 Backend (NestJS)
 
-- Bertanggung jawab atas seluruh **RESTful API, fast I/O** — autentikasi, CRUD tenant/prodi/dokumen/bab, validasi bisnis.
-- Menerima request aksi yang memicu pekerjaan berat (Scoring, File Processing, Content Generation, AMI Assessment) → mendorong job ke **Redis** sebagai stream, lalu segera membalas response ke client tanpa menunggu hasil job selesai.
-- Memegang **koneksi SSE** milik tiap client yang terhubung — inilah satu-satunya komponen yang benar-benar mengirim event ke client.
-- Melakukan **"Data storing & retrieval"** langsung ke PostgreSQL untuk operasi CRUD biasa (di luar jalur job asinkron).
-- Berkomunikasi dengan Cloudflare R2 untuk **validasi file dan penerbitan presigned URL**.
-- Memakai Redis untuk **"other caching checking/storing"** — lihat penjelasan detail di [bagian 4](#4-makna-other-caching-checkingstoring).
+Satu service dengan beberapa modul; istilah "Main Thread / Second Thread" di rancangan awal tidak dipakai lagi karena Node berjalan di satu thread — yang ada adalah modul/listener berbeda dalam proses yang sama.
 
-### 3.3 NestJS — Second Thread/Worker
+- **REST API**: autentikasi, CRUD tenant/prodi/dokumen/bab, validasi bisnis (kunci bab, role).
+- **Pengirim job**: satu pintu `JobsService.enqueue()` → BullMQ, sekaligus mencatat baris audit `Job` di Postgres. Response ke client langsung dibalas tanpa menunggu job selesai.
+- **Penerima laporan hasil job**: menerima hasil dari worker, memvalidasi, lalu **menulis ke tabel domain**. Backend adalah satu-satunya penulis tabel domain.
+- **Relay SSE**: meneruskan event status job ke client yang relevan.
+- **Chat agent**: endpoint chat, riwayat chat, pemanggilan LLM, dan tool calling yang men-dispatch job ke worker (lihat [bagian 7](#7-chat--revisi-konten)).
+- **R2**: menerbitkan presigned URL dan memverifikasi keberadaan berkas.
 
-- Bertugas sebagai **"Event capture to write data"** — mendengarkan stream laporan hasil job (_"...report job (stream)"_) dari FastAPI lewat Redis.
-- Begitu laporan diterima, melakukan **pengecekan** (status kunci bab, status auto-lock, dst — masuk kategori "other caching checking/storing" juga) sebelum **"Checking and update status or metadata"** ke PostgreSQL.
-- Setelah data berhasil ditulis, mengirim **"Job done signal to SSE (pub/sub)"** ke Redis — sinyal ini yang kemudian ditangkap oleh Main Thread untuk diteruskan ke client yang tepat lewat koneksi SSE yang ia pegang.
-- Berjalan sebagai "pendengar" berbeda dalam proses NestJS yang sama dengan Main Thread — bukan proses/service terpisah, meski secara logis punya tanggung jawab yang jelas berbeda.
+### 3.3 Redis
 
-### 3.4 Redis
+- **BullMQ**: antrean `generation-queue`, `assessment-queue`, `ingestion-queue` (+ jalur laporan hasil, lihat [bagian 10](#10-usulan-yang-belum-dikonfirmasi)).
+- **Event status job** (`QueueEvents` BullMQ) untuk SSE. Event ini bersifat broadcast ke semua listener, jadi tetap benar saat backend dijalankan multi-instance.
+- **Lock & cache**: auto-lock kolaborasi bab (`lock:bab:{bab_id}`, sliding window 10 menit), flag pembatalan job, dan cache lain yang sifatnya sementara dan boleh hilang.
 
-Bertindak sebagai **hub komunikasi sentral** dengan beberapa fungsi berbeda dalam satu instance:
+### 3.4 PostgreSQL + pgvector
 
-- **Job stream** — menyalurkan job dari NestJS ke FastAPI (`AMI assessment Job`, `Content Generation Job`, `File processing Job`), dan laporan hasil balik dari FastAPI ke NestJS (`...report job (stream)`).
-- **Pub/Sub** — menyalurkan sinyal "Job done signal to SSE" dari Second Thread ke Main Thread.
-- **Other caching checking/storing** — lihat [bagian 4](#4-makna-other-caching-checkingstoring).
+- Database tunggal untuk seluruh skema aplikasi, dikelola lewat **Prisma** (skema & migrasi hanya dari satu tempat).
+- **pgvector** menyimpan embedding (menggantikan ChromaDB di rancangan awal): satu komponen infra lebih sedikit, dan filter tenant cukup lewat SQL biasa.
+- Hak tulis: backend untuk tabel domain; AI worker hanya untuk tabel vektor.
 
-### 3.5 PostgreSQL
+### 3.5 Cloudflare R2
 
-- Database utama, menyimpan seluruh skema aplikasi (dijelaskan terpisah di dokumentasi database).
-- Diakses oleh NestJS Main Thread (CRUD biasa) dan Second Thread (update status/metadata hasil job) — keduanya membaca/menulis Postgres yang sama, NestJS tetap menjadi satu-satunya pemilik tulis untuk tabel-tabel inti dokumen.
+- Object storage untuk seluruh berkas mentah (LED, bukti dukung, panduan, rubrik).
+- Client upload langsung; worker mengunduh langsung berdasarkan file key dari payload job.
 
-### 3.6 Cloudflare R2
+### 3.6 AI Worker (Python)
 
-- Object storage untuk seluruh file mentah (bukti dukung, dokumen panduan).
-- Client upload **langsung** ke R2 menggunakan presigned URL dari NestJS — NestJS tidak menjadi perantara byte file.
-- FastAPI (khususnya pipeline **File Processing**) mengambil file dari R2 untuk **"Take file to ingestion process"** (OCR, chunking, dst).
+Konsumen BullMQ untuk tiga jenis pekerjaan:
 
-### 3.7 FastAPI — Tiga RAG Pipeline
+| Antrean | Pekerjaan |
+|---|---|
+| `ingestion-queue` | Ekstraksi berkas (MinerU untuk PDF), chunking, embedding → tulis ke tabel vektor |
+| `generation-queue` | Generasi konten sub-bab, outline, rekomendasi, simulasi skor |
+| `assessment-queue` | Skoring AMI per dokumen (seluruh indikator) |
 
-Satu service FastAPI dengan tiga pipeline berbeda, masing-masing mengonsumsi jenis job tersendiri dari Redis dan mengirim laporan hasil lewat stream terpisah:
+- Dijalankan sebagai **beberapa service dari image yang sama**, masing-masing mendengarkan antrean tertentu: worker ingestion **wajib** terpisah, worker generasi dan AMI boleh digabung atau dipisah (lihat [bagian 8.2](#82-pemisahan-worker-per-jenis-pekerjaan)).
+- **Membaca** tabel domain untuk menyusun prompt (rubrik, template, isi section, tag bukti) — diizinkan.
+- **Menulis** hanya tabel vektor. Hasil lain dikirim sebagai laporan ke backend.
+- Tidak menyimpan state di memori proses yang dibutuhkan setelah job selesai.
 
-- **RAG Pipeline (AMI Assessment)** — memproses job penilaian audit mutu internal.
-- **RAG Pipeline (LED Content Generation or Scoring)** — memproses job generate konten bab **dan** job scoring rubrik LLM (kedua jenis job ini disatukan dalam satu pipeline karena sama-sama membutuhkan retrieval + prompt konteks yang serupa).
-- **File Processing (Bukti dukung ingestion, etc)** — memproses job ingest file: OCR, chunking, embedding, lalu **"Store vector"** ke ChromaDB.
+### 3.7 LLM Layer
 
-Ketiga pipeline melakukan **"Vector retrieval"** dari ChromaDB dan **"Prompt with context"** ke LLM Layer sesuai kebutuhan masing-masing (kecuali File Processing yang fokus pada penyimpanan vektor, bukan retrieval untuk generate).
-
-### 3.8 ChromaDB
-
-- Vector database, menyimpan hasil embedding dari proses ingest (`Store vector`), dan menyediakan hasil pencarian semantik (`Vector retrieval`) untuk pipeline AMI Assessment dan Content Generation/Scoring.
-
-### 3.9 LLM Layer
-
-- Lapisan abstraksi pemanggilan model bahasa, mendukung beberapa provider: **Ollama** (jika dibutuhkan, kemungkinan untuk model lokal/self-hosted), **DeepSeek**, **GPT OSS**, **Qwen**.
-- Menerima **"Prompt with context"** dari kedua pipeline RAG (AMI Assessment dan Content Generation/Scoring), mengembalikan hasil generasi/penilaian.
-- File Processing pipeline dapat memanggil LLM layer jika ada kebutuhan dari pemrosesan dokumen, tapi ini bukan jalur utama dan bersifat **"use in ingestion process if needed"**.
+- Diakses lewat **OpenRouter** (satu API, banyak model). Model per peran diatur lewat env: generasi, judge, dan (baru) model chat.
+- Model reasoning (misalnya `deepseek-r1`) untuk generasi/penilaian yang berat; model cepat non-reasoning untuk chat dan revisi ringan.
 
 ---
 
-## 4. Makna "Other Caching Checking/Storing"
+## 4. Kepemilikan Data
 
-Label ini dipakai berulang di diagram sebagai representasi **generalisasi** dari seluruh interaksi Redis yang sifatnya bukan job-queue utama maupun pub/sub notifikasi SSE. Di baliknya, ada beberapa jenis penggunaan Redis yang berbeda, disatukan labelnya di level diagram supaya tidak terlalu padat, tapi berikut rinciannya:
+| Jenis data | Pemilik tulis | Pembaca |
+|---|---|---|
+| Tabel domain (tenant, prodi, dokumen, bab, section, draft, hasil AMI, rubrik, template, bukti dukung, chat, job) | **Backend** | Backend, AI worker (baca) |
+| Tabel vektor (`*_chunk_embeddings`) | **AI worker** | AI worker, (opsional) backend |
+| Berkas mentah | Client (via presigned URL) | AI worker, backend (verifikasi) |
+| Lock, cache, flag pembatalan | Backend (dan worker untuk flag yang ia baca) | Keduanya |
 
-- **Auto-lock kolaborasi** — NestJS Main Thread dan Second Thread membaca/menulis key lock (`lock:bab:{bab_id}`) untuk mekanisme _sliding window_ 10 menit yang mencegah dua user mengedit bab yang sama bersamaan.
-- **Status proses job** — status sementara (`MENUNGGU`/`DIPROSES`/`SELESAI`/`GAGAL`) untuk keperluan polling/pemeriksaan cepat tanpa perlu query ke PostgreSQL setiap saat.
-- **Session/token cache** (jika diperlukan) — mempercepat validasi autentikasi berulang tanpa selalu membebani PostgreSQL.
-- **Cache umum lain** — hasil query yang sering diakses (misal daftar rubrik/panduan yang jarang berubah), untuk mengurangi beban baca ke PostgreSQL.
-
-Baik NestJS (Main Thread & Second Thread) maupun FastAPI (ketiga pipeline) **sama-sama punya akses bebas** ke kategori ini sesuai kebutuhan masing-masing — sengaja tidak dipetakan detail per fungsi di level diagram tingkat tinggi ini, karena tujuan diagram adalah menjelaskan **alur komunikasi fitur utama**, bukan spesifikasi teknis tiap key Redis (yang lebih pas didokumentasikan terpisah saat implementasi).
-
----
-
-## 5. Alur Kerja Utama
-
-### 5.1 Upload & Ingest File (Bukti Dukung/Panduan)
-
-```
-1. Client minta izin upload → NestJS Main Thread validasi & terbitkan presigned URL
-2. Client upload file LANGSUNG ke Cloudflare R2 (tidak lewat NestJS)
-3. Client beri tahu NestJS bahwa upload selesai
-4. NestJS lakukan HEAD request ke Cloudflare R2 untuk memverifikasi
-   file benar-benar ada (dan opsional: cocokkan ukuran file)
-5. Jika terverifikasi → dorong "File Processing Job (stream)" ke Redis
-   Jika tidak → tandai BUKTI_DUKUNG.status_proses = GAGAL, jangan dorong job
-6. FastAPI (File Processing) ambil job → "Take file to ingestion process" dari R2
-   → OCR, chunking, embedding → "Store vector" ke ChromaDB
-7. FastAPI kirim "File processing report job (stream)" balik ke Redis
-8. NestJS Second Thread terima laporan → validasi → update status/metadata di PostgreSQL
-9. Second Thread kirim "Job done signal to SSE (pub/sub)"
-10. Main Thread terima sinyal pub/sub → kirim event SSE ke client yang relevan
-```
-
-### 5.2 Generate Konten LED
-
-```
-1. Client pilih bukti dukung, klik Generate → request HTTP ke NestJS Main Thread
-2. Main Thread validasi (lock, status kunci bab) → dorong "Content generation job (stream)" ke Redis
-   → balas response cepat ke client, client mulai dengar SSE untuk update
-3. FastAPI (RAG Pipeline - LED Content Generation) ambil job
-   → "Vector retrieval" dari ChromaDB (bukti dukung + panduan terkait)
-   → "Prompt with context" ke LLM Layer
-   → dapat hasil generasi + otomatis hitung skor RAGAS
-4. FastAPI kirim "Content generation report job (stream)" ke Redis
-5. NestJS Second Thread terima laporan → validasi ulang → tulis ke PostgreSQL
-   (konten_kerja, BUKTI_DUKUNG_BAB, skor RAGAS)
-6. Second Thread kirim sinyal pub/sub → Main Thread teruskan lewat SSE ke client
-```
-
-### 5.3 Skoring Rubrik LLM
-
-- Job **"Scoring job (stream)"** dikirim terpisah dari job Content Generation, tapi diproses oleh **pipeline FastAPI yang sama** (RAG Pipeline - LED Content Generation or Scoring), karena kebutuhan retrieval-nya serupa (mengambil `RUBRIK_KRITERIA` yang relevan berdasar `urutan_bab`).
-- Alur laporan dan penulisan hasil (`HASIL_SKOR_KRITERIA`) mengikuti pola yang sama seperti alur generate di atas.
-
-### 5.4 Skor RAGAS
-
-- **Tidak punya job stream terpisah** — dihitung otomatis oleh FastAPI sebagai bagian dari proses Content Generation, karena metrik ini menilai kualitas jawaban LLM itu sendiri (bukan kelayakan akreditasi), sehingga wajar dihasilkan bersamaan dalam satu siklus job yang sama.
-
-### 5.5 AMI Assessment
-
-- Job **"AMI assessment Job (stream)"** diproses oleh pipeline FastAPI terpisah (**RAG Pipeline - AMI Assessment**), dengan retrieval dan prompt konteks tersendiri, mengingat sifat audit mutu internal berbeda dari sekadar generate konten atau skoring rubrik akreditasi.
-- Alur laporan (`AMI assessment report job (stream)`) dan penulisan hasil ke PostgreSQL mengikuti pola yang sama seperti alur lain. Detail struktur data hasil AMI Assessment masih perlu dirumuskan lebih lanjut di dokumentasi database (lihat [bagian 10](#10-hal-yang-masih-ditunda)).
-
-### 5.6 Notifikasi Real-time via SSE
-
-```
-Second Thread (setelah tulis PostgreSQL)
-   → publish "Job done signal to SSE (pub/sub)" ke Redis
-   → Main Thread (subscribe channel yang sama) menangkap sinyal ini
-   → Main Thread cari koneksi SSE milik user/job terkait
-   → kirim event ke client
-```
-
-Pemilihan **Pub/Sub** (bukan job queue biasa) untuk jalur ini disengaja: Pub/Sub bersifat _broadcast_ ke seluruh subscriber, cocok untuk skenario multi-instance NestJS di masa depan di mana koneksi SSE seorang user bisa jadi dipegang instance mana saja — lihat [bagian 8](#8-opsi-multi-deploy--scaling-ke-depan).
+Skema seluruh tabel — termasuk tabel vektor — tetap didefinisikan di Prisma. Worker tidak membuat atau mengubah skema.
 
 ---
 
-## 6. Kanal Komunikasi via Redis
+## 5. Aturan Komunikasi Antar Komponen
 
-Ringkasan seluruh jenis "kanal" logis yang lewat Redis dalam sistem ini:
+Rancangan awal menyatakan backend dan AI **tidak pernah** berkomunikasi langsung. Aturan itu terlalu mutlak; penggantinya:
 
-| Jenis Kanal                 | Arah                        | Sifat                                                                | Contoh                                                                                                               |
-| --------------------------- | --------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Job Stream (perintah)       | NestJS → FastAPI            | Harus sampai, tidak boleh hilang                                     | `Content Generation Job (stream)`, `File processing job (stream)`, `AMI assesment Job (stream)`                      |
-| Job Stream (laporan hasil)  | FastAPI → NestJS            | Harus sampai, tidak boleh hilang                                     | `Content generation report job (stream)`, `File processing report job (stream)`, `AMI assesment report job (stream)` |
-| Pub/Sub (notifikasi)        | Second Thread → Main Thread | Broadcast, boleh terlewat karena data utama sudah aman di PostgreSQL | `Job done signal to SSE (pub/sub)`                                                                                   |
-| Cache/Lock (dua arah bebas) | Semua komponen ↔ Redis      | Sementara, boleh hilang                                              | `other caching checking/storing`                                                                                     |
-
----
-
-## 7. Alternatif: RabbitMQ untuk Queue & Pub/Sub
-
-Saat ini seluruh kebutuhan job stream dan pub/sub ditangani oleh **Redis** (Streams untuk job, Pub/Sub asli untuk notifikasi SSE) — pilihan ini dipertahankan untuk MVP karena tidak menambah infrastruktur baru (satu instance Redis melayani semua kebutuhan).
-
-**RabbitMQ** tetap dipertimbangkan sebagai opsi migrasi di masa depan, khususnya jika kebutuhan berikut mulai muncul:
-
-- **Routing job yang lebih kompleks** — misalnya prioritas antrian (job AMI Assessment harus didahulukan dari job Scoring biasa), atau routing berdasarkan tipe tenant/kelas layanan.
-- **Volume job sangat tinggi** — RabbitMQ punya mekanisme _acknowledgement_, _dead-letter queue_, dan manajemen antrian yang lebih matang dibanding Redis Streams untuk skala besar.
-- **Kebutuhan fan-out lebih kaya** — mengirim satu event ke banyak jenis consumer dengan pola _routing key_/_exchange_ yang fleksibel (topic exchange, fanout exchange), yang lebih native di RabbitMQ dibanding harus disimulasikan manual di Redis.
-- **Pemisahan operasional queue dari cache** — bila skala Redis untuk cache/lock sudah cukup besar sehingga ingin dipisahkan bebannya dari sistem antrian, RabbitMQ bisa berdiri sebagai komponen terpisah tanpa berbagi resource dengan Redis.
-
-Migrasi ke RabbitMQ, jika dilakukan nanti, secara desain **tidak mengubah alur logis** yang sudah digambarkan di [bagian 5](#5-alur-kerja-utama) — hanya mengganti "pembawa pesan" di balik layar. Perubahan kode akan terbatas pada lapisan publisher/consumer (bagian yang mengirim/menerima job), sementara logika bisnis (validasi, penulisan PostgreSQL) tidak perlu disentuh, selama pola job/hasil job tetap mengikuti kontrak payload yang konsisten.
+| Jenis interaksi | Jalur | Contoh |
+|---|---|---|
+| Pekerjaan panjang/berat/memanggil LLM berulang | **Antrean BullMQ**, hasil dilaporkan balik ke backend | Generasi, AMI, ingestion |
+| Baca/CRUD data domain | **Backend langsung ke Postgres** — tidak lewat AI | Daftar indikator, hasil evaluasi, riwayat chat, pratinjau struktur |
+| Upload berkas | **Client → R2**, lalu job berisi file key | LED, bukti dukung, panduan |
+| Notifikasi status | **SSE** dari backend (sumber: event BullMQ) | Progres dan selesai job |
 
 ---
 
-## 8. Opsi Multi-Deploy / Scaling ke Depan
+## 6. Alur Kerja Utama
 
-Untuk MVP, seluruh komponen NestJS (Main Thread + Second Thread) dijalankan sebagai **satu instance/deployment**, begitu juga FastAPI (ketiga pipeline dalam satu service). Seiring bertambahnya beban, komponen-komponen berikut bisa **di-scale secara independen** tanpa perubahan besar pada logika aplikasi, karena seluruh komunikasi antar komponen sudah lewat Redis (bukan panggilan langsung):
+### 6.1 Upload & Ingest Berkas (LED, Bukti Dukung, Panduan, Rubrik)
 
-- **Main Thread instance** — bisa digandakan (horizontal scaling) untuk menangani lebih banyak trafik HTTP/SSE bersamaan. Koneksi SSE yang tersebar di banyak instance tetap bisa menerima notifikasi yang benar karena mekanisme Pub/Sub (bukan in-memory event) sudah dipakai sejak awal — lihat [bagian 5.6](#56-notifikasi-real-time-via-sse).
-- **Worker instance (Second Thread)** — bisa dipisah jadi deployment tersendiri (di luar Main Thread) bila proses penulisan laporan hasil job mulai menjadi beban tersendiri yang signifikan.
-- **RAG Pipeline instance** — ketiga pipeline FastAPI (AMI Assessment, Content Generation/Scoring, File Processing) yang saat ini satu service, bisa dipecah jadi **deployment terpisah per pipeline** bila salah satu jenis job jauh lebih sering dipakai dibanding yang lain (misalnya Content Generation jauh lebih ramai dibanding AMI Assessment), sehingga scaling bisa dilakukan spesifik per jenis beban kerja.
-- **File Processing instance** — mengingat proses ingest (OCR, chunking, embedding) cenderung _CPU/IO intensive_ dan bisa terjadi dalam jumlah besar sekaligus (bulk upload), ini adalah kandidat kuat untuk dipisah dan di-scale secara independen lebih awal dibanding pipeline lain.
+```
+1. Client minta izin upload → backend validasi & terbitkan presigned URL
+2. Client upload LANGSUNG ke R2
+3. Client beri tahu backend bahwa upload selesai
+4. Backend verifikasi berkas di R2 (HEAD, opsional cocokkan ukuran)
+   → gagal: tandai status GAGAL, tidak ada job
+5. Backend enqueue job ingestion berisi file key → balas cepat ke client
+6. Worker ambil job → unduh dari R2 → ekstraksi, chunking, embedding
+   → tulis tabel vektor
+7. Worker laporkan hasil (status, jumlah chunk, metadata) ke backend
+8. Backend tulis status/metadata ke tabel domain → event SSE ke client
+```
 
-Prasyarat agar opsi-opsi ini bisa diterapkan dengan mulus: seluruh komunikasi job dan notifikasi **konsisten lewat Redis** (bukan pemanggilan langsung antar service), dan kontrak payload job/laporan hasil (`job_id`, `tipe_job`, `payload`, dst) dijaga stabil sejak awal — sehingga menambah/mengurangi jumlah instance konsumen di sisi mana pun tidak memerlukan perubahan pada sisi pengirim.
+Semua jenis berkas memakai alur yang sama; tidak ada jalur khusus per jenis berkas.
+
+### 6.2 Generasi Konten
+
+```
+1. Client klik Generate (per sub-bab) → backend validasi (kunci bab, role)
+2. Backend enqueue job generasi → balas cepat; client mendengar SSE
+3. Worker: baca konteks domain + retrieval vektor → prompt ke LLM
+   → hasil generasi + skor kualitas (judge)
+4. Worker laporkan hasil ke backend
+5. Backend tulis draft/section, tautan bukti, skor kualitas → SSE ke client
+```
+
+### 6.3 Skoring AMI
+
+```
+1. Dipicu manual (tombol penilaian) → backend enqueue job AMI
+2. Worker menilai seluruh indikator dokumen (beberapa indikator paralel dalam satu job)
+3. Worker laporkan hasil ke backend
+4. Backend tulis hasil indikator & langkah reasoning → SSE ke client
+```
+
+Cara pelaporan (sekali di akhir atau bertahap per indikator agar UI bisa menampilkan progres) belum diputuskan — lihat [bagian 10](#10-usulan-yang-belum-dikonfirmasi) no. 1.
+
+### 6.4 Notifikasi Real-time (SSE)
+
+Backend berlangganan event BullMQ (`progress`, `completed`, `failed`) per antrean, lalu meneruskan event milik job tertentu ke client yang membuka job tersebut. Event ini hanya **notifikasi**; data utamanya selalu dibaca dari Postgres, sehingga event yang terlewat tidak menghilangkan data.
 
 ---
 
-## 9. Autentikasi, Keamanan, & Logging
+## 7. Chat & Revisi Konten
+
+### 7.1 Chat di backend
+
+- Endpoint chat, riwayat, otorisasi, dan kunci bab dikelola **backend**.
+- Backend memanggil LLM **cepat** (non-reasoning, mendukung tool calling) sehingga chat tetap responsif.
+- Chat **tidak menunggu** generasi: permintaan yang butuh pekerjaan berat di-dispatch sebagai job lewat tool calling, lalu chat langsung menjawab bahwa prosesnya sedang berjalan. UI menampilkan loading di latar belakang selama job berjalan.
+- Selama job masih berjalan, **tool calling dinonaktifkan sementara** agar tidak ada job ganda. (Alternatif penjaga di sisi server: [bagian 10](#10-usulan-yang-belum-dikonfirmasi) no. 4.)
+
+### 7.2 Revisi bertingkat
+
+Revisi dibedakan berdasarkan kebutuhannya, karena biayanya berbeda jauh:
+
+| Jenis revisi | Jalur | Alasan |
+|---|---|---|
+| Ganti kata, kalimat, paragraf; ubah tone; ubah panjang | **Agentic loop di backend**, prompt ulang tanpa injeksi bukti dukung | Input kecil (paragraf + instruksi), selesai dalam hitungan detik, biaya sangat kecil |
+| Ganti atau tambah bukti dukung | **Job ke AI worker** (retrieval + prompt lengkap) — atau diarahkan ke fitur generasi ulang di luar chat | Butuh retrieval dan prompt besar; menit, bukan detik |
+
+- Penentuan jenis revisi dilakukan oleh **intent resolver** sebelum routing.
+- Revisi tanpa bukti memakai **system prompt ketat**: boleh mengubah tone, jumlah karakter, dan struktur kalimat; **tidak boleh** mengubah angka, fakta, atau klaim.
+
+---
+
+## 8. Model Eksekusi Worker & Scaling
+
+### 8.1 Slot, `concurrency`, dan instance
+
+- **Slot job paralel = jumlah instance worker × `concurrency` per instance.** Waktu antre user ditentukan oleh jumlah slot ini; response time per job ditentukan oleh LLM provider.
+- **`concurrency`** BullMQ = jumlah job yang dipegang satu proses sebagai coroutine asyncio dalam satu event loop — **bukan** jumlah thread. Karena job generasi/AMI sebagian besar menunggu LLM (I/O), satu proses bisa memegang banyak job sekaligus dengan satu salinan model embedding di memori.
+- **Instance** tambahan memberi isolasi (crash/beku hanya berdampak ke job di instance itu), memakai lebih banyak core CPU, dan memungkinkan restart bergiliran — dengan biaya RAM per instance (model embedding dimuat per proses).
+- Susunan yang dituju: **beberapa instance × `concurrency` moderat**. Pembedaan `concurrency` per antrean masih usulan ([bagian 10](#10-usulan-yang-belum-dikonfirmasi) no. 12).
+- Total slot perlu **dibatasi sesuai kapasitas provider LLM**, bukan dibuat sebanyak mungkin. Antrean dalam batas wajar berfungsi sebagai penyangga agar provider tidak kebanjiran.
+- **Auto-scaling** (bila nanti diperlukan lintas mesin) harus berbasis **panjang antrean**, bukan CPU, karena worker hampir selalu menganggur CPU-nya saat menunggu LLM. Docker Compose sendiri tidak punya auto-scaling.
+
+### 8.2 Pemisahan worker per jenis pekerjaan
+
+Ketiga jenis pekerjaan AI punya sifat beban yang berbeda, dan sifat beban itulah yang menentukan perlu dipisah atau tidak — bukan jumlah jenis pekerjaannya.
+
+| Pekerjaan | Sifat beban | Sumber daya yang dibutuhkan |
+|---|---|---|
+| Ingestion | **CPU/RAM-bound** — ekstraksi PDF (MinerU: layout + OCR) memakai CPU penuh dan RAM melonjak ±2–4 GB per berkas; embedding chunk juga memakai CPU | vCPU dan RAM |
+| Generasi LED | **I/O-bound** — hampir seluruh waktunya menunggu jawaban LLM | Slot job |
+| Skoring AMI | **I/O-bound** — sama seperti generasi, dengan jauh lebih banyak panggilan LLM per job; tiap indikator yang sedang dinilai memakai satu thread | Slot job dan thread |
+
+**Aturan:**
+
+1. **Ingestion WAJIB berjalan di worker terpisah** yang hanya mendengarkan `ingestion-queue`, dengan batas CPU/RAM sendiri.
+2. **Generasi LED dan skoring AMI BOLEH digabung** dalam satu worker, atau **dipisah** bila memenuhi kondisi di bawah (opsional).
+3. Pemisahan **tidak membuat codebase baru**: semua worker memakai **image yang sama**, dan tiap container menentukan antrean yang didengarkan lewat env (misalnya `WORKER_QUEUES`). Pemisahan = beberapa service di compose/orkestrator, masing-masing dengan batas sumber daya dan jumlah replika sendiri.
+
+**Kenapa ingestion wajib dipisah:**
+
+- **Tidak membekukan pekerjaan lain.** Ekstraksi berjalan lama (hingga menit per berkas) dan intensif CPU. Bila berbagi proses atau event loop dengan generasi dan AMI, job-job yang sedang menunggu LLM ikut tertahan selama ekstraksi berjalan.
+- **Lonjakan RAM tidak merembet.** Tanpa batas memori tersendiri, beberapa berkas yang diekstrak bersamaan bisa menghabiskan RAM host dan membuat komponen lain (Postgres, backend) dimatikan oleh OOM killer. Dengan container terpisah, yang terkena hanya worker ingestion.
+- **Cara scaling-nya berbeda.** Ingestion diskalakan dengan **menambah vCPU/instance** (atau GPU); generasi dan AMI diskalakan dengan **menambah slot** (`concurrency`) karena CPU-nya menganggur. Digabung, keduanya tidak bisa diatur sesuai kebutuhan masing-masing.
+- **Pola lonjakannya berbeda.** Upload massal (misalnya awal siklus akreditasi) datang bergelombang dan tidak boleh membuat penyusun yang sedang generate ikut menunggu.
+- **Kebutuhan hardware bisa berbeda di masa depan** — misalnya worker ingestion di mesin ber-GPU, sementara generasi/AMI tetap di mesin kecil.
+
+**Opsional — memisahkan generasi LED dan skoring AMI.** Menggabungkan keduanya tidak berat, karena sama-sama menunggu jaringan. Pisahkan bila salah satu kondisi berikut muncul:
+
+- **Isolasi kegagalan**: job AMI berjalan lama (puluhan menit per dokumen); restart/crash worker AMI tidak boleh ikut menghentikan generasi yang sedang dikerjakan penyusun, dan sebaliknya.
+- **Scaling berbeda**: generasi dipakai jauh lebih sering (banyak klik kecil), AMI jarang tapi berat — misalnya generasi 3 replika, AMI 1 replika.
+- **Batas beban ke provider LLM**: AMI menghasilkan jauh lebih banyak panggilan LLM bersamaan; worker tersendiri memudahkan membatasi slot AMI tanpa mengurangi slot generasi.
+- **Thread pool**: indikator AMI yang sedang dinilai memakai thread dari pool proses; di worker tersendiri, pool itu tidak berebut dengan pekerjaan generasi.
+
+Biaya memisahkan: RAM tambahan per proses (±1 GB, karena model embedding dimuat per proses) dan satu service tambahan untuk dikelola.
+
+Ilustrasi susunan (satu image, tiga service):
+
+```yaml
+ai-worker-ingest:                # wajib terpisah
+  image: ai-led-ai
+  environment: { WORKER_QUEUES: ingestion-queue }
+  deploy: { resources: { limits: { cpus: "4", memory: 8g } } }
+
+ai-worker-gen:                   # opsional: bisa digabung dengan AMI
+  image: ai-led-ai
+  environment: { WORKER_QUEUES: generation-queue }
+
+ai-worker-ami:                   # opsional: bisa digabung dengan generasi
+  image: ai-led-ai
+  environment: { WORKER_QUEUES: assessment-queue }
+```
+
+Bila generasi dan AMI digabung: satu service dengan `WORKER_QUEUES: generation-queue,assessment-queue`, ditambah `ai-worker-ingest`.
+
+---
+
+## 9. Status Implementasi terhadap Rancangan
+
+Kondisi kode per 2026-09-22 yang **belum** mengikuti rancangan di atas:
+
+| Rancangan | Kondisi saat ini | Lokasi |
+|---|---|---|
+| Worker hanya menulis tabel vektor | Worker menulis langsung dengan SQL mentah ke ±20 tabel domain (draft, section, bab, hasil AMI, langkah reasoning, rubrik, template, set akreditasi, bukti dukung, rekomendasi, chat, dll.). Tidak ada jalur laporan hasil ke backend. | `apps/ai/db/generation_client.py`, `apps/ai/db/postgres_client.py`, `apps/ai/worker.py` |
+| AI tidak melayani baca domain | Backend mem-proxy baca ke service AI: `/structure/:id/preview` & `/confirm`, `/assessment/indicators`, `/eval/:id/results`, `/chat/:sectionId/history` | `apps/backend/src/accreditation-set`, `assessment`, `bab-dokumen` |
+| Chat di backend | Chat (LLM + riwayat) berada di service AI; backend hanya mem-proxy | `apps/ai/api/routes/chat.py`, `apps/backend/src/bab-dokumen/bab-dokumen.controller.ts` |
+| Pekerjaan berat lewat antrean | Evaluasi kualitas (`POST /eval/run`) dipanggil langsung lewat HTTP | `apps/backend/src/assessment/assessment.service.ts` |
+| Slot = instance × `concurrency` per antrean | `Worker` BullMQ tanpa opsi `concurrency` (default 1): satu job per antrean per proses | `apps/ai/worker.py` |
+| Worker ingestion terpisah | Satu proses (`ai-worker`) mendengarkan ketiga antrean sekaligus; daftar antrean ditulis tetap di kode (`QUEUE_NAMES`), belum bisa dipilih lewat env | `apps/ai/worker.py`, `docker-compose.yml` |
+| Ingestion tidak mengganggu antrean lain | MinerU dipanggil sinkron (`subprocess.run`) di event loop yang sama dengan antrean generasi & AMI | `apps/ai/ingestion/evidence_mineru.py`, `apps/ai/worker.py` |
+
+Yang **sudah** sesuai: satu pintu enqueue job (`JobsService.enqueue`) dengan audit `Job` di Postgres; generasi, AMI, dan ingestion bukti dukung lewat antrean; upload bukti dukung, LED (`INGESTION_LED`), dan LKPS dokumen (`INGESTION_LKPS`) lewat R2 + file key; SSE lewat event BullMQ; pgvector sebagai vector store.
+
+---
+
+## 10. Usulan yang Belum Dikonfirmasi
+
+Usulan berikut muncul dari diskusi arsitektur tapi **belum menjadi keputusan**:
+
+1. **Jalur laporan hasil lewat antrean** (`result-queue`) yang dikonsumsi backend dengan processor ber-retry — bukan menulis hasil dari event `QueueEvents`, karena event itu tidak dijamin sampai saat backend restart. Untuk AMI, laporan dikirim **bertahap per indikator** agar UI tetap bisa menampilkan progres.
+2. **Penulisan hasil idempotent** (upsert berdasarkan `jobId`), karena job BullMQ dapat di-retry dan laporan bisa terkirim lebih dari sekali.
+3. **User Postgres khusus untuk AI worker**: `SELECT` pada tabel domain, tulis hanya pada tabel vektor — supaya aturan kepemilikan data dipaksakan database, bukan kesepakatan.
+4. **Penjaga dispatch per section di server**, bukan menghapus tool dari daftar tool LLM: tool tetap tersedia, server memeriksa job aktif per section dan membalas status `busy` (beserta `jobId`) agar LLM menjawab jujur dan dua pesan cepat tidak memicu dua job.
+5. **Hasil revisi sebagai versi/usulan diff** yang bisa diterima atau ditolak, bukan menimpa konten langsung — agar tidak bentrok dengan ketikan user di editor.
+6. **Pesan "job selesai" ditambahkan ke riwayat chat** saat hasil diterima, agar konteks LLM pada giliran berikutnya tidak basi.
+7. **Routing dua cabang** — "butuh fakta/bukti baru atau tidak" — sebagai pengganti klasifikasi kata/kalimat/paragraf; **cakupan diambil dari seleksi teks di editor**; intent ditentukan lewat **pemilihan tool oleh LLM chat** tanpa resolver terpisah (resolver ditambahkan hanya bila pemilihan tool terbukti tidak andal). Catatan: permintaan "tambahkan data X" juga termasuk butuh fakta baru, bukan hanya "ganti bukti".
+8. **Validasi deterministik sebelum-sesudah** pada revisi ringan: angka, persen, tahun/tanggal, dan penanda sitasi harus tetap sama; bila berubah, tolak/ulang sekali atau tandai ke user.
+9. **Agentic loop minimal untuk revisi ringan**: satu panggilan → validasi → ulang sekali bila gagal; loop bertingkat hanya bila dibutuhkan.
+10. **Konfirmasi sebelum dispatch job dari chat** dan **batas job aktif per user**, untuk kendali biaya dan perlindungan dari prompt injection lewat isi dokumen.
+11. **Penanda "berubah sejak dinilai"** pada skor kualitas dan hasil AMI setelah section direvisi.
+12. **`concurrency` per antrean** (misalnya generasi 5, AMI 2, ingestion 1) dengan beberapa instance worker, disertai penyesuaian ukuran pool koneksi Postgres per proses (pool saat ini langsung error saat habis).
+13. **Optimasi worker ingestion** (pemisahannya sendiri sudah diputuskan, lihat [bagian 8.2](#82-pemisahan-worker-per-jenis-pekerjaan)): `mineru-api` permanen agar model dimuat sekali per worker, bukan per berkas; pemanggilan MinerU yang tidak memblokir event loop; flag ekstraksi yang lebih ringan (misalnya tanpa parsing rumus); dan cache hasil ekstraksi berdasarkan hash berkas.
+14. **Menurunkan bagian RabbitMQ** menjadi catatan sejarah: BullMQ sudah menyediakan prioritas, retry, dan penyimpanan job gagal.
+
+---
+
+## 11. Hal yang Belum Diputuskan
+
+1. **Retrieval untuk chat di backend.** Backend tidak memuat model embedding. Pilihan: memanggil fungsi compute stateless di sisi AI, atau backend menjalankan query pgvector sendiri dengan embedding dari sisi AI.
+2. **Model chat** — model cepat non-reasoning dengan tool calling yang andal.
+3. **Batas chat** — apakah penggantian bukti dukung boleh dipicu dari chat, atau selalu diarahkan ke fitur generasi ulang.
+4. **Kontrak payload per jenis job dan laporan hasil** (generasi, outline, rekomendasi, simulasi skor, AMI, ingestion).
+5. **Kendali runtime pemanggilan LLM**: timeout, batas `max_tokens`, dan retry yang saat ini bertumpuk di beberapa lapis (retry pemanggilan, retry SDK, `attempts` BullMQ).
+6. **Nasib evaluasi kualitas (`/eval/run`)** — dipindah ke antrean atau dihapus.
+7. **Isi pratinjau struktur (`/structure/:id/preview`)** — bila hanya membaca, pindah ke backend; bila ada komputasi, jadi job.
+8. **Kendali biaya tingkat sistem** — misalnya kuota AMI per tenant/dokumen; skoring AMI adalah pemakan token terbesar.
+9. **Urutan migrasi** dari kondisi di [bagian 9](#9-status-implementasi-terhadap-rancangan) ke rancangan, tanpa memblokir pengembangan pipeline AI yang sedang berjalan.
+10. **Diagram** di [bagian 2](#2-diagram-arsitektur) perlu digambar ulang.
+11. Masih berlaku dari rancangan awal: **struktur data hasil AMI** (bila ada alur approval tersendiri), **kebijakan caching** (key, TTL, invalidasi), **environment terpisah** (dev/staging/production) dan pengelolaan secret, serta **backup & disaster recovery** PostgreSQL.
+
+---
+
+## 12. Riwayat Perubahan Rancangan
+
+| Rancangan awal | Pengganti | Alasan |
+|---|---|---|
+| NestJS dan FastAPI **tidak pernah** berkomunikasi langsung | Aturan per jenis interaksi ([bagian 5](#5-aturan-komunikasi-antar-komponen)) | Memaksa baca singkat lewat antrean adalah anti-pola; yang wajib lewat antrean adalah pekerjaan panjang |
+| NestJS satu-satunya penulis; tidak jelas apakah AI boleh membaca | Worker **boleh membaca** domain, **hanya menulis** tabel vektor | Menyusun prompt butuh banyak data domain; menaruh semuanya di payload job membuat payload gemuk |
+| "Main Thread" & "Second Thread" NestJS | Modul/listener dalam satu service | Node berjalan di satu thread; istilah lama menyesatkan |
+| FastAPI dengan tiga RAG pipeline, termasuk endpoint | AI worker (konsumen antrean) tanpa CRUD; chat pindah ke backend | Menghilangkan hop ganda dan beban chat di proses AI |
+| Redis Streams + Pub/Sub buatan sendiri | BullMQ + `QueueEvents` | Retry, deteksi job macet, dan event status sudah tersedia |
+| ChromaDB | pgvector di PostgreSQL | Satu komponen infra lebih sedikit; filter tenant lewat SQL |
+| Skor RAGAS otomatis dalam siklus generasi | Skor kualitas oleh LLM judge | Pustaka RAGAS tidak stabil |
+| LLM layer: Ollama, DeepSeek, GPT OSS, Qwen | OpenRouter, model per peran lewat env | Satu API untuk banyak model |
+| Scaling per pipeline sebagai opsi masa depan | Slot = instance × `concurrency` per antrean ([bagian 8](#8-model-eksekusi-worker--scaling)) | Hambatan utama adalah jumlah slot, bukan hardware |
+| Satu service FastAPI untuk ketiga pipeline; pemisahan File Processing sebagai opsi | Worker ingestion **wajib** terpisah; generasi & AMI boleh digabung atau dipisah ([bagian 8.2](#82-pemisahan-worker-per-jenis-pekerjaan)) | Ingestion CPU/RAM-bound dan membekukan pekerjaan I/O-bound bila digabung |
+| RabbitMQ sebagai opsi migrasi | Belum diputuskan ([bagian 10](#10-usulan-yang-belum-dikonfirmasi) no. 14) | — |
+
+---
+
+## 13. Autentikasi, Keamanan, & Logging
 
 - **Autentikasi**: JWT dengan refresh token rotation; `tenant_id` disisipkan di dalam token/header, wajib difilter di setiap query PostgreSQL untuk menjaga isolasi multi-tenant.
-- **Dua jalur pembuatan akun, satu entitas `USER`**: registrasi mandiri (publik, selalu membuat `TENANT` baru beserta `ADMIN` pertamanya) terpisah dari pembuatan akun oleh Admin (butuh token, `tenant_id` diambil dari token dan **tidak pernah** dari request body). Keduanya menghasilkan baris `USER` biasa — tidak ada pemisahan entitas "user asli" vs "user buatan Admin", karena seluruh relasi konten (`BAB_DRAFT`, `BUKTI_DUKUNG`, `HASIL_SKOR_KRITERIA`, dan lain-lain) menunjuk ke satu `USER`, dan role sudah cukup membedakan kewenangannya.
+- **Dua jalur pembuatan akun, satu entitas `USER`**: registrasi mandiri (publik, selalu membuat `TENANT` baru beserta `ADMIN` pertamanya) terpisah dari pembuatan akun oleh Admin (butuh token, `tenant_id` diambil dari token dan **tidak pernah** dari request body). Keduanya menghasilkan baris `USER` biasa — tidak ada pemisahan entitas "user asli" vs "user buatan Admin", karena seluruh relasi konten menunjuk ke satu `USER`, dan role sudah cukup membedakan kewenangannya.
 - **Password**: di-hash dengan **bcrypt**. Password akun buatan Admin diisi oleh Admin (§4.2 `application_flow.md`), bukan lewat token undangan.
 - **Akses file**: seluruh interaksi dengan Cloudflare R2 menggunakan **presigned URL** bermasa berlaku terbatas.
+- **Tenant di sisi AI**: service AI tidak punya konsep tenant sendiri; backend wajib memvalidasi kepemilikan tenant sebelum mengirim job, dan worker memfilter `tenant_id` pada setiap query yang ia jalankan.
 - **Logging**: file-based selama development, dengan transport yang dirancang mudah di-_swap_ untuk kebutuhan production (detail transport production belum ditentukan).
-
----
-
-## 10. Hal yang Masih Ditunda
-
-1. **Struktur data hasil AMI Assessment** — apakah menggunakan pola tabel serupa `HASIL_SKOR_KRITERIA` (dengan `target_tipe` tambahan) atau memerlukan struktur/alur approval tersendiri, mengingat AMI secara konsep adalah proses audit, bukan sekadar skoring.
-2. **Detail payload tiap jenis job** (`AMI assessment Job`, `Content Generation Job`, `Scoring job`, `File processing job`) — kerangka umum kontrak job/laporan sudah disepakati sebelumnya, tapi field spesifik per jenis job masih perlu dirumuskan bersama tim RAG.
-3. **Rate limiting & concurrency ke LLM Layer** — terutama karena ada empat provider berbeda (Ollama, DeepSeek, GPT OSS, Qwen), perlu dipikirkan strategi pemilihan provider dan penanganan kuota/rate limit masing-masing.
-4. **Kebijakan caching lebih rinci** — key-key spesifik apa saja yang masuk kategori "other caching checking/storing", TTL masing-masing, dan strategi invalidasi cache.
-5. **Environment terpisah** (development/staging/production) dan pengelolaan konfigurasi/secret per environment.
-6. **Backup & disaster recovery** untuk PostgreSQL dan ChromaDB.
-7. **Kapan tepatnya migrasi ke RabbitMQ atau pemisahan multi-deploy** (bagian 7 dan 8) benar-benar dieksekusi — saat ini murni opsi yang sudah disiapkan jalurnya, bukan rencana dengan linimasa pasti.

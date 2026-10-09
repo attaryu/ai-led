@@ -1,0 +1,23 @@
+# SELURUH aplikasi (web, backend, database, AI, ...) dengan MinerU lewat API mineru.net (mode `api`).
+#
+#   MINERU_API_KEY=... docker compose -f docker-compose.mineru-api.yml up -d --build
+#
+# Tidak perlu menjalankan `docker compose up` biasa dulu: berkas ini memuat compose/base.yml (layanan bersama) lalu hanya
+# menimpa bagian MinerU (compose/mineru-api.override.yml): tanpa GPU, tanpa model lokal, tanpa volume model.
+# `ai` dan `ai-worker` juga tanpa GPU (embedding di CPU), jadi jalan di mesin tanpa NVIDIA.
+#
+# MINERU_API_KEY WAJIB (compose menolak start tanpa itu). Jangan menulis kuncinya di berkas ini atau
+# meng-commit-nya; berikan lewat environment atau berkas .env yang diabaikan git. Dokumen yang diproses
+# DIKIRIM ke mineru.net: pastikan itu boleh.
+#
+# Nama proyek SAMA dengan stack utama. Jangan jalankan berkas varian lain bersamaan.
+name: ai-led-dev-v2
+
+include:
+  - path:
+      - compose/base.yml
+      - compose/mineru-api.override.yml
+    # Path relatif di base.yml (./apps/ai, ./models, apps/*/.env) dihitung dari root proyek, bukan folder compose/.
+    project_directory: .
+    # VARIAN=api -> nama container ai-led-dev-v2-<service>-api (lihat container_name di compose/base.yml)
+    env_file: compose/varian-api.env

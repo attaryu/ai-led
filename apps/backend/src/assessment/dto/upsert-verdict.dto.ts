@@ -7,6 +7,12 @@ export class UpsertVerdictDto {
   @IsPositive()
   indicatorNo!: number;
 
+  // Sub-indikator ("I", "II", ...) bila nomor indikator ini punya beberapa baris rubrik; kosong = tanpa sub.
+  @ApiPropertyOptional({ example: 'II' })
+  @IsOptional()
+  @IsString()
+  subNo?: string;
+
   @ApiProperty({ example: 3.5 })
   @IsNumber()
   @Min(0)

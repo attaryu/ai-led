@@ -20,7 +20,9 @@ export const createLedProjectSchema = ledProjectSchema
 	})
 	.extend({
 		tahunMulai: tahunMulaiSchema,
-		tenggat: z.string(),
+		// ponytail: dulu z.string() (boleh kosong); kini wajib diisi saat membuat dokumen.
+		// tenggat: z.string(),
+		tenggat: z.string().min(1, 'Target selesai wajib diisi'),
 		/**
 		 * Acuan penilaian wajib dipilih sejak dokumen dibuat.
 		 *
@@ -34,6 +36,15 @@ export const createLedProjectSchema = ledProjectSchema
 		 * ruang kerjanya punya tampilan tersendiri untuk keadaan itu.
 		 */
 		accreditationSetId: z.string().min(1, 'Acuan penilaian wajib dipilih'),
+		/**
+		 * LKPS prodi yang dipilih untuk dokumen ini. `''` = belum dipilih (`<select>` memakai
+		 * string kosong untuk "tidak ada"; dinormalkan ke `null` saat disimpan). Opsional di
+		 * sini karena LKPS bisa diunggah belakangan -- tapi AMI baru bisa menilai indikator
+		 * kuantitatif setelah dokumen terhubung ke satu LKPS.
+		 */
+		// ponytail: dulu opsional (z.string()); kini wajib -- dokumen LED tidak boleh dibuat tanpa LKPS.
+		// lkpsEvidenceId: z.string(),
+		lkpsEvidenceId: z.string().min(1, 'LKPS wajib dipilih'),
 	});
 
 export type CreateLedProjectDto = z.infer<typeof createLedProjectSchema>;

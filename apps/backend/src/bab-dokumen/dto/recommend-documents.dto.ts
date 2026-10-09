@@ -7,4 +7,10 @@ export class RecommendDocumentsDto {
   @IsOptional()
   @IsString()
   draftId?: string;
+
+  // dimas: rekomendasi per section — pedoman/LKPS dari section ini saja.
+  @ApiPropertyOptional({ example: 'clx1a2b3c4d5e6f7g8h9i0j1' })
+  @IsOptional()
+  @IsString()
+  sectionId?: string;
 }

@@ -15,6 +15,7 @@ from scalar_fastapi import get_scalar_api_reference
 from api.routes.assessment import router as assessment_router
 from api.routes.chat import router as chat_router
 from api.routes.eval import router as eval_router
+from api.routes.structure import router as structure_router
 from api.routes.upload import router as upload_router
 
 app = FastAPI(title="AMI Assessment API", version="0.1.0")
@@ -34,6 +35,7 @@ app.include_router(assessment_router)
 app.include_router(upload_router)
 app.include_router(eval_router)
 app.include_router(chat_router)
+app.include_router(structure_router)
 
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(_STATIC_DIR):

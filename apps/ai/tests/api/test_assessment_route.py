@@ -364,7 +364,7 @@ def test_resume_skips_already_done_indicators(fake_indicators):
         patch("api.routes.assessment.get_session", return_value=_fake_session_row()),
         patch("api.routes.assessment.os.path.exists", return_value=True),
         patch("api.routes.assessment.read_indicator_rows", return_value=all_indicators),
-        patch("api.routes.assessment.get_completed_indicator_numbers", return_value={1}),
+        patch("api.routes.assessment.get_completed_indicator_numbers", return_value={(1, "")}),
         patch("api.routes.assessment.update_session_status"),
         patch("api.routes.assessment._run_assessment_pipeline", new=AsyncMock(side_effect=fake_pipeline)),
     ):
@@ -514,7 +514,7 @@ def test_resume_all_done_marks_completed_without_running_pipeline(fake_indicator
         patch("api.routes.assessment.get_session", return_value=_fake_session_row(total_indicators=2)),
         patch("api.routes.assessment.os.path.exists", return_value=True),
         patch("api.routes.assessment.read_indicator_rows", return_value=fake_indicators),
-        patch("api.routes.assessment.get_completed_indicator_numbers", return_value={1, 2}),
+        patch("api.routes.assessment.get_completed_indicator_numbers", return_value={(1, ""), (2, "")}),
         patch("api.routes.assessment.update_session_status") as mock_update,
         patch("api.routes.assessment._run_assessment_pipeline", new=AsyncMock()) as mock_pipeline,
     ):

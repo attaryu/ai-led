@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { ArrowLeftIcon } from '@phosphor-icons/react';
 
-import { PlaceholderPage } from '~/core/components/placeholder-page';
+import { LoadFailedPage, PlaceholderPage } from '~/core/components/placeholder-page';
 import { Button } from '~/core/components/ui/button';
 import { Input } from '~/core/components/ui/input';
 import { Select } from '~/core/components/ui/select';
@@ -38,6 +38,9 @@ import { TahunAkademikField } from '../components/tahun-akademik-field';
 import { ledProjectRepository } from '../../data/repositories/led-project.repository';
 import { type StudyProgramEntity } from '../../../study-program/domain/entities/study-program.entity';
 import { studyProgramRepository } from '../../../study-program/data/repositories/study-program.repository';
+import { evidenceRepository } from '~/features/evidence/data/repositories/evidence.repository';
+import { type EvidenceEntity } from '~/features/evidence/domain/entities/evidence.entity';
+import { labelLkps } from '~/features/evidence/domain/lkps-meta';
 
 export function EditLedProject() {
 	const navigate = useNavigate();
@@ -45,6 +48,7 @@ export function EditLedProject() {
 	const [searchParams] = useSearchParams();
 	const [project, setProject] = React.useState<LedProjectEntity | null>(null);
 	const [tidakAda, setTidakAda] = React.useState(false);
+	const [gagalMuat, setGagalMuat] = React.useState(false);
 
 	/*
 	 * Formulir ini bisa dibuka dari daftar lintas program studi maupun dari daftar milik
@@ -62,10 +66,18 @@ export function EditLedProject() {
 		studyProgramRepository.findAll().then(setStudyPrograms);
 	}, []);
 
+	const [berkasLkps, setBerkasLkps] = React.useState<EvidenceEntity[]>([]);
+	React.useEffect(() => {
+		if (!project) return;
+		evidenceRepository.findLkpsByStudyProgram(project.studyProgramId).then(setBerkasLkps);
+	}, [project]);
+
 	React.useEffect(() => {
 		if (!projectId) return;
 		let cancelled = false;
-		ledProjectRepository.findById(projectId).then((found) => {
+		ledProjectRepository
+			.findById(projectId)
+			.then((found) => {
 			if (cancelled) return;
 			if (found) {
 				setProject(found);
@@ -73,7 +85,10 @@ export function EditLedProject() {
 				// Lihat catatan di edit-user.tsx soal kenapa ini bukan `alert`.
 				setTidakAda(true);
 			}
-		});
+		})
+			.catch(() => {
+				if (!cancelled) setGagalMuat(true);
+			});
 		return () => {
 			cancelled = true;
 		};
@@ -94,6 +109,7 @@ export function EditLedProject() {
 			tahunMulai: '',
 			statusKeseluruhan: 'DRAFT',
 			tenggat: '',
+			lkpsEvidenceId: '',
 		},
 	});
 
@@ -105,6 +121,7 @@ export function EditLedProject() {
 				tahunMulai: tahunMulaiDari(project.tahunAkademik),
 				statusKeseluruhan: project.statusKeseluruhan,
 				tenggat: toDateInputValue(project.tenggat),
+				lkpsEvidenceId: project.lkpsEvidenceId ?? '',
 			});
 		}
 	}, [project, reset]);
@@ -145,12 +162,15 @@ export function EditLedProject() {
 				tahunAkademik,
 				statusKeseluruhan: data.statusKeseluruhan,
 				tenggat: fromDateInputValue(data.tenggat),
+				lkpsEvidenceId: data.lkpsEvidenceId || null,
 			});
 			navigate(returnTo);
 		} catch (e) {
 			setFormError(e instanceof ApiError ? e.message : 'Gagal menyimpan perubahan.');
 		}
 	};
+
+	if (gagalMuat) return <LoadFailedPage />;
 
 	if (tidakAda) {
 		return (
@@ -265,6 +285,28 @@ export function EditLedProject() {
 								{errors.tenggat && (
 									<FieldError>{errors.tenggat.message}</FieldError>
 								)}
+							</Field>
+
+							<Field>
+								<FieldLabel htmlFor="lkpsEvidenceId">
+									Data LKPS (opsional)
+								</FieldLabel>
+								<Select
+									id="lkpsEvidenceId"
+									disabled={isSubmitting}
+									{...register('lkpsEvidenceId')}
+								>
+									<option value="">— pilih berkas LKPS —</option>
+									{berkasLkps.map((b) => (
+										<option key={b.id} value={b.id}>
+											{/* {b.namaDokumen} */}
+											{labelLkps(b)}
+										</option>
+									))}
+								</Select>
+								<p className="text-xs text-muted-foreground">
+									LKPS prodi (kartu "Data LKPS" di halaman Bukti Dukung prodi), dipakai AI saat menulis bab.
+								</p>
 							</Field>
 						</FieldGroup>
 

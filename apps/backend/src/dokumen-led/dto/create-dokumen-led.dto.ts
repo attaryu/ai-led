@@ -31,4 +31,11 @@ export class CreateDokumenLedDto {
   @IsOptional()
   @IsString()
   accreditationSetId?: string;
+
+  // LKPS pilihan dokumen ini. Harus LKPS milik program studi dokumen yang sama
+  // (divalidasi di service); sumber data LKPS yang dipakai AMI untuk dokumen ini.
+  @ApiPropertyOptional({ example: 'clx1a2b3c4d5e6f7g8h9i0j1' })
+  @IsOptional()
+  @IsString()
+  lkpsEvidenceId?: string;
 }

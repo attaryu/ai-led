@@ -11,6 +11,7 @@ export type BackendDokumenLed = {
 	deadline: string | null;
 	/** Acuan penilaian (Set Akreditasi) yang dipilih dokumen ini; `null` = belum dipilih. */
 	accreditationSetId: string | null;
+	lkpsEvidenceId: string | null;
 	createdAt: string;
 };
 
@@ -19,11 +20,14 @@ export type DokumenLedCreatePayload = {
 	academicYear: string;
 	deadline?: string;
 	accreditationSetId?: string;
+	/** LKPS pilihan sejak dokumen dibuat; harus LKPS prodi yang sama (divalidasi backend). */
+	lkpsEvidenceId?: string;
 };
 
 export type DokumenLedUpdatePayload = Partial<DokumenLedCreatePayload> & {
 	overallStatus?: LedProjectStatus;
 	accreditationSetId?: string;
+	lkpsEvidenceId?: string;
 };
 
 export const ledProjectRemoteSource = {

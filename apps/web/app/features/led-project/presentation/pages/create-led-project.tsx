@@ -35,6 +35,9 @@ import { TahunAkademikField } from '../components/tahun-akademik-field';
 import { ledProjectRepository } from '../../data/repositories/led-project.repository';
 import { type StudyProgramEntity } from '../../../study-program/domain/entities/study-program.entity';
 import { studyProgramRepository } from '../../../study-program/data/repositories/study-program.repository';
+import { evidenceRepository } from '~/features/evidence/data/repositories/evidence.repository';
+import { type EvidenceEntity } from '~/features/evidence/domain/entities/evidence.entity';
+import { labelLkps } from '~/features/evidence/domain/lkps-meta';
 import { accreditationSetRepository } from '~/features/accreditation-set/data/repositories/accreditation-set.repository';
 import { type AccreditationSetEntity } from '~/features/accreditation-set/domain/entities/accreditation-set.entity';
 
@@ -82,8 +85,40 @@ export function CreateLedProject() {
 			tahunMulai: String(new Date().getFullYear()),
 			tenggat: '',
 			accreditationSetId: '',
+			lkpsEvidenceId: '',
 		},
 	});
+
+	/*
+	 * LKPS yang bisa dipilih = LKPS milik prodi yang sedang dipilih di form ini -- bukan
+	 * milik semua prodi. LKPS adalah Laporan Kinerja *Program Studi*; AMI memakainya sesuai
+	 * dokumen LED-nya, jadi LKPS prodi lain tidak pernah kandidat yang benar. Daftarnya
+	 * dimuat ulang tiap prodi berganti, dan pilihan lama dibuang karena menunjuk LKPS
+	 * prodi sebelumnya (backend menolaknya).
+	 */
+	const prodiDipilih = watch('studyProgramId');
+	const [berkasLkps, setBerkasLkps] = React.useState<EvidenceEntity[]>([]);
+	React.useEffect(() => {
+		setValue('lkpsEvidenceId', '');
+		if (!prodiDipilih) {
+			setBerkasLkps([]);
+			return;
+		}
+		let dibatalkan = false;
+		evidenceRepository
+			.findLkpsByStudyProgram(prodiDipilih)
+			.then((daftar) => {
+				// Hanya LKPS yang sudah siap dibaca penilai yang masuk pilihan: yang masih
+				// diproses atau gagal tidak berguna untuk dokumen yang baru dibuat.
+				if (!dibatalkan) setBerkasLkps(daftar.filter((b) => b.status === 'SIAP'));
+			})
+			.catch(() => {
+				if (!dibatalkan) setBerkasLkps([]);
+			});
+		return () => {
+			dibatalkan = true;
+		};
+	}, [prodiDipilih, setValue]);
 
 	React.useEffect(() => {
 		if (studyPrograms.length === 0) return;
@@ -144,6 +179,7 @@ export function CreateLedProject() {
 				tahunAkademik,
 				tenggat: fromDateInputValue(data.tenggat),
 				accreditationSetId: data.accreditationSetId,
+				lkpsEvidenceId: data.lkpsEvidenceId || null,
 			});
 			navigate(returnTo);
 		} catch (e) {
@@ -263,7 +299,7 @@ export function CreateLedProject() {
 
 							<Field data-invalid={!!errors.tenggat}>
 								<FieldLabel htmlFor="tenggat">
-									Target Selesai (opsional)
+									Target Selesai
 								</FieldLabel>
 								<Input
 									id="tenggat"
@@ -273,6 +309,35 @@ export function CreateLedProject() {
 								/>
 								{errors.tenggat && (
 									<FieldError>{errors.tenggat.message}</FieldError>
+								)}
+							</Field>
+
+							{/* ponytail: dulu <Field> tanpa data-invalid (LKPS opsional); kini wajib. */}
+							<Field data-invalid={!!errors.lkpsEvidenceId}>
+								<FieldLabel htmlFor="lkpsEvidenceId">Data LKPS</FieldLabel>
+								<Select
+									id="lkpsEvidenceId"
+									disabled={isSubmitting || berkasLkps.length === 0}
+									{...register('lkpsEvidenceId')}
+								>
+									<option value="">
+										{berkasLkps.length === 0
+											? '— belum ada LKPS siap untuk prodi ini —'
+											: '— pilih LKPS —'}
+									</option>
+									{berkasLkps.map((b) => (
+										<option key={b.id} value={b.id}>
+											{labelLkps(b)}
+										</option>
+									))}
+								</Select>
+								<p className="text-xs text-muted-foreground">
+									LKPS yang diunggah untuk program studi ini. LKPS terhubung ke dokumen LED dan
+									dipakai AI saat menulis bab serta saat penilaian AMI. Wajib dipilih; unggah LKPS
+									di halaman program studi terlebih dulu bila belum ada.
+								</p>
+								{errors.lkpsEvidenceId && (
+									<FieldError>{errors.lkpsEvidenceId.message}</FieldError>
 								)}
 							</Field>
 						</FieldGroup>

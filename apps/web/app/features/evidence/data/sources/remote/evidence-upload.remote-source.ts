@@ -89,7 +89,11 @@ export async function reportUploadComplete({
 	folderId,
 	indicatorNos,
 	accreditationSetId,
+	kind,
+	periode,
 }: {
+	/** `LKPS` = Excel LKPS prodi (tidak masuk perpustakaan Bukti Dukung); default Bukti Dukung. */
+	kind?: 'LKPS';
 	objectKey: string;
 	namaDokumen: string;
 	target: UploadEvidenceTargetDto;
@@ -99,14 +103,18 @@ export async function reportUploadComplete({
 	indicatorNos?: number[];
 	/** Set Akreditasi yang jadi acuan `indicatorNos` — wajib bareng `indicatorNos` (indicatorNo polos ambigu lintas set). */
 	accreditationSetId?: string;
+	/** Tahun/periode; wajib untuk `kind = 'LKPS'` (ditegakkan backend), diabaikan untuk Bukti Dukung. */
+	periode?: string;
 }): Promise<EvidenceEntity> {
 	try {
 		const row = await apiFetch<BuktiDukungApiRow>('/bukti-dukung', {
 			method: 'POST',
 			body: {
+				kind,
 				ownerType: target.ownerTipe,
 				studyProgramId: target.ownerTipe === 'PROGRAM_STUDI' ? target.studyProgramId : undefined,
 				documentName: namaDokumen,
+				period: periode,
 				fileKey: objectKey,
 				folderId: folderId ?? undefined,
 				indicatorNos: indicatorNos && indicatorNos.length > 0 ? indicatorNos : undefined,

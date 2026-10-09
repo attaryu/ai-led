@@ -1,0 +1,21 @@
+# SELURUH aplikasi (web, backend, database, AI, ...) dengan MinerU di GPU lokal (mode `local`).
+#
+#   docker compose -f docker-compose.mineru-gpu.yml up -d --build
+#
+# Tidak perlu menjalankan `docker compose up` biasa dulu: berkas ini memuat compose/base.yml (layanan bersama) lalu hanya
+# menimpa bagian MinerU (compose/mineru-gpu.override.yml). Nama proyeknya SAMA dengan stack utama, jadi
+# container, volume database, dan volume model yang sudah ada dipakai ulang -- bukan membuat yang baru.
+#
+# Prasyarat: driver NVIDIA + NVIDIA Container Toolkit. Model tier `basic` (folder MinerU-4_models_torch) harus
+# sudah ada di volume mineru_home -- petunjuk menyalinnya ada di komentar service `mineru` di compose/base.yml, atau cukup
+# letakkan modelnya di ./models (lihat compose/bootstrap.sh) dan service `bootstrap` mengisinya otomatis.
+name: ai-led-dev-v2
+
+include:
+  - path:
+      - compose/base.yml
+      - compose/mineru-gpu.override.yml
+    # Path relatif di base.yml (./apps/ai, ./models, apps/*/.env) dihitung dari root proyek, bukan folder compose/.
+    project_directory: .
+    # VARIAN=gpu -> nama container ai-led-dev-v2-<service>-gpu (lihat container_name di compose/base.yml)
+    env_file: compose/varian-gpu.env

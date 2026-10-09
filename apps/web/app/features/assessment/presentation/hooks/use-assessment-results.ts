@@ -113,12 +113,13 @@ export function useAssessmentResults({
 	 * dari pemanggil: keduanya harus sepasang agar penanda basi bisa dipercaya.
 	 */
 	const simpanKeputusan = React.useCallback(
-		async (input: { indikatorNo: number; skorFinal: number; catatan: string }) => {
+		async (input: { indikatorNo: number; subNo?: string; skorFinal: number; catatan: string }) => {
 			if (!izin.canCorrect || !sesiId) return;
 
 			await assessmentVerdictRepository.upsert({
 				dokumenId: projectId,
 				indikatorNo: input.indikatorNo,
+				subNo: input.subNo,
 				skorFinal: input.skorFinal,
 				catatan: input.catatan,
 			});
@@ -128,9 +129,9 @@ export function useAssessmentResults({
 	);
 
 	const cabutKeputusan = React.useCallback(
-		async (indikatorNo: number) => {
+		async (indikatorNo: number, subNo = '') => {
 			if (!izin.canCorrect) return;
-			await assessmentVerdictRepository.remove(projectId, indikatorNo);
+			await assessmentVerdictRepository.remove(projectId, indikatorNo, subNo);
 			await muat();
 		},
 		[izin.canCorrect, projectId, muat],

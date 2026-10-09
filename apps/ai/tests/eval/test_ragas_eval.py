@@ -670,7 +670,7 @@ def test_build_ragas_llm_round_robins_across_ollama_endpoints():
         ),
         patch("langchain_ollama.ChatOllama") as mock_chat_ollama_cls,
     ):
-        for k in ("RAGAS_PROVIDER", "RAGAS_OLLAMA_BASE_URL", "RAGAS_OLLAMA_MODEL", "ASSESSMENT_OLLAMA_BASE_URL"):
+        for k in ("RAGAS_PROVIDER", "RAGAS_OLLAMA_BASE_URL", "RAGAS_OLLAMA_MODEL"):
             os.environ.pop(k, None)
         mock_chat_ollama_cls.return_value = MagicMock()
         _build_ragas_llm()
@@ -705,7 +705,7 @@ def test_get_available_judge_models_falls_back_to_assessment_list():
     from eval.ragas_eval import get_available_judge_models
 
     with patch.dict(os.environ, {"LLM_PROVIDER": "ollama", "OLLAMA_MODEL": "qwen3.6:35b,deepseek-r1:32b"}, clear=False):
-        for k in ("RAGAS_PROVIDER", "RAGAS_OLLAMA_MODEL", "RAGAS_OPENROUTER_MODEL", "ASSESSMENT_OLLAMA_MODEL"):
+        for k in ("RAGAS_PROVIDER", "RAGAS_OLLAMA_MODEL", "RAGAS_OPENROUTER_MODEL"):
             os.environ.pop(k, None)
         models = get_available_judge_models()
 
@@ -720,6 +720,7 @@ def test_get_available_judge_models_uses_ragas_override_list():
         os.environ,
         {
             "LLM_PROVIDER": "ollama",
+            "RAGAS_PROVIDER": "ollama",
             "OLLAMA_MODEL": "qwen3.6:35b",
             "RAGAS_OLLAMA_MODEL": "deepseek-r1:32b,qwen2.5:14b",
         },
@@ -807,3 +808,46 @@ def test_run_evaluation_background_failure():
 
     assert ev._eval_results[eval_id]["status"] == "failed"
     assert "LLM error" in ev._eval_results[eval_id]["error"]
+
+
+def test_build_eval_samples_uses_the_sessions_real_scope_not_local():
+    """With a session, LED/evidence/LKPS/rubric must come from that session's tenant/document/set/prodi."""
+    from eval.ragas_eval import build_eval_samples
+
+    fake_llm_wrapper = MagicMock()
+    fake_llm_wrapper.langchain_llm.invoke.return_value = MagicMock(content="Referensi.")
+    rubric = _fake_rubric(31)
+    rubric.lkps_table_ref = ["Tabel 4.a. LKPS"]
+    sess = {
+        "tenant_id": "t1", "document_id": "d1", "accreditation_set_id": "set-1",
+        "study_program_id": "p1", "lkps_evidence_id": "ev-lkps", "document_lkps_evidence_id": None,
+    }
+    seen = {}
+
+    def fake_lkps_invoke(args):
+        from agent.context import require_current_context
+        seen["ctx"] = require_current_context()
+        return "| a |"
+
+    with (
+        patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[rubric]) as for_set,
+        patch("agent.tools.rubric_tool._get_rubrics", side_effect=AssertionError("global rubric used")),
+        patch("agent.tools.lkps_tool.load_lkps_for_document") as load_lkps,
+        patch("vectorstore.pgvector_store.search_led", return_value=_fake_search_results(1)) as led,
+        patch("vectorstore.pgvector_evidence_store.list_available_evidence_ids", return_value=[]) as ev_ids,
+        patch("agent.tools.lkps_tool.get_lkps_table") as lkps_tool,
+        patch("eval.ragas_eval._build_ragas_llm", return_value=fake_llm_wrapper),
+        patch("db.postgres_client.get_session", return_value=sess),
+        patch(
+            "db.postgres_client.get_indicator_results",
+            return_value=[{"indicator_no": 31, "justification": "J."}],
+        ),
+    ):
+        lkps_tool.invoke.side_effect = fake_lkps_invoke
+        build_eval_samples(n_indicators=1, session_id="s1")
+
+    for_set.assert_called_once_with("set-1", "t1")
+    load_lkps.assert_called_once_with("t1", "d1", "ev-lkps")
+    assert led.call_args.kwargs["tenant_id"] == "t1" and led.call_args.kwargs["dokumen_id"] == "d1"
+    assert ev_ids.call_args.args == ("t1", "set-1", 31, "p1")
+    assert (seen["ctx"].tenant_id, seen["ctx"].dokumen_id) == ("t1", "d1")

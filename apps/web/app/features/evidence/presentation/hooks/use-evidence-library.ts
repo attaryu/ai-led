@@ -61,8 +61,12 @@ export function useEvidenceLibrary({
 	const [terpilih, setTerpilih] = React.useState<Set<string>>(new Set());
 
 	React.useEffect(() => {
-		const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
-		if (stored === 'grid' || stored === 'table') setViewModeState(stored);
+		try {
+			const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+			if (stored === 'grid' || stored === 'table') setViewModeState(stored);
+		} catch {
+			// Site data blocked — keep the default view.
+		}
 	}, []);
 
 	const setViewMode = React.useCallback((mode: CollectionViewMode) => {

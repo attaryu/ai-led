@@ -54,6 +54,15 @@ export function landingFor(session: SessionEntity): string {
 	return '/dashboard';
 }
 
+/** Halaman tulis di lapis tenant -> role yang boleh membukanya (sama dengan @Protected di backend). */
+const TENANT_WRITE_ROUTES: [RegExp, SessionEntity['role'][]][] = [
+	[/^\/dashboard\/users\/create$/, ['Admin']],
+	[/^\/dashboard\/users\/[^/]+\/edit$/, ['Admin', 'Pimpinan']],
+	[/^\/dashboard\/study-programs\/(create|[^/]+\/edit)$/, ['Admin', 'Pimpinan']],
+	[/^\/dashboard\/led-projects\/(create|[^/]+\/edit)$/, ['Penjamin Mutu']],
+	[/^\/dashboard\/accreditation-sets\/create$/, ['Penjamin Mutu']],
+];
+
 /**
  * Satu-satunya tempat aturan akses antar lapis dituliskan, supaya tidak
  * tersebar ke tiap halaman. Menyembunyikan menu di sidebar saja tidak cukup:
@@ -85,9 +94,14 @@ export function useRoleGuard(
 	if (layer === 'tenant') {
 		// Penyusun tidak berwenang melihat prodi lain maupun menu manajemen
 		// organisasi, jadi ia tidak pernah masuk lapis tenant sama sekali (§2).
-		return session.role === 'Penyusun'
-			? { status: 'denied', redirectTo: landingFor(session) }
-			: { status: 'allowed', session };
+		if (session.role === 'Penyusun') {
+			return { status: 'denied', redirectTo: landingFor(session) };
+		}
+		const rule = TENANT_WRITE_ROUTES.find(([pola]) => pola.test(location.pathname));
+		if (rule && !rule[1].includes(session.role)) {
+			return { status: 'denied', redirectTo: location.pathname.replace(/\/(create|[^/]+\/edit)$/, '') };
+		}
+		return { status: 'allowed', session };
 	}
 
 	// Admin murni back office — tidak punya akses ke dashboard progres LED,

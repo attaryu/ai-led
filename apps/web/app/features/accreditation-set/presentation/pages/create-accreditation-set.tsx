@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ApiError } from '~/core/lib/api-client';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate } from 'react-router';
@@ -46,8 +47,8 @@ export function CreateAccreditationSet() {
 			// Langsung ke detailnya: set baru selalu lahir kosong, dan yang
 			// dituju pengguna sesudah membuatnya pasti mengunggah berkas.
 			navigate(`/dashboard/accreditation-sets/${created.id}`);
-		} catch {
-			setFormError('Gagal menyimpan set akreditasi.');
+		} catch (e) {
+			setFormError(e instanceof ApiError ? e.message : 'Gagal menyimpan set akreditasi.');
 		}
 	};
 

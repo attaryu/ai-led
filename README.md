@@ -40,9 +40,9 @@ Script `dev.bat` akan otomatis:
 
 Jika ingin menjalankan service secara terpisah:
 
-1. **Nyalakan Database & Redis:**
+1. **Nyalakan Database & Redis** (pakai salah satu varian MinerU, lihat bagian Docker Compose di bawah; contoh GPU):
    ```bash
-   docker compose up -d postgres redis
+   docker compose -f docker-compose.mineru-gpu.yml up -d postgres redis
    ```
 
 2. **Setup Database (Migration & Generate):**
@@ -85,25 +85,42 @@ Jika ingin menjalankan service secara terpisah:
 
 Untuk mem-build dan menjalankan seluruh service sekaligus dalam kontainer Docker:
 
-### 1. Build Image & Jalankan Kontainer
+### 1. Pilih varian MinerU, lalu build & jalankan
+
+Tidak ada `docker-compose.yml` bawaan: pilih **satu** dari tiga berkas di root proyek. Masing-masing menjalankan
+seluruh aplikasi (Backend, AI API, AI Worker, Web, Postgres, Redis, MinerU), hanya MinerU-nya yang berbeda:
+
+| Berkas | MinerU | Syarat |
+|---|---|---|
+| `docker-compose.mineru-gpu.yml` | GPU lokal | GPU NVIDIA + NVIDIA Container Toolkit |
+| `docker-compose.mineru-cpu.yml` | CPU (lebih lambat) | model ONNX MinerU (lihat komentar di berkasnya) |
+| `docker-compose.mineru-api.yml` | API mineru.net | `MINERU_API_KEY` (jangan di-commit) |
 
 ```bash
-# Build dan jalankan seluruh container (Backend, AI API, AI Worker, Web, Postgres, Redis)
-docker compose up -d --build
+docker compose -f docker-compose.mineru-gpu.yml up -d --build
+docker compose -f docker-compose.mineru-cpu.yml up -d --build
+MINERU_API_KEY=... docker compose -f docker-compose.mineru-api.yml up -d --build
 ```
 
-> **Catatan HuggingFace Token:** Service AI menggunakan model `bge-m3`. Set environment variable `HF_TOKEN` jika diperlukan:
-> ```bash
-> HF_TOKEN=your_token docker compose up -d --build
-> ```
+Nama container mengikuti `ai-led-dev-v2-<service>-<varian>`, mis. `ai-led-dev-v2-web-gpu`, `ai-led-dev-v2-ai-cpu`,
+`ai-led-dev-v2-mineru-api`. Volume data (`*_postgres_data`, `*_hf_cache`, ...) memakai awalan `ai-led-dev-v1` secara bawaan supaya
+data yang sudah ada tetap terpakai; mesin baru yang ingin awalan v2 menulis `AI_LED_VOLUME_PREFIX=ai-led-dev-v2` di `.env` sebelum
+menjalankan pertama kali.
 
-### 2. Jalankan Database Migration dalam Kontainer
+Jalankan **satu saja** pada satu waktu (semuanya satu proyek dan memakai port yang sama). Agar perintah `docker compose ps/logs/down`
+tanpa `-f` tetap bekerja, tulis di berkas `.env` di root proyek (diabaikan git): `COMPOSE_FILE=docker-compose.mineru-gpu.yml`.
 
-Setelah kontainer berjalan, jalankan migration Prisma:
+> **Catatan HuggingFace Token:** `HF_TOKEN` tidak wajib untuk build, karena model tidak diunduh saat build.
 
-```bash
-docker compose exec backend npx prisma migrate deploy
-```
+### 2. Penyiapan otomatis (model dan database)
+
+Tidak ada langkah manual sesudah `up`:
+
+- **`bootstrap`** mengisi volume model dari folder **`models/`** di proyek (bge-m3, PDF-Extract-Kit, model MinerU) sekali saja,
+  bila volume masih kosong. Folder `models/` (~4,9 GB) tidak ikut git; salin dari mesin lain atau lihat `compose/bootstrap.sh`
+  untuk layout-nya. Tanpa bge-m3 service ini berhenti dengan pesan jelas.
+- **`migrate`** menerapkan migrasi Prisma sebelum backend dan AI naik (database kosong maupun yang sudah ada).
+- Berkas `apps/ai/.env` dan `apps/backend/.env` tetap perlu ada (tidak ikut git).
 
 ---
 

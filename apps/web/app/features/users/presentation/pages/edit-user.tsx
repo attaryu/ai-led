@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate, useParams } from 'react-router';
 import { ArrowLeftIcon } from '@phosphor-icons/react';
 
-import { PlaceholderPage } from '~/core/components/placeholder-page';
+import { LoadFailedPage, PlaceholderPage } from '~/core/components/placeholder-page';
 import { ApiError } from '~/core/lib/api-client';
 import { Button } from '~/core/components/ui/button';
 import { Input } from '~/core/components/ui/input';
@@ -35,6 +35,7 @@ export function EditUser() {
 	const [user, setUser] = React.useState<UserEntity | null>(null);
 	const [formError, setFormError] = React.useState<string | null>(null);
 	const [tidakAda, setTidakAda] = React.useState(false);
+	const [gagalMuat, setGagalMuat] = React.useState(false);
 
 	React.useEffect(() => {
 		studyProgramRepository.findAll().then(setStudyPrograms);
@@ -50,7 +51,7 @@ export function EditUser() {
 					// dipakai ruang kerja Dokumen LED dan Program Studi.
 					setTidakAda(true);
 				}
-			});
+			}, () => setGagalMuat(true));
 		}
 	}, [userId, navigate]);
 
@@ -122,6 +123,8 @@ export function EditUser() {
 			setFormError(e instanceof ApiError ? e.message : 'Gagal menyimpan perubahan.');
 		}
 	};
+
+	if (gagalMuat) return <LoadFailedPage />;
 
 	if (tidakAda) {
 		return (

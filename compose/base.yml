@@ -1,0 +1,327 @@
+# BERKAS DASAR bersama -- BUKAN titik masuk. Jangan dijalankan langsung (`docker compose -f compose/base.yml up`).
+# Tim menjalankan salah satu dari tiga berkas di root proyek, yang memuat berkas ini lalu menimpa bagian MinerU:
+#   docker-compose.mineru-gpu.yml   MinerU di GPU lokal
+#   docker-compose.mineru-cpu.yml   MinerU di CPU
+#   docker-compose.mineru-api.yml   MinerU lewat API mineru.net (butuh MINERU_API_KEY)
+# Path relatif di sini (./apps/ai, ./models, apps/*/.env, ...) dihitung dari ROOT proyek, bukan dari folder compose/
+# -- diatur lewat `project_directory: .` pada `include` di ketiga berkas itu.
+services:
+  postgres:
+    container_name: ai-led-dev-v2-postgres-${VARIAN:?jalankan lewat docker-compose.mineru-gpu/cpu/api.yml, bukan compose/base.yml}
+    # pgvector/pgvector:pg16 is upstream postgres:16 + the pgvector extension
+    # precompiled — drop-in compatible, same data directory format. Used for
+    # LED chunk embeddings (apps/ai/vectorstore/pgvector_store.py) alongside
+    # every other table Prisma owns.
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_led
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Dipakai `migrate` dan service lain (condition: service_healthy) supaya tidak ada yang mencoba terhubung
+    # sebelum Postgres siap -- penting di mesin baru, saat inisialisasi data pertama butuh beberapa detik.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_led"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # --- Penyiapan mandiri (tanpa meminjam apa pun dari luar proyek) -----------------------------------
+  # `bootstrap`: mengisi volume model dari folder ./models di proyek, SEKALI. Tanpa ini, model embedding
+  #   hanya ada di volume yang dulu disalin manual, dan mesin/volume baru tidak bisa membuat embedding
+  #   (HF_HUB_OFFLINE=1 melarang mengunduh). Detail dan layout folder: compose/bootstrap.sh.
+  # `migrate`: menerapkan migrasi Prisma ke database (kosong maupun sudah ada) SEBELUM backend/ai naik.
+  #   Memakai tahap `deps` Dockerfile backend (npm ci lengkap, termasuk Prisma CLI di packages/db/node_modules)
+  #   + bind mount HANYA folder packages/db/prisma (skema dan migrasi). Jangan mount seluruh packages/db: itu
+  #   menutupi node_modules milik image (Alpine) dengan milik host (platform berbeda).
+  bootstrap:
+    container_name: ai-led-dev-v2-bootstrap-${VARIAN:?jalankan lewat docker-compose.mineru-gpu/cpu/api.yml, bukan compose/base.yml}
+    image: alpine:3.20
+    restart: "no"
+    volumes:
+      - ./models:/seed:ro
+      - ./compose/bootstrap.sh:/bootstrap.sh:ro
+      - hf_cache:/dst/hf_cache
+      - mineru_home:/dst/mineru_home
+    command: ["sh", "/bootstrap.sh"]
+
+  migrate:
+    container_name: ai-led-dev-v2-migrate-${VARIAN:?jalankan lewat docker-compose.mineru-gpu/cpu/api.yml, bukan compose/base.yml}
+    image: ai-led-migrate:local
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+      target: deps
+    restart: "no"
+    working_dir: /repo/packages/db
+    environment:
+      # Pemilik skema (postgres), bukan app_runtime: DDL dan pembuatan peran butuh hak pemilik.
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_led?schema=public
+    volumes:
+      - ./packages/db/prisma:/repo/packages/db/prisma:ro
+    command: ["npx", "prisma", "migrate", "deploy"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis:
+    container_name: ai-led-dev-v2-redis-${VARIAN:?jalankan lewat docker-compose.mineru-gpu/cpu/api.yml, bukan compose/base.yml}
+    image: redis:7
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  backend:
+    container_name: ai-led-dev-v2-backend-${VARIAN:?jalankan lewat docker-compose.mineru-gpu/cpu/api.yml, bukan compose/base.yml}
+    image: ai-led-backend:local
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file: apps/backend/.env
+    environment:
+      # app_runtime, not postgres -- RLS-restricted role, see
+      # packages/db/prisma/migrations/..._tenant_row_level_security.
+      DATABASE_URL: postgresql://app_runtime:app_runtime_dev_pw@postgres:5432/ai_led?schema=public
+      REDIS_URL: redis://redis:6379
+      AI_SERVICE_URL: http://ai:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      ai:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+
+  ai:
+    container_name: ai-led-dev-v2-ai-${VARIAN:?jalankan lewat docker-compose.mineru-gpu/cpu/api.yml, bukan compose/base.yml}
+    # Shared `image:` with ai-worker below — same code/deps, only the CMD
+    # differs, so one build serves both instead of two ~identical images.
+    image: ai-led-ai:local
+    build:
+      context: ./apps/ai
+      secrets:
+        - hf_token
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./apps/ai/data:/app/data
+      # Without this, every container recreation loses bge-m3/MiniLM (~2.3GB
+      # combined) and the next embedding call re-downloads from HuggingFace
+      # instead of loading from disk — minutes of "stuck" instead of seconds.
+      - hf_cache:/root/.cache/huggingface
+    env_file: apps/ai/.env
+    # ponytail: akses GPU utk MinerU (layout detection) + embedding
+    # sentence-transformers -- menyamakan dengan worker /web. Tanpa ini
+    # onnxruntime/torch di dalam container tidak bisa lihat GPU host sama
+    # sekali. Kalau dijalankan di mesin tanpa GPU NVIDIA, hapus blok `deploy`
+    # ini -- kalau tidak, `docker compose up` gagal minta device yang tidak ada.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      DATA_DIR: /app/data
+      HF_HOME: /root/.cache/huggingface
+      SENTENCE_TRANSFORMERS_HOME: /root/.cache/huggingface/sentence-transformers
+      HF_HUB_DISABLE_XET: "1"
+      # ponytail: CDN HuggingFace ke-throttle di jaringan sini (diukur
+      # 2026-09-22: ~358 B/s vs Cloudflare 4.8 MB/s), jadi tiap load model
+      # menggantung belasan menit di retry sebelum akhirnya pakai cache.
+      # Model (bge-m3, PDF-Extract-Kit) sudah lengkap di volume hf_cache,
+      # jadi paksa baca dari disk saja. Hapus dua baris ini begitu jaringan
+      # ke HF normal -- tanpa ini model baru otomatis terunduh lagi.
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      # ponytail: JANGAN set MINERU_MODEL_SOURCE=local di sini. Sempat dicoba
+      # 2026-09-22 untuk menghentikan MinerU mengecek ModelScope/HF tiap
+      # ekstraksi (koneksi ke 47.251.62.57 / googleusercontent, bikin job diam
+      # 6+ menit di jaringan yang CDN-nya ke-throttle). Hasilnya SEMUA
+      # ekstraksi gagal "AttributeError: 'NoneType' object has no attribute
+      # 'get'" -- diuji langsung pada PDF yang sama: dengan `local` gagal,
+      # tanpa itu selesai 31/31 halaman. Jalur "local" di mineru 3.4.5
+      # melewatkan resolusi path yang tetap dibutuhkan pipeline-nya.
+      REDIS_URL: redis://redis:6379
+      # app_ai_worker, not postgres -- BYPASSRLS role, see
+      # packages/db/prisma/migrations/..._tenant_row_level_security.
+      DATABASE_URL: postgresql://app_ai_worker:app_ai_worker_dev_pw@postgres:5432/ai_led?schema=public
+      # ponytail: MinerU dipanggil lewat service `mineru` (MinerU 4.x, algoritma
+      # ekstraksi sama dengan notebook), bukan lagi subprocess MinerU 3.4.5 di
+      # container ini. Kosongkan baris ini untuk kembali ke jalur lama (3.4.5
+      # in-process) -- jalur itu tetap ada sebagai cadangan.
+      MINERU_SERVICE_URL: http://mineru:8100
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      bootstrap:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+
+  # BullMQ consumer (GENERASI_BAB, ASSESSMENT_AMI, INGESTION_BUKTI_DUKUNG) —
+  # previously only ever run manually (`python worker.py`) outside Docker, so
+  # none of those job types actually processed in a deployed environment.
+  ai-worker:
+    container_name: ai-led-dev-v2-ai-worker-${VARIAN:?jalankan lewat docker-compose.mineru-gpu/cpu/api.yml, bukan compose/base.yml}
+    image: ai-led-ai:local
+    command: ["python", "worker.py"]
+    restart: unless-stopped
+    volumes:
+      - ./apps/ai/data:/app/data
+      # Shared with `ai` — same cache dir, so whichever service downloads a
+      # model first, the other reuses it instead of downloading its own copy.
+      - hf_cache:/root/.cache/huggingface
+    env_file: apps/ai/.env
+    # ponytail: akses GPU utk MinerU (layout detection) + embedding
+    # sentence-transformers -- menyamakan dengan worker /web. Tanpa ini
+    # onnxruntime/torch di dalam container tidak bisa lihat GPU host sama
+    # sekali. Kalau dijalankan di mesin tanpa GPU NVIDIA, hapus blok `deploy`
+    # ini -- kalau tidak, `docker compose up` gagal minta device yang tidak ada.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      DATA_DIR: /app/data
+      HF_HOME: /root/.cache/huggingface
+      SENTENCE_TRANSFORMERS_HOME: /root/.cache/huggingface/sentence-transformers
+      HF_HUB_DISABLE_XET: "1"
+      # ponytail: CDN HuggingFace ke-throttle di jaringan sini (diukur
+      # 2026-09-22: ~358 B/s vs Cloudflare 4.8 MB/s), jadi tiap load model
+      # menggantung belasan menit di retry sebelum akhirnya pakai cache.
+      # Model (bge-m3, PDF-Extract-Kit) sudah lengkap di volume hf_cache,
+      # jadi paksa baca dari disk saja. Hapus dua baris ini begitu jaringan
+      # ke HF normal -- tanpa ini model baru otomatis terunduh lagi.
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      # ponytail: JANGAN set MINERU_MODEL_SOURCE=local di sini. Sempat dicoba
+      # 2026-09-22 untuk menghentikan MinerU mengecek ModelScope/HF tiap
+      # ekstraksi (koneksi ke 47.251.62.57 / googleusercontent, bikin job diam
+      # 6+ menit di jaringan yang CDN-nya ke-throttle). Hasilnya SEMUA
+      # ekstraksi gagal "AttributeError: 'NoneType' object has no attribute
+      # 'get'" -- diuji langsung pada PDF yang sama: dengan `local` gagal,
+      # tanpa itu selesai 31/31 halaman. Jalur "local" di mineru 3.4.5
+      # melewatkan resolusi path yang tetap dibutuhkan pipeline-nya.
+      REDIS_URL: redis://redis:6379
+      # app_ai_worker, not postgres -- BYPASSRLS role, see
+      # packages/db/prisma/migrations/..._tenant_row_level_security.
+      DATABASE_URL: postgresql://app_ai_worker:app_ai_worker_dev_pw@postgres:5432/ai_led?schema=public
+      # ponytail: MinerU dipanggil lewat service `mineru` (MinerU 4.x, algoritma
+      # ekstraksi sama dengan notebook), bukan lagi subprocess MinerU 3.4.5 di
+      # container ini. Kosongkan baris ini untuk kembali ke jalur lama (3.4.5
+      # in-process) -- jalur itu tetap ada sebagai cadangan.
+      MINERU_SERVICE_URL: http://mineru:8100
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      ai:
+        condition: service_started
+      bootstrap:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+
+  # MinerU 4.x sebagai service sendiri -- satu-satunya pemegang model MinerU di GPU.
+  # Dulu MinerU 3.4.5 berjalan sebagai subprocess di dalam `ai`/`ai-worker`, berebut
+  # VRAM 6 GB dengan proses lain (CUDA OOM pada SK Pendirian PENS).
+  #
+  # Ganti mode TANPA mengubah berkas:
+  #   MINERU_MODE=local docker compose up -d mineru   # GPU lokal (default)
+  #   MINERU_MODE=api   docker compose up -d mineru   # mineru.net, butuh MINERU_API_KEY
+  # Tier default `basic` (= pipeline saja); override lewat MINERU_TIER.
+  #
+  # Model tier `basic` WAJIB sudah ada di volume sebelum mode lokal bisa aktif --
+  # `mineru config set parse_server.local.managed_tier basic` ditolak kalau modelnya
+  # belum ada ("Run: mineru-kit models download --tier basic"). Salin dari host SEKALI
+  # (hanya 854 MB: folder MinerU-4_models_torch; folder *-GGUF 1,2 GB itu VLM tier
+  # `standard`, tidak dipakai):
+  #   docker volume create ai-led-dev-v1_mineru_home
+  #   docker run --rm -v ai-led-dev-v1_mineru_home:/dst \
+  #     -v $HOME/.mineru/models/MinerU-4_models_torch:/src:ro alpine \
+  #     sh -c 'mkdir -p /dst/models/MinerU-4_models_torch && cp -a /src/. /dst/models/MinerU-4_models_torch/'
+  # (nama volume = <nama-proyek-compose>_mineru_home; cek `docker volume ls`).
+  # Tanpa model, container TETAP hidup dan /health melaporkan
+  # local_parse_server_healthy=false; log entrypoint menjelaskan penyebabnya.
+  mineru:
+    container_name: ai-led-dev-v2-mineru-${VARIAN:?jalankan lewat docker-compose.mineru-gpu/cpu/api.yml, bukan compose/base.yml}
+    image: ai-led-mineru:local
+    build:
+      context: ./apps/mineru
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8100:8100"
+    environment:
+      MINERU_MODE: ${MINERU_MODE:-local}
+      MINERU_TIER: ${MINERU_TIER:-basic}
+      MINERU_API_KEY: ${MINERU_API_KEY:-}
+    volumes:
+      - mineru_home:/root/.mineru
+    # Model MinerU tier basic diisi dari ./models oleh `bootstrap` (tidak perlu menyalin manual lagi).
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8100/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  web:
+    container_name: ai-led-dev-v2-web-${VARIAN:?jalankan lewat docker-compose.mineru-gpu/cpu/api.yml, bukan compose/base.yml}
+    image: ai-led-web:local
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5173:3000"
+    environment:
+      API_BASE_URL: http://backend:3000
+    depends_on:
+      - backend
+
+secrets:
+  hf_token:
+    environment: HF_TOKEN
+
+# Nama volume DIKUNCI (tidak ikut nama proyek): mengganti nama proyek ke ai-led-dev-v2 tidak boleh membuat database
+# dan model "hilang" ke volume kosong baru. Bawaan = volume yang sudah ada di mesin ini (ai-led-dev-v1_*).
+# Mesin baru yang ingin nama v2: set AI_LED_VOLUME_PREFIX=ai-led-dev-v2 di .env (SEBELUM pertama kali dijalankan).
+volumes:
+  postgres_data:
+    name: ${AI_LED_VOLUME_PREFIX:-ai-led-dev-v1}_postgres_data
+  redis_data:
+    name: ${AI_LED_VOLUME_PREFIX:-ai-led-dev-v1}_redis_data
+  hf_cache:
+    name: ${AI_LED_VOLUME_PREFIX:-ai-led-dev-v1}_hf_cache
+  mineru_home:
+    name: ${AI_LED_VOLUME_PREFIX:-ai-led-dev-v1}_mineru_home

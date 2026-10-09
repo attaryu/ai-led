@@ -76,12 +76,13 @@ export class AssessmentController {
   findReasoning(
     @Param('id') id: string,
     @Query('indicatorNo', ParseIntPipe) indicatorNo: number,
+    @Query('subNo') subNo?: string,
   ) {
-    return this.assessmentService.findReasoning(id, indicatorNo);
+    return this.assessmentService.findReasoning(id, indicatorNo, subNo);
   }
 
   @Post('assessment-sessions/:id/eval')
-  @Protected(...READ_ROLES)
+  @Protected(Role.PENJAMIN_MUTU, Role.PENYUSUN)
   runEval(@Param('id') id: string, @Body() dto: RunEvalDto) {
     return this.assessmentService.runEval(id, dto);
   }
@@ -89,21 +90,8 @@ export class AssessmentController {
   /** Proxy to apps/ai's GET /eval/{eval_id}/results — poll for RAGAS eval progress/result. */
   @Get('assessment-eval/:evalId')
   @Protected(...READ_ROLES)
-  async findEvalResult(@Param('evalId') evalId: string) {
-    const aiServiceUrl = requireEnv('AI_SERVICE_URL');
-
-    let upstream: globalThis.Response;
-    try {
-      upstream = await fetch(`${aiServiceUrl}/eval/${evalId}/results`);
-    } catch {
-      throw new BadGatewayException('AI service tidak dapat dihubungi');
-    }
-
-    if (!upstream.ok) {
-      throw new BadGatewayException('Gagal memuat hasil evaluasi RAGAS');
-    }
-
-    return upstream.json();
+  findEvalResult(@Param('evalId') evalId: string) {
+    return this.assessmentService.findEvalResult(evalId);
   }
 
   @Get('dokumen/:dokumenId/assessment-verdicts')
@@ -128,7 +116,8 @@ export class AssessmentController {
   removeVerdict(
     @Param('dokumenId') dokumenId: string,
     @Param('indikatorNo', ParseIntPipe) indikatorNo: number,
+    @Query('subNo') subNo?: string,
   ) {
-    return this.assessmentService.removeVerdict(dokumenId, indikatorNo);
+    return this.assessmentService.removeVerdict(dokumenId, indikatorNo, subNo ?? '');
   }
 }

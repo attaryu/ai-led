@@ -71,10 +71,10 @@ export function useAccreditationSet(
 	// sampai KEDUA status lepas dari DIPROSES, sama seperti alasan status
 	// bukti dukung butuh dicek ulang, bukan cuma sekali muat.
 	React.useEffect(() => {
-		if (set?.criteriaParseStatus !== 'DIPROSES' && set?.structureParseStatus !== 'DIPROSES') return;
+		if (set?.criteriaParseStatus !== 'DIPROSES' && set?.panduan?.structureParseStatus !== 'DIPROSES') return;
 		const id = setInterval(reload, 3000);
 		return () => clearInterval(id);
-	}, [set?.criteriaParseStatus, set?.structureParseStatus, reload]);
+	}, [set?.criteriaParseStatus, set?.panduan?.structureParseStatus, reload]);
 
 	return {
 		set,

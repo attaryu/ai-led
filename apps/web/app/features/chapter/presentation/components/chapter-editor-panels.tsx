@@ -5,16 +5,17 @@ import { Button } from '~/core/components/ui/button';
 import { TabsContent } from '~/core/components/ui/tabs';
 import { cn } from '~/core/lib/utils';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
-import { type HasilPulih } from '../hooks/use-chapter-draft';
+import { type ChapterSectionEntity } from '../../domain/entities/chapter-section.entity';
 import { type HasilGenerate } from '../hooks/use-chapter-generation';
 import { type ChapterPermission } from '../hooks/use-chapter-permission';
+import { type HasilPulihSection } from '../hooks/use-section-draft';
 import { ChapterChatPanel } from './chapter-chat-panel';
-import { ChapterDraftPanel } from './chapter-draft-panel';
-import { ChapterGenerationPanel } from './chapter-generation-panel';
+import { ChapterGenerationPanel, type KontrolGenerate } from './chapter-generation-panel';
 import { ChapterQualityPanel } from './chapter-quality-panel';
 import { ChapterGuidancePanel } from './chapter-guidance-panel';
 import { ChapterReferencePanel } from './chapter-reference-panel';
 import { ChapterReviewPanel } from './chapter-review-panel';
+import { SectionDraftPanel } from './section-draft-panel';
 
 /**
  * Tab sidebar kanan Editor Bab.
@@ -34,9 +35,19 @@ import { ChapterReviewPanel } from './chapter-review-panel';
  * Satu-satunya sumber urutan dan label, dipakai bersama oleh daftar tab di baris
  * toolbar dan panel-panel di sidebar kanan.
  */
+// ponytail: urutan lama -- Draft, Generasi, Panduan, Bukti, Kualitas AI. Kini Panduan lebih dulu (alur kerja:
+// baca panduan -> generate -> tinjau draft -> periksa bukti -> lihat kualitas), dan Panduan jadi tab bawaan.
+// export const PANEL_TABS = [
+// 	{ value: 'draft', label: 'Draft' },
+// 	{ value: 'generasi', label: 'Generasi' },
+// 	{ value: 'panduan', label: 'Panduan' },
+// 	{ value: 'rujukan', label: 'Bukti' },
+// 	{ value: 'skor', label: 'Kualitas AI' },
+// ] as const;
 export const PANEL_TABS = [
-	{ value: 'draft', label: 'Draft' },
+	{ value: 'panduan', label: 'Panduan' },
 	{ value: 'generasi', label: 'Generasi' },
+	{ value: 'draft', label: 'Draft' },
 	// Di depan "Bukti", mengikuti urutan pipeline sungguhan: pedoman dan rubrik
 	// diambil lebih dulu, bukti dukung menyusul. Urutan bacanya pun sama — "apa
 	// yang seharusnya ditulis" mendahului "dari mana tulisannya berasal".
@@ -44,28 +55,30 @@ export const PANEL_TABS = [
 	// Ini **bukan** tab Rubrik yang dihapus di §9 yang kembali: yang itu
 	// menjalankan simulasi skor bab dan menulis `HASIL_SKOR_KRITERIA`; yang ini
 	// murni baca, memperlihatkan konteks yang diberikan ke generator.
-	{ value: 'panduan', label: 'Panduan' },
 	// Label "Bukti", `value` tetap `'rujukan'` — sama seperti `skor`/"Kualitas AI":
 	// `value` kunci internal yang tidak pernah dilihat pengguna. Labelnya sengaja
 	// pendek, bukan "Bukti Dukung" penuh, karena baris ini dibagi dengan bilah alat
 	// editor; judul di dalam panelnya tetap berbunyi lengkap.
 	{ value: 'rujukan', label: 'Bukti' },
 	{ value: 'skor', label: 'Kualitas AI' },
-	{ value: 'chat', label: 'Chat' },
+	// Chat & Review disembunyikan sementara (panelnya tetap ada di bawah); kembalikan dua baris ini untuk memunculkannya.
+	// { value: 'chat', label: 'Chat' },
 	// Ditaruh paling akhir: ia bukan alat menyusun melainkan keadaan bab, dan
 	// ditengok sesudah pekerjaannya — bukan sambil mengerjakan.
-	{ value: 'review', label: 'Review' },
+	// { value: 'review', label: 'Review' },
 ] as const;
 
 export type PanelTabValue = (typeof PANEL_TABS)[number]['value'];
 
 export function ChapterEditorPanels({
 	chapter,
+	section,
 	studyProgramId,
 	izin,
 	onGenerated,
-	ambilSnapshot,
-	onRestored,
+	onKontrolGenerate,
+	ambilSnapshotSection,
+	onSectionRestored,
 	onReviewed,
 	savedAt,
 	lebar,
@@ -76,13 +89,18 @@ export function ChapterEditorPanels({
 	onPilihTab,
 }: {
 	chapter: ChapterEntity;
+	/** Section yang sedang dibuka di kanvas (`sectionId` URL) — `null` saat tampilan bab-penuh. Chat dan Panduan terikat ke section ini. */
+	section: ChapterSectionEntity | null;
 	studyProgramId: string;
 	izin: ChapterPermission;
 	onGenerated: (hasil: HasilGenerate) => void;
-	ambilSnapshot: () => Promise<ChapterEntity | undefined>;
-	onRestored: (hasil: HasilPulih) => void;
+	/** Tombol Generate section terbuka di toolbar editor (dimas) -- lihat ChapterGenerationPanel. */
+	onKontrolGenerate: (kontrol: KontrolGenerate | null) => void;
+	/** Checkpoint section — dipakai tab Draft saat section terbuka. */
+	ambilSnapshotSection: () => Promise<ChapterSectionEntity | undefined>;
+	onSectionRestored: (hasil: HasilPulihSection) => void;
 	/** Bab sesudah kunci/catatan review ditulis; isinya tidak ikut berubah. */
-	onReviewed: (diperbarui: ChapterEntity) => void;
+	onReviewed: (diperbarui: ChapterSectionEntity) => void;
 	/** Stempel simpan terakhir dari autosave; dipakai tab Kualitas AI. */
 	savedAt: string | null;
 	/** Lebar hasil seretan; menggantikan `w-80` yang dulu tetap. */
@@ -174,23 +192,28 @@ export function ChapterEditorPanels({
 				value="draft"
 				className="flex min-h-0 flex-1 flex-col overflow-hidden"
 			>
-				<ChapterDraftPanel
-					chapter={chapter}
+				<SectionDraftPanel
+					chapterId={chapter.id}
+					section={section}
 					izin={izin}
-					ambilSnapshot={ambilSnapshot}
-					onRestored={onRestored}
+					ambilSnapshot={ambilSnapshotSection}
+					onRestored={onSectionRestored}
 				/>
 			</TabsContent>
 
+			{/* keepMounted: panel ini memegang centang bukti & rekomendasi yang dipakai tombol Generate di toolbar. */}
 			<TabsContent
 				value="generasi"
-				className="flex min-h-0 flex-1 flex-col overflow-hidden"
+				keepMounted
+				className="flex min-h-0 flex-1 flex-col overflow-hidden [&[hidden]]:hidden"
 			>
 				<ChapterGenerationPanel
 					chapter={chapter}
 					studyProgramId={studyProgramId}
 					izin={izin}
+					section={section}
 					onGenerated={onGenerated}
+					onKontrolGenerate={onKontrolGenerate}
 				/>
 			</TabsContent>
 
@@ -201,6 +224,7 @@ export function ChapterEditorPanels({
 				<ChapterReferencePanel
 					chapter={chapter}
 					studyProgramId={studyProgramId}
+					sectionId={section?.id ?? null}
 				/>
 			</TabsContent>
 
@@ -208,21 +232,26 @@ export function ChapterEditorPanels({
 				value="panduan"
 				className="flex min-h-0 flex-1 flex-col overflow-hidden"
 			>
-				<ChapterGuidancePanel chapter={chapter} />
+				<ChapterGuidancePanel chapter={chapter} section={section} />
 			</TabsContent>
 
 			<TabsContent
 				value="skor"
 				className="flex min-h-0 flex-1 flex-col overflow-hidden"
 			>
-				<ChapterQualityPanel chapter={chapter} savedAt={savedAt} />
+				<ChapterQualityPanel chapter={chapter} sectionId={section?.id ?? null} savedAt={savedAt} />
 			</TabsContent>
 
 			<TabsContent
 				value="chat"
 				className="flex min-h-0 flex-1 flex-col overflow-hidden"
 			>
-				<ChapterChatPanel chapter={chapter} izin={izin} />
+				<ChapterChatPanel
+					chapter={chapter}
+					sectionId={section?.id ?? null}
+					izin={izin}
+					onRevised={onSectionRestored}
+				/>
 			</TabsContent>
 
 			<TabsContent
@@ -231,6 +260,7 @@ export function ChapterEditorPanels({
 			>
 				<ChapterReviewPanel
 					chapter={chapter}
+					sectionId={section?.id ?? null}
 					izin={izin}
 					onReviewed={onReviewed}
 				/>

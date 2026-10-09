@@ -4,6 +4,7 @@ import { CaretRightIcon } from '@phosphor-icons/react';
 import { ScrollArea } from '~/core/components/ui/scroll-area';
 import { cn } from '~/core/lib/utils';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
+import { type ChapterSectionEntity } from '../../domain/entities/chapter-section.entity';
 import {
 	useChapterGuidance,
 	type BarisPanduan,
@@ -53,13 +54,32 @@ import { ChapterGuidanceDetailSheet } from './chapter-guidance-detail-sheet';
  *   {@link ../hooks/use-chapter-guidance useChapterGuidance}.
  * - Tombol membuka dokumen sumbernya. `PanduanReferensi.file_url` memang ada di
  *   skema, tapi berkasnya belum ada di mana pun, dan tombol unduh yang mati
- *   lebih buruk daripada tidak ada tombol.
+ *   lebih baik daripada tidak ada tombol.
+ *
+ * **Tersaring ke satu poin saat `section` dibuka** (kanvas section-view, bukan
+ * tampilan bab-penuh) — lihat JSDoc {@link ../hooks/use-chapter-guidance
+ * useChapterGuidance} untuk kenapa ini bukan lagi daftar 165 poin yang
+ * dinavigasi satu-satu.
  */
-export function ChapterGuidancePanel({ chapter }: { chapter: ChapterEntity }) {
-	const { kelompok, semuaBaris } = useChapterGuidance({
+export function ChapterGuidancePanel({
+	chapter,
+	section,
+}: {
+	chapter: ChapterEntity;
+	/** Section yang sedang dibuka di kanvas, atau `null` saat tampilan bab-penuh. */
+	section: ChapterSectionEntity | null;
+}) {
+	const hasil = useChapterGuidance({
 		urutanBab: chapter.urutanBab,
 		ledProjectId: chapter.ledProjectId,
+		sectionTerbuka: section,
 	});
+	// dimas SectionInfoPane: pedoman section yang dibuka tampil inline penuh, bukan kartu+laci.
+	const pedomanInline = section && section.panduan.trim() ? section : null;
+	const kelompok = pedomanInline
+		? hasil.kelompok.filter((grup) => grup.kunci !== 'pedoman')
+		: hasil.kelompok;
+	const semuaBaris = kelompok.flatMap((grup) => grup.baris);
 
 	/**
 	 * Yang dipegang id barisnya, bukan objeknya — pola yang sama dengan tab Bukti
@@ -76,7 +96,9 @@ export function ChapterGuidancePanel({ chapter }: { chapter: ChapterEntity }) {
 			<div className="flex shrink-0 flex-wrap items-baseline justify-between gap-x-2 gap-y-1 px-5 pt-4 pb-2">
 				<p className="text-sm font-medium">Panduan Penulisan</p>
 				<span className="text-xs text-muted-foreground">
-					{semuaBaris.length === 0
+					{pedomanInline
+						? ''
+						: semuaBaris.length === 0
 						? 'Tidak dicocoki panduan'
 						: `${semuaBaris.length} butir`}
 				</span>
@@ -84,7 +106,15 @@ export function ChapterGuidancePanel({ chapter }: { chapter: ChapterEntity }) {
 
 			<ScrollArea className="min-h-0 flex-1">
 				<div className="px-5">
-					{kelompok.length === 0 ? (
+					{pedomanInline && (
+						<PedomanSection
+							key={pedomanInline.id}
+							teks={pedomanInline.panduan}
+							lkpsDibutuhkan={pedomanInline.lkpsDibutuhkan}
+							tabelLkps={pedomanInline.tabelLkps}
+						/>
+					)}
+					{pedomanInline && kelompok.length === 0 ? null : kelompok.length === 0 ? (
 						/*
 						 * Kalimat keduanya yang menahan bacaannya: panel kosong tanpa
 						 * keterangan terbaca seperti pemuatan yang gagal, padahal bab tanpa
@@ -233,5 +263,61 @@ function KartuButirPanduan({
 				<CaretRightIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
 			</button>
 		</li>
+	);
+}
+
+const BATAS_RINGKAS = 220;
+
+/** Port dimas SectionInfoPane: kartu pedoman (collapse > 220 karakter) + kartu "Data LKPS yang dibutuhkan". */
+function PedomanSection({
+	teks,
+	lkpsDibutuhkan,
+	tabelLkps,
+}: {
+	teks: string;
+	lkpsDibutuhkan: boolean;
+	tabelLkps: string[];
+}) {
+	const panjang = teks.length > BATAS_RINGKAS;
+	const [terbuka, setTerbuka] = React.useState(!panjang);
+	return (
+		<div className="space-y-3 pt-1 pb-6">
+			<div className="rounded-md border border-border p-3 text-sm">
+				<p className="text-xs text-muted-foreground">Pedoman penulisan</p>
+				<p className="mt-1.5 leading-relaxed whitespace-pre-wrap">
+					{panjang && !terbuka ? `${teks.slice(0, BATAS_RINGKAS).trimEnd()}…` : teks}
+				</p>
+				{panjang && (
+					<button
+						type="button"
+						onClick={() => setTerbuka((v) => !v)}
+						className="mt-1.5 cursor-pointer text-xs font-medium text-primary hover:underline"
+					>
+						{terbuka ? 'Sembunyikan' : 'Lihat selengkapnya'}
+					</button>
+				)}
+			</div>
+			{lkpsDibutuhkan && (
+				<div className="rounded-md border border-border p-3">
+					<p className="mb-2 text-xs text-muted-foreground">Data LKPS yang dibutuhkan</p>
+					{tabelLkps.length > 0 ? (
+						<div className="flex flex-wrap gap-1.5">
+							{tabelLkps.map((sheet) => (
+								<span
+									key={sheet}
+									className="rounded-md border border-border px-2.5 py-1 text-xs font-medium"
+								>
+									Tabel {sheet}
+								</span>
+							))}
+						</div>
+					) : (
+						<p className="text-xs text-muted-foreground">
+							Pedoman menyebut kebutuhan LKPS tapi belum ada sheet spesifik terdeteksi.
+						</p>
+					)}
+				</div>
+			)}
+		</div>
 	);
 }

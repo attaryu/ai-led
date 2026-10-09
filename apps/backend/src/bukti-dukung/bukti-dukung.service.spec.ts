@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { OwnerTipe, Role, StatusEkstraksi } from '@ai-led/db';
+import { EvidenceKind, JobType, OwnerTipe, Role, StatusEkstraksi } from '@ai-led/db';
 import { BuktiDukungService } from './bukti-dukung.service';
 import type { TenantContextService } from '../tenant/tenant-context.service';
 import type { JobsService } from '../jobs/jobs.service';
@@ -26,9 +26,21 @@ function makeService(context: {
     evidenceIndicatorTag: {
       createMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
+    // remove() memutus baris penaut dulu (FK ON DELETE RESTRICT) di dalam
+    // transaksi -- mock-nya menjalankan callback langsung dengan `prisma` itu
+    // sendiri sebagai `tx`, jadi assertion tetap melihat pemanggilannya.
+    evidenceDraftLink: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    evidenceChapterLink: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    $executeRaw: jest.fn().mockResolvedValue(0),
+    $transaction: jest.fn(),
   };
-  const tenantContext: Pick<TenantContextService, 'getOrThrow'> = {
+  prisma.$transaction.mockImplementation((fn: (tx: typeof prisma) => unknown) => fn(prisma));
+  const tenantContext: Pick<
+    TenantContextService,
+    'getOrThrow' | 'runInManagedTransaction'
+  > = {
     getOrThrow: jest.fn().mockReturnValue({ userId: 'u1', ...context }),
+    runInManagedTransaction: jest.fn().mockImplementation((fn: () => unknown) => fn()),
   };
   const jobsService: Pick<JobsService, 'enqueue'> = {
     enqueue: jest.fn().mockResolvedValue(undefined),
@@ -193,7 +205,7 @@ describe('BuktiDukungService.findAll', () => {
     const { service, prisma } = makeService({ tenantId: 't1', role: Role.PIMPINAN, studyProgramId: null });
     await service.findAll(undefined);
     expect(prisma.evidence.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { tenantId: 't1', ownerType: OwnerTipe.TENANT } }),
+      expect.objectContaining({ where: { tenantId: 't1', ownerType: OwnerTipe.TENANT, kind: EvidenceKind.BUKTI_DUKUNG } }),
     );
   });
 });
@@ -217,6 +229,15 @@ describe('BuktiDukungService.remove', () => {
     await service.remove('b1');
     expect(prisma.evidence.delete).toHaveBeenCalledWith({ where: { id: 'b1' } });
     expect(storage.deleteObject).toHaveBeenCalledWith('x');
+  });
+
+  /** Keduanya FK ON DELETE RESTRICT -- tanpa diputus dulu, delete selalu gagal P2003. */
+  it('clears chapter/draft links before deleting the row', async () => {
+    const { service, prisma } = makeService({ tenantId: 't1', role: Role.PENJAMIN_MUTU, studyProgramId: null });
+    prisma.evidence.findFirst.mockResolvedValue({ id: 'b1', uploadedByUserId: 'u9', fileUrl: 'x' });
+    await service.remove('b1');
+    expect(prisma.evidenceDraftLink.deleteMany).toHaveBeenCalledWith({ where: { evidenceId: 'b1' } });
+    expect(prisma.evidenceChapterLink.deleteMany).toHaveBeenCalledWith({ where: { evidenceId: 'b1' } });
   });
 });
 
@@ -287,5 +308,64 @@ describe('BuktiDukungService.retryIngestion', () => {
       { buktiDukungId: 'b1', tenantId: 't1', fileUrl: 'x', tipeFile: 'pdf' },
     );
     expect(result.extractionStatus).toBe(StatusEkstraksi.MENUNGGU);
+  });
+});
+
+describe('BuktiDukungService — LKPS kind', () => {
+  const LKPS_KEY = 't1/uploads/lkps-prodi.xlsx';
+
+  it('indexes an LKPS right after upload with dimas INGESTION_LKPS (not as Bukti Dukung)', async () => {
+    const { service, prisma, jobsService } = makeService({ tenantId: 't1', role: Role.PENYUSUN, studyProgramId: 'p1' });
+    prisma.studyProgram.findFirst.mockResolvedValue({ id: 'p1' });
+    const row = await service.create({
+      kind: EvidenceKind.LKPS, ownerType: OwnerTipe.PROGRAM_STUDI, studyProgramId: 'p1', fileKey: LKPS_KEY,
+      documentName: 'LKPS TS 2024', period: '2023/2024',
+    });
+    expect(row).toMatchObject({
+      kind: EvidenceKind.LKPS, extractionStatus: StatusEkstraksi.MENUNGGU,
+      documentName: 'LKPS TS 2024', period: '2023/2024',
+    });
+    expect(jobsService.enqueue).toHaveBeenCalledTimes(1);
+    expect(jobsService.enqueue).toHaveBeenCalledWith(JobType.INGESTION_LKPS, {
+      evidenceId: row.id, tenantId: 't1', fileUrl: LKPS_KEY,
+    });
+  });
+
+  it('requires a name and a year/period for a new LKPS', async () => {
+    const { service, prisma } = makeService({ tenantId: 't1', role: Role.PENYUSUN, studyProgramId: 'p1' });
+    prisma.studyProgram.findFirst.mockResolvedValue({ id: 'p1' });
+    const dasar = { kind: EvidenceKind.LKPS, ownerType: OwnerTipe.PROGRAM_STUDI, studyProgramId: 'p1', fileKey: LKPS_KEY };
+
+    await expect(service.create({ ...dasar, period: '2024' })).rejects.toThrow('Nama LKPS wajib diisi');
+    await expect(service.create({ ...dasar, documentName: '   ', period: '2024' })).rejects.toThrow('Nama LKPS wajib diisi');
+    await expect(service.create({ ...dasar, documentName: 'LKPS' })).rejects.toThrow('Tahun/periode LKPS wajib diisi');
+    await expect(service.create({ ...dasar, documentName: 'LKPS', period: '  ' })).rejects.toThrow('Tahun/periode LKPS wajib diisi');
+  });
+
+  it('never stores a period on a Bukti Dukung, even if the client sends one', async () => {
+    const { service, prisma } = makeService({ tenantId: 't1', role: Role.PENYUSUN, studyProgramId: 'p1' });
+    prisma.studyProgram.findFirst.mockResolvedValue({ id: 'p1' });
+    const row = await service.create({
+      ownerType: OwnerTipe.PROGRAM_STUDI, studyProgramId: 'p1', fileKey: 't1/uploads/sk.pdf', period: '2024',
+    });
+    expect(row.period).toBeNull();
+  });
+
+  it('rejects a non-Excel LKPS and a tenant-level LKPS', async () => {
+    const { service } = makeService({ tenantId: 't1', role: Role.PENJAMIN_MUTU, studyProgramId: null });
+    await expect(
+      service.create({ kind: EvidenceKind.LKPS, ownerType: OwnerTipe.PROGRAM_STUDI, studyProgramId: 'p1', fileKey: 't1/x.pdf' }),
+    ).rejects.toThrow(BadRequestException);
+    await expect(
+      service.create({ kind: EvidenceKind.LKPS, ownerType: OwnerTipe.TENANT, fileKey: LKPS_KEY }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('lists only the requested kind (Bukti Dukung by default)', async () => {
+    const { service, prisma } = makeService({ tenantId: 't1', role: Role.PENJAMIN_MUTU, studyProgramId: null });
+    await service.findAll('p1');
+    await service.findAll('p1', EvidenceKind.LKPS);
+    expect(prisma.evidence.findMany.mock.calls[0][0].where).toEqual({ tenantId: 't1', studyProgramId: 'p1', kind: EvidenceKind.BUKTI_DUKUNG });
+    expect(prisma.evidence.findMany.mock.calls[1][0].where).toEqual({ tenantId: 't1', studyProgramId: 'p1', kind: EvidenceKind.LKPS });
   });
 });

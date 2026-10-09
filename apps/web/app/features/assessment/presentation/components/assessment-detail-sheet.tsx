@@ -2,6 +2,7 @@ import * as React from 'react';
 import { CheckIcon, WarningCircleIcon } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
+import { Input } from '~/core/components/ui/input';
 import {
 	Sheet,
 	SheetBody,
@@ -51,6 +52,14 @@ import { formatSkor } from '../utils/assessment-format';
  * Navigasi ‹ › ada supaya meninjau berurutan tidak menuntut tutup-buka per
  * indikator — tanpa itu, laci justru dua kali lebih mahal daripada accordion
  * yang digantikannya.
+ *
+ * **Radio level + satu input skor kustom, bukan radio saja.** `finalScore`
+ * sudah `Decimal(5,2)` di database dan DTO backend sudah `@IsNumber()` sejak
+ * awal (lihat upsert-verdict.dto.ts) -- yang selama ini membatasi ke 4 level
+ * bulat murni radionya di sini. Radio tetap dipertahankan sebagai jalan pintas
+ * (levelnya bawa deskripsi kualitatif yang tidak boleh hilang), input skor
+ * kustom di bawahnya cuma untuk skor yang jatuh di ANTARA dua level -- keduanya
+ * menulis ke `pilihan` yang sama, jadi tidak ada dua sumber kebenaran.
  */
 export function AssessmentDetailSheet({
 	row,
@@ -76,7 +85,8 @@ export function AssessmentDetailSheet({
 	const [catatan, setCatatan] = React.useState('');
 	const [galat, setGalat] = React.useState<string | null>(null);
 
-	const indikatorNo = row?.kriteria.no;
+	// Kunci nomor + sub-indikator: berpindah dari 43.I ke 43.II juga harus menyetel ulang catatan.
+	const indikatorNo = row ? `${row.kriteria.no}|${row.kriteria.subNo ?? ''}` : undefined;
 
 	// Disetel ulang tiap kali indikatornya berganti — termasuk saat berpindah
 	// lewat ‹ ›. Tanpa ini, catatan indikator sebelumnya ikut terbawa dan bisa
@@ -90,7 +100,7 @@ export function AssessmentDetailSheet({
 
 	if (!row) return null;
 
-	const { kriteria, hasil } = row;
+	const { kriteria, hasil, skorMaksimal } = row;
 	const mengoreksi = pilihan !== row.skorMesin;
 	const adaPerubahan =
 		pilihan !== row.skorFinal || catatan !== (row.keputusan?.catatan ?? '');
@@ -98,6 +108,15 @@ export function AssessmentDetailSheet({
 	function simpan() {
 		if (pilihan === null) {
 			setGalat('Pilih tingkat penilaian yang berlaku.');
+			return;
+		}
+
+		// Input skor kustom tidak punya batas atas di HTML (`max` cuma hint
+		// browser, bukan larangan sungguhan) -- dicek ulang di sini, dan sekali
+		// lagi di backend (upsertVerdict) supaya panggilan API langsung pun
+		// tidak bisa melewatinya.
+		if (Number.isNaN(pilihan) || pilihan < 0 || pilihan > skorMaksimal) {
+			setGalat(`Skor harus di antara 0 dan ${formatSkor(skorMaksimal)}.`);
 			return;
 		}
 
@@ -291,6 +310,32 @@ export function AssessmentDetailSheet({
 							</Wrapper>
 						);
 					})}
+
+					{bolehMemutuskan && (
+						<div className="flex items-center gap-2 border-t border-border pt-2">
+							<label
+								htmlFor={`skor-kustom-${kriteria.no}`}
+								className="text-sm text-muted-foreground"
+							>
+								atau skor di antara level (mis. 2,35)
+							</label>
+							<Input
+								id={`skor-kustom-${kriteria.no}`}
+								type="number"
+								inputMode="decimal"
+								step={0.01}
+								min={0}
+								max={row.skorMaksimal}
+								value={pilihan ?? ''}
+								onChange={(event) => {
+									const teks = event.target.value;
+									setPilihan(teks === '' ? null : Number(teks));
+									setGalat(null);
+								}}
+								className="w-24 tabular-nums"
+							/>
+						</div>
+					)}
 				</div>
 
 				{bolehMemutuskan ? (

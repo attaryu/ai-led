@@ -9,7 +9,7 @@ export type BackendChatMessage = {
 };
 
 export const chapterChatRemoteSource = {
-	findHistory(babId: string): Promise<BackendChatMessage[]> {
-		return apiFetch<BackendChatMessage[]>(`/bab/${babId}/chat/history`);
+	findHistory(babId: string, sectionId: string): Promise<BackendChatMessage[]> {
+		return apiFetch<BackendChatMessage[]>(`/bab/${babId}/sections/${sectionId}/chat/history`);
 	},
 };

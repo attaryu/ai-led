@@ -142,3 +142,11 @@ def test_same_indicator_no_in_a_different_set_does_not_leak(fixture_ids):
     )
     assert ids_a == {fixture_ids["ev_ind1"]}
     assert ids_b == {fixture_ids["ev_other_set"]}
+
+
+def test_prodi_filter_keeps_tenant_wide_evidence(fixture_ids):
+    """study_program_id given: tenant-wide evidence (study_program_id NULL) stays visible; other prodi's would not."""
+    from vectorstore.pgvector_evidence_store import list_available_evidence_ids
+
+    ids = list_available_evidence_ids(fixture_ids["tenant_id"], fixture_ids["set_a"], 1, "prodi-lain")
+    assert ids == [fixture_ids["ev_ind1"]]

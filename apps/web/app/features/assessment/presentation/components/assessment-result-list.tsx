@@ -9,6 +9,7 @@ import {
 } from '~/core/components/ui/collection-toolbar';
 import { cn } from '~/core/lib/utils';
 import {
+	kunciIndikator,
 	type PenilaianFinalRow,
 	type RingkasanPenilaian,
 } from '../../domain/entities/assessment-session.entity';
@@ -100,7 +101,7 @@ export function AssessmentResultList({
 }: {
 	baris: PenilaianFinalRow[];
 	ringkasan: RingkasanPenilaian;
-	barisTerpilihNo: number | null;
+	barisTerpilihNo: string | null;
 	onBuka: (row: PenilaianFinalRow) => void;
 	/** Dipakai halaman untuk menavigasi ‹ › mengikuti urutan yang terlihat. */
 	onDaftarTampilBerubah: (rows: PenilaianFinalRow[]) => void;
@@ -145,6 +146,21 @@ export function AssessmentResultList({
 		const arah = sortDir === 'desc' ? -1 : 1;
 
 		return [...disaring].sort((a, b) => {
+			// ponytail: dua tingkat prioritas sebelum kolom pengurut apa pun.
+			//
+			// 1. DICENTANG duluan -- itu yang akan dinilai, jadi tidak boleh
+			//    terserak di bawah. Saat semuanya tercentang (bawaan hook)
+			//    perbandingan ini imbang, jadi tingkat berikutnya yang menentukan.
+			// 2. SUDAH DINILAI berikutnya -- yang punya hasil naik ke atas,
+			//    supaya yang sudah dikerjakan langsung terlihat tanpa menggulir.
+			const pa = pemilihan.terpilih.has(kunciIndikator(a.kriteria.no, a.kriteria.subNo)) ? 0 : 1;
+			const pb = pemilihan.terpilih.has(kunciIndikator(b.kriteria.no, b.kriteria.subNo)) ? 0 : 1;
+			if (pa !== pb) return pa - pb;
+
+			const na = a.hasil ? 0 : 1;
+			const nb = b.hasil ? 0 : 1;
+			if (na !== nb) return na - nb;
+
 			switch (sortId) {
 				case 'skor':
 					// Yang belum punya skor selalu di bawah, apa pun arah urutannya:
@@ -167,7 +183,7 @@ export function AssessmentResultList({
 					return (a.kriteria.no - b.kriteria.no) * arah;
 			}
 		});
-	}, [baris, cari, saringan, sortId, sortDir]);
+	}, [baris, cari, saringan, sortId, sortDir, pemilihan.terpilih]);
 
 	// Laci menavigasi mengikuti urutan yang **terlihat**, bukan urutan aslinya —
 	// menekan ‹ › lalu mendarat di indikator yang tidak ada di layar akan membuat
@@ -277,16 +293,21 @@ export function AssessmentResultList({
 					<div className="flex flex-col gap-1">
 						{tampil.map((row) => (
 							<AssessmentResultRow
-								key={row.kriteria.no}
+								// ponytail: dulu `key={row.kriteria.no}`. Dua belas indikator punya dua baris (sub-indikator
+								// I/II dengan `no` sama, mis. 43.I dan 43.II), jadi kuncinya kembar: React menyisakan/menggandakan
+								// baris saat daftar disaring, dan hasil pencarian berisi baris yang tidak cocok. Kode kriteria unik.
+								key={row.kriteria.kodeKriteria}
 								row={row}
-								terpilih={row.kriteria.no === barisTerpilihNo}
+								terpilih={kunciIndikator(row.kriteria.no, row.kriteria.subNo) === barisTerpilihNo}
 								onBuka={() => onBuka(row)}
 								untukDinilai={
 									bolehMemilih
-										? pemilihan.terpilih.has(row.kriteria.no)
+										? pemilihan.terpilih.has(kunciIndikator(row.kriteria.no, row.kriteria.subNo))
 										: undefined
 								}
-								onToggleUntukDinilai={() => pemilihan.toggle(row.kriteria.no)}
+								onToggleUntukDinilai={() => pemilihan.toggle(kunciIndikator(row.kriteria.no, row.kriteria.subNo))}
+								// ponytail: dulu `ikutIndikator` -- kotak centang hanya di baris pertama tiap nomor karena pilihan per nomor.
+								// Kini tiap sub-indikator (43.I, 43.II) punya kotak centang dan dinilai sendiri-sendiri.
 							/>
 						))}
 					</div>

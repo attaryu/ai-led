@@ -14,7 +14,9 @@ import {
 	CardTitle,
 } from '~/core/components/ui/card';
 import { formatRelativeTimeLong } from '~/core/lib/format-time';
-import { findKriteriaByNo } from '~/features/chapter/domain/entities/rubric-criterion.entity';
+// ponytail: dulu `findKriteriaByNo` -- mencari ke RUBRIK_KRITERIA (data contoh), bukan kriteria set akreditasi dokumen.
+// import { findKriteriaByNo } from '~/features/chapter/domain/entities/rubric-criterion.entity';
+import { type RubricCriterion } from '~/features/chapter/domain/entities/rubric-criterion.entity';
 import {
 	AMI_RAGAS_METRIK_INFO,
 	AMI_RAGAS_URUTAN,
@@ -39,6 +41,7 @@ import { type StatusEvaluasi } from '../hooks/use-assessment-quality';
  */
 export function AssessmentQualityPanel({
 	kualitas,
+	kriteriaSet = [],
 	status,
 	pesanGagal,
 	bolehMengevaluasi,
@@ -47,6 +50,8 @@ export function AssessmentQualityPanel({
 	onJalankan,
 }: {
 	kualitas: AssessmentQuality | null;
+	/** Kriteria set akreditasi dokumen ini -- sumber deskripsi indikator (bukan data contoh). */
+	kriteriaSet?: RubricCriterion[];
 	status: StatusEvaluasi;
 	pesanGagal: string | null;
 	bolehMengevaluasi: boolean;
@@ -155,7 +160,12 @@ export function AssessmentQualityPanel({
 					) : (
 						<ul className="flex flex-col gap-2">
 							{perluDiperiksa.map((baris) => {
-								const kriteria = findKriteriaByNo(baris.indikatorNo);
+								// Deskripsi dari set dokumen; nomor kembar (sub-indikator) digabung dengan " / ".
+								const deskripsiKriteria = kriteriaSet
+									.filter((k) => k.no === baris.indikatorNo)
+									.map((k) => k.deskripsi)
+									.join(' / ');
+								const kriteria = deskripsiKriteria ? { deskripsi: deskripsiKriteria } : undefined;
 								return (
 									<li
 										key={baris.indikatorNo}

@@ -55,6 +55,7 @@ export type BackendIndicatorResult = {
 	id: string;
 	sessionId: string;
 	indicatorNo: number;
+	subNo?: string;
 	score: string | null;
 	justification: string | null;
 	confidence: string | null;
@@ -77,6 +78,7 @@ export type BackendAssessmentVerdict = {
 	id: string;
 	documentId: string;
 	indicatorNo: number;
+	subNo?: string;
 	finalScore: string;
 	note: string | null;
 	machineScoreAtReview: string | null;
@@ -130,6 +132,8 @@ export type BackendEvalResult = {
 
 export type TriggerAssessmentPayload = {
 	indikatorList?: number[];
+	/** Kunci "nomor|sub" (mis. "43|I") baris yang dinilai; mengalahkan `indikatorList` bila diisi. */
+	subIndikatorList?: string[];
 	sumberLed?: LedSourceMode;
 	ledFileName?: string;
 	lkpsBuktiDukungId?: string;
@@ -138,6 +142,7 @@ export type TriggerAssessmentPayload = {
 
 export type UpsertVerdictPayload = {
 	indicatorNo: number;
+	subNo?: string;
 	finalScore: number;
 	note?: string;
 };
@@ -184,9 +189,10 @@ export const assessmentRemoteSource = {
 	findReasoning(
 		sessionId: string,
 		indicatorNo: number,
+		subNo = '',
 	): Promise<BackendReasoningStep[]> {
 		return apiFetch<BackendReasoningStep[]>(
-			`/assessment-sessions/${sessionId}/reasoning?indicatorNo=${indicatorNo}`,
+			`/assessment-sessions/${sessionId}/reasoning?indicatorNo=${indicatorNo}${subNo ? `&subNo=${encodeURIComponent(subNo)}` : ''}`,
 		);
 	},
 
@@ -206,9 +212,9 @@ export const assessmentRemoteSource = {
 		);
 	},
 
-	removeVerdict(dokumenId: string, indikatorNo: number): Promise<void> {
+	removeVerdict(dokumenId: string, indikatorNo: number, subNo = ''): Promise<void> {
 		return apiFetch<void>(
-			`/dokumen/${dokumenId}/assessment-verdicts/${indikatorNo}`,
+			`/dokumen/${dokumenId}/assessment-verdicts/${indikatorNo}${subNo ? `?subNo=${encodeURIComponent(subNo)}` : ''}`,
 			{ method: 'DELETE' },
 		);
 	},

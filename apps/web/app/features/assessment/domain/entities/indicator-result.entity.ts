@@ -17,6 +17,8 @@ export const indicatorResultSchema = z.object({
 	sesiId: z.string(),
 	/** Nomor indikator di matriks; kunci ke `RubricCriterion.no`. */
 	indikatorNo: z.number().int().positive(),
+	/** Sub-indikator ("I", "II", ...); "" = tanpa sub. Bersama `indikatorNo` ini kunci hasil. */
+	subNo: z.string().optional(),
 	/**
 	 * Skor 0–4. **Bukan bilangan bulat**: `IndicatorResult.score` di Prisma
 	 * bertipe `Decimal(5,2)` karena indikator komposit dihitung lewat rumus

@@ -7,7 +7,7 @@ import {
 import { Prisma, Role } from '@ai-led/db';
 import { PrismaService } from '../database/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
-import { BabAccessService } from './bab-access.service';
+import { BabAccessService, withSectionReview, withSectionReviewSelect } from './bab-access.service';
 import { CreateBabDokumenDto } from './dto/create-bab-dokumen.dto';
 import { UpdateBabDokumenDto } from './dto/update-bab-dokumen.dto';
 
@@ -39,11 +39,69 @@ export class BabDokumenService {
   }
 
   async findAllForDokumen(dokumenId: string) {
-    await this.access.findDokumenScoped(dokumenId);
-    return this.prisma.documentChapter.findMany({
+    const dokumen = await this.access.findDokumenScoped(dokumenId);
+    await this.syncFromTemplate(dokumenId, dokumen.accreditationSetId);
+    const chapters = await this.prisma.documentChapter.findMany({
       where: { documentId: dokumenId },
       orderBy: { chapterOrder: 'asc' },
+      include: withSectionReviewSelect,
     });
+    return chapters.map(withSectionReview);
+  }
+
+  /** Selaraskan bab dokumen ke ChapterTemplate terkini -- create+rename aja, gak pernah hapus bab yatim. */
+  private async syncFromTemplate(
+    dokumenId: string,
+    accreditationSetId: string | null,
+  ): Promise<void> {
+    if (!accreditationSetId) return;
+
+    const set = await this.prisma.accreditationSet.findUnique({
+      where: { id: accreditationSetId },
+      select: { panduanId: true },
+    });
+    if (!set?.panduanId) return;
+
+    const templates = await this.prisma.chapterTemplate.findMany({
+      where: { guideId: set.panduanId },
+      select: { order: true, title: true },
+    });
+    if (templates.length === 0) return;
+
+    const existing = await this.prisma.documentChapter.findMany({
+      where: { documentId: dokumenId },
+      select: { chapterOrder: true, chapterTitle: true },
+    });
+    const existingTitleByOrder = new Map(
+      existing.map((e) => [e.chapterOrder, e.chapterTitle]),
+    );
+
+    const toCreate = templates.filter((t) => !existingTitleByOrder.has(t.order));
+    const toRename = templates.filter(
+      (t) =>
+        existingTitleByOrder.has(t.order) &&
+        existingTitleByOrder.get(t.order) !== t.title,
+    );
+    if (toCreate.length === 0 && toRename.length === 0) return;
+
+    await this.prisma.$transaction([
+      ...toCreate.map((t) =>
+        this.prisma.documentChapter.create({
+          data: {
+            documentId: dokumenId,
+            chapterOrder: t.order,
+            chapterTitle: t.title,
+            workingContent: {},
+          },
+        }),
+      ),
+      ...toRename.map((t) =>
+        this.prisma.documentChapter.updateMany({
+          where: { documentId: dokumenId, chapterOrder: t.order },
+          data: { chapterTitle: t.title },
+        }),
+      ),
+    ]);
   }
 
   /** Lintas prodi — Dashboard Utama KPI. */
@@ -71,6 +129,7 @@ export class BabDokumenService {
         buktiDukungBab: true,
         ragasScores: { orderBy: { computedAt: 'desc' }, take: 1 },
         hasilSkorKriteria: { where: { targetType: 'BAB_AKTIF' } },
+        ...withSectionReviewSelect,
       },
     });
     if (!bab) {
@@ -80,7 +139,7 @@ export class BabDokumenService {
 
     const { document, ...rest } = bab;
     void document;
-    return rest;
+    return withSectionReview(rest);
   }
 
   /** Content edit (chapterTitle/workingContent) — the autosave path. */

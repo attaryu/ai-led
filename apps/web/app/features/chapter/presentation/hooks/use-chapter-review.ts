@@ -3,6 +3,7 @@ import * as React from 'react';
 import { ApiError } from '~/core/lib/api-client';
 import { chapterRepository } from '../../data/repositories/chapter.repository';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
+import { type ChapterSectionEntity } from '../../domain/entities/chapter-section.entity';
 import { type ChapterPermission } from './use-chapter-permission';
 
 export type ChapterReview = {
@@ -37,15 +38,17 @@ export type ChapterReview = {
  */
 export function useChapterReview(
 	chapter: ChapterEntity,
+	sectionId: string | null,
 	izin: ChapterPermission,
-	onReviewed: (diperbarui: ChapterEntity) => void,
+	onReviewed: (diperbarui: ChapterSectionEntity) => void,
 ): ChapterReview {
 	const [pesanGagal, setPesanGagal] = React.useState<string | null>(null);
 
-	const boleh = izin.canReview && Boolean(izin.session);
+	// Review per-section: tanpa section terbuka (tampilan bab utuh) tidak ada yang bisa direview.
+	const boleh = izin.canReview && Boolean(izin.session) && Boolean(sectionId);
 
 	const susulkan = React.useCallback(
-		async (aksi: () => Promise<ChapterEntity>) => {
+		async (aksi: () => Promise<ChapterSectionEntity>) => {
 			try {
 				const diperbarui = await aksi();
 				setPesanGagal(null);
@@ -60,24 +63,28 @@ export function useChapterReview(
 	);
 
 	const toggleKunci = React.useCallback(() => {
-		if (!izin.canReview) return;
-		void susulkan(() => chapterRepository.setTerkunci(chapter.id, !chapter.terkunci));
-	}, [chapter.id, chapter.terkunci, izin.canReview, susulkan]);
+		if (!izin.canReview || !sectionId) return;
+		void susulkan(() => chapterRepository.setTerkunci(chapter.id, sectionId, !chapter.terkunci));
+	}, [chapter.id, chapter.terkunci, sectionId, izin.canReview, susulkan]);
 
 	const simpanCatatan = React.useCallback(
 		(catatan: string) => {
-			if (!izin.canReview || !izin.session) return;
-			void susulkan(() => chapterRepository.setCatatanPenjaminMutu(chapter.id, catatan));
+			if (!izin.canReview || !izin.session || !sectionId) return;
+			void susulkan(() =>
+				chapterRepository.setCatatanPenjaminMutu(chapter.id, sectionId, catatan),
+			);
 		},
-		[chapter.id, izin.canReview, izin.session, susulkan],
+		[chapter.id, sectionId, izin.canReview, izin.session, susulkan],
 	);
 
 	const ajukanReview = React.useCallback(
 		(diajukan: boolean) => {
-			if (!izin.canSubmitReview) return;
-			void susulkan(() => chapterRepository.setDiajukanReview(chapter.id, diajukan));
+			if (!izin.canSubmitReview || !sectionId) return;
+			void susulkan(() =>
+				chapterRepository.setDiajukanReview(chapter.id, sectionId, diajukan),
+			);
 		},
-		[chapter.id, izin.canSubmitReview, susulkan],
+		[chapter.id, sectionId, izin.canSubmitReview, susulkan],
 	);
 
 	return {
@@ -85,7 +92,7 @@ export function useChapterReview(
 		pesanGagal,
 		toggleKunci,
 		simpanCatatan,
-		bolehMengajukan: izin.canSubmitReview,
+		bolehMengajukan: izin.canSubmitReview && Boolean(sectionId),
 		ajukanReview,
 	};
 }

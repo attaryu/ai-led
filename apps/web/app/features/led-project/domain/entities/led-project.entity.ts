@@ -44,6 +44,8 @@ export const ledProjectSchema = z.object({
 	 * tenant sudah beralih ke set yang lebih baru.
 	 */
 	accreditationSetId: z.string().nullable(),
+	/** Bukti dukung Excel LKPS yang dipakai penulisan bab (sheet lookup + RAG). */
+	lkpsEvidenceId: z.string().nullable(),
 	createdAt: z.string(),
 });
 

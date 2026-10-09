@@ -21,6 +21,7 @@ import {
 	useChapterReference,
 	type BarisRujukan,
 } from '../hooks/use-chapter-reference';
+import { ChapterChunkCards } from './chapter-chunk-cards';
 import { ChapterEvidenceDetailSheet } from './chapter-evidence-detail-sheet';
 
 /**
@@ -54,12 +55,15 @@ import { ChapterEvidenceDetailSheet } from './chapter-evidence-detail-sheet';
 export function ChapterReferencePanel({
 	chapter,
 	studyProgramId,
+	sectionId,
 }: {
 	chapter: ChapterEntity;
 	studyProgramId: string;
+	/** Section terbuka -> bukti & LKPS yang dipakai generate section itu saja (dimas Referensi). */
+	sectionId: string | null;
 }) {
-	const { daftarDraft, lingkup, setLingkup, rujukan, jumlahHilang } =
-		useChapterReference({ chapter, studyProgramId });
+	const { daftarDraft, lingkup, setLingkup, rujukan, jumlahHilang, lkpsTerpakai, potongan } =
+		useChapterReference({ chapter, studyProgramId, sectionId });
 
 	const punyaRiwayat = daftarDraft.length > 0;
 
@@ -90,9 +94,13 @@ export function ChapterReferencePanel({
 					 * ada jawabannya.
 					 */}
 					<span className="text-xs text-muted-foreground">
-						{rujukan.length === 0
-							? 'Belum ada bukti dukung'
-							: `${rujukan.length} berkas`}
+						{sectionId
+							? potongan.length === 0
+								? 'Belum ada bukti dukung'
+								: `${potongan.length} potongan`
+							: rujukan.length === 0
+								? 'Belum ada bukti dukung'
+								: `${rujukan.length} berkas`}
 					</span>
 				</div>
 
@@ -127,9 +135,33 @@ export function ChapterReferencePanel({
 
 			<ScrollArea className="min-h-0 flex-1">
 				<div className="px-5">
-					{rujukan.length === 0 ? (
+					{/* ponytail: tampilan section kini kartu per chunk RAG (ChapterChunkCards); blok LKPS per-sheet lama dinonaktifkan. */}
+					{!sectionId && lkpsTerpakai.length > 0 && (
+						<div className="pb-3">
+							<p className="pb-1.5 text-xs font-medium text-muted-foreground">
+								Data LKPS terpakai ({lkpsTerpakai.length} sheet)
+							</p>
+							<ul className="space-y-1.5">
+								{lkpsTerpakai.map((lkps) => (
+									<li key={lkps.id}>
+										<details className="rounded-md border border-border p-2">
+											<summary className="cursor-pointer text-sm font-medium">{lkps.label}</summary>
+											<p className="mt-1.5 max-h-60 overflow-auto text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
+												{lkps.teks}
+											</p>
+										</details>
+									</li>
+								))}
+							</ul>
+						</div>
+					)}
+					{sectionId && potongan.length > 0 ? (
+						<ChapterChunkCards potongan={potongan} />
+					) : rujukan.length === 0 ? (
 						<p className="py-8 text-center text-xs leading-relaxed text-muted-foreground">
-							{lingkup !== 'aktif'
+							{sectionId
+								? 'Generate terakhir section ini tidak memakai bukti dukung.'
+								: lingkup !== 'aktif'
 								? 'Checkpoint ini tidak mencatat bukti dukung apa pun.'
 								: hasKonten(chapter)
 									? 'Belum ada bukti dukung yang tercatat dipakai bab ini.'

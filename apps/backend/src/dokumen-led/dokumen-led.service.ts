@@ -1,16 +1,14 @@
 import {
-  BadGatewayException,
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { JobType, Prisma, Role, StatusDokumen } from '@ai-led/db';
-import { requireEnv } from '../config/env';
+import { AccreditationSetStatus, EvidenceKind, JobType, Prisma, Role, StatusDokumen } from '@ai-led/db';
 import { PrismaService } from '../database/prisma.service';
 import { JobsService } from '../jobs/jobs.service';
 import { extractFileNameFromKey } from '../storage/storage-key.util';
-import { StorageService } from '../storage/storage.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { ConfirmLedUploadDto } from './dto/confirm-led-upload.dto';
 import { CreateDokumenLedDto } from './dto/create-dokumen-led.dto';
@@ -25,7 +23,6 @@ export class DokumenLedService {
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
     private readonly jobsService: JobsService,
-    private readonly storage: StorageService,
   ) {}
 
   /** PENYUSUN is scoped to their one assigned program studi; every other role is tenant-wide. */
@@ -53,8 +50,33 @@ export class DokumenLedService {
     this.assertProgramStudiScope(studyProgramId);
   }
 
+  /** Set Akreditasi harus milik tenant ini dan sudah SIAP -- FK sendiri tidak menahan set tenant lain. */
+  private async assertSelectableSet(accreditationSetId: string | undefined): Promise<void> {
+    if (!accreditationSetId) return;
+    const { tenantId } = this.tenantContext.getOrThrow();
+    const set = await this.prisma.accreditationSet.findFirst({
+      where: { id: accreditationSetId, tenantId },
+      select: { status: true },
+    });
+    if (!set) throw new NotFoundException('Set Akreditasi tidak ditemukan');
+    if (set.status !== AccreditationSetStatus.SIAP) {
+      throw new ConflictException('Set Akreditasi masih DRAF -- tandai SIAP dulu sebelum dipakai dokumen');
+    }
+  }
+
   async create(studyProgramId: string, dto: CreateDokumenLedDto) {
     await this.assertProgramStudiInTenant(studyProgramId);
+    await this.assertSelectableSet(dto.accreditationSetId);
+    // LKPS dipilih sejak dokumen dibuat: harus LKPS prodi ini, bukan LKPS prodi lain.
+    // Semua isian wajib untuk dokumen baru (form web sudah menegakkannya; ini menahan panggilan API langsung).
+    if (!dto.title?.trim() || !dto.academicYear?.trim() || !dto.deadline || !dto.accreditationSetId) {
+      throw new BadRequestException('Judul, tahun akademik, target selesai, dan acuan penilaian wajib diisi');
+    }
+    // ponytail: dulu opsional (`if (dto.lkpsEvidenceId) {...}`); kini wajib untuk dokumen baru.
+    if (!dto.lkpsEvidenceId) {
+      throw new BadRequestException('LKPS wajib dipilih untuk membuat Dokumen LED');
+    }
+    await this.assertDocumentLkps({ studyProgramId }, dto.lkpsEvidenceId);
     return this.prisma.ledDocument.create({
       data: { ...dto, studyProgramId, overallStatus: StatusDokumen.DRAFT },
     });
@@ -97,8 +119,27 @@ export class DokumenLedService {
   }
 
   async update(id: string, dto: UpdateDokumenLedDto) {
-    await this.findOne(id);
+    const dokumen = await this.findOne(id);
+    if (dto.accreditationSetId !== dokumen.accreditationSetId) {
+      await this.assertSelectableSet(dto.accreditationSetId);
+    }
+    if (dto.lkpsEvidenceId && dto.lkpsEvidenceId !== dokumen.lkpsEvidenceId) {
+      await this.assertDocumentLkps(dokumen, dto.lkpsEvidenceId);
+    }
     return this.prisma.ledDocument.update({ where: { id }, data: dto });
+  }
+
+  /** The LKPS must be an LKPS file of the document's prodi -- it is already indexed on upload (INGESTION_LKPS). */
+  private async assertDocumentLkps(
+    dokumen: { studyProgramId: string },
+    lkpsEvidenceId: string,
+  ) {
+    const lkps = await this.prisma.evidence.findFirst({
+      where: { id: lkpsEvidenceId, studyProgramId: dokumen.studyProgramId, kind: EvidenceKind.LKPS },
+    });
+    if (!lkps) {
+      throw new NotFoundException('Berkas LKPS tidak ditemukan di LKPS prodi ini');
+    }
   }
 
   /**
@@ -129,8 +170,19 @@ export class DokumenLedService {
             })
           ).map((d) => d.id);
 
+          const sectionIds = (
+            await tx.chapterSection.findMany({
+              where: { chapterId: { in: chapterIds } },
+              select: { id: true },
+            })
+          ).map((s) => s.id);
+
           await tx.documentChapter.updateMany({
             where: { id: { in: chapterIds } },
+            data: { activeCheckpointId: null },
+          });
+          await tx.chapterSection.updateMany({
+            where: { id: { in: sectionIds } },
             data: { activeCheckpointId: null },
           });
 
@@ -160,7 +212,7 @@ export class DokumenLedService {
             },
           });
           await tx.chatMessage.deleteMany({
-            where: { chapterId: { in: chapterIds } },
+            where: { sectionId: { in: sectionIds } },
           });
           await tx.evidenceChapterLink.deleteMany({
             where: { chapterId: { in: chapterIds } },
@@ -194,24 +246,41 @@ export class DokumenLedService {
     const dokumen = await this.findOne(id);
     const { tenantId, userId } = this.tenantContext.getOrThrow();
 
+    // No document LKPS yet: the one picked for this assessment becomes the document's LKPS for writing too.
+    if (dto?.lkpsBuktiDukungId && !dokumen.lkpsEvidenceId) {
+      await this.assertDocumentLkps(dokumen, dto.lkpsBuktiDukungId);
+      await this.prisma.ledDocument.update({
+        where: { id: dokumen.id },
+        data: { lkpsEvidenceId: dto.lkpsBuktiDukungId },
+      });
+    }
+
     return this.jobsService.enqueue(JobType.ASSESSMENT_AMI, {
       dokumenId: dokumen.id,
       tenantId,
       programStudiId: dokumen.studyProgramId,
       createdByUserId: userId, // NOT NULL FK on assessment_sessions
       indikatorList: dto?.indikatorList, // omitted (not []) means "assess all"
+      ...(dto?.subIndikatorList?.length ? { subIndikatorList: dto.subIndikatorList } : {}),
       ...(dto?.sumberLed ? { sumberLed: dto.sumberLed } : {}),
       ...(dto?.ledFileName ? { ledFileName: dto.ledFileName } : {}),
-      ...(dto?.lkpsBuktiDukungId
-        ? { lkpsBuktiDukungId: dto.lkpsBuktiDukungId }
+      // LKPS milik dokumen menang atas kiriman klien: LKPS terhubung ke dokumen LED, dan AMI
+      // memakai LKPS dokumen yang sedang dinilai. Kiriman klien hanya dipakai bila dokumen
+      // belum punya LKPS (kasus di atas yang menjadikannya LKPS dokumen).
+      ...((dokumen.lkpsEvidenceId ?? dto?.lkpsBuktiDukungId)
+        ? { lkpsBuktiDukungId: dokumen.lkpsEvidenceId ?? dto?.lkpsBuktiDukungId }
         : {}),
+      // ...(dto?.lkpsBuktiDukungId
+      //   ? { lkpsBuktiDukungId: dto.lkpsBuktiDukungId }
+      //   : {}),
       ...(dto?.laporanBuktiDukungId
         ? { laporanBuktiDukungId: dto.laporanBuktiDukungId }
         : {}),
+      ...(dto?.model ? { model: dto.model } : {}),
     });
   }
 
-  /** LED already sits in R2 (client uploaded via presigned PUT) — reads it back and forwards it as multipart to apps/ai's POST /upload/led. */
+  /** LED already sits in R2 (presigned PUT) -- record its key and let the worker ingest it (architecture rule 3). */
   async confirmLedUpload(id: string, dto: ConfirmLedUploadDto) {
     const dokumen = await this.findOne(id);
     const { tenantId } = this.tenantContext.getOrThrow();
@@ -227,35 +296,14 @@ export class DokumenLedService {
       );
     }
 
-    const { bytes, contentType } = await this.storage.getObjectBytes(
-      dto.fileKey,
-    );
-
-    const aiServiceUrl = requireEnv('AI_SERVICE_URL');
-    const form = new FormData();
-    form.append('tenant_id', tenantId);
-    form.append('dokumen_id', dokumen.id);
-    form.append(
-      // Buffer's ArrayBufferLike isn't a valid BlobPart; Uint8Array copies it into one that is.
-      'file',
-      new Blob([new Uint8Array(bytes)], {
-        type: contentType ?? 'application/octet-stream',
-      }),
-      fileName,
-    );
-
-    let upstream: globalThis.Response;
-    try {
-      upstream = await fetch(`${aiServiceUrl}/upload/led`, {
-        method: 'POST',
-        body: form,
-      });
-    } catch {
-      throw new BadGatewayException('AI service tidak dapat dihubungi');
-    }
-    if (!upstream.ok) {
-      throw new BadGatewayException('Gagal mengunggah LED ke AI service');
-    }
-    return upstream.json();
+    await this.prisma.ledDocument.update({
+      where: { id: dokumen.id },
+      data: { ledFileKey: dto.fileKey },
+    });
+    return this.jobsService.enqueue(JobType.INGESTION_LED, {
+      dokumenId: dokumen.id,
+      tenantId,
+      fileUrl: dto.fileKey,
+    });
   }
 }

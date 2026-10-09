@@ -62,17 +62,24 @@ const JENIS_JOB = 'recommend';
 export function useChapterRecommendation({
 	chapter,
 	izin,
+	sectionId,
 }: {
 	chapter: ChapterEntity;
 	izin: ChapterPermission;
+	/** Section yang sedang dibuka — rekomendasi per section seperti dimas; `null` = tidak ada. */
+	sectionId: string | null;
 }) {
+	// Job tertunda disimpan per section, supaya pindah section tidak menyambung ke job section lain.
+	const kunciJob = `${chapter.id}:${sectionId ?? ''}`;
+	const kunciAktif = React.useRef(kunciJob);
+	kunciAktif.current = kunciJob;
 	const [rekomendasi, setRekomendasi] =
 		React.useState<DocumentRecommendationEntity | null>(null);
 	const [status, setStatus] = React.useState<StatusRekomendasi>('diam');
 	const [pesanGagal, setPesanGagal] = React.useState<string | null>(null);
 
 	/**
-	 * Rekomendasi DIKONFIRMASI terbaru milik bab ini — bukan milik checkpoint
+	 * Rekomendasi terbaru (DIREKOMENDASIKAN/DIKONFIRMASI) milik bab ini — bukan milik checkpoint
 	 * aktifnya. `findRecommendation` TANPA argumen draftId (lihat JSDoc
 	 * `bab-pipeline.service.ts::findRecommendation`) sengaja dicari per bab,
 	 * bukan dicocokkan ke `checkpointAktifId` persis: worker.py selalu
@@ -85,26 +92,32 @@ export function useChapterRecommendation({
 	 * (sinyal "ada sesuatu yang baru saja terjadi"), termasuk saat halaman
 	 * baru dimuat di tengah alur.
 	 */
+	// Pindah section = mulai bersih; rekomendasi section lain tidak boleh terbawa.
+	React.useEffect(() => {
+		setRekomendasi(null);
+		setStatus('diam');
+		setPesanGagal(null);
+	}, [kunciJob]);
+
 	React.useEffect(() => {
 		let dibatalkan = false;
+		if (!sectionId) return;
 
 		chapterRepository
-			.findRecommendation(chapter.id)
+			.findRecommendation(chapter.id, undefined, sectionId)
 			.then((rec) => {
 				if (dibatalkan) return;
 				setRekomendasi((sebelumnya) => {
 					/*
-					 * Query di atas cuma menjawab "yang DIKONFIRMASI" (lihat JSDoc
-					 * `findRecommendation` di `bab-pipeline.service.ts`) — `null` di
-					 * sini bukan berarti "tidak ada rekomendasi sama sekali", bisa
-					 * juga berarti "ada, tapi masih DIREKOMENDASIKAN, menunggu
-					 * ditinjau". Menimpanya begitu saja membuat rekomendasi yang baru
-					 * saja selesai (`trigger`/`tunggu` di bawah) lenyap tanpa jejak
-					 * kalau checkpoint bab kebetulan berubah di saat yang hampir
-					 * sama (mis. pengguna menekan Generate sebelum sempat meninjau) —
-					 * persis race yang membuat rekomendasi "menghilang" dari layar.
+					 * Jaga-jaga race: rekomendasi yang baru saja selesai
+					 * (`trigger`/`tunggu` di bawah) jangan ditimpa `null` dari
+					 * query yang berangkat sebelum barisnya tersimpan.
 					 */
-					if (rec === null && sebelumnya?.status === 'DIREKOMENDASIKAN') {
+					if (
+						rec === null &&
+						sebelumnya?.status === 'DIREKOMENDASIKAN' &&
+						sebelumnya.chapterSectionId === sectionId
+					) {
 						return sebelumnya;
 					}
 					return rec;
@@ -117,12 +130,14 @@ export function useChapterRecommendation({
 		return () => {
 			dibatalkan = true;
 		};
-	}, [chapter.id, chapter.checkpointAktifId]);
+	}, [chapter.id, chapter.checkpointAktifId, sectionId]);
 
 	/** Menunggu satu job REKOMENDASI_DOKUMEN sampai kelar — dipakai baik saat
 	 * baru dipicu maupun saat menyambung ulang ke job id lama dari sessionStorage. */
 	const tunggu = React.useCallback(
 		async (jobId: string) => {
+			// Job selesai setelah user pindah section -> jangan tulis ke state section yang sekarang dibuka.
+			const masihAktif = () => kunciAktif.current === kunciJob;
 			try {
 				let hasilJob: JobEvent | null = null;
 				for await (const event of streamSse<JobEvent>(`/jobs/${jobId}/events`)) {
@@ -132,6 +147,7 @@ export function useChapterRecommendation({
 					}
 				}
 
+				if (!masihAktif()) return;
 				if (
 					!hasilJob ||
 					hasilJob.status === 'failed' ||
@@ -148,66 +164,66 @@ export function useChapterRecommendation({
 
 				const draftId = hasilJob.result?.babDraftId;
 				const rec = draftId
-					? await chapterRepository.findRecommendation(chapter.id, draftId)
+					? await chapterRepository.findRecommendation(chapter.id, draftId, sectionId ?? undefined)
 					: null;
 
+				if (!masihAktif()) return;
 				setRekomendasi(rec);
 				setStatus('diam');
 			} catch {
+				if (!masihAktif()) return;
 				setStatus('gagal');
 				setPesanGagal(
 					'Mencari rekomendasi dokumen gagal diselesaikan. Periksa koneksi lalu coba lagi.',
 				);
 			} finally {
-				hapusJobTertunda(chapter.id, JENIS_JOB);
+				hapusJobTertunda(kunciJob, JENIS_JOB);
 			}
 		},
-		[chapter.id],
+		[chapter.id, sectionId, kunciJob],
 	);
 
 	/** Sambung ulang ke job yang belum sempat selesai saat halaman ini
 	 * dimuat/di-refresh — sekali per bab, bukan tiap render. */
 	React.useEffect(() => {
-		const jobId = ambilJobTertunda(chapter.id, JENIS_JOB);
+		const jobId = ambilJobTertunda(kunciJob, JENIS_JOB);
 		if (!jobId) return;
 
 		setStatus('berjalan');
 		setPesanGagal(null);
 		void tunggu(jobId);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [chapter.id]);
+	}, [kunciJob]);
 
 	const trigger = React.useCallback(async () => {
-		if (!izin.canEdit || status === 'berjalan') return;
+		if (!izin.canEdit || status === 'berjalan' || !sectionId) return;
 
 		setStatus('berjalan');
 		setPesanGagal(null);
 
 		try {
-			const job = await chapterRepository.triggerRecommendDocuments(chapter.id);
-			simpanJobTertunda(chapter.id, JENIS_JOB, job.id);
+			const job = await chapterRepository.triggerRecommendDocuments(chapter.id, undefined, sectionId);
+			simpanJobTertunda(kunciJob, JENIS_JOB, job.id);
 			await tunggu(job.id);
 		} catch {
 			setStatus('gagal');
 			setPesanGagal(
 				'Mencari rekomendasi dokumen gagal diselesaikan. Periksa koneksi lalu coba lagi.',
 			);
-			hapusJobTertunda(chapter.id, JENIS_JOB);
+			hapusJobTertunda(kunciJob, JENIS_JOB);
 		}
-	}, [izin.canEdit, status, chapter.id, tunggu]);
+	}, [izin.canEdit, status, chapter.id, sectionId, kunciJob, tunggu]);
 
 	/**
-	 * `DocumentRecommendation` yang sudah `DIKONFIRMASI` tidak bisa dikonfirmasi
-	 * ulang (`bab-pipeline.service.ts::confirmRecommendation` menolaknya 403) —
-	 * jadi tombolnya di `ChapterDocumentRecommendation` memang disembunyikan
-	 * begitu status ini tercapai, bukan dibiarkan gagal diam-diam.
+	 * Boleh diulang (dimas): tiap generate mengonfirmasi ulang dengan centang terbaru.
+	 * Cuma rekomendasi `DIGANTIKAN` yang ditolak backend.
 	 *
 	 * `selectedEvidenceIds`: pilihan `terpilih` milik `useChapterGeneration`,
 	 * dikirim apa adanya oleh pemanggil.
 	 */
 	const konfirmasi = React.useCallback(
 		async (selectedEvidenceIds: string[]) => {
-			if (!rekomendasi || rekomendasi.status !== 'DIREKOMENDASIKAN') return;
+			if (!rekomendasi || rekomendasi.status === 'DIGANTIKAN') return;
 
 			await chapterRepository.confirmRecommendation(chapter.id, {
 				recommendationId: rekomendasi.id,

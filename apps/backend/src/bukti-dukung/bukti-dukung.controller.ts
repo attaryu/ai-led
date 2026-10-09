@@ -1,6 +1,6 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseEnumPipe, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { Role } from '@ai-led/db';
+import { EvidenceKind, Role } from '@ai-led/db';
 import { Protected } from '../tenant/protected.decorator';
 import { BuktiDukungService } from './bukti-dukung.service';
 import { CreateBuktiDukungDto } from './dto/create-bukti-dukung.dto';
@@ -23,8 +23,11 @@ export class BuktiDukungController {
 
   @Get()
   @Protected(...BUKTI_DUKUNG_ROLES)
-  findAll(@Query('programStudiId') programStudiId?: string) {
-    return this.buktiDukungService.findAll(programStudiId);
+  findAll(
+    @Query('programStudiId') programStudiId?: string,
+    @Query('kind', new ParseEnumPipe(EvidenceKind, { optional: true })) kind?: EvidenceKind,
+  ) {
+    return this.buktiDukungService.findAll(programStudiId, kind);
   }
 
   @Delete(':id')

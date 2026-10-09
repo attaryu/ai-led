@@ -1,0 +1,19 @@
+# Penimpa MinerU untuk docker-compose.mineru-api.yml (dimuat lewat `include`, jangan dijalankan sendiri).
+services:
+  mineru:
+    image: ai-led-mineru:cpu
+    build:
+      dockerfile: Dockerfile.cpu
+    environment:
+      MINERU_MODE: api
+      MINERU_API_KEY: ${MINERU_API_KEY:?isi MINERU_API_KEY (kunci API mineru.net) untuk memakai varian API}
+    # Tanpa GPU dan tanpa model lokal: buang reservasi GPU dan volume model dari basis.
+    deploy: !reset null
+    volumes: !reset []
+
+  # Mesin tanpa GPU NVIDIA: buang permintaan GPU `ai` dan `ai-worker` dari basis (kalau tidak, `up` gagal "could not
+  # select device driver nvidia"). Embedding bge-m3 dipilih otomatis ke CPU -- lebih lambat, tapi jalan.
+  ai:
+    deploy: !reset null
+  ai-worker:
+    deploy: !reset null

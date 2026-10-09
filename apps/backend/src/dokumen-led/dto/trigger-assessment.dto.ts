@@ -14,7 +14,18 @@ export class TriggerAssessmentDto {
   @IsInt({ each: true })
   indikatorList?: number[];
 
-  // Descriptive only — recorded on assessment_sessions, doesn't change how the agent retrieves evidence.
+  // Kunci "nomor|sub" (mis. "43|I") baris rubrik yang dinilai; kalau diisi, mengalahkan indikatorList.
+  // Sub-indikator (43.I / 43.II) dinilai terpisah, jadi nomor saja tidak cukup untuk memilih salah satunya.
+  @ApiPropertyOptional({
+    description: 'Daftar kunci "nomor|sub" sub-indikator yang dinilai (opsional; mengalahkan indikatorList)',
+    example: ['43|I', '5|I'],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  subIndikatorList?: string[];
+
+  // EDITOR: the worker indexes the chapters' current text as the LED; UNGGAHAN: the uploaded LED file.
   @ApiPropertyOptional({ enum: LedSourceMode })
   @IsOptional()
   @IsEnum(LedSourceMode)
@@ -34,4 +45,10 @@ export class TriggerAssessmentDto {
   @IsOptional()
   @IsString()
   laporanBuktiDukungId?: string;
+
+  // Assessor model (ariel: chosen per session); must be one of apps/ai get_available_models().
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  model?: string;
 }

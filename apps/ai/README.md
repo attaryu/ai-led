@@ -24,7 +24,7 @@ dari sana, disesuaikan ke skema/stack `dev-v1` yang sebenarnya.
 | **Worker** | `worker.py` — polling BullMQ (`generation-queue`, `assessment-queue`, `ingestion-queue`) via Redis, service `ai-worker` (image sama dengan `ai`, cuma beda `command`) |
 | **Agent scoring** | LangGraph — dua implementasi graph: `graph.py` (native tool-calling, model chat biasa) dan `reasoning_graph.py` (protokol JSON manual, untuk model reasoning seperti deepseek-r1/qwq yang kurang reliable native tool-calling-nya) |
 | **Vector DB** | pgvector (Postgres, `packages/db`) — bukan ChromaDB. Dua tabel: `writing_led_chunk_embeddings` (LED) dan `evidence_chunk_embeddings` (bukti dukung), isolasi lewat `WHERE tenant_id = ... AND document_id = ...` biasa, bukan collection-per-dokumen |
-| **Embedding** | Sentence-Transformers multilingual (`paraphrase-multilingual-MiniLM-L12-v2`) — di-cache di volume `hf_cache` (lihat `docker-compose.yml`) |
+| **Embedding** | Writing (dimas): `BAAI/bge-m3` 1024-d, kolom `embedding` (`EMBEDDING_MODEL`). Asesmen AMI (ariel): `paraphrase-multilingual-MiniLM-L12-v2` 384-d, kolom `embedding_ami` (`AMI_EMBEDDING_MODEL`). Data lama: `python -m scripts.backfill_ami_embeddings`. Di-cache di volume `hf_cache` |
 | **Ekstraksi PDF** | pdfplumber (Matriks/LED) · MinerU (evidence PDF → Markdown, butuh `poppler-utils`+`libgl1`, sudah dibake di `Dockerfile`) |
 | **State DB** | Postgres via Prisma (`packages/db/prisma/schema.prisma`) — `apps/ai` menulis langsung lewat `db/postgres_client.py`, **bukan** lewat NestJS. Tidak ada Supabase lagi — sisa arsitektur ariel sudah dibuang sepenuhnya |
 | **LLM assessment** | Ollama (self-hosted) atau OpenRouter — `OLLAMA_BASE_URL` bisa daftar beberapa endpoint dipisah koma (1 alamat = 1 GPU), round-robin per panggilan |
@@ -103,7 +103,7 @@ API: <http://localhost:8000> · Scalar API reference: `/reference` · Swagger UI
 | `DATABASE_URL` | Postgres monorepo (Prisma) — **sama dengan** `apps/backend/.env`, dipakai `db/postgres_client.py` untuk assessment_sessions/indicator_results/reasoning_steps dan `db/generation_client.py` untuk jalur GENERASI_BAB |
 | `REDIS_URL` | Antrean BullMQ yang sama dipakai `apps/backend` — worker.py butuh ini buat konsumsi job |
 | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET_NAME` | Sama dengan `R2_*` di `apps/backend/.env` — worker.py unduh berkas Bukti Dukung dari sana |
-| `MAX_PARALLEL_INDICATORS` | Batas concurrency (`asyncio.Semaphore`) untuk menilai banyak indikator sekaligus |
+| `ASSESSMENT_MAX_PARALLEL` | Batas concurrency (`asyncio.Semaphore`) untuk menilai banyak indikator sekaligus |
 | `RUBRIC_CACHE_PATH` / `UPLOAD_DIR` | Path state on-disk di bawah `data/` |
 | `HF_TOKEN` | Opsional, mempercepat download model embedding saat build image |
 
@@ -113,7 +113,7 @@ API: <http://localhost:8000> · Scalar API reference: `/reference` · Swagger UI
 
 Tiap indikator dinilai lewat satu invocation graph LangGraph independen —
 tidak ada state yang dibagi antar-indikator, bisa dijalankan paralel
-(`MAX_PARALLEL_INDICATORS`). `build_graph_auto` memilih graph berdasarkan
+(`ASSESSMENT_MAX_PARALLEL`). `build_graph_auto` memilih graph berdasarkan
 nama model (`deepseek-r1`/`qwq`/`o1-`/dst dianggap model reasoning →
 `reasoning_graph.py`, selain itu → `graph.py`):
 

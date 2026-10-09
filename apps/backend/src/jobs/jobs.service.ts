@@ -47,12 +47,15 @@ export class JobsService implements OnModuleDestroy {
       case JobType.GENERASI_OUTLINE_BAB:
       case JobType.SIMULASI_SKOR:
       case JobType.REKOMENDASI_DOKUMEN:
+      case JobType.PENILAIAN_RAGAS:
         return this.generationQueue;
       case JobType.ASSESSMENT_AMI:
         return this.assessmentQueue;
       case JobType.INGESTION_BUKTI_DUKUNG:
       case JobType.INGESTION_RUBRIK_DOKUMEN:
       case JobType.INGESTION_STRUKTUR_DOKUMEN:
+      case JobType.INGESTION_LKPS:
+      case JobType.INGESTION_LED:
         return this.ingestionQueue;
     }
   }
@@ -91,7 +94,24 @@ export class JobsService implements OnModuleDestroy {
    */
   async cancel(jobId: string) {
     const { tenantId } = this.tenantContext.getOrThrow();
-    const job = await this.prisma.job.findFirst({ where: { id: jobId, tenantId } });
+    // ponytail: terima Job.id (cuid Postgres) MAUPUN bullJobId (nomor antrean).
+    // Web mengirim `bullJobId` -- `assessment-session.entity.ts` memetakan
+    // `jobId: row.bullJobId` -- sementara dulu di sini hanya `id` yang dicari,
+    // jadi membatalkan penilaian selalu 404 "Job not found" dan muncul sebagai
+    // "Gagal membatalkan penilaian" tanpa jejak error di log mana pun.
+    // `bullJobId` hanya unik PER ANTREAN (generation/ingestion/assessment punya
+    // counter sendiri, jadi "12" bisa ada di tiga-tiganya). Pencocokan
+    // bullJobId karenanya dibatasi ke antrean yang jobnya memang bisa
+    // dibatalkan -- satu-satunya yang membaca flag ini adalah ASSESSMENT_AMI
+    // (worker.py `job:cancel:{id}`). Tanpa batasan itu, membatalkan penilaian
+    // bisa mengenai job ingestion yang kebetulan bernomor sama.
+    const job = await this.prisma.job.findFirst({
+      where: {
+        tenantId,
+        OR: [{ id: jobId }, { bullJobId: jobId, type: JobType.ASSESSMENT_AMI }],
+      },
+      orderBy: { createdAt: 'desc' },
+    });
     if (!job) throw new NotFoundException('Job not found');
 
     const queue = this.queueFor(job.type);

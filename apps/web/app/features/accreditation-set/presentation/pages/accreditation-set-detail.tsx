@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ApiError } from '~/core/lib/api-client';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate, useParams } from 'react-router';
@@ -6,6 +7,7 @@ import {
 	ArrowLeftIcon,
 	ArrowRightIcon,
 	CopySimpleIcon,
+	ListChecksIcon,
 } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
@@ -25,14 +27,18 @@ import {
 	deriveSetCompleteness,
 	deriveSetReadiness,
 	findSetDocument,
+	type PanduanLibraryItem,
 	type SetDocumentType,
 } from '../../domain/entities/accreditation-set.entity';
 import { EvidenceStatusBadge } from '~/features/evidence/presentation/components/evidence-status-badge';
 import { accreditationSetRepository } from '../../data/repositories/accreditation-set.repository';
 import { AccreditationSetFormFields } from '../components/accreditation-set-form-fields';
 import { DocumentSlotCard } from '../components/document-slot-card';
+import { PanduanManageModal } from '../components/panduan-manage-modal';
+import { PanduanSlotCard } from '../components/panduan-slot-card';
 import { SetLockNotice } from '../components/set-lock-notice';
 import { SetStatusBadge } from '../components/set-status-badge';
+import { StructureConfirmModal } from '../components/structure-confirm-modal';
 import { useAccreditationSet } from '../hooks/use-accreditation-set';
 import { useAccreditationSetPermission } from '../hooks/use-accreditation-set-permission';
 
@@ -45,6 +51,9 @@ export function AccreditationSetDetail() {
 	const { konfirmasi, confirmDialog } = useConfirmDialog();
 	const [formError, setFormError] = React.useState<string | null>(null);
 	const [aksiError, setAksiError] = React.useState<string | null>(null);
+	const [strukturModalTerbuka, setStrukturModalTerbuka] = React.useState(false);
+	const [panduanManageTerbuka, setPanduanManageTerbuka] = React.useState(false);
+	const [panduanLibrary, setPanduanLibrary] = React.useState<PanduanLibraryItem[] | null>(null);
 
 	const {
 		register,
@@ -73,6 +82,22 @@ export function AccreditationSetDetail() {
 		}
 	}, [set?.id, set?.nama, set?.lembaga, set?.tahunSiklus, reset]);
 
+	// Daftar Panduan tenant ini -- dropdown "pilih existing" + info "dipakai N
+	// set lain" pada slot yang sudah terisi, dan sumber modal Kelola Panduan.
+	// Cuma perlu dimuat kalau boleh mengelola berkas; pembaca-saja tidak pernah
+	// menyentuh slot ini.
+	const muatPanduanLibrary = React.useCallback(() => {
+		accreditationSetRepository
+			.listPanduan()
+			.then(setPanduanLibrary)
+			.catch(() => setPanduanLibrary([]));
+	}, []);
+
+	React.useEffect(() => {
+		if (!canManage) return;
+		muatPanduanLibrary();
+	}, [canManage, muatPanduanLibrary]);
+
 	const onSubmit = async (data: UpdateAccreditationSetDto) => {
 		if (!setId) return;
 		setFormError(null);
@@ -80,8 +105,8 @@ export function AccreditationSetDetail() {
 		try {
 			await accreditationSetRepository.update(setId, data);
 			reload();
-		} catch {
-			setFormError('Gagal menyimpan perubahan.');
+		} catch (e) {
+			setFormError(e instanceof ApiError ? e.message : 'Gagal menyimpan perubahan.');
 		}
 	};
 
@@ -135,6 +160,88 @@ export function AccreditationSetDetail() {
 		},
 		[setId, reload, konfirmasi],
 	);
+
+	const handleSelectExistingPanduan = React.useCallback(
+		async (panduanId: string) => {
+			if (!setId) return;
+			setAksiError(null);
+			try {
+				await accreditationSetRepository.attachPanduan(setId, panduanId);
+				reload();
+			} catch (e) {
+				setAksiError(e instanceof Error ? e.message : 'Gagal memasang Panduan.');
+			}
+		},
+		[setId, reload],
+	);
+
+	const handleUploadNewPanduan = React.useCallback(
+		async (file: File) => {
+			if (!setId) return;
+			setAksiError(null);
+			try {
+				await accreditationSetRepository.uploadAndAttachPanduan(setId, file);
+				reload();
+				// Panduan baru belum muncul di daftar sebelumnya -- muat ulang
+				// supaya set lain yang membuka dropdown ini langsung melihatnya juga.
+				muatPanduanLibrary();
+			} catch (e) {
+				setAksiError(e instanceof Error ? e.message : 'Gagal mengunggah Panduan.');
+			}
+		},
+		[setId, reload, muatPanduanLibrary],
+	);
+
+	// Ganti berkas Panduan yang SUDAH terpasang -- wipe+re-extract, mempengaruhi
+	// SEMUA set lain yang menunjuk Panduan yang sama, bukan cuma set ini.
+	// Peringatan eksplisit di sini karena akibatnya tidak kelihatan dari layar
+	// set ini sendiri.
+	const handleReplacePanduan = React.useCallback(
+		async (file: File) => {
+			if (!setId || !set?.panduan) return;
+
+			const jumlahSetLain = panduanLibrary?.find((p) => p.id === set.panduan?.id)?.jumlahSetPemakai ?? 1;
+			if (jumlahSetLain > 1) {
+				const lanjut = await konfirmasi({
+					judul: 'Ganti berkas Panduan ini?',
+					deskripsi: `Panduan ini dipakai ${jumlahSetLain} Set (termasuk ini) -- strukturnya akan diekstrak ulang dan SEMUA set itu perlu meninjau ulang hasilnya sebelum bisa dipakai lagi.`,
+					labelAksi: 'Ganti Berkas',
+					merusak: true,
+				});
+				if (!lanjut) return;
+			}
+
+			setAksiError(null);
+			try {
+				await accreditationSetRepository.replacePanduan(set.panduan.id, file);
+				reload();
+			} catch (e) {
+				setAksiError(e instanceof Error ? e.message : 'Gagal mengunggah ulang Panduan.');
+			}
+		},
+		[setId, set?.panduan, panduanLibrary, reload, konfirmasi],
+	);
+
+	const handleDetachPanduan = React.useCallback(async () => {
+		if (!setId) return;
+
+		const lanjut = await konfirmasi({
+			judul: 'Lepas Panduan dari set ini?',
+			deskripsi:
+				'Set ini tidak lagi menunjuk Panduan manapun -- Panduan itu sendiri (dan set lain yang memakainya) tidak terpengaruh.',
+			labelAksi: 'Lepas Panduan',
+			merusak: true,
+		});
+		if (!lanjut) return;
+
+		setAksiError(null);
+		try {
+			await accreditationSetRepository.detachPanduan(setId);
+			reload();
+		} catch (e) {
+			setAksiError(e instanceof Error ? e.message : 'Gagal melepas Panduan.');
+		}
+	}, [setId, reload, konfirmasi]);
 
 	const duplikat = React.useCallback(async () => {
 		if (!setId) return;
@@ -213,8 +320,15 @@ export function AccreditationSetDetail() {
 							{(set.criteriaParseStatus === 'DIPROSES' || set.criteriaParseStatus === 'GAGAL') && (
 								<EvidenceStatusBadge status={set.criteriaParseStatus} />
 							)}
-							{(set.structureParseStatus === 'DIPROSES' || set.structureParseStatus === 'GAGAL') && (
-								<EvidenceStatusBadge status={set.structureParseStatus} />
+							{(set.panduan?.structureParseStatus === 'DIPROSES' ||
+								set.panduan?.structureParseStatus === 'GAGAL') && (
+								<EvidenceStatusBadge status={set.panduan.structureParseStatus} />
+							)}
+							{set.panduan?.structureParseStatus === 'MENUNGGU_KONFIRMASI' && (
+								<span className="inline-flex items-center gap-1 rounded-full border border-amber-200/50 bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:border-amber-800/30 dark:bg-amber-900/30 dark:text-amber-300">
+									<ListChecksIcon className="size-3.5" />
+									Menunggu Konfirmasi
+								</span>
 							)}
 						</div>
 						{/* Jumlah kriteria ikut di sini, bukan di kartu tersendiri di dasar
@@ -282,18 +396,57 @@ export function AccreditationSetDetail() {
 				</div>
 			)}
 
-			{set.structureParseStatus === 'DIPROSES' && (
+			{set.panduan?.structureParseStatus === 'DIPROSES' && (
 				<div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
 					Memproses ekstraksi struktur bab dari berkas Panduan Penulisan yang baru diunggah — halaman ini
 					akan memperbarui diri begitu selesai.
 				</div>
 			)}
 
-			{set.structureParseStatus === 'GAGAL' && (
+			{set.panduan?.structureParseStatus === 'GAGAL' && (
 				<div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-					Ekstraksi struktur bab otomatis gagal: {set.structureParseError ?? 'penyebab tidak diketahui'}.
+					Ekstraksi struktur bab otomatis gagal: {set.panduan.structureParseError ?? 'penyebab tidak diketahui'}.
 					Dokumen LED baru dari set ini tetap memakai struktur bab standar — unggah ulang Panduan
 					Penulisan untuk mencoba lagi.
+				</div>
+			)}
+
+			{/* Ekstraksi selesai tapi belum di-commit -- user harus meninjau (uncheck
+			    bab/sub-bab yang tak perlu) dulu di modal sebelum apa pun masuk ke
+			    ChapterTemplate/SubBabTemplate. Beda dari DIPROSES/GAGAL di atas:
+			    ini butuh AKSI, bukan cuma info, jadi tombolnya di sini juga. */}
+			{set.panduan?.structureParseStatus === 'MENUNGGU_KONFIRMASI' && (
+				<div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+					<span>
+						Ekstraksi struktur bab dari Panduan Penulisan selesai — tinjau dan un-centang bagian yang
+						tidak diperlukan sebelum dipakai.
+					</span>
+					<Button
+						size="sm"
+						onClick={() => setStrukturModalTerbuka(true)}
+						className="cursor-pointer gap-2"
+					>
+						<ListChecksIcon className="size-4" />
+						Tinjau Struktur
+					</Button>
+				</div>
+			)}
+
+			{/* gap #2: begitu struktur sudah commit (SIAP, bukan lagi menunggu
+			    konfirmasi), tombol yang sama membuka modal dalam mode toggle
+			    (kelola isActive per sub-bab) -- lihat StructureConfirmModal. */}
+			{set.panduan?.structureParseStatus === 'SIAP' && (
+				<div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+					<span>Struktur bab dari Panduan Penulisan sudah aktif.</span>
+					<Button
+						size="sm"
+						variant="outline"
+						onClick={() => setStrukturModalTerbuka(true)}
+						className="cursor-pointer gap-2"
+					>
+						<ListChecksIcon className="size-4" />
+						Kelola Struktur
+					</Button>
 				</div>
 			)}
 
@@ -356,12 +509,34 @@ export function AccreditationSetDetail() {
 						    masih kosong. */}
 						<CardTitle className="flex items-center justify-between gap-2">
 							Berkas Acuan
-							<span className="text-sm font-normal tabular-nums text-muted-foreground">
-								{terisi.length}/{SET_DOCUMENT_TYPES.length}
+							<span className="flex items-center gap-2">
+								{canManage && (
+									<Button
+										type="button"
+										variant="link"
+										size="sm"
+										className="h-auto cursor-pointer p-0 text-xs font-normal"
+										onClick={() => setPanduanManageTerbuka(true)}
+									>
+										Kelola Panduan
+									</Button>
+								)}
+								<span className="text-sm font-normal tabular-nums text-muted-foreground">
+									{terisi.length + (set.panduan ? 1 : 0)}/{SET_DOCUMENT_TYPES.length + 1}
+								</span>
 							</span>
 						</CardTitle>
 					</CardHeader>
 					<CardContent className="flex flex-col gap-3">
+						<PanduanSlotCard
+							panduan={set.panduan}
+							library={panduanLibrary}
+							canManage={canManage && lock.terbuka}
+							onSelectExisting={handleSelectExistingPanduan}
+							onUploadNew={handleUploadNewPanduan}
+							onReplace={handleReplacePanduan}
+							onDetach={handleDetachPanduan}
+						/>
 						{SET_DOCUMENT_TYPES.map((tipe) => (
 							<DocumentSlotCard
 								key={tipe}
@@ -380,6 +555,20 @@ export function AccreditationSetDetail() {
 			</div>
 
 			{confirmDialog}
+
+			<StructureConfirmModal
+				setId={set.id}
+				open={strukturModalTerbuka}
+				onOpenChange={setStrukturModalTerbuka}
+				onConfirmed={reload}
+			/>
+
+			<PanduanManageModal
+				open={panduanManageTerbuka}
+				onOpenChange={setPanduanManageTerbuka}
+				library={panduanLibrary}
+				onChanged={muatPanduanLibrary}
+			/>
 		</div>
 	);
 }

@@ -191,7 +191,7 @@ export function SheetBody({
 }) {
 	return (
 		<ScrollArea className="min-h-0 flex-1">
-			<div className={cn('p-5', className)}>{children}</div>
+			<div className={cn('relative p-5', className)}>{children}</div>
 		</ScrollArea>
 	);
 }

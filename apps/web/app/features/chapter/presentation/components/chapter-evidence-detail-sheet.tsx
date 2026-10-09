@@ -118,17 +118,13 @@ export function ChapterEvidenceDetailSheet({
 			 */}
 			<SheetBody className="space-y-2">
 				<ChapterChunkList
-					potongan={kutipan.map((potongan) => ({
-						id: potongan.id,
-						kutipan: potongan.kutipan,
-						asal:
-							potongan.halamanMulai === potongan.halamanSelesai
-								? `hlm. ${potongan.halamanMulai}`
-								: `hlm. ${potongan.halamanMulai}–${potongan.halamanSelesai}`,
-						judulBagian: potongan.judulBagian,
-					}))}
-					pengantar={`${kutipan.length} bagian berkas ini dipakai saat menyusun bab tersebut.`}
-					catatanKaki="Kutipan masih contoh: pencarian ke isi berkas yang sebenarnya menyusul bersama vector database-nya."
+					potongan={kutipan}
+					pengantar={
+						kutipan.length > 0
+							? `${kutipan.length} bagian berkas ini dipakai AI saat menyusun bab tersebut.`
+							: 'Belum ada potongan berkas ini yang tercatat dipakai AI pada generate terakhir.'
+					}
+					catatanKaki="Diambil dari generate terakhir tiap section; label di atas tiap potongan adalah section-nya."
 				/>
 			</SheetBody>
 		</Sheet>

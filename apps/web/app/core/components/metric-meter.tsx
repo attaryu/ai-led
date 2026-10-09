@@ -36,8 +36,8 @@ export function MetricMeter({
 	nilai: number;
 	/** Kenapa angkanya segitu pada kejadian yang sedang dilihat. */
 	alasan: string;
-	/** Judul kotak alasan, mis. "Pada generate ini" / "Pada penilaian ini". */
-	alasanLabel: string;
+	/** Judul kotak alasan, mis. "Pada generate ini" / "Pada penilaian ini". Kosong = tanpa judul. */
+	alasanLabel?: string;
 	className?: string;
 }) {
 	const persen = Math.round(nilai * 100);
@@ -90,12 +90,17 @@ export function MetricMeter({
 				/>
 			</div>
 
-			<div className="rounded-md bg-muted/60 p-2.5">
-				<p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-					{alasanLabel}
-				</p>
-				<p className="mt-1 text-xs leading-relaxed">{alasan}</p>
-			</div>
+			{/* Kotak alasan hanya tampil bila ada alasannya (skor RAGAS asli tidak membawa alasan per metrik). */}
+			{alasan.trim() && (
+				<div className="rounded-md bg-muted/60 p-2.5">
+					{alasanLabel && (
+						<p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+							{alasanLabel}
+						</p>
+					)}
+					<p className={cn('text-xs leading-relaxed', alasanLabel && 'mt-1')}>{alasan}</p>
+				</div>
+			)}
 		</div>
 	);
 }

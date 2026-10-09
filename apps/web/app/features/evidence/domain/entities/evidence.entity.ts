@@ -62,6 +62,12 @@ export const evidenceSchema = z.object({
 	status: evidenceStatusEnum,
 	/** Alasan singkat saat `status = GAGAL`, ditampilkan di panel detail. */
 	catatanGagal: z.string().nullable(),
+	/**
+	 * Tahun / periode data, teks bebas (mis. "2024/2025"). Hanya LKPS yang memakainya --
+	 * Bukti Dukung dan LKPS lama selalu `null`. Pembeda utama beberapa LKPS dalam satu
+	 * prodi saat dipilih untuk sebuah Dokumen LED.
+	 */
+	periode: z.string().nullable(),
 	uploadedByUserId: z.string(),
 	uploadedByName: z.string(),
 	waktuDiunggah: z.string(),

@@ -130,3 +130,40 @@ def test_get_sheet_as_text_empty_sheet():
     reg = LKPSRegistry(sheets={"empty": pd.DataFrame()})
     result = reg.get_sheet_as_text("empty")
     assert "kosong" in result
+
+
+# ── get_by_ref: cocok langsung ke nama sheet yang ada (tanpa berkas LKPS eksternal) ──────────────
+
+
+def _registry(*nama):
+    return LKPSRegistry(sheets={n: pd.DataFrame({"k": [n]}) for n in nama})
+
+
+def test_get_by_ref_sheet_6c1_yang_tidak_ada_di_peta_statis():
+    """Regresi: peta statis hanya punya 'tabel 6.c' -> ['6c'], jadi 'Tabel 6.c.1' dianggap tidak ada
+    padahal sheet-nya bernama '6c1'. Penilaian AMI indikator 43 gagal karena ini."""
+    reg = _registry("6c1", "6c2", "6a")
+    df = reg.get_by_ref("Tabel 6.c.1. LKPS")
+    assert df is not None and list(df["k"]) == ["6c1"]
+
+
+def test_get_by_ref_token_huruf_mencakup_turunannya():
+    reg = _registry("6c1", "6c2", "6d")
+    assert list(reg.get_by_ref("Tabel 6.c LKPS")["k"]) == ["6c1", "6c2"]
+
+
+def test_get_by_ref_nama_sheet_bertanda_hubung_dan_kembar_prefix():
+    reg = _registry("4f-1", "4f-2", "4f-3", "4g")
+    assert list(reg.get_by_ref("Tabel 4.f.3. LKPS")["k"]) == ["4f-3"]
+    assert list(reg.get_by_ref("Tabel 4.f. LKPS")["k"]) == ["4f-1", "4f-2", "4f-3"]
+
+
+def test_get_by_ref_token_angka_saja_hanya_cocok_persis():
+    reg = _registry("1", "10", "2a1")
+    assert list(reg.get_by_ref("Tabel 1 LKPS")["k"]) == ["1"]
+
+
+def test_get_by_ref_tidak_ditemukan_mengembalikan_none_dan_peta_lama_tetap_jadi_cadangan():
+    assert _registry("2b").get_by_ref("Tabel 9.z LKPS") is None
+    # peta statis lama masih dipakai bila tidak ada kecocokan langsung ("tabel 2.a" -> 2a1..2a3)
+    assert list(_registry("2a1", "2a2").get_by_ref("Tabel 2.a. LKPS")["k"]) == ["2a1", "2a2"]

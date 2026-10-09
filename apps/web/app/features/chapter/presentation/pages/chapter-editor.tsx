@@ -1,17 +1,19 @@
 import { useEditor } from '@tiptap/react';
-import { ListIcon, SidebarSimpleIcon } from '@phosphor-icons/react';
+import { ListIcon, SidebarSimpleIcon, SparkleIcon, SpinnerGapIcon, TableIcon } from '@phosphor-icons/react';
 import * as React from 'react';
 import { Navigate, useParams } from 'react-router';
 
-import { PlaceholderPage } from '~/core/components/placeholder-page';
+import { LoadFailedPage, PlaceholderPage } from '~/core/components/placeholder-page';
 import { Button } from '~/core/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '~/core/components/ui/tabs';
+import { bacaTabTersimpan, simpanTab } from '../utils/tab-panel-tersimpan';
 import { useEscapeLayer } from '~/core/lib/escape-layer';
 import {
 	canAccessTenant,
 	useRoleGuard,
 } from '~/features/auth/presentation/hooks/use-role-guard';
 import { useSession } from '~/features/auth/presentation/hooks/use-session';
+import { evidenceRepository } from '~/features/evidence/data/repositories/evidence.repository';
 import { ledProjectRepository } from '~/features/led-project/data/repositories/led-project.repository';
 import { type LedProjectEntity } from '~/features/led-project/domain/entities/led-project.entity';
 import { chapterRepository } from '../../data/repositories/chapter.repository';
@@ -32,13 +34,15 @@ import {
 } from '../components/chapter-editor-panels';
 import { ChapterEditorToc } from '../components/chapter-editor-toc';
 import { ChapterEditorToolbar } from '../components/chapter-editor-toolbar';
+import { type KontrolGenerate } from '../components/chapter-generation-panel';
+import { SectionTableSpecDialog } from '../components/section-table-spec-dialog';
 import { useChapterAutosave } from '../hooks/use-chapter-autosave';
-import { type HasilPulih } from '../hooks/use-chapter-draft';
 import { type HasilGenerate } from '../hooks/use-chapter-generation';
 import { useChapterPermission } from '../hooks/use-chapter-permission';
+import { type HasilPulihSection } from '../hooks/use-section-draft';
 import { usePanelResize } from '../hooks/use-panel-resize';
 import { useSectionSources } from '../hooks/use-section-sources';
-import { CITATION_LINK_HREF, sisipkanTautanSitasi } from '../utils/citation-links';
+import { CITATION_LABEL_ATTR, sisipkanTautanSitasi } from '../utils/citation-links';
 import { editorExtensions } from '../utils/editor-extensions';
 
 /**
@@ -68,6 +72,7 @@ export function ChapterEditor() {
 	const [chapters, setChapters] = React.useState<ChapterEntity[] | undefined>(
 		undefined,
 	);
+	const [gagalMuat, setGagalMuat] = React.useState(false);
 
 	React.useEffect(() => {
 		if (!projectId) {
@@ -78,12 +83,22 @@ export function ChapterEditor() {
 		setLedProject(undefined);
 		setChapters(undefined);
 		let cancelled = false;
-		ledProjectRepository.findById(projectId).then((found) => {
-			if (!cancelled) setLedProject(found ?? null);
-		});
-		chapterRepository.findByProjectId(projectId).then((found) => {
-			if (!cancelled) setChapters(found);
-		});
+		const gagal = () => {
+			if (!cancelled) setGagalMuat(true);
+		};
+		setGagalMuat(false);
+		ledProjectRepository
+			.findById(projectId)
+			.then((found) => {
+				if (!cancelled) setLedProject(found ?? null);
+			})
+			.catch(gagal);
+		chapterRepository
+			.findByProjectId(projectId)
+			.then((found) => {
+				if (!cancelled) setChapters(found);
+			})
+			.catch(gagal);
 		return () => {
 			cancelled = true;
 		};
@@ -145,9 +160,14 @@ export function ChapterEditor() {
 			return;
 		}
 		let cancelled = false;
-		chapterRepository.findSections(chapter.id).then((found) => {
-			if (!cancelled) setSections(found);
-		});
+		chapterRepository
+			.findSections(chapter.id)
+			.then((found) => {
+				if (!cancelled) setSections(found);
+			})
+			.catch(() => {
+				if (!cancelled) setGagalMuat(true);
+			});
 		return () => {
 			cancelled = true;
 		};
@@ -200,6 +220,8 @@ export function ChapterEditor() {
 	// Ditaruh sesudah seluruh hook di atas (Rules of Hooks) — `ledProject`/
 	// `chapters` sekarang datang dari HTTP, jadi ada jeda sebelum keduanya siap.
 	// `sections` cuma ikut menggerbang saat `sectionId` memang ada di URL.
+	if (gagalMuat) return <LoadFailedPage />;
+
 	if (ledProject === undefined || chapters === undefined || (sectionId && sections === undefined)) {
 		return (
 			<div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
@@ -317,9 +339,15 @@ function ChapterEditorWorkspace({
 	/** Diteruskan ke `ChapterEditorToc` — lihat `refetchChapterToc` di `ChapterEditor`. */
 	onSectionAdded: () => void | Promise<void>;
 }) {
+	// Tab terakhir yang dipilih pengguna dipulihkan (refresh dan pindah sub-bab tidak mengembalikannya ke bawaan).
+	// Workspace hanya dirender sesudah data dimuat di klien, jadi membaca penyimpanan browser di sini aman dari SSR.
 	const [tabAktif, setTabAktif] = React.useState<PanelTabValue>(
-		PANEL_TABS[0].value,
+		() =>
+			bacaTabTersimpan(PANEL_TABS.map((tab) => tab.value)) ?? PANEL_TABS[0].value,
 	);
+	React.useEffect(() => {
+		simpanTab(tabAktif);
+	}, [tabAktif]);
 
 	/**
 	 * Baris bab yang dilihat sidebar kanan.
@@ -332,6 +360,26 @@ function ChapterEditorWorkspace({
 	 * Tiptap memang hanya dibaca sekali saat editor dibuat.
 	 */
 	const [babTerkini, setBabTerkini] = React.useState(chapter);
+	// Review (kunci/catatan/pengajuan) milik section yang terbuka, bukan bab.
+	const [sectionTerkini, setSectionTerkini] = React.useState(section);
+	/** dimas: satu tombol Generate + ikon Tabel untuk section terbuka, sebaris dengan tools editor. */
+	const [kontrolGenerate, setKontrolGenerate] = React.useState<KontrolGenerate | null>(null);
+	const [tabelTerbuka, setTabelTerbuka] = React.useState(false);
+	const babView = React.useMemo(
+		() =>
+			sectionTerkini
+				? {
+						...babTerkini,
+						kontenKerja: sectionTerkini.konten,
+						terkunci: sectionTerkini.terkunci,
+						catatanPenjaminMutu: sectionTerkini.catatanPenjaminMutu,
+						catatanOlehNama: sectionTerkini.catatanOlehNama,
+						catatanPada: sectionTerkini.catatanPada,
+						diajukanReviewPada: sectionTerkini.diajukanReviewPada,
+					}
+				: babTerkini,
+		[babTerkini, sectionTerkini],
+	);
 
 	/**
 	 * Laci mana yang terbuka di bawah `lg` — Daftar Isi, sidebar kanan, atau tidak
@@ -390,7 +438,7 @@ function ChapterEditorWorkspace({
 	//
 	// Hanya hak akses yang pindah ke state; `content` Tiptap tetap dibaca sekali
 	// dari prop, persis seperti yang dijaga catatan di atas.
-	const izin = useChapterPermission(babTerkini, studyProgramId);
+	const izin = useChapterPermission(babView, studyProgramId);
 	const autosave = useChapterAutosave({
 		chapterId: chapter.id,
 		sectionId: section?.id ?? null,
@@ -404,6 +452,16 @@ function ChapterEditorWorkspace({
 	const { markDirty, flush } = autosave;
 
 	const sumberSection = useSectionSources(chapter.id, section?.id);
+
+	// `handleClickOn` di bawah dipasang sekali saat editor dibuat (bagian dari
+	// `editorProps`, bukan `deps` React) -- kalau closure langsung memakai
+	// `sumberSection`, klik pertama sebelum hover-card-nya fetch selesai akan
+	// terjebak memakai versi lama (`null`) selamanya untuk editor instance ini.
+	// Ref dibaca ulang tiap klik, selalu versi terbaru.
+	const sumberRef = React.useRef(sumberSection);
+	React.useEffect(() => {
+		sumberRef.current = sumberSection;
+	}, [sumberSection]);
 
 	const editor = useEditor({
 		extensions: editorExtensions,
@@ -423,13 +481,37 @@ function ChapterEditorWorkspace({
 		editable: izin.canEdit,
 		editorProps: {
 			attributes: { class: 'tiptap', 'data-slot': 'chapter-editor-content' },
-			// Klik angka sitasi "(sumber: ...)" -> pindah ke tab Bukti, bukan taruh kursor.
+			// Klik sitasi "(sumber: ...)": kalau chunk aslinya (hover-card,
+			// use-section-sources.ts) tahu berkas Evidence-nya, buka berkas itu
+			// langsung (persis seperti [link] di dokumen LED asli) -- baru kalau
+			// tidak (belum pernah digenerate lewat job ini, atau sitasi LED/LKPS
+			// tanpa berkas tunggal), fallback ke perilaku lama: pindah ke tab Bukti.
 			handleClickOn: (_view, _pos, _node, _nodePos, event) => {
-				const target = (event.target as HTMLElement).closest(`a[href="${CITATION_LINK_HREF}"]`);
+				const target = (event.target as HTMLElement).closest<HTMLElement>(
+					`[${CITATION_LABEL_ATTR}]`,
+				);
 				if (!target) return false;
-				event.preventDefault();
-				setTabAktif('rujukan');
-				return true;
+				const label = target.getAttribute(CITATION_LABEL_ATTR);
+				const chunk = label
+					? (sumberRef.current?.chunks ?? []).find((c) => c.label === label && c.fileUrl)
+					: undefined;
+				if (chunk?.fileUrl) {
+					event.preventDefault();
+					evidenceRepository.openFile(chunk.fileUrl);
+					return true;
+				}
+				// `target` yang match `[data-citation-label]` SELALU elemen mark
+				// CitationLabel (selalu `<span>`, lihat citation-mark.ts) -- kalau
+				// sitasi ini juga match Evidence terkonfirmasi, mark `Link` bawaan
+				// StarterKit ikut menempel & membungkusnya dalam `<a href>` sungguhan
+				// (dua mark sama-sama menempel, dirender bersarang), makanya dicek
+				// lewat leluhur terdekat, bukan `target.tagName` langsung.
+				if (target.closest('a[href]')) {
+					event.preventDefault();
+					setTabAktif('rujukan');
+					return true;
+				}
+				return false;
 			},
 		},
 		onUpdate: ({ editor, transaction }) => {
@@ -459,13 +541,9 @@ function ChapterEditorWorkspace({
 	}, [editor, izin.canEdit]);
 
 	/**
-	 * Membawa isi bab yang ditulis **dari luar editor** ke layar.
-	 *
-	 * Dipakai dua jalur yang bentuknya sama persis: hasil generate (§12.1) dan
-	 * pemulihan checkpoint (§8.1). Keduanya sudah menulis sendiri ke repository —
-	 * jadi yang tersisa cuma menyusulkan kanvas dan merapikan autosave. Sengaja
-	 * satu fungsi: dua salinan dari urutan di bawah pasti akan menyimpang, dan
-	 * menyimpangnya senyap.
+	 * Membawa isi bab yang ditulis **dari luar editor** ke layar sesudah
+	 * generate (§12.1) selesai — generate sudah menulis sendiri ke repository,
+	 * jadi yang tersisa cuma menyusulkan kanvas dan merapikan autosave.
 	 *
 	 * `emitUpdate: false` bukan pilihan gaya. Sejak Tiptap v3, `setContent`
 	 * memancarkan update secara bawaan — tanpa mematikannya, `onUpdate` di atas
@@ -473,54 +551,66 @@ function ChapterEditorWorkspace({
 	 * dan indikator berkedip menyimpan tanpa ada yang berubah.
 	 *
 	 * `adopt` menyusul **sinkron**: kalau pengguna sempat mengetik lalu menekan
-	 * Generate atau memulihkan checkpoint, ada simpanan tertunda yang memegang
-	 * tulisan lama dan akan menimpanya balik beberapa ratus milidetik kemudian.
+	 * Generate, ada simpanan tertunda yang memegang tulisan lama dan akan
+	 * menimpanya balik beberapa ratus milidetik kemudian.
 	 */
 	const adopsiIsiBaru = React.useCallback(
-		({ html, chapter: diperbarui }: HasilGenerate | HasilPulih) => {
-			// Kanvas cuma pegang isi SATU section saat `section` ada — HTML bab
-			// utuh dari sini tidak boleh menimpanya. `babTerkini` tetap
-			// diperbarui (dibaca panel lain), cuma editor yang dilewati; pindah
-			// balik ke tampilan bab utuh sudah cukup untuk melihat hasilnya
-			// (backend sudah menulisnya duluan).
-			if (!section) editor?.commands.setContent(html, { emitUpdate: false });
+		({ html, chapter: diperbarui }: HasilGenerate) => {
 			if (diperbarui.terakhirDisimpan) autosave.adopt(diperbarui.terakhirDisimpan);
 			setBabTerkini(diperbarui);
+			if (!section) {
+				editor?.commands.setContent(html, { emitUpdate: false });
+				return;
+			}
+			// Kanvas cuma pegang isi SATU section — HTML bab utuh tidak boleh menimpanya.
+			// Ambil isi section ini yang baru ditulis worker, supaya hasil generate langsung tampil.
+			void chapterRepository.findSections(diperbarui.id).then((found) => {
+				const baru = found.find((item) => item.id === section.id);
+				if (!baru) return;
+				editor?.commands.setContent(baru.konten ?? '', { emitUpdate: false });
+				setSectionTerkini(baru);
+			});
 		},
 		[editor, autosave, section],
 	);
 
 	/**
-	 * Isi bab yang **benar-benar terkini**, untuk checkpoint di tab Draft.
-	 *
-	 * `kontenKerja` dibaca langsung dari editor. Backend menulis checkpoint dari
-	 * `kontenKerja` bab saat itu di server, jadi `flush()` di-`await` dulu supaya
-	 * backend sudah punya ketikan terakhir sebelum checkpoint dibuat — gagal
-	 * flush berarti `undefined`, jangan checkpoint isi yang belum tentu sampai.
+	 * Isi SECTION yang benar-benar terkini, untuk checkpoint tab Draft saat
+	 * sebuah section terbuka. `flush()` dulu supaya backend sudah punya
+	 * ketikan terakhir sebelum checkpoint dibuat, lalu baca `editor.getHTML()`
+	 * langsung -- kanvas memang cuma pegang isi section ini.
 	 */
-	const ambilSnapshot = React.useCallback(async () => {
+	const ambilSnapshotSection = React.useCallback(async () => {
+		if (!section) return undefined;
 		const tersimpan = await autosave.flush();
-		if (!tersimpan) return undefined;
+		if (!tersimpan || !editor) return undefined;
+		return { ...section, konten: editor.isEmpty ? '' : editor.getHTML() };
+	}, [autosave, editor, section]);
 
-		// Kanvas cuma pegang isi SATU section — checkpoint butuh `kontenKerja`
-		// BAB UTUH, jadi dibaca ulang dari backend (bukan `editor.getHTML()`).
-		// `recompileChapterContent` (backend, dipicu autosave section di atas)
-		// sudah menimpa `workingContent`-nya begitu `flush()` di atas selesai.
-		if (section) return chapterRepository.refreshFromBackend(chapter.id);
-
-		if (!editor) return undefined;
-		const kontenKerja = editor.isEmpty ? '' : editor.getHTML();
-		return { ...babTerkini, kontenKerja };
-	}, [autosave, editor, babTerkini, section, chapter.id]);
+	/**
+	 * Checkpoint section dipulihkan -> dorong isinya ke kanvas.
+	 *
+	 * Beda dari `adopsiIsiBaru`: ruang kerja ini di-`key` per section (lihat
+	 * catatan `ChapterEditorWorkspace`), jadi berpindah section memasang ulang
+	 * editor dengan sendirinya -- tapi memulihkan checkpoint TIDAK berpindah
+	 * section, jadi `setContent` di sini wajib, bukan opsional.
+	 */
+	const pulihkanSection = React.useCallback(
+		({ html }: HasilPulihSection) => {
+			editor?.commands.setContent(html, { emitUpdate: false });
+		},
+		[editor],
+	);
 
 	return (
 		<div className="flex h-screen flex-col overflow-hidden bg-background">
 			<ChapterEditorHeader
 				projectId={projectId}
 				judulDokumen={judulDokumen}
-				chapter={babTerkini}
+				chapter={babView}
+				sectionId={section?.id ?? null}
 				izin={izin}
-				onReviewed={setBabTerkini}
+				onReviewed={setSectionTerkini}
 				status={autosave.status}
 				savedAt={autosave.savedAt}
 			/>
@@ -568,6 +658,40 @@ function ChapterEditorWorkspace({
 							</div>
 						) : (
 							<div />
+						)}
+
+						{sectionTerkini && kontrolGenerate && (
+							<div className="flex shrink-0 items-center gap-1 border-l border-border pl-2">
+								<Button
+									type="button"
+									variant="ghost"
+									size="icon-sm"
+									aria-label="Instruksi tabel section ini"
+									title="Instruksi tabel"
+									disabled={kontrolGenerate.berjalan}
+									onClick={() => setTabelTerbuka(true)}
+									className="cursor-pointer"
+								>
+									<TableIcon className="size-4" />
+									{sectionTerkini.tableSpec.length > 0 && (
+										<span className="sr-only">({sectionTerkini.tableSpec.length} tabel)</span>
+									)}
+								</Button>
+								<Button
+									type="button"
+									size="sm"
+									disabled={kontrolGenerate.berjalan}
+									onClick={() => void kontrolGenerate.jalankan()}
+									className="cursor-pointer"
+								>
+									{kontrolGenerate.berjalan ? (
+										<SpinnerGapIcon className="size-4 animate-spin" />
+									) : (
+										<SparkleIcon className="size-4" />
+									)}
+									{kontrolGenerate.berjalan ? 'Menulis…' : 'Generate'}
+								</Button>
+							</div>
 						)}
 					</div>
 
@@ -657,16 +781,18 @@ function ChapterEditorWorkspace({
 					)}
 
 					<ChapterEditorPanels
-						chapter={babTerkini}
+						chapter={babView}
+						section={section ?? null}
 						studyProgramId={studyProgramId}
 						izin={izin}
 						onGenerated={adopsiIsiBaru}
-						ambilSnapshot={ambilSnapshot}
-						onRestored={adopsiIsiBaru}
-						// `setBabTerkini`, bukan `adopsiIsiBaru`: review tidak menyentuh
-						// `kontenKerja` sama sekali, dan mendorong isi ke kanvas hanya akan
-						// memicu autosave untuk tulisan yang tidak berubah.
-						onReviewed={setBabTerkini}
+						onKontrolGenerate={setKontrolGenerate}
+						ambilSnapshotSection={ambilSnapshotSection}
+						onSectionRestored={pulihkanSection}
+						// `setSectionTerkini`, bukan `adopsiIsiBaru`: review tidak menyentuh
+						// isi sama sekali, dan mendorong isi ke kanvas hanya akan memicu
+						// autosave untuk tulisan yang tidak berubah.
+						onReviewed={setSectionTerkini}
 						savedAt={autosave.savedAt}
 						lebar={panel.lebar}
 						handleProps={panel.handleProps}
@@ -677,6 +803,21 @@ function ChapterEditorWorkspace({
 					/>
 				</div>
 			</Tabs>
+
+			{sectionTerkini && (
+				<SectionTableSpecDialog
+					open={tabelTerbuka}
+					onOpenChange={setTabelTerbuka}
+					judulSection={sectionTerkini.judul}
+					tableSpecAwal={sectionTerkini.tableSpec}
+					sudahDigenerate={sectionTerkini.status === 'GENERATED'}
+					onSimpan={(tableSpec) => {
+						void chapterRepository
+							.updateSectionTableSpec(chapter.id, sectionTerkini.id, tableSpec)
+							.then((baru) => setSectionTerkini((lama) => (lama ? { ...lama, tableSpec: baru.tableSpec } : lama)));
+					}}
+				/>
+			)}
 		</div>
 	);
 }
