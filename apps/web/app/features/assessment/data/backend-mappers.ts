@@ -4,7 +4,10 @@ import {
 } from '../domain/entities/assessment-quality.entity';
 import { type AssessmentSessionEntity } from '../domain/entities/assessment-session.entity';
 import { type AssessmentVerdictEntity } from '../domain/entities/assessment-verdict.entity';
-import { type IndicatorResultEntity } from '../domain/entities/indicator-result.entity';
+import {
+	type IndicatorResultEntity,
+	type JudgeVerdictEntity,
+} from '../domain/entities/indicator-result.entity';
 import {
 	type BackendAssessmentSession,
 	type BackendAssessmentVerdict,
@@ -43,6 +46,29 @@ export function mapSession(row: BackendAssessmentSession): AssessmentSessionEnti
 	};
 }
 
+function daftarString(nilai: unknown): string[] {
+	return Array.isArray(nilai) ? nilai.filter((v): v is string => typeof v === 'string') : [];
+}
+
+/**
+ * Verdict judge apps/ai (snake_case, JSON bebas) -> entity. `null` untuk "belum dijudge" maupun
+ * bentuk yang tidak bisa dipercaya (mis. `{error: ...}`, `grounded` bukan boolean) — lebih baik
+ * tampil "Belum dijudge" daripada memajang verdict rusak.
+ */
+export function mapJudgeVerdict(
+	mentah: Record<string, unknown> | null | undefined,
+): JudgeVerdictEntity | null {
+	if (!mentah || typeof mentah.grounded !== 'boolean') return null;
+	return {
+		grounded: mentah.grounded,
+		klaimTakTerdukung: daftarString(mentah.hallucinated_claims),
+		faktaTerlewat: daftarString(mentah.missing_facts),
+		catatan: typeof mentah.notes === 'string' ? mentah.notes : '',
+		model: typeof mentah.judge_model === 'string' ? mentah.judge_model : null,
+		dinilaiPada: typeof mentah.judged_at === 'string' ? mentah.judged_at : null,
+	};
+}
+
 export function mapResult(row: BackendIndicatorResult): IndicatorResultEntity {
 	return {
 		id: row.id,
@@ -54,6 +80,7 @@ export function mapResult(row: BackendIndicatorResult): IndicatorResultEntity {
 		confidence: toNumber(row.confidence),
 		rekomendasi: row.recommendation,
 		error: row.error,
+		judge: mapJudgeVerdict(row.judgeVerdict),
 		dinilaiPada: row.createdAt,
 	};
 }

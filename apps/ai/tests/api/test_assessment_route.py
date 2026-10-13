@@ -688,6 +688,43 @@ async def test_process_single_indicator_success(fake_indicators):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("graph_value, expected", [("bukti X", "bukti X"), ("", ""), (None, None)])
+async def test_process_single_indicator_forwards_judge_evidence(fake_indicators, graph_value, expected):
+    """"" (penilai tidak mengambil bukti) harus tetap "" sampai ke DB; hanya None yang tetap None."""
+    from api.routes.assessment import _process_single_indicator
+
+    fake_graph = MagicMock()
+    result = {
+        "final_score": 3.0,
+        "justification": "Cukup baik.",
+        "confidence": 0.85,
+        "recommendation": None,
+        "reasoning_steps": [],
+        "error": None,
+    }
+    if graph_value is not None:
+        result["judge_evidence"] = graph_value
+    fake_graph.invoke.return_value = result
+
+    with (
+        patch("api.routes.assessment.log_reasoning_step"),
+        patch("api.routes.assessment.log_indicator_result") as mock_log,
+        patch("api.routes.assessment.create_ollama_client_from_env", return_value=MagicMock()),
+        patch("api.routes.assessment.build_graph_auto", return_value=fake_graph),
+    ):
+        await _process_single_indicator(
+            indicator=fake_indicators[0],
+            session_id="test-session",
+            semaphore=asyncio.Semaphore(5),
+            tenant_id=TENANT_ID,
+            dokumen_id=DOKUMEN_ID,
+            accreditation_set_id=ACCREDITATION_SET_ID,
+        )
+
+    assert mock_log.call_args.kwargs["judge_evidence"] == expected
+
+
+@pytest.mark.asyncio
 async def test_process_single_indicator_builds_its_own_graph_per_call(fake_indicators):
     """Each indicator must build its own OllamaClient/graph (not share one
     built once for the whole batch) so that pick_ollama_endpoint()'s

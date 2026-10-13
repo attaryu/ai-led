@@ -27,14 +27,11 @@ from langgraph.graph import END, StateGraph
 
 from agent.graph import (
     CHECKLIST_PROMPT_TEMPLATE,
-    JUDGE_PROMPT_TEMPLATE,
     _accumulate_sources,
     _EMPTY_SOURCES,
-    build_judge_llm,
     compute_decimal_score,
     formula_data_confirmed_unavailable,
     parse_checklist,
-    parse_judge_verdict,
     requires_formula_tool,
 )
 from agent.state import AssessmentState
@@ -600,37 +597,13 @@ def build_reasoning_graph(ollama_client: OllamaClient, disable_evidence: bool = 
             state["justification"] = (state.get("justification") or "") + suffix
         return state
 
-    def judge_node(state: AssessmentState) -> AssessmentState:
-        """Independent post-hoc grounding check — same behavior as
-        agent.graph's judge_node (separate model, soft confidence adjustment,
-        never blocks), adapted to this graph's plain-HumanMessage tool-result
-        format."""
+    def evidence_snapshot_node(state: AssessmentState) -> AssessmentState:
+        """Padanan graph.evidence_snapshot_node untuk format hasil-tool graph ini
+        (HumanMessage berawalan "Tool result (<nama>):"): simpan bukti sampai
+        3000 karakter untuk judge on-demand. Tanpa LLM, tanpa menyentuh confidence."""
         if state.get("final_score") is None:
             return state
-
-        evidence_text = _collect_reasoning_evidence_text(state["messages"])
-        justification = state.get("justification") or ""
-
-        try:
-            judge_llm = build_judge_llm()
-            prompt = JUDGE_PROMPT_TEMPLATE.format(
-                justification=justification[:1500],
-                evidence_text=evidence_text[:3000] or "(tidak ada bukti tercatat)",
-            )
-            response = judge_llm.invoke([HumanMessage(content=prompt)])
-            verdict = parse_judge_verdict(response.content or "")
-        except Exception as exc:
-            verdict = {"error": str(exc)}
-
-        state["judge_verdict"] = verdict
-
-        if verdict and verdict.get("grounded") is False:
-            current_conf = state.get("confidence")
-            if current_conf is not None:
-                state["confidence"] = min(current_conf, 0.3)
-
-        steps = state.get("reasoning_steps", [])
-        state["reasoning_steps"] = list(steps) + [{"judge_verdict": verdict}]
+        state["judge_evidence"] = _collect_reasoning_evidence_text(state["messages"])[:3000]
         return state
 
     def route_after_tools(state: AssessmentState) -> Literal["checklist", "agent"]:
@@ -651,7 +624,7 @@ def build_reasoning_graph(ollama_client: OllamaClient, disable_evidence: bool = 
     graph.add_node("force", force_finalize_node)
     graph.add_node("finalize", finalize_node)
     graph.add_node("decimal_refine", decimal_refine_node)
-    graph.add_node("judge", judge_node)
+    graph.add_node("evidence_snapshot", evidence_snapshot_node)
     graph.add_node("error_node", error_node)
 
     graph.set_entry_point("agent")
@@ -667,7 +640,7 @@ def build_reasoning_graph(ollama_client: OllamaClient, disable_evidence: bool = 
     graph.add_edge("checklist", "agent")
     graph.add_edge("force", "agent")
     graph.add_edge("finalize", "decimal_refine")
-    graph.add_edge("decimal_refine", "judge")
-    graph.add_edge("judge", END)
+    graph.add_edge("decimal_refine", "evidence_snapshot")
+    graph.add_edge("evidence_snapshot", END)
 
     return graph.compile()

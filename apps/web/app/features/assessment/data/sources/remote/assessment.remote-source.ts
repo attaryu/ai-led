@@ -62,6 +62,8 @@ export type BackendIndicatorResult = {
 	recommendation: string | null;
 	error: string | null;
 	createdAt: string;
+	/** JSON verdict judge (apps/ai); `null` = belum dijudge. `judgeEvidence` sengaja tidak dikirim backend. */
+	judgeVerdict: Record<string, unknown> | null;
 };
 
 export type BackendReasoningStep = {
@@ -99,6 +101,25 @@ export type BackendRunEvalResponse = {
 	eval_id: string;
 	message: string;
 	n_indicators: number;
+};
+
+/** Respons `POST /assessment-sessions/:id/judge` (proxy apps/ai). */
+export type BackendRunJudgeResponse = {
+	judge_id: string;
+	total: number;
+	skipped: number;
+};
+
+/** Respons `GET /assessment-judge/:id` (proxy apps/ai). */
+export type BackendJudgeStatus = {
+	judge_id: string;
+	session_id: string;
+	status: 'pending' | 'running' | 'completed' | 'failed';
+	total: number;
+	done: number;
+	skipped: number;
+	failed: number;
+	error: string | null;
 };
 
 /** Bentuk mentah `apps/ai`'s `EvalResultResponse` (snake_case, apa adanya dari proxy). */
@@ -247,5 +268,21 @@ export const assessmentRemoteSource = {
 	/** Poll hasil/progress satu evaluasi RAGAS. */
 	findEvalResult(evalId: string): Promise<BackendEvalResult> {
 		return apiFetch<BackendEvalResult>(`/assessment-eval/${evalId}`);
+	},
+
+	/** Mulai judge on-demand; `indicators` kosong/undefined = seluruh sesi. */
+	runJudge(
+		sessionId: string,
+		indicators?: { indicatorNo: number; subNo: string }[],
+	): Promise<BackendRunJudgeResponse> {
+		return apiFetch<BackendRunJudgeResponse>(
+			`/assessment-sessions/${sessionId}/judge`,
+			{ method: 'POST', body: indicators ? { indicators } : {} },
+		);
+	},
+
+	/** Poll progres satu judge. Melempar `ApiError` 404 bila apps/ai sudah melupakannya (restart). */
+	findJudgeStatus(judgeId: string): Promise<BackendJudgeStatus> {
+		return apiFetch<BackendJudgeStatus>(`/assessment-judge/${judgeId}`);
 	},
 };

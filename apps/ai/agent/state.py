@@ -51,11 +51,13 @@ class AssessmentState(TypedDict):
     # logged for audit trail. None if generation failed or was skipped.
     checklist: Optional[list]
 
-    # ── Independent judge verdict (graph.py / reasoning_graph.py) ─────────────
-    # Post-hoc check by a SEPARATE model (RAGAS_* judge config) on whether the
-    # final justification is grounded in evidence actually retrieved this run.
-    # {"error": ...} if the judge call itself failed — never blocks the result.
-    judge_verdict: Optional[dict]
+    # ── Judge input snapshot (graph.py / reasoning_graph.py) ──────────────────
+    # Sampai 3000 karakter pertama bukti yang diambil penilai di run ini -- persis
+    # yang dibaca judge. Disimpan ke assessment_indicator_results.judge_evidence
+    # supaya judge bisa dijalankan belakangan, on-demand
+    # (api/routes/assessment_judge.py). "" = penilai tidak mengambil bukti apa pun;
+    # None = tidak ada skor (jalur galat).
+    judge_evidence: Optional[str]
 
     # LED/LKPS/evidence citations retrieved this run (graph.py's _accumulate_sources)
     sources_used: Optional[dict]

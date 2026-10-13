@@ -24,18 +24,21 @@ import { kunciIndikator, type PenilaianFinalRow } from '../../domain/entities/as
 import { AssessmentDetailSheet } from '../components/assessment-detail-sheet';
 import { AssessmentDownloadDialog } from '../components/assessment-download-dialog';
 import { AssessmentHistoryList } from '../components/assessment-history-list';
+import { AssessmentJudgeBar } from '../components/assessment-judge-bar';
 import { AssessmentQualityPanel } from '../components/assessment-quality-panel';
 import { AssessmentResultList } from '../components/assessment-result-list';
 import { AssessmentRunPanel } from '../components/assessment-run-panel';
 import { AssessmentReadinessNotice } from '../components/assessment-readiness-notice';
 import { AssessmentSourceCard } from '../components/assessment-source-card';
 import { useAssessmentIndicatorPicks } from '../hooks/use-assessment-indicator-picks';
+import { useAssessmentJudge } from '../hooks/use-assessment-judge';
 import { useAssessmentPermission } from '../hooks/use-assessment-permission';
 import { useAssessmentQuality } from '../hooks/use-assessment-quality';
 import { useAssessmentReadiness } from '../hooks/use-assessment-readiness';
 import { useAssessmentResults } from '../hooks/use-assessment-results';
 import { useAssessmentSession } from '../hooks/use-assessment-session';
 import { formatSkor } from '../utils/assessment-format';
+import { kunciSasaranJudge, sesiIdUnik } from '../utils/assessment-judge-poll';
 
 const TAB_VALID = ['penilaian', 'kualitas', 'riwayat'] as const;
 type TabValue = (typeof TAB_VALID)[number];
@@ -141,7 +144,7 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 		kunciKeDokumen: !TAMPILKAN_KARTU_SUMBER,
 	});
 
-	const { baris, ringkasan, simpanKeputusan, cabutKeputusan } =
+	const { baris, ringkasan, simpanKeputusan, cabutKeputusan, muatUlang } =
 		useAssessmentResults({
 			projectId: ledProject.id,
 			sesi: sesiAktif,
@@ -169,6 +172,18 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 	}, [baris]);
 
 	const kualitas = useAssessmentQuality({ sesi: sesiAktif, izin });
+	const judge = useAssessmentJudge({ sesi: sesiAktif, izin, muatUlang });
+
+	/**
+	 * Tampilan "terbaru" menggabungkan hasil terbaru per indikator dari SEMUA sesi dokumen, jadi
+	 * "Judge semua" menjalankan satu judge per sesi yang muncul di baris (bukan hanya `sesiAktif`).
+	 * Tanpa baris berhasil, jatuh ke sesi aktif (hook).
+	 */
+	const sesiIdTampil = React.useMemo(
+		() => sesiIdUnik(baris.flatMap((row) => (row.hasil ? [row.hasil] : []))),
+		[baris],
+	);
+	const adaBarisBernilai = React.useMemo(() => baris.some((row) => row.hasil?.skor != null), [baris]);
 
 	/**
 	 * Indikator yang sedang dibuka di laci, disimpan sebagai **nomor** bukan objek
@@ -196,6 +211,12 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 		(row) => kunciIndikator(row.kriteria.no, row.kriteria.subNo) === indikatorDibuka,
 	);
 	const rowDibuka = posisiDibuka >= 0 ? urutanTampil[posisiDibuka] : null;
+
+	const pesanJudgeUntukLaci =
+		judge.lingkup === 'sesi' ||
+		(rowDibuka?.hasil != null &&
+			judge.lingkup ===
+				kunciSasaranJudge(rowDibuka.hasil.sesiId, rowDibuka.hasil.indikatorNo, rowDibuka.hasil.subNo ?? ''));
 
 	function gantiParam(ubah: Record<string, string | null>) {
 		const berikutnya = new URLSearchParams(searchParams);
@@ -359,6 +380,20 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 						membatalkan={membatalkan}
 					/>
 
+					{judge.bolehMenjalankan && (adaBarisBernilai || sesiAktif !== undefined) && (
+						<AssessmentJudgeBar
+							status={judge.status}
+							progres={judge.progres}
+							ringkasan={judge.ringkasan}
+							pesanGagal={judge.pesanGagal}
+							onJalankan={() =>
+								void judge.jalankan(
+									sesiIdTampil.length > 0 ? sesiIdTampil.map((sesiId) => ({ sesiId })) : undefined,
+								)
+							}
+						/>
+					)}
+
 					<AssessmentResultList
 						baris={baris}
 						ringkasan={ringkasan}
@@ -415,6 +450,26 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 				}}
 				onCabut={() => {
 					if (rowDibuka) cabutKeputusan(rowDibuka.kriteria.no, rowDibuka.kriteria.subNo ?? '');
+				}}
+				judgeBolehMenjalankan={
+					judge.bolehMenjalankan && rowDibuka?.hasil != null && rowDibuka.hasil.skor != null
+				}
+				judgeBerjalan={judge.status === 'berjalan'}
+				// Pesan hasil run hanya untuk laci indikator yang dijalankan (atau run "Judge semua").
+				judgeStatus={pesanJudgeUntukLaci ? judge.status : 'diam'}
+				judgeRingkasan={pesanJudgeUntukLaci ? judge.ringkasan : null}
+				judgePesanGagal={pesanJudgeUntukLaci ? judge.pesanGagal : null}
+				onJalankanJudge={() => {
+					const hasil = rowDibuka?.hasil;
+					if (!hasil) return;
+					// Sasaran = baris yang DITAMPILKAN (sesinya sendiri, kunci sub dari hasil), bukan
+					// sesiAktif / kriteria.subNo: di tampilan gabungan keduanya bisa berbeda.
+					void judge.jalankan([
+						{
+							sesiId: hasil.sesiId,
+							indikator: [{ indikatorNo: hasil.indikatorNo, subNo: hasil.subNo ?? '' }],
+						},
+					]);
 				}}
 			/>
 

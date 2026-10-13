@@ -16,6 +16,7 @@ import { requireEnv } from '../config/env';
 import { Protected } from '../tenant/protected.decorator';
 import { AssessmentService } from './assessment.service';
 import { RunEvalDto } from './dto/run-eval.dto';
+import { RunJudgeDto } from './dto/run-judge.dto';
 import { UpsertVerdictDto } from './dto/upsert-verdict.dto';
 
 const READ_ROLES = [Role.PIMPINAN, Role.PENJAMIN_MUTU, Role.PENYUSUN];
@@ -92,6 +93,20 @@ export class AssessmentController {
   @Protected(...READ_ROLES)
   findEvalResult(@Param('evalId') evalId: string) {
     return this.assessmentService.findEvalResult(evalId);
+  }
+
+  /** Proxy to apps/ai's POST /assessment/:id/judge -- judge grounding on-demand; tanpa job BullMQ. */
+  @Post('assessment-sessions/:id/judge')
+  @Protected(Role.PENJAMIN_MUTU, Role.PENYUSUN)
+  runJudge(@Param('id') id: string, @Body() dto: RunJudgeDto) {
+    return this.assessmentService.runJudge(id, dto);
+  }
+
+  /** Proxy to apps/ai's GET /assessment/judge/:judgeId -- poll progres judge. */
+  @Get('assessment-judge/:judgeId')
+  @Protected(...READ_ROLES)
+  findJudgeStatus(@Param('judgeId') judgeId: string) {
+    return this.assessmentService.findJudgeStatus(judgeId);
   }
 
   @Get('dokumen/:dokumenId/assessment-verdicts')
