@@ -16,15 +16,20 @@ def build_setor_llm(
     tools: list | None = None,
     temperature: float = 0.1,
     num_predict: int = 4096,
+    disable_reasoning: bool | None = None,
 ):
+    """`disable_reasoning`: None = bawaan (matikan bila tanpa tools, yaitu tahap JSON murni). Tahap 1 untuk model
+    reasoning juga tanpa tools (tool dipanggil lewat JSON di teks), tetapi berpikirnya harus tetap hidup: beri False."""
     client = create_ollama_client_from_env(model=model)
     provider = os.environ.get("LLM_PROVIDER", "ollama").lower()
+    if disable_reasoning is None:
+        disable_reasoning = tools is None
 
     if provider == "openrouter":
         from langchain_openai import ChatOpenAI
 
         extra: dict = {}
-        if tools is None:
+        if disable_reasoning:
             # Tahap JSON (tanpa tool): token "reasoning" model ikut memakan max_tokens, dan di uji E2E jawaban JSON
             # kadang terpotong/kosong karenanya. Sama dengan llm/chat_model.py::build_plain_llm.
             extra["extra_body"] = {"reasoning": {"enabled": False}}
@@ -51,7 +56,7 @@ def build_setor_llm(
         if client.api_key and not client.api_key.startswith("<"):
             kwargs["client_kwargs"]["headers"] = {"Authorization": f"Bearer {client.api_key}"}
         # Tahap tanpa tool menuntut JSON bersih: matikan thinking terpisah milik qwen3/nemotron.
-        if tools is None and _is_thinking_model(client.model):
+        if disable_reasoning and _is_thinking_model(client.model):
             kwargs["reasoning"] = False
         llm = ChatOllama(**kwargs)
 

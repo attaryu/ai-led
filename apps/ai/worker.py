@@ -2472,10 +2472,9 @@ async def _handle_setor_led(job) -> dict:
     setor_led/pipeline.py.
 
     Prasyarat sama dengan AMI (LED + LKPS wajib; tanpa salah satunya job berhenti dengan error, bukan
-    menulis dari konteks kosong). Model reasoning ditolak: setor ke LED memakai tool calling asli dan
-    tidak menduplikasi protokol JSON-tool agent/reasoning_graph.py.
+    menulis dari konteks kosong). Model reasoning diterima: pipeline memilih jalurnya per model seperti AMI
+    (tool calling bawaan, atau protokol JSON untuk deepseek-r1/qwq dst.), bukan di sini.
     """
-    from agent.graph import is_reasoning_model
     from agent.tools.lkps_tool import load_lkps_for_document
     from db.postgres_client import get_document_accreditation_set
     from llm.ollama_client import get_available_models
@@ -2498,11 +2497,6 @@ async def _handle_setor_led(job) -> dict:
         return {"status": "error", "error": "Tidak ada model yang dikonfigurasi (OLLAMA_MODEL / OPENROUTER_MODEL kosong)."}
     if model not in available:
         return {"status": "error", "error": f"Unknown model: {model}. Available: {available}"}
-    if is_reasoning_model(model):
-        return {
-            "status": "error",
-            "error": f"Model reasoning ({model}) belum didukung untuk setor ke LED -- pilih model chat dengan tool calling.",
-        }
 
     accreditation_set_id = get_document_accreditation_set(dokumen_id)
     if accreditation_set_id is None:

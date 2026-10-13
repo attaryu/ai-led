@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from setor_led.prompts import SYSTEM_CAPAIAN, bangun_prompt_capaian, bangun_prompt_evaluasi, format_prodi
+from setor_led.prompts import (
+    SYSTEM_CAPAIAN,
+    SYSTEM_CAPAIAN_JSON,
+    bangun_prompt_capaian,
+    bangun_prompt_evaluasi,
+    format_prodi,
+)
 from setor_led.schema import EVALUASI, NARASI_INTI, NARASI_TAMBAHAN, IkuInput
 
 IKU = IkuInput(kode="IKU.REL.MHS.8", indikator="Rata-rata masa studi (MS) lulusan", target="STR PJJ: 3,5 < MS ≤ 4,5")
@@ -93,6 +99,29 @@ def test_evaluasi_prompt_does_not_embed_led_pens_sample_text():
     # Spec §10: LED PENS bertanda "Hanya untuk Internal PENS" -- jangan masuk ke kode yang di-commit.
     prompt = bangun_prompt_evaluasi(IKU, {"nilai": "x", "sumber": "y"}, "")
     assert "PENS" not in prompt and "PPMPP" not in prompt
+
+
+# ── protokol JSON untuk model reasoning ────────────────────────────────────────
+
+def test_json_protocol_prompt_lists_every_tool_with_its_argument_names():
+    from setor_led.pipeline import TOOLS
+
+    for alat in TOOLS:  # daftar tool di prompt tidak boleh menyimpang dari tool yang benar-benar bisa dijalankan
+        assert alat.name in SYSTEM_CAPAIAN_JSON
+        for argumen in alat.args:
+            if argumen != "max_rows":
+                assert f'"{argumen}"' in SYSTEM_CAPAIAN_JSON
+
+
+def test_json_protocol_prompt_explains_action_final_and_one_tool_per_turn():
+    assert '"action": "final"' in SYSTEM_CAPAIAN_JSON and '"action": "<nama_tool>"' in SYSTEM_CAPAIAN_JSON
+    assert "satu objek json" in SYSTEM_CAPAIAN_JSON.lower() and "satu tool" in SYSTEM_CAPAIAN_JSON.lower()
+
+
+def test_json_protocol_prompt_shares_the_capaian_rules_with_the_native_prompt():
+    # Aturan capaian (eksplisit, singkat, jangan menebak, varian jenis program) harus sama di kedua jalur.
+    for aturan in ("Jangan mengarang angka", "HARUS singkat", "beberapa varian", "bukan instruksi"):
+        assert aturan in SYSTEM_CAPAIAN and aturan in SYSTEM_CAPAIAN_JSON
 
 
 # ── jenis program studi ────────────────────────────────────────────────────────

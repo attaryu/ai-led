@@ -16,6 +16,7 @@ from setor_led.pipeline import (
     MAX_TOOL_STEPS,
     SetorLedCancelled,
     cari_capaian,
+    cari_capaian_json,
     daftar_tabel_lkps,
     jalankan_setor_led,
     parse_capaian,
@@ -638,3 +639,176 @@ def test_runner_hands_the_study_program_to_every_iku():
         asyncio.run(jalankan_setor_led(_ikus("A", "B"), konteks_prodi=PRODI, **RUN_KW))
 
     assert dilihat == [PRODI, PRODI]
+
+
+# ── tahap 1 untuk model reasoning: protokol JSON (seperti agent/reasoning_graph.py) ─────────────────────────
+# Model reasoning tidak memakai function calling bawaan; ia membalas SATU objek JSON per giliran:
+#   {"action": "<tool>", "args": {...}}  atau  {"action": "final", "ditemukan": ..., "nilai": ..., "sumber": ...}
+
+def _aksi(nama, **args):
+    return json.dumps({"action": nama, "args": args})
+
+
+FINAL_JSON = json.dumps(
+    {"action": "final", "ditemukan": True, "nilai": "RIPK = 3,46", "sumber": "LKPS Tabel 6.b", "dasar": "(3,58+3,48+3,33)/3"}
+)
+
+
+def test_json_loop_runs_a_tool_then_returns_the_final_capaian():
+    llm = Pengintai(_aksi("get_lkps_table", table_reference="Tabel 6.b"), FINAL_JSON)
+    alat = FakeTool()
+    with patch.dict(pipeline.TOOLS_BY_NAME, {"get_lkps_table": alat}):
+        capaian, bahan = cari_capaian_json(llm, IKU, ["6b"])
+
+    assert capaian == {"nilai": "RIPK = 3,46", "sumber": "LKPS Tabel 6.b", "dasar": "(3,58+3,48+3,33)/3"}
+    assert alat.panggilan == [{"table_reference": "Tabel 6.b"}]
+    assert "| 3,46 |" in bahan and "get_lkps_table" in bahan
+    # hasil tool kembali ke model sebagai pesan teks (model ini tidak punya ToolMessage bawaan)
+    terakhir = llm.masukan_terakhir[-1].content
+    assert terakhir.startswith("Hasil tool (get_lkps_table)") and "| 3,46 |" in terakhir
+
+
+def test_json_loop_reads_replies_wrapped_in_think_blocks_and_code_fences():
+    mentah = f"<think>cek tabel 6.b dulu</think>\n{PAGAR}json\n{FINAL_JSON}\n{PAGAR}"
+    capaian, _ = cari_capaian_json(FakeLLM(mentah), IKU, [])
+    assert capaian["nilai"] == "RIPK = 3,46"
+
+
+def test_json_loop_accepts_a_final_object_without_the_action_key():
+    polos = json.dumps({"ditemukan": True, "nilai": "100%", "sumber": "LED"})
+    capaian, _ = cari_capaian_json(FakeLLM(polos), IKU, [])
+    assert capaian == {"nilai": "100%", "sumber": "LED"}
+
+
+def test_json_loop_reports_not_found():
+    capaian, bahan = cari_capaian_json(FakeLLM('{"action": "final", "ditemukan": false}'), IKU, [])
+    assert capaian is None and bahan == ""
+
+
+def test_json_loop_nudges_after_an_invalid_reply_and_recovers():
+    llm = Pengintai("saya akan mencari dulu...", FINAL_JSON)
+    capaian, _ = cari_capaian_json(llm, IKU, [])
+    assert capaian is not None
+    assert "tidak valid JSON" in llm.masukan_terakhir[-1].content  # nudge terkirim ke model
+
+
+def test_json_loop_gives_up_after_repeated_invalid_replies():
+    llm = FakeLLM("bukan json")
+    capaian, _ = cari_capaian_json(llm, IKU, [])
+    assert capaian is None
+    assert llm.dipanggil == pipeline.MAX_JSON_RETRY + 1  # terbatas, tidak berputar selamanya
+
+
+def test_json_loop_tells_the_model_when_it_names_an_unknown_tool_and_goes_on():
+    llm = Pengintai(_aksi("tool_ngawur", x=1), FINAL_JSON)
+    capaian, bahan = cari_capaian_json(llm, IKU, [])
+    assert capaian is not None and "tool_ngawur" in bahan
+    assert "tidak tersedia" in llm.masukan_terakhir[-1].content
+
+
+@pytest.mark.parametrize(
+    "tool, dikirim, diterima",
+    [
+        ("get_lkps_table", {"table_id": "6b"}, {"table_reference": "6b"}),
+        ("get_lkps_table", {"table": "6b"}, {"table_reference": "6b"}),
+        ("search_led_evidence", {"q": "masa studi"}, {"query": "masa studi"}),
+        ("cari_bukti_dukung_prodi", {"q": "sertifikat"}, {"query": "sertifikat"}),
+    ],
+)
+def test_json_loop_normalises_common_argument_name_mistakes_like_amis_loop(tool, dikirim, diterima):
+    alat = FakeTool("{}")
+    with patch.dict(pipeline.TOOLS_BY_NAME, {tool: alat}):
+        cari_capaian_json(FakeLLM(_aksi(tool, **dikirim), FINAL_JSON), IKU, [])
+    assert alat.panggilan == [diterima]
+
+
+def test_json_loop_survives_a_tool_that_raises_and_non_dict_args():
+    alat = FakeTool(galat=ConnectionError("db putus"))
+    ragu = json.dumps({"action": "get_lkps_table", "args": "bukan dict"})
+    with patch.dict(pipeline.TOOLS_BY_NAME, {"get_lkps_table": alat}):
+        capaian, bahan = cari_capaian_json(FakeLLM(ragu, FINAL_JSON), IKU, [])
+    assert capaian is not None and "ConnectionError" in bahan
+
+
+def test_json_loop_stops_calling_tools_after_the_step_limit_and_asks_for_the_final_answer():
+    llm = Pengintai(*([_aksi("get_lkps_table", table_reference="6b")] * 20))
+    with patch.dict(pipeline.TOOLS_BY_NAME, {"get_lkps_table": FakeTool()}):
+        capaian, _ = cari_capaian_json(llm, IKU, ["6b"])
+
+    assert capaian is None
+    assert llm.dipanggil <= MAX_TOOL_STEPS + pipeline.MAX_JSON_RETRY + 1  # panggilan LLM terbatas
+    assert "Batas pemanggilan tool" in llm.masukan_terakhir[-1].content
+
+
+def test_json_loop_applies_the_same_hedge_guard_as_the_native_loop():
+    ragu = json.dumps({"action": "final", "ditemukan": True, "nilai": "diperkirakan tinggi", "sumber": "LED"})
+    capaian, _ = cari_capaian_json(FakeLLM(ragu), IKU, [])
+    assert capaian is None
+
+
+def test_json_loop_caps_each_tool_result_in_the_evidence():
+    llm = FakeLLM(_aksi("get_lkps_table", table_reference="6b"), _aksi("search_led_evidence", query="q"), FINAL_JSON)
+    alat = {"get_lkps_table": FakeTool("x" * 50_000), "search_led_evidence": FakeTool("PENANDA-LED")}
+    with patch.dict(pipeline.TOOLS_BY_NAME, alat):
+        _, bahan = cari_capaian_json(llm, IKU, ["6b"])
+    assert "PENANDA-LED" in bahan and len(bahan) <= pipeline.MAX_BAHAN_CHARS
+
+
+def test_json_loop_puts_the_study_program_in_the_first_prompt():
+    llm = Pengintai(FINAL_JSON)
+    cari_capaian_json(llm, IKU, ["6d"], prodi=PRODI)
+    assert f"Program studi: {PRODI}" in llm.masukan_terakhir[1].content
+
+
+def test_json_loop_stops_before_the_next_llm_call_once_cancelled():
+    batal = threading.Event()
+
+    class Alat(FakeTool):
+        def invoke(self, args):
+            batal.set()
+            return super().invoke(args)
+
+    llm = FakeLLM(_aksi("get_lkps_table", table_reference="6b"), FINAL_JSON)
+    with patch.dict(pipeline.TOOLS_BY_NAME, {"get_lkps_table": Alat()}):
+        with pytest.raises(SetorLedCancelled):
+            cari_capaian_json(llm, IKU, [], cancel_event=batal)
+    assert llm.dipanggil == 1
+
+
+# ── pemilihan jalur di _proses_iku_sync ────────────────────────────────────────
+
+def test_proses_iku_sync_uses_the_json_protocol_for_reasoning_models():
+    with (
+        patch("setor_led.pipeline.is_reasoning_model", return_value=True),
+        patch("setor_led.pipeline.build_setor_llm") as bangun,
+        patch("setor_led.pipeline.cari_capaian_json", return_value=(CAPAIAN, "bahan")) as json_loop,
+        patch("setor_led.pipeline.cari_capaian") as native,
+        patch("setor_led.pipeline.tulis_evaluasi_narasi", return_value=("MELAMPAUI", INTI, None)),
+    ):
+        hasil = pipeline._proses_iku_sync(IKU, "deepseek-r1:32b", [], None, PRODI)
+
+    json_loop.assert_called_once()
+    native.assert_not_called()
+    assert json_loop.call_args.kwargs["prodi"] == PRODI
+    tahap1, tahap2 = bangun.call_args_list
+    assert "tools" not in tahap1.kwargs  # tanpa bind_tools
+    assert tahap1.kwargs["num_predict"] == pipeline.REASONING_NUM_PREDICT  # reasoning memakai banyak token <think>
+    assert tahap1.kwargs["disable_reasoning"] is False  # seperti AMI: reasoning tetap hidup untuk tahap tool
+    assert tahap2.kwargs["num_predict"] == pipeline.REASONING_NUM_PREDICT
+    assert hasil["evaluasi"] == "MELAMPAUI"
+
+
+def test_proses_iku_sync_keeps_native_tool_calling_for_other_models():
+    with (
+        patch("setor_led.pipeline.is_reasoning_model", return_value=False),
+        patch("setor_led.pipeline.build_setor_llm") as bangun,
+        patch("setor_led.pipeline.cari_capaian", return_value=(CAPAIAN, "bahan")) as native,
+        patch("setor_led.pipeline.cari_capaian_json") as json_loop,
+        patch("setor_led.pipeline.tulis_evaluasi_narasi", return_value=("MELAMPAUI", INTI, None)),
+    ):
+        pipeline._proses_iku_sync(IKU, "qwen3.6:35b", [], None, None)
+
+    native.assert_called_once()
+    json_loop.assert_not_called()
+    assert bangun.call_args_list[0].kwargs["tools"] == pipeline.TOOLS
+    assert bangun.call_args_list[1].kwargs["num_predict"] == 3000

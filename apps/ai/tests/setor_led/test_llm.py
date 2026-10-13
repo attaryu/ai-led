@@ -89,6 +89,37 @@ def test_openrouter_tool_stage_keeps_the_models_default_reasoning(monkeypatch):
     assert "extra_body" not in openai.call_args.kwargs
 
 
+def test_json_tool_protocol_stage_keeps_reasoning_on_without_binding_tools(monkeypatch):
+    # Model reasoning memanggil tool lewat JSON di teks (bukan function calling), jadi tanpa tools -- tetapi berpikirnya
+    # tidak dimatikan, sama seperti agent/reasoning_graph.py. disable_reasoning=False mengesampingkan bawaan "tanpa tools".
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    with (
+        patch("setor_led.llm.create_ollama_client_from_env", return_value=_client("deepseek/x")),
+        patch("langchain_openai.ChatOpenAI") as openai,
+    ):
+        build_setor_llm("deepseek/x", num_predict=8192, disable_reasoning=False)
+    assert "extra_body" not in openai.call_args.kwargs
+    assert openai.call_args.kwargs["max_tokens"] == 8192
+
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    with (
+        patch("setor_led.llm.create_ollama_client_from_env", return_value=_client("qwen3.6:35b")),
+        patch("langchain_ollama.ChatOllama") as ollama,
+    ):
+        build_setor_llm("qwen3.6:35b", disable_reasoning=False)
+    assert "reasoning" not in ollama.call_args.kwargs
+
+
+def test_disable_reasoning_can_also_be_forced_on_with_tools():
+    with (
+        patch("setor_led.llm.create_ollama_client_from_env", return_value=_client("qwen3.6:35b")),
+        patch("langchain_ollama.ChatOllama") as ollama,
+    ):
+        build_setor_llm("qwen3.6:35b", tools=["t"], disable_reasoning=True)
+    assert ollama.call_args.kwargs["reasoning"] is False
+
+
 def test_openrouter_branch_uses_chatopenai(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
     monkeypatch.setenv("OPENROUTER_API_KEY", "k")

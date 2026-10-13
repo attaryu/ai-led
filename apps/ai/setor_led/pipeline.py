@@ -18,11 +18,12 @@ from typing import Awaitable, Callable, Optional
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
 from agent.context import AssessmentContext, current_assessment_context
+from agent.graph import is_reasoning_model
 from agent.tools.led_tool import search_led_evidence
 from agent.tools.lkps_tool import _registries, get_lkps_table
 from llm.chat_model import no_think
 from setor_led.llm import build_setor_llm
-from setor_led.prompts import SYSTEM_CAPAIAN, bangun_prompt_capaian, bangun_prompt_evaluasi
+from setor_led.prompts import SYSTEM_CAPAIAN, SYSTEM_CAPAIAN_JSON, bangun_prompt_capaian, bangun_prompt_evaluasi
 from setor_led.schema import (
     IkuInput,
     SetorLedError,
@@ -38,6 +39,19 @@ MAX_TOOL_STEPS = 6          # panggilan tool maksimum per IKU sebelum model dipa
 MAX_BAHAN_CHARS = 6000      # batas bahan tool yang diteruskan ke tahap 2
 MAX_BAHAN_PER_TOOL = 2000   # jatah tiap hasil tool: satu tabel LKPS besar tidak boleh menggusur hasil LED/bukti
 CANCEL_POLL_SECONDS: float = 3  # cek flag batal tiap ini detik, walau belum ada IKU yang selesai
+MAX_JSON_RETRY = 2          # balasan non-JSON yang ditoleransi (tiap kali diingatkan) di loop protokol JSON
+MAX_PESAN_TOOL = 4000       # hasil tool yang dikembalikan ke model di loop protokol JSON (sama dengan AMI)
+REASONING_NUM_PREDICT = 8192  # model reasoning memakai banyak token <think>; sama dengan agent/reasoning_graph.py
+
+_NUDGE_JSON = "Output sebelumnya tidak valid JSON. Ulangi dengan JSON satu baris saja, tanpa markdown atau penjelasan."
+_BATAS_TOOL = "Batas pemanggilan tool tercapai. Berikan jawaban akhir JSON sekarang."
+
+# Salah nama argumen yang lazim dari model; dinormalkan seperti agent/reasoning_graph.py::tool_node.
+_ALIAS_ARGUMEN = {
+    "get_lkps_table": {"table_id": "table_reference", "table": "table_reference"},
+    "search_led_evidence": {"q": "query"},
+    "cari_bukti_dukung_prodi": {"q": "query"},
+}
 
 TOOLS = [get_lkps_table, search_led_evidence, cari_bukti_dukung_prodi]
 TOOLS_BY_NAME = {t.name: t for t in TOOLS}
@@ -161,6 +175,72 @@ def cari_capaian(
     return parse_capaian(llm.invoke(pesan).content, kode=iku.kode), _bahan()
 
 
+def _normalkan_argumen(nama: str, args: object) -> dict:
+    """`args` dari model -> dict untuk tool: bukan dict jadi {}, nama argumen yang salah lazim diperbaiki."""
+    if not isinstance(args, dict):
+        return {}
+    args = dict(args)
+    for salah, benar in _ALIAS_ARGUMEN.get(nama, {}).items():
+        if salah in args and benar not in args:
+            args[benar] = args.pop(salah)
+    return args
+
+
+def cari_capaian_json(
+    llm,
+    iku: IkuInput,
+    tabel_lkps: list[str],
+    cancel_event: threading.Event | None = None,
+    prodi: str | None = None,
+) -> tuple[dict | None, str]:
+    """Tahap 1 untuk model reasoning, yang tidak punya function calling bawaan: tool dipanggil lewat JSON di teks
+    (`{"action": "<tool>", "args": {...}}` / `{"action": "final", ...}`), protokol yang sama dengan
+    agent/reasoning_graph.py milik AMI. `llm` polos (tanpa bind_tools). Kontrak hasil dan pembatalan sama dengan
+    cari_capaian. Jumlah panggilan LLM terbatas: MAX_TOOL_STEPS tool + 1 jawaban paksa + MAX_JSON_RETRY pengingat."""
+    pesan = [
+        SystemMessage(content=SYSTEM_CAPAIAN_JSON),
+        HumanMessage(content=bangun_prompt_capaian(iku, tabel_lkps, prodi)),
+    ]
+    bahan: list[str] = []
+    langkah = 0       # tool yang sudah dijalankan
+    salah_format = 0  # balasan yang bukan objek JSON beraksi
+    dipaksa = False   # batas tool tercapai: model sudah diminta menjawab akhir
+
+    def _bahan() -> str:
+        return "\n\n".join(bahan)[:MAX_BAHAN_CHARS]
+
+    while True:
+        _cek_batal(cancel_event)
+        if langkah >= MAX_TOOL_STEPS and not dipaksa:
+            pesan.append(HumanMessage(content=_BATAS_TOOL))
+            dipaksa = True
+        jawaban = llm.invoke(pesan)
+        teks = str(jawaban.content or "")
+        data = _extract_json(teks)
+        aksi = data.get("action") if isinstance(data, dict) else None
+
+        if aksi == "final" or (isinstance(data, dict) and aksi is None and "ditemukan" in data):
+            return parse_capaian(teks, kode=iku.kode), _bahan()
+
+        if not isinstance(aksi, str):
+            if salah_format >= MAX_JSON_RETRY:
+                logger.info("Capaian %s: model tidak membalas JSON yang valid: %.300r", iku.kode, teks)
+                return None, _bahan()
+            salah_format += 1
+            pesan += [jawaban, HumanMessage(content=_NUDGE_JSON)]
+            continue
+
+        if dipaksa:
+            logger.info("Capaian %s: model masih meminta tool '%s' setelah batas langkah", iku.kode, aksi)
+            return None, _bahan()
+
+        _cek_batal(cancel_event)
+        keluaran = _jalankan_tool({"name": aksi, "args": _normalkan_argumen(aksi, data.get("args"))})
+        bahan.append(f"[{aksi}] {keluaran[:MAX_BAHAN_PER_TOOL]}")
+        langkah += 1
+        pesan += [jawaban, HumanMessage(content=f"Hasil tool ({aksi}):\n{keluaran[:MAX_PESAN_TOOL]}")]
+
+
 def tulis_evaluasi_narasi(
     llm,
     iku: IkuInput,
@@ -204,13 +284,22 @@ def _proses_iku_sync(
     """Seluruh pekerjaan satu IKU (sinkron, jalan di thread executor karena tool & LLM sinkron).
     Raise SetorLedCancelled bila `cancel_event` menyala: thread berhenti di titik aman berikutnya."""
     _cek_batal(cancel_event)
-    llm_tool = build_setor_llm(model, tools=TOOLS)
-    capaian, bahan = cari_capaian(llm_tool, iku, tabel_lkps, cancel_event, prodi=prodi)
+    # Routing seperti AMI (agent/graph.py::build_graph_auto): model reasoning -> tool lewat protokol JSON, selain itu
+    # tool calling bawaan. is_reasoning_model membaca LLM_REASONING_MODE / REASONING_MODEL_PATTERNS.
+    reasoning = is_reasoning_model(model or "")
+    if reasoning:
+        llm_tool = build_setor_llm(model, num_predict=REASONING_NUM_PREDICT, disable_reasoning=False)
+        capaian, bahan = cari_capaian_json(llm_tool, iku, tabel_lkps, cancel_event, prodi=prodi)
+    else:
+        llm_tool = build_setor_llm(model, tools=TOOLS)
+        capaian, bahan = cari_capaian(llm_tool, iku, tabel_lkps, cancel_event, prodi=prodi)
     if capaian is None:
         raise SetorLedError("Capaian tidak ditemukan di LKPS/LED/bukti dukung")
 
     _cek_batal(cancel_event)
-    llm_narasi = build_setor_llm(model, temperature=0.2, num_predict=3000)
+    llm_narasi = build_setor_llm(
+        model, temperature=0.2, num_predict=REASONING_NUM_PREDICT if reasoning else 3000
+    )
     evaluasi, inti, tambahan = tulis_evaluasi_narasi(llm_narasi, iku, capaian, bahan, model, cancel_event, prodi=prodi)
     return hasil_sukses(iku.kode, capaian, evaluasi, inti, tambahan)
 

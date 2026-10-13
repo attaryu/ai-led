@@ -102,16 +102,18 @@ def test_requested_model_is_forwarded():
     assert d["jalankan_setor_led"].call_args.kwargs["model"] == "llama3.3:70b"
 
 
-def test_reasoning_model_is_rejected_with_a_clear_message():
+def test_reasoning_model_is_accepted_and_routed_by_the_pipeline_not_rejected_here():
+    # Dulu ditolak di sini. Sekarang model reasoning jalan lewat protokol tool berbasis JSON di pipeline (seperti AMI);
+    # pemilihan jalur ada di pipeline._proses_iku_sync, handler hanya meneruskan nama model.
     result, d = _run(_fake_job(model="deepseek-r1:32b"), models=("deepseek-r1:32b",))
-    assert result["status"] == "error" and "reasoning" in result["error"].lower()
-    d["jalankan_setor_led"].assert_not_called()
+    assert result["status"] == "completed"
+    assert d["jalankan_setor_led"].call_args.kwargs["model"] == "deepseek-r1:32b"
 
 
-def test_default_model_that_is_a_reasoning_model_is_rejected_too():
+def test_default_model_that_is_a_reasoning_model_is_accepted_too():
     result, d = _run(_fake_job(), models=("deepseek-r1:32b",))
-    assert result["status"] == "error" and "reasoning" in result["error"].lower()
-    d["jalankan_setor_led"].assert_not_called()
+    assert result["status"] == "completed"
+    assert d["jalankan_setor_led"].call_args.kwargs["model"] == "deepseek-r1:32b"
 
 
 def test_document_without_accreditation_set_stops_the_job():
