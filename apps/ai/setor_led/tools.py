@@ -10,6 +10,8 @@ from langchain_core.tools import tool
 from agent.context import require_current_context
 from vectorstore.pgvector_evidence_store import list_prodi_evidence_ids, search_evidence
 
+MAX_N_RESULTS = 10
+
 
 @tool
 def cari_bukti_dukung_prodi(query: str, n_results: int = 5) -> str:
@@ -30,7 +32,8 @@ def cari_bukti_dukung_prodi(query: str, n_results: int = 5) -> str:
         query=query,
         tenant_id=ctx.tenant_id,
         bukti_dukung_ids=list(berkas),
-        n_results=n_results,
+        # n_results diisi model: tanpa batas ia bisa menyedot ratusan potongan ke konteks tahap 1.
+        n_results=max(1, min(n_results, MAX_N_RESULTS)),
     )
     return json.dumps(
         [

@@ -58,6 +58,16 @@ def test_long_chunk_text_is_capped_at_1000_chars(konteks):
     assert len(keluaran[0]["text"]) == 1000
 
 
+@pytest.mark.parametrize("diminta, dipakai", [(500, 10), (10, 10), (3, 3), (0, 1), (-7, 1)])
+def test_n_results_is_clamped_because_the_model_controls_it(konteks, diminta, dipakai):
+    with (
+        patch("setor_led.tools.list_prodi_evidence_ids", return_value={"e1": "a.pdf"}),
+        patch("setor_led.tools.search_evidence", return_value=[]) as cari,
+    ):
+        cari_bukti_dukung_prodi.invoke({"query": "q", "n_results": diminta})
+    assert cari.call_args.kwargs["n_results"] == dipakai
+
+
 def test_unknown_file_id_falls_back_to_a_placeholder_label(konteks):
     with (
         patch("setor_led.tools.list_prodi_evidence_ids", return_value={"e1": "a.pdf"}),

@@ -49,6 +49,23 @@ def test_evaluasi_prompt_names_every_output_key_and_enum_value():
         assert nilai in prompt
 
 
+def test_evaluasi_prompt_teaches_target_direction_so_lower_is_better_targets_are_not_misjudged():
+    # Target "≤ 5%" (mis. persentase DO) terpenuhi justru oleh capaian DI BAWAH 5%; aturan "di bawah target = belum
+    # memenuhi" akan membalik hasilnya.
+    iku = IkuInput(kode="IKU.X", indikator="Persentase mahasiswa DO", target="≤ 5%")
+    prompt = bangun_prompt_evaluasi(iku, {"nilai": "3%", "sumber": "LKPS Tabel 6.d"}, "")
+
+    assert "ARAH target" in prompt
+    assert "makin besar makin baik" in prompt and "makin kecil makin baik" in prompt
+    assert "≤" in prompt and "≥" in prompt
+    assert "capaian di bawah target" not in prompt  # kalimat lama yang hanya benar untuk "lebih besar lebih baik"
+
+
+def test_evaluasi_prompt_still_covers_range_targets():
+    prompt = bangun_prompt_evaluasi(IKU, {"nilai": "4,05", "sumber": "LKPS"}, "")
+    assert "rentang" in prompt and "di luar rentang" in prompt
+
+
 def test_evaluasi_prompt_does_not_embed_led_pens_sample_text():
     # Spec §10: LED PENS bertanda "Hanya untuk Internal PENS" -- jangan masuk ke kode yang di-commit.
     prompt = bangun_prompt_evaluasi(IKU, {"nilai": "x", "sumber": "y"}, "")
