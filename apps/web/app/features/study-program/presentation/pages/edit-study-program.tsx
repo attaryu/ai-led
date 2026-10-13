@@ -9,12 +9,8 @@ import { Button } from '~/core/components/ui/button';
 import {
 	Card,
 	CardContent,
-	CardHeader,
-	CardTitle,
-	CardDescription,
 } from '~/core/components/ui/card';
 import { ApiError } from '~/core/lib/api-client';
-import { fromDateInputValue, toDateInputValue } from '~/core/lib/format-time';
 import {
 	updateStudyProgramSchema,
 	type UpdateStudyProgramDto,
@@ -66,9 +62,6 @@ export function EditStudyProgram() {
 			jenjang: 'S1',
 			fakultas: '',
 			ketuaProdi: '',
-			peringkatAkreditasi: 'BELUM_TERAKREDITASI',
-			nomorSkAkreditasi: '',
-			berlakuSampaiAkreditasi: '',
 		},
 	});
 
@@ -80,11 +73,6 @@ export function EditStudyProgram() {
 				jenjang: program.jenjang,
 				fakultas: program.fakultas,
 				ketuaProdi: program.ketuaProdi,
-				peringkatAkreditasi: program.peringkatAkreditasi,
-				nomorSkAkreditasi: program.nomorSkAkreditasi ?? '',
-				berlakuSampaiAkreditasi: toDateInputValue(
-					program.berlakuSampaiAkreditasi,
-				),
 			});
 		}
 	}, [program, reset]);
@@ -93,13 +81,7 @@ export function EditStudyProgram() {
 		if (!programId) return;
 		setFormError(null);
 		try {
-			await studyProgramRepository.update(programId, {
-				...data,
-				nomorSkAkreditasi: data.nomorSkAkreditasi.trim() || null,
-				berlakuSampaiAkreditasi: fromDateInputValue(
-					data.berlakuSampaiAkreditasi,
-				),
-			});
+			await studyProgramRepository.update(programId, data);
 			navigate('/dashboard/study-programs');
 		} catch (e) {
 			setFormError(e instanceof ApiError ? e.message : 'Gagal menyimpan perubahan.');
@@ -142,14 +124,7 @@ export function EditStudyProgram() {
 				</div>
 			</div>
 
-			{/* Lihat catatan di create-study-program.tsx soal CardHeader yang ini. */}
 			<Card>
-				<CardHeader>
-					<CardDescription>
-						Nomor SK dan masa berlaku boleh kosong kalau program studi ini
-						belum terakreditasi.
-					</CardDescription>
-				</CardHeader>
 				<CardContent>
 					<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 						{formError && (

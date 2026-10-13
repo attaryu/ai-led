@@ -93,8 +93,7 @@ export function StudyProgramManagement() {
 						Program Studi
 					</h2>
 					<p className="text-sm text-muted-foreground">
-						Identitas dan peringkat akreditasi yang berlaku di tiap program
-						studi.
+						Identitas tiap program studi.
 					</p>
 				</div>
 				{canManage && (

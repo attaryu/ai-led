@@ -36,12 +36,6 @@ function toPayload(
 	if (data.jenjang !== undefined) payload.level = data.jenjang;
 	if (data.fakultas !== undefined) payload.faculty = data.fakultas;
 	if (data.ketuaProdi !== undefined) payload.programHead = data.ketuaProdi;
-	if (data.peringkatAkreditasi !== undefined)
-		payload.accreditationRank = data.peringkatAkreditasi;
-	if (data.nomorSkAkreditasi !== undefined)
-		payload.accreditationDecreeNumber = data.nomorSkAkreditasi ?? undefined;
-	if (data.berlakuSampaiAkreditasi !== undefined)
-		payload.accreditationValidUntil = data.berlakuSampaiAkreditasi ?? undefined;
 	return payload;
 }
 

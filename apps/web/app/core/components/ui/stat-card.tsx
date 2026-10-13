@@ -9,11 +9,88 @@ import { cn } from '~/core/lib/utils';
  */
 const toneStyles = {
 	default: '',
+	muted: 'text-muted-foreground',
 	warning: 'text-amber-700 dark:text-amber-400',
 	danger: 'text-destructive',
+	success: 'text-emerald-700 dark:text-emerald-400',
+	info: 'text-sky-700 dark:text-sky-400',
 } as const;
 
 export type StatCardTone = keyof typeof toneStyles;
+
+/** Warna kotak ikon per nada: latar berwarna lembut, ikon berwarna penuh. */
+const iconBoxStyles: Record<StatCardTone, string> = {
+	default: 'bg-primary/10 text-primary',
+	muted: 'bg-muted text-muted-foreground',
+	warning: 'bg-amber-500/15 text-amber-700 dark:text-amber-400',
+	danger: 'bg-destructive/10 text-destructive',
+	success: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
+	info: 'bg-sky-500/15 text-sky-700 dark:text-sky-400',
+};
+
+/** Ikon di dalam kotak persegi membulat yang warnanya mengikuti nada. */
+export function StatIconBox({
+	icon: BoxIcon,
+	tone = 'default',
+	size = 'md',
+	className,
+}: {
+	icon: Icon;
+	tone?: StatCardTone;
+	size?: 'sm' | 'md';
+	className?: string;
+}) {
+	return (
+		<span
+			aria-hidden="true"
+			className={cn(
+				'flex shrink-0 items-center justify-center rounded-lg',
+				size === 'md' ? 'size-11' : 'size-9',
+				iconBoxStyles[tone],
+				className,
+			)}
+		>
+			<BoxIcon className={size === 'md' ? 'size-6' : 'size-5'} weight="duotone" />
+		</span>
+	);
+}
+
+/**
+ * Susunan horizontal: kotak ikon di kiri, di kanannya satu wadah berisi judul
+ * (kecil, redup) di atas dan angka besar di bawah.
+ */
+export function StatBlock({
+	label,
+	value,
+	icon,
+	tone = 'default',
+	size = 'md',
+	className,
+}: {
+	label: string;
+	value: string;
+	icon: Icon;
+	tone?: StatCardTone;
+	size?: 'sm' | 'md';
+	className?: string;
+}) {
+	return (
+		<div className={cn('flex items-center gap-3', className)}>
+			<StatIconBox icon={icon} tone={tone} size={size} />
+			<div className="flex min-w-0 flex-col">
+				<p className="truncate text-sm font-medium text-muted-foreground">{label}</p>
+				<p
+					className={cn(
+						'font-heading text-2xl font-bold tracking-tight tabular-nums',
+						toneStyles[tone],
+					)}
+				>
+					{value}
+				</p>
+			</div>
+		</div>
+	);
+}
 
 /**
  * Kartu satu angka untuk baris ringkasan dashboard.
@@ -28,6 +105,7 @@ export function StatCard({
 	icon: StatIcon,
 	progress,
 	tone = 'default',
+	boxed = false,
 	className,
 }: {
 	label: string;
@@ -37,8 +115,23 @@ export function StatCard({
 	/** 0–100. Bila diisi, bar progres dirender di bawah angka. */
 	progress?: number;
 	tone?: StatCardTone;
+	/**
+	 * Ikon di kotak berwarna sebelah kiri judul+angka (butuh `icon`). Tanpa ini
+	 * ikon tetap kecil di baris judul, seperti pemanggil lama.
+	 */
+	boxed?: boolean;
 	className?: string;
 }) {
+	if (boxed && StatIcon) {
+		return (
+			<Card size="sm" className={className}>
+				<CardContent>
+					<StatBlock label={label} value={value} icon={StatIcon} tone={tone} />
+				</CardContent>
+			</Card>
+		);
+	}
+
 	const clamped =
 		progress === undefined
 			? undefined

@@ -1,19 +1,28 @@
 import {
 	ArrowRightIcon,
-	UsersThreeIcon,
+	ArrowsClockwiseIcon,
+	BooksIcon,
+	CheckCircleIcon,
+	ClockIcon,
+	StackIcon,
 	WarningCircleIcon,
+	type Icon,
 } from '@phosphor-icons/react';
 import { Link } from 'react-router';
 
 import { buttonVariants } from '~/core/components/ui/button';
 import {
 	Card,
+	CardAction,
 	CardContent,
-	CardDescription,
 	CardHeader,
 	CardTitle,
 } from '~/core/components/ui/card';
-import { formatRelativeTime } from '~/core/lib/format-time';
+import {
+	StatBlock,
+	StatIconBox,
+	type StatCardTone,
+} from '~/core/components/ui/stat-card';
 import { type InstitutionResources } from '../../domain/entities/institution-readiness.entity';
 
 /**
@@ -23,27 +32,28 @@ import { type InstitutionResources } from '../../domain/entities/institution-rea
  */
 export function InstitutionResourceStrip({
 	sumberDaya,
-	totalProdi,
-	dapatKelolaUser,
 }: {
 	sumberDaya: InstitutionResources;
-	totalProdi: number;
-	/**
-	 * Tautan ke Manajemen User hanya dirender untuk yang berhak (§1). Penjamin
-	 * Mutu tidak punya menu itu sama sekali (§4.2), jadi menyodorkan tautan
-	 * kepadanya hanya berujung pengalihan — cacat yang sama yang sudah dihindari
-	 * §5.1c.
-	 */
-	dapatKelolaUser: boolean;
 }) {
-	const { evidenceTenant, prodiTanpaPenyusun } = sumberDaya;
-	const belumSiap = evidenceTenant.menunggu + evidenceTenant.diproses;
+	const { evidenceTenant } = sumberDaya;
 
-	// Penyebutnya total prodi, sama dengan hitungan "n dari m prodi sedang
-	// menyusun" di subjudul §4.0c, supaya dua angka di halaman yang sama tidak
-	// diam-diam mengukur hal berbeda.
-	const persenTanpaPenyusun =
-		totalProdi === 0 ? 0 : Math.round((prodiTanpaPenyusun / totalProdi) * 100);
+	const tiles: {
+		label: string;
+		value: number;
+		tone: StatCardTone;
+		icon: Icon;
+	}[] = [
+		{ label: 'Total', value: evidenceTenant.total, tone: 'default', icon: StackIcon },
+		{ label: 'Siap', value: evidenceTenant.siap, tone: 'success', icon: CheckCircleIcon },
+		{
+			label: 'Diproses',
+			value: evidenceTenant.diproses,
+			tone: 'info',
+			icon: ArrowsClockwiseIcon,
+		},
+		{ label: 'Menunggu', value: evidenceTenant.menunggu, tone: 'default', icon: ClockIcon },
+		{ label: 'Gagal', value: evidenceTenant.gagal, tone: 'warning', icon: WarningCircleIcon },
+	];
 
 	return (
 		<section className="flex flex-col gap-3">
@@ -51,70 +61,16 @@ export function InstitutionResourceStrip({
 				<p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 					Sumber Daya Institusi
 				</p>
-				<p className="mt-1 text-sm text-muted-foreground">
-					Bekal yang berlaku lintas penyusunan, bukan ukuran pekerjaan yang
-					sedang disusun.
-				</p>
 			</div>
 
-			<div className="grid gap-4 sm:grid-cols-2">
+			<div className="grid gap-4">
 				<Card size="sm">
 					<CardHeader>
-						<CardTitle>Bukti Dukung Universitas</CardTitle>
-						<CardDescription>
-							{evidenceTenant.total === 0
-								? 'Belum ada berkas level universitas.'
-								: `${evidenceTenant.siap} dari ${evidenceTenant.total} berkas siap dipakai AI (${evidenceTenant.persenSiap}%).`}
-						</CardDescription>
-					</CardHeader>
-					<CardContent className="flex flex-col gap-3">
-						{/*
-						 * Cakupannya hanya `owner_tipe = TENANT` supaya angkanya cocok
-						 * dengan daftar di halaman yang dituju tombolnya (§4.4) — aturan
-						 * yang sama dengan panel Bukti Dukung di §5.1c.
-						 */}
-						{evidenceTenant.total > 0 && (
-							<div
-								className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
-								role="progressbar"
-								aria-valuenow={evidenceTenant.persenSiap}
-								aria-valuemin={0}
-								aria-valuemax={100}
-								aria-label="Bukti dukung universitas yang siap"
-							>
-								<div
-									className="h-full rounded-full bg-primary transition-[width]"
-									style={{ width: `${evidenceTenant.persenSiap}%` }}
-								/>
-							</div>
-						)}
-
-						{belumSiap > 0 && (
-							<p className="text-xs text-muted-foreground">
-								{belumSiap} berkas masih dalam antrean ekstraksi.
-							</p>
-						)}
-
-						{evidenceTenant.gagal > 0 && (
-							<p className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400">
-								<WarningCircleIcon
-									className="mt-0.5 size-3.5 shrink-0"
-									weight="fill"
-								/>
-								{evidenceTenant.gagal} berkas gagal diproses dan bisa dicoba
-								ulang.
-							</p>
-						)}
-
-						{evidenceTenant.terakhirDiunggah &&
-							evidenceTenant.berkasTerakhir && (
-								<p className="truncate text-xs text-muted-foreground">
-									Terakhir: {evidenceTenant.berkasTerakhir} ·{' '}
-									{formatRelativeTime(evidenceTenant.terakhirDiunggah)}
-								</p>
-							)}
-
-						<div>
+						<CardTitle className="flex items-center gap-3">
+							<StatIconBox icon={BooksIcon} size="sm" />
+							Bukti Dukung Universitas
+						</CardTitle>
+						<CardAction className="self-center">
 							<Link
 								to="/dashboard/evidence"
 								className={buttonVariants({ variant: 'outline', size: 'sm' })}
@@ -122,54 +78,31 @@ export function InstitutionResourceStrip({
 								Buka perpustakaan
 								<ArrowRightIcon className="size-4" />
 							</Link>
-						</div>
-					</CardContent>
-				</Card>
-
-				{/*
-				 * Prodi tanpa Penyusun bukan angka biasa: dokumennya tidak akan pernah
-				 * bergerak sampai ada yang ditugaskan, jadi keadaan itu ditampilkan
-				 * sebagai peringatan (§5.1c).
-				 */}
-				<Card size="sm">
-					<CardHeader>
-						<CardTitle>Tim Penyusun</CardTitle>
-						<CardDescription>
-							{prodiTanpaPenyusun === 0
-								? `Seluruh ${totalProdi} program studi sudah punya Penyusun.`
-								: `${prodiTanpaPenyusun} dari ${totalProdi} program studi belum punya Penyusun (${persenTanpaPenyusun}%).`}
-						</CardDescription>
+						</CardAction>
 					</CardHeader>
-					<CardContent className="flex flex-col gap-3">
-						{prodiTanpaPenyusun > 0 ? (
-							<p className="flex items-start gap-2 text-sm text-amber-700 dark:text-amber-400">
-								<WarningCircleIcon
-									className="mt-0.5 size-4 shrink-0"
-									weight="fill"
-								/>
-								Dokumen program studi itu tidak akan bergerak sampai ada pengguna yang
-								ditugaskan menulisnya.
+					<CardContent>
+						{/*
+						 * Cakupannya hanya `owner_tipe = TENANT` supaya angkanya cocok
+						 * dengan daftar di halaman yang dituju tombolnya (§4.4) — aturan
+						 * yang sama dengan panel Bukti Dukung di §5.1c.
+						 */}
+						{evidenceTenant.total === 0 ? (
+							<p className="text-sm text-muted-foreground">
+								Belum ada berkas level universitas.
 							</p>
 						) : (
-							<p className="flex items-start gap-2 text-sm text-muted-foreground">
-								<UsersThreeIcon
-									className="mt-0.5 size-4 shrink-0"
-									weight="duotone"
-								/>
-								Tiap program studi punya setidaknya satu pengguna yang bertugas menulis
-								dokumennya.
-							</p>
-						)}
-
-						{dapatKelolaUser && (
-							<div>
-								<Link
-									to="/dashboard/users"
-									className={buttonVariants({ variant: 'outline', size: 'sm' })}
-								>
-									Kelola penugasan
-									<ArrowRightIcon className="size-4" />
-								</Link>
+							<div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+								{tiles.map(({ label, value, tone, icon }) => (
+									<StatBlock
+										key={label}
+										label={label}
+										value={String(value)}
+										icon={icon}
+										size="sm"
+										tone={value === 0 ? 'muted' : tone}
+										className="rounded-lg bg-muted/50 px-3 py-2.5 ring-1 ring-border"
+									/>
+								))}
 							</div>
 						)}
 					</CardContent>

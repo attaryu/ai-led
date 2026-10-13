@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Role } from '@ai-led/db';
+import { PeringkatAkreditasi, Prisma, Role } from '@ai-led/db';
 import { PrismaService } from '../database/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { CreateProgramStudiDto } from './dto/create-program-studi.dto';
@@ -18,7 +18,14 @@ export class ProgramStudiService {
 
   create(dto: CreateProgramStudiDto) {
     const { tenantId } = this.tenantContext.getOrThrow();
-    return this.prisma.studyProgram.create({ data: { ...dto, tenantId } });
+    return this.prisma.studyProgram.create({
+      data: {
+        ...dto,
+        accreditationRank:
+          dto.accreditationRank ?? PeringkatAkreditasi.BELUM_TERAKREDITASI,
+        tenantId,
+      },
+    });
   }
 
   findAll() {

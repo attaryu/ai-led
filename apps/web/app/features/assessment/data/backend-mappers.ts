@@ -2,6 +2,7 @@ import {
 	type AmiRagasMetrik,
 	type AssessmentQuality,
 } from '../domain/entities/assessment-quality.entity';
+import { type AssessmentOverviewEntity } from '../domain/entities/assessment-overview.entity';
 import { type AssessmentSessionEntity } from '../domain/entities/assessment-session.entity';
 import { type AssessmentVerdictEntity } from '../domain/entities/assessment-verdict.entity';
 import {
@@ -9,6 +10,7 @@ import {
 	type JudgeVerdictEntity,
 } from '../domain/entities/indicator-result.entity';
 import {
+	type BackendAssessmentOverview,
 	type BackendAssessmentSession,
 	type BackendAssessmentVerdict,
 	type BackendEvalResult,
@@ -132,6 +134,20 @@ export function mapEvalResult(row: BackendEvalResult): AssessmentQuality | null 
 		model: row.model,
 		finished_at: row.finished_at ?? new Date().toISOString(),
 	});
+}
+
+export function mapOverview(row: BackendAssessmentOverview): AssessmentOverviewEntity {
+	return {
+		dokumenId: row.documentId,
+		studyProgramId: row.studyProgramId,
+		sesi: row.session,
+		dinilai: row.scored,
+		gagal: row.failed,
+		skorRataRata: row.averageScore,
+		jumlahSkorRendah: row.lowScoreCount,
+		ditinjau: row.reviewed,
+		dikoreksi: row.corrected,
+	};
 }
 
 export function mapVerdict(row: BackendAssessmentVerdict): AssessmentVerdictEntity {

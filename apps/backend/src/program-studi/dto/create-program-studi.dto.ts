@@ -38,9 +38,11 @@ export class CreateProgramStudiDto {
   @MaxLength(255)
   programHead!: string;
 
-  @ApiProperty({ enum: PeringkatAkreditasi })
+  /** Opsional — kalau kosong, service menyimpan BELUM_TERAKREDITASI (kolom DB tetap NOT NULL). */
+  @ApiPropertyOptional({ enum: PeringkatAkreditasi })
+  @IsOptional()
   @IsEnum(PeringkatAkreditasi)
-  accreditationRank!: PeringkatAkreditasi;
+  accreditationRank?: PeringkatAkreditasi;
 
   @ApiPropertyOptional({ example: '123/SK/BAN-PT/Akred/S/III/2026' })
   @IsOptional()

@@ -1,10 +1,9 @@
 import { useSession } from '~/features/auth/presentation/hooks/use-session';
-import { ActiveDraftingTable } from '../components/active-drafting-table';
+import { ActiveDocumentStatCards } from '../components/active-document-stat-cards';
+import { ActiveDocumentsTable } from '../components/active-documents-table';
 import { AdminOrganizationSummary } from '../components/admin-organization-summary';
-import { InstitutionAccreditationCard } from '../components/institution-accreditation-card';
 import { InstitutionResourceStrip } from '../components/institution-resource-strip';
-import { PendingDraftingTable } from '../components/pending-drafting-table';
-import { useInstitutionReadiness } from '../hooks/use-institution-readiness';
+import { useActiveDocumentsOverview } from '../hooks/use-active-documents-overview';
 
 /**
  * Dashboard Utama (docs/application_flow.md §4.0).
@@ -15,35 +14,48 @@ import { useInstitutionReadiness } from '../hooks/use-institution-readiness';
  *
  * **Aturan utama halaman ini: satu blok, satu kerangka waktu** — aturan yang sama
  * yang berlaku di Dashboard Program Studi (§5.1) dan yang secara khusus diperingatkan
- * PRD §3.8 untuk level institusi: capaian akreditasi yang sudah disahkan dan
- * usaha penyusunan yang sedang berjalan tidak boleh disandingkan sebagai angka
- * sederajat.
+ * PRD §3.8 untuk level institusi: capaian yang sudah disahkan dan usaha
+ * penyusunan yang sedang berjalan tidak boleh disandingkan sebagai angka
+ * sederajat. Seluruh angka di sini adalah tentang Dokumen LED yang **aktif**
+ * (sedang disusun) beserta penilaian AMI terbarunya.
  *
- *   §4.0a — Posisi Akreditasi ......... masa lalu, dari `PROGRAM_STUDI`
- *   §4.0c — Sedang Menyusun ........... prodi yang dokumennya sedang berjalan
- *           Perlu Segera Disusun ..... prodi yang seharusnya sudah mulai
- *   §4.0d — Sumber Daya Institusi ..... lintas penyusunan, bukti dukung & tim
+ *   Empat kartu ....................... Penyusunan LED (dokumen aktif, tenggat
+ *                                       mendesak) dan Penilaian AMI (perlu ditinjau,
+ *                                       perlu perhatian), di puncak halaman
+ *   §4.0c — Dokumen LED aktif ......... satu tabel, satu baris per dokumen: status
+ *                                       dan tenggat, progres bab, peninjauan serta
+ *                                       rata-rata skor AMI
+ *   §4.0d — Sumber Daya Institusi ..... lintas penyusunan, bukti dukung
  *
- * Nomor bagiannya sengaja tidak dirapatkan setelah §4.0b dibuang: §4.0c dan
- * §4.0d dirujuk dari banyak tempat lain di dokumen, dan menggesernya hanya untuk
- * menutup lubang penomoran akan membatalkan seluruh rujukan itu. §4.0b kini
- * ditempati catatan desain yang menerangkan kenapa bloknya tidak ada.
+ * Tabel Dokumen LED aktif menggantikan dua tabel yang dulu berdampingan —
+ * "Sedang menyusun" (§4.0c) dan "Penilaian AMI" — yang memuat dokumen yang sama
+ * dan memaksa pembaca mencocokkan barisnya sendiri. Nomor §4.0c tetap dipakai
+ * untuk tabel gabungan ini.
  *
- * **Dua tabel, bukan satu tabel dengan kolom Status.** Keduanya pernah jadi satu,
- * dan kolom-kolomnya saling meniadakan: "sejauh mana penyusunan berjalan" butuh
- * progres dan tenggat, "siapa yang harus mulai" butuh masa berlaku akreditasi
- * dan tombol untuk memulainya. Satu tabel tidak bisa melayani keduanya tanpa
- * separuh selnya berisi `—`.
+ * Nomor bagiannya sengaja tidak dirapatkan setelah §4.0a dan §4.0b dibuang:
+ * §4.0c dan §4.0d dirujuk dari banyak tempat lain di dokumen, dan menggesernya
+ * hanya untuk menutup lubang penomoran akan membatalkan seluruh rujukan itu.
+ * Posisi Akreditasi (§4.0a), tabel Perlu Segera Disusun, dan kartu Tim Penyusun
+ * dibuang dari halaman: peringkat akreditasi tidak dipakai pembangkitan AI
+ * maupun penilaian AMI. Datanya tetap ada di DB dan payload API, hanya tidak
+ * lagi ditampilkan atau ditanyakan.
  *
- * **Rincian per bab tetap tidak ada di sini.** Halaman ini pernah punya blok
- * berisi empat kartu angka se-universitas, dan tabelnya mengulang ketiganya lagi
- * per baris, sehingga lapis tenant terbaca sebagai Dashboard Project LED (§6.1)
- * yang diperbanyak barisnya. Yang tersisa cuma satu bar kelengkapan yang
- * menyebutkan pembagiannya lewat tooltip.
+ * **Kartu menghitung dokumen, bukan bab atau indikator.** Tiap dokumen punya
+ * jumlah bab dan rubrik yang berbeda, jadi menjumlahkan sub-unit itu lintas
+ * dokumen menghasilkan angka yang tidak bermakna. Halaman ini pernah punya blok
+ * empat kartu angka se-universitas yang diulang lagi per baris tabel, sehingga
+ * lapis tenant terbaca sebagai Dashboard Project LED (§6.1) yang diperbanyak
+ * barisnya; kartu yang sekarang hanya menjawab "berapa dokumen yang perlu
+ * disentuh", dan rincian per bab tetap tidak ada di sini.
  *
- * Berbeda dari versi sebelumnya, halaman ini **punya** aksi ubah data: tombol
- * Buat Dokumen LED di tabel kedua. Sesuai §1 ia tidak dirender sama sekali di luar
- * Penjamin Mutu, sama seperti tautan Manajemen User di §4.0d.
+ * Bila ringkasan AMI gagal dimuat, tabel tetap tampil (kolom dokumen, bab, dan
+ * tenggat tidak bergantung padanya) sementara kolom AMI menjadi "—" dan dua
+ * kartu Penilaian AMI disembunyikan — nol di sana akan terbaca sebagai
+ * "sudah dicek, tidak ada".
+ *
+ * Halaman ini murni baca: tombol Buat Dokumen LED yang dulu ada di tabel Perlu
+ * Segera Disusun ikut hilang bersamanya. Tautan Manajemen User tinggal di
+ * sidebar.
  */
 export function Dashboard() {
 	const session = useSession();
@@ -57,7 +69,7 @@ export function Dashboard() {
 				<p className="text-sm text-muted-foreground">
 					{session?.role === 'Admin'
 						? 'Ringkasan organisasi level universitas (tenant).'
-						: 'Kesiapan akreditasi seluruh program studi di universitas ini.'}
+						: 'Kesiapan AMI seluruh program studi di universitas ini.'}
 				</p>
 			</div>
 
@@ -69,10 +81,7 @@ export function Dashboard() {
 			{!session ? null : session.role === 'Admin' ? (
 				<AdminOrganizationSummary />
 			) : (
-				<InstitutionReadinessView
-					dapatKelolaUser={session.role === 'Pimpinan'}
-					dapatBuatProyek={session.role === 'Penjamin Mutu'}
-				/>
+				<InstitutionReadinessView />
 			)}
 		</div>
 	);
@@ -83,100 +92,42 @@ export function Dashboard() {
  * menyentuh penyimpanan) untuk Admin yang tidak akan merendernya — pemisahan
  * yang sama seperti `ProgramReadinessView` di Dashboard Program Studi.
  */
-function InstitutionReadinessView({
-	dapatKelolaUser,
-	dapatBuatProyek,
-}: {
-	dapatKelolaUser: boolean;
-	/** Penjamin Mutu; Pimpinan read-only atas Dokumen LED di level ini (§6.2). */
-	dapatBuatProyek: boolean;
-}) {
-	const { sedangMenyusun, perluDisusun, belumPerlu, akreditasi, sumberDaya } =
-		useInstitutionReadiness();
+function InstitutionReadinessView() {
+	const { loaded, adaProdi, rows, stats, amiStatus, sumberDaya } =
+		useActiveDocumentsOverview();
 
-	const adaProdi = akreditasi.totalProdi > 0;
+	// Menunggu pembacaan pertama: jangan memunculkan "Belum ada program studi" sesaat.
+	if (!loaded) return null;
 
 	return (
 		<>
-			<InstitutionAccreditationCard akreditasi={akreditasi} />
-
-			{/*
-			 * Tenant tanpa prodi sama sekali tidak dapat dua kotak kosong berturut-turut
-			 * yang mengulang hal yang sama — keduanya akan berbunyi "belum ada prodi",
-			 * dan dua kali tidak membuatnya lebih benar.
-			 */}
+			{/* Tenant tanpa prodi sama sekali tidak punya apa pun untuk disusun. */}
 			{!adaProdi ? (
 				<div className="rounded-md border border-dashed border-border p-8 text-center">
 					<p className="text-sm font-medium">Belum ada program studi</p>
 					<p className="mt-1 text-sm text-muted-foreground">
-						Kesiapan akreditasi baru bisa dipantau setelah ada program studi yang
-						terdaftar.
+						Dokumen LED baru bisa disusun setelah ada program studi yang terdaftar.
 					</p>
 				</div>
 			) : (
 				<>
+					<ActiveDocumentStatCards
+						stats={stats}
+						tampilkanAmi={amiStatus !== 'error'}
+					/>
 					<section className="flex flex-col gap-3">
-						<div>
-							<h3 className="font-heading text-lg font-bold tracking-tight">
-								Sedang menyusun
-								{sedangMenyusun.length > 0 && (
-									<span className="ml-2 text-sm font-normal text-muted-foreground">
-										{sedangMenyusun.length} program studi
-									</span>
-								)}
-							</h3>
-							<p className="text-sm text-muted-foreground">
-								Diurutkan dari tenggat yang paling menekan.
-							</p>
-						</div>
-						<ActiveDraftingTable rows={sedangMenyusun} />
-					</section>
-
-					<section className="flex flex-col gap-3">
-						<div>
-							<h3 className="font-heading text-lg font-bold tracking-tight">
-								Perlu segera disusun
-								{perluDisusun.length > 0 && (
-									<span className="ml-2 text-sm font-normal text-muted-foreground">
-										{perluDisusun.length} program studi
-									</span>
-								)}
-							</h3>
-							{/*
-							 * Dua kalimat pendek, bukan satu kalimat 22 kata dengan tiga
-							 * cabang "atau" dan satu "dan" di ujungnya. Syaratnya memang
-							 * dua hal yang harus benar bersamaan, dan itu lebih jelas
-							 * dibaca sebagai dua kalimat daripada satu rangkaian.
-							 */}
-							<p className="text-sm text-muted-foreground">
-								Akreditasinya tersisa setahun atau kurang, sudah habis, atau
-								belum pernah ada. Belum ada Dokumen LED yang dikerjakan.
-							</p>
-						</div>
-						<PendingDraftingTable
-							rows={perluDisusun}
-							canManage={dapatBuatProyek}
+						<h3 className="font-heading text-lg font-bold tracking-tight">
+							Dokumen LED aktif
+						</h3>
+						<ActiveDocumentsTable
+							rows={rows}
+							amiTersedia={amiStatus === 'ready'}
 						/>
-						{/*
-						 * Prodi yang tidak masuk kedua tabel tidak hilang diam-diam:
-						 * penjumlahan ketiganya harus selalu bisa dicocokkan dengan total
-						 * prodi di kartu akreditasi.
-						 */}
-						{belumPerlu > 0 && (
-							<p className="text-xs text-muted-foreground">
-								{belumPerlu} program studi lain akreditasinya masih panjang dan belum
-								perlu menyusun.
-							</p>
-						)}
 					</section>
 				</>
 			)}
 
-			<InstitutionResourceStrip
-				sumberDaya={sumberDaya}
-				totalProdi={akreditasi.totalProdi}
-				dapatKelolaUser={dapatKelolaUser}
-			/>
+			<InstitutionResourceStrip sumberDaya={sumberDaya} />
 		</>
 	);
 }

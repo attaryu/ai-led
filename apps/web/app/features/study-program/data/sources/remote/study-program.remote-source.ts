@@ -13,7 +13,8 @@ export type BackendProgramStudi = {
 	level: Jenjang;
 	faculty: string;
 	programHead: string;
-	accreditationRank: PeringkatAkreditasi;
+	/** Opsional: tidak lagi ditanyakan UI, backend memberi nilai bawaan. */
+	accreditationRank?: PeringkatAkreditasi;
 	accreditationDecreeNumber: string | null;
 	accreditationValidUntil: string | null;
 	createdAt: string;
@@ -25,9 +26,6 @@ export type ProgramStudiPayload = {
 	level: Jenjang;
 	faculty: string;
 	programHead: string;
-	accreditationRank: PeringkatAkreditasi;
-	accreditationDecreeNumber?: string;
-	accreditationValidUntil?: string;
 };
 
 export const studyProgramRemoteSource = {

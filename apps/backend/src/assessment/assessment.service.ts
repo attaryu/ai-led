@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Role } from '@ai-led/db';
+import type { AssessmentOverviewItemDto } from './dto/assessment-overview.dto';
 import { requireEnv } from '../config/env';
 import { PrismaService } from '../database/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
@@ -26,6 +27,88 @@ export class AssessmentService {
   private readonly includeCreatedByName = {
     createdBy: { select: { fullName: true } },
   } as const;
+
+  /**
+   * Ringkasan penilaian semua Dokumen LED tenant (PIMPINAN / PENJAMIN_MUTU) dalam
+   * 4 query tetap, bukan N+1 per dokumen. Tenant lewat `studyProgram.tenantId`,
+   * sama seperti DokumenLedService.findAllForTenant.
+   */
+  async getOverview(): Promise<AssessmentOverviewItemDto[]> {
+    const { tenantId } = this.tenantContext.getOrThrow();
+    const documents = await this.prisma.ledDocument.findMany({
+      where: { studyProgram: { tenantId } },
+      select: { id: true, studyProgramId: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    const documentIds = documents.map((d) => d.id);
+    if (documentIds.length === 0) return [];
+
+    const [sessions, verdicts] = await Promise.all([
+      // Satu sesi terbaru per dokumen.
+      this.prisma.assessmentSession.findMany({
+        where: { documentId: { in: documentIds } },
+        distinct: ['documentId'],
+        orderBy: [{ documentId: 'asc' }, { createdAt: 'desc' }],
+      }),
+      this.prisma.assessmentVerdict.findMany({
+        where: { documentId: { in: documentIds } },
+        select: { documentId: true, finalScore: true, machineScoreAtReview: true },
+      }),
+    ]);
+    const sessionByDocument = new Map(sessions.map((s) => [s.documentId, s]));
+    const results = sessions.length
+      ? await this.prisma.indicatorResult.findMany({
+          where: { sessionId: { in: sessions.map((s) => s.id) } },
+          select: { sessionId: true, score: true, error: true },
+        })
+      : [];
+
+    const resultsBySession = new Map<string, typeof results>();
+    for (const r of results) {
+      const list = resultsBySession.get(r.sessionId);
+      if (list) list.push(r);
+      else resultsBySession.set(r.sessionId, [r]);
+    }
+    const verdictsByDocument = new Map<string, typeof verdicts>();
+    for (const v of verdicts) {
+      const list = verdictsByDocument.get(v.documentId);
+      if (list) list.push(v);
+      else verdictsByDocument.set(v.documentId, [v]);
+    }
+
+    return documents.map((doc) => {
+      const session = sessionByDocument.get(doc.id) ?? null;
+      const sessionResults = session ? (resultsBySession.get(session.id) ?? []) : [];
+      const scores = sessionResults
+        .filter((r) => r.score !== null)
+        .map((r) => Number(r.score));
+      const docVerdicts = verdictsByDocument.get(doc.id) ?? [];
+      const sum = scores.reduce((a, b) => a + b, 0);
+      return {
+        documentId: doc.id,
+        studyProgramId: doc.studyProgramId,
+        session: session
+          ? {
+              id: session.id,
+              status: session.status,
+              totalIndicators: session.totalIndicators,
+              completedIndicators: session.completedIndicators,
+              createdAt: session.createdAt.toISOString(),
+            }
+          : null,
+        scored: scores.length,
+        failed: sessionResults.filter((r) => r.score === null && r.error !== null).length,
+        averageScore: scores.length ? Math.round((sum / scores.length) * 100) / 100 : null,
+        lowScoreCount: scores.filter((s) => s <= 2).length,
+        reviewed: docVerdicts.length,
+        corrected: docVerdicts.filter(
+          (v) =>
+            v.machineScoreAtReview !== null &&
+            Number(v.finalScore) !== Number(v.machineScoreAtReview),
+        ).length,
+      };
+    });
+  }
 
   async findSessions(dokumenId: string) {
     await this.dokumenLedService.findOne(dokumenId); // isolasi tenant + 404

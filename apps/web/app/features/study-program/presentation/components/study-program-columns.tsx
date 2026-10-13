@@ -5,7 +5,6 @@ import { Link } from 'react-router';
 
 import { Button } from '~/core/components/ui/button';
 import { type StudyProgramEntity } from '../../domain/entities/study-program.entity';
-import { AccreditationRankBadge } from './accreditation-rank-badge';
 
 // Extend TableMeta to support custom functions (like onDelete, onEdit) passed to the table
 declare module '@tanstack/react-table' {
@@ -51,13 +50,6 @@ export const getStudyProgramColumns = ({
 		cell: (info) => (
 			<span className="font-medium tabular-nums">{info.getValue()}</span>
 		),
-		enableSorting: true,
-	}),
-	// Cukup peringkatnya; sisa identitas akreditasi (SK, masa berlaku, ketua
-	// prodi) ada di Dashboard Program Studi masing-masing, bukan di daftar lintas program studi.
-	columnHelper.accessor('peringkatAkreditasi', {
-		header: 'Akreditasi',
-		cell: (info) => <AccreditationRankBadge peringkat={info.getValue()} />,
 		enableSorting: true,
 	}),
 	columnHelper.accessor('createdAt', {
