@@ -30,6 +30,25 @@ def test_capaian_prompt_demands_json_answer_and_forbids_inventing_numbers():
     assert "jangan mengarang" in SYSTEM_CAPAIAN.lower()
 
 
+def test_capaian_prompt_treats_an_estimate_as_not_found():
+    teks = SYSTEM_CAPAIAN.lower()
+    assert "eksplisit" in teks
+    assert "memperkirakan" in teks and "ditemukan: false" in teks.replace('"', "")
+    assert "jangan menulis kata \"diperkirakan\"" in teks
+
+
+def test_capaian_prompt_asks_for_a_short_nilai_with_details_in_dasar():
+    assert "singkat" in SYSTEM_CAPAIAN.lower()
+    assert '"dasar"' in SYSTEM_CAPAIAN
+
+
+def test_evaluasi_prompt_shows_the_dasar_only_when_there_is_one():
+    dengan = bangun_prompt_evaluasi(IKU, {"nilai": "RIPK = 3,46", "sumber": "LKPS", "dasar": "(3,58+3,48+3,33)/3"}, "")
+    tanpa = bangun_prompt_evaluasi(IKU, {"nilai": "RIPK = 3,46", "sumber": "LKPS"}, "")
+    assert "Dasar capaian: (3,58+3,48+3,33)/3" in dengan
+    assert "Dasar capaian" not in tanpa
+
+
 def test_capaian_prompt_treats_retrieved_text_as_data_not_instructions():
     assert "data" in SYSTEM_CAPAIAN.lower() and "instruksi" in SYSTEM_CAPAIAN.lower()
 

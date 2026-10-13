@@ -78,6 +78,41 @@ def test_parse_capaian_returns_none_when_not_found_or_unreadable(mentah):
     assert parse_capaian(mentah) is None
 
 
+@pytest.mark.parametrize(
+    "nilai",
+    [
+        "Tidak terdapat angka persentase keterlaksanaan K3L yang eksplisit di LKPS maupun LED",
+        "Persentase K3L diperkirakan tinggi, memenuhi target 75%",
+        "Tidak ada angka eksplisit; seluruh aspek terpenuhi",
+        "Tidak ditemukan nilai persentase di dokumen",
+        "Perkiraan capaian 90%",
+        "Capaian tidak secara eksplisit disebutkan",
+    ],
+)
+def test_parse_capaian_rejects_hedged_values_so_no_narrative_is_written_on_a_guess(nilai):
+    # Capaian yang hanya ditebak/disimpulkan = "tidak ditemukan" (spec §5), bukan alasan menulis narasi "diperkirakan".
+    assert parse_capaian(json.dumps({"ditemukan": True, "nilai": nilai, "sumber": "LED"})) is None
+
+
+def test_parse_capaian_rejects_a_hedge_hidden_in_the_dasar_field_too():
+    mentah = json.dumps({"ditemukan": True, "nilai": "100%", "sumber": "LED", "dasar": "angka riilnya diperkirakan"})
+    assert parse_capaian(mentah) is None
+
+
+@pytest.mark.parametrize(
+    "nilai",
+    ["RIPK = 3,46", "Pedoman SMK3L PENS tersedia (SK No. 48/PL14/2025)", "100% (25 dari 25 jenis sarana terawat)"],
+)
+def test_parse_capaian_keeps_firm_values(nilai):
+    assert parse_capaian(json.dumps({"ditemukan": True, "nilai": nilai, "sumber": "LKPS"}))["nilai"] == nilai
+
+
+def test_parse_capaian_keeps_the_optional_dasar_but_omits_it_when_absent():
+    dengan = json.dumps({"ditemukan": True, "nilai": "RIPK = 3,46", "sumber": "LKPS Tabel 6.b", "dasar": "(3,58+3,48+3,33)/3"})
+    assert parse_capaian(dengan) == {"nilai": "RIPK = 3,46", "sumber": "LKPS Tabel 6.b", "dasar": "(3,58+3,48+3,33)/3"}
+    assert "dasar" not in parse_capaian(CAPAIAN_JSON)
+
+
 def test_parse_capaian_defaults_missing_source():
     assert parse_capaian('{"ditemukan": true, "nilai": "100%"}') == {"nilai": "100%", "sumber": "tidak disebutkan"}
 
@@ -223,6 +258,19 @@ def test_proses_iku_sync_reports_missing_capaian_without_calling_stage_two():
             pipeline._proses_iku_sync(IKU, "m", [])
     tulis.assert_not_called()
     assert bangun.call_count == 1  # model tahap 2 tidak dibangun
+
+
+def test_proses_iku_sync_gives_stage_two_the_dasar_but_keeps_it_out_of_the_result():
+    capaian = {**CAPAIAN, "dasar": "(3,58+3,48+3,33)/3 = 3,463"}
+    with (
+        patch("setor_led.pipeline.build_setor_llm"),
+        patch("setor_led.pipeline.cari_capaian", return_value=(capaian, "bahan")),
+        patch("setor_led.pipeline.tulis_evaluasi_narasi", return_value=("MELAMPAUI", INTI, None)) as tulis,
+    ):
+        hasil = pipeline._proses_iku_sync(IKU, "m", [])
+
+    assert tulis.call_args.args[2] == capaian  # tahap 2 melihat dasar perhitungannya
+    assert hasil["capaian"] == CAPAIAN  # hasil job tetap {nilai, sumber} saja, ringkas
 
 
 def test_proses_iku_sync_builds_the_full_result():

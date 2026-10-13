@@ -11,6 +11,7 @@ import asyncio
 import contextvars
 import json
 import logging
+import re
 from typing import Awaitable, Callable, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
@@ -55,15 +56,33 @@ def daftar_tabel_lkps(tenant_id: str, dokumen_id: str) -> list[str]:
     return list(registry.sheets.keys()) if registry is not None else []
 
 
+# Capaian yang hanya ditebak/disimpulkan model ("diperkirakan tinggi", "tidak terdapat angka eksplisit"). Prompt
+# sudah melarangnya, tapi model kadang tetap menulis ditemukan=true dengan nilai ragu-ragu; tanpa penjaga ini
+# narasi "diperkirakan memenuhi" ikut tertulis ke dokumen akreditasi. Berlaku untuk keluaran bahasa Indonesia.
+_RAGU = re.compile(
+    r"diperkirakan|perkiraan"
+    r"|tidak\s+(?:terdapat|ada|ditemukan|tercantum|disebutkan|dicantumkan)\s+(?:\w+\s+){0,3}?(?:angka|nilai)"
+    r"|tidak\s+(?:secara\s+)?eksplisit",
+    re.IGNORECASE,
+)
+
+
 def parse_capaian(content: object) -> dict | None:
-    """Jawaban akhir tahap 1 -> {"nilai", "sumber"}, atau None bila tidak ditemukan/tidak terbaca."""
+    """Jawaban akhir tahap 1 -> {"nilai", "sumber"[, "dasar"]}, atau None bila tidak ditemukan, tidak terbaca,
+    atau ragu-ragu (lihat _RAGU). `dasar` (rincian perhitungan/bukti) hanya untuk tahap 2, tidak masuk hasil job."""
     data = _extract_json(content if isinstance(content, str) else str(content or ""))
     if not isinstance(data, dict) or not data.get("ditemukan"):
         return None
     nilai = str(data.get("nilai") or "").strip()
     if not nilai:
         return None
-    return {"nilai": nilai, "sumber": str(data.get("sumber") or "").strip() or "tidak disebutkan"}
+    dasar = str(data.get("dasar") or "").strip()
+    if _RAGU.search(nilai) or _RAGU.search(dasar):
+        return None
+    capaian = {"nilai": nilai, "sumber": str(data.get("sumber") or "").strip() or "tidak disebutkan"}
+    if dasar:
+        capaian["dasar"] = dasar
+    return capaian
 
 
 def _jalankan_tool(call: dict) -> str:
