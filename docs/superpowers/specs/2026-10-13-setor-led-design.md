@@ -155,15 +155,32 @@ Aturan:
   indikator rubrik (`evidence_indicator_tags`), sedangkan IKU bukan indikator rubrik. Gantinya
   `cari_bukti_dukung_prodi` di atas. Konsekuensi: pencarian melintasi seluruh bukti prodi sehingga
   hasil bisa bercampur dokumen tak relevan; kualitas bergantung pada query yang disusun LLM.
-- **Hanya model chat dengan tool calling asli.** Model reasoning (`is_reasoning_model()`)
-  ditolak dengan pesan jelas; protokol JSON-tool `reasoning_graph.py` tidak diduplikasi.
+- **Routing model seperti AMI.** `pipeline._proses_iku_sync` memanggil `is_reasoning_model()` (pola nama di
+  `agent/graph.py`, override `LLM_REASONING_MODE` / `REASONING_MODEL_PATTERNS`). Model chat memakai tool calling
+  bawaan (`cari_capaian`); model reasoning (`deepseek-r1`, `qwq`, ...) yang tidak punya function calling memakai
+  protokol JSON-tool (`cari_capaian_json`): model membalas `{"action": "<tool>", "args": {...}}` atau
+  `{"action": "final", ...}` satu objek per giliran, hasil tool kembali sebagai pesan teks. Protokolnya sama dengan
+  `agent/reasoning_graph.py` (parser `_extract_json`, pengingat bila bukan JSON, normalisasi nama argumen `table_id`
+  / `q`), tetapi kodenya terpisah di `setor_led/`; file AMI tidak diubah. Loop dibatasi `MAX_TOOL_STEPS` tool + satu
+  jawaban paksa + `MAX_JSON_RETRY` pengingat. Tahap 1 reasoning tetap berpikir (`disable_reasoning=False`) dengan
+  anggaran `REASONING_NUM_PREDICT=8192`; tahap 2 tetap tanpa reasoning. Belum diuji dengan model reasoning sungguhan
+  (deepseek-r1/qwq). Jalur JSON dicoba live dengan deepseek-v4-flash (OpenRouter) yang dipaksa lewat
+  `LLM_REASONING_MODE=true`: IKU.REL.MHS.3 menemukan RIPK 3,46 dari `get_lkps_table`; IKU.REL.MHS.8 ditemukan lewat
+  empat panggilan tool (capaian kualitatif "rentang 3,5 < MS ≤ 4,5", bersumber LED bab C.6); IKU.REL.SPR.5 tetap
+  "capaian tidak ditemukan" setelah lima panggilan tool, tanpa tebakan. Catatan: `is_reasoning_model("")` selalu
+  `False`, jadi pemilihan jalur butuh nama model (handler selalu mengirimnya).
+- **Konteks program studi.** Handler membaca `name` dan `level` prodi (`org_study_programs`, jenjang D3/D4/S1/S2/S3)
+  dari `programStudiId`; kedua tahap menuliskan baris `Program studi: ...` dan diberi aturan "bila target/tabel
+  memuat beberapa varian jenis program, pakai yang sesuai program studi ini; bila tidak jelas, jangan menebak".
+  Skema tidak punya penanda PJJ, jadi jenis seperti PJJ hanya bisa datang dari nama prodi atau teks target.
+  Kegagalan membaca prodi tidak menghentikan job (prompt tanpa baris itu).
 - Validasi `model` terhadap `get_available_models()` seperti AMI.
 
 ## 6. Penanganan error
 
 - **Level job** → `{status: "error", error}`: `ikuList` kosong atau `kode` duplikat, LED belum
   terindeks, LKPS tidak tersedia, dokumen belum punya Set Akreditasi, model tidak dikenal atau
-  model reasoning.
+  tidak ada model terkonfigurasi.
 - **Level IKU** → field `error`, IKU lain tetap jalan: capaian tidak ditemukan, JSON model tidak
   terbaca, evaluasi di luar enum setelah retry, timeout LLM.
 - **Dibatalkan** → `{status: "cancelled", hasil: [...sebagian]}`.
@@ -179,8 +196,12 @@ Tes otomatis tanpa LLM asli (LLM tiruan, seperti `tests/test_handle_assessment_a
 - Tool bukti dukung: mengembalikan hasil dari bukti milik prodi dan tenant-wide saja (bukti prodi
   lain tidak ikut); prodi tanpa bukti → list kosong, bukan error. Tes `list_prodi_evidence_ids`
   yang butuh Postgres/pgvector di-skip tanpa `DATABASE_URL`, seperti `test_postgres_client.py`.
-- Handler (`test_handle_setor_led.py`): tiap prasyarat gagal (LED, LKPS, list kosong, model
-  reasoning) dan bentuk hasil akhir.
+- Loop JSON-tool: tool jalan lalu final; balasan dengan `<think>`/code fence; final tanpa kunci `action`; tidak
+  ditemukan; pengingat lalu pulih; menyerah setelah balasan non-JSON berulang; tool tak dikenal; normalisasi argumen;
+  tool yang melempar; batas langkah; penjaga keraguan; jatah bahan per tool; konteks prodi; batal; pemilihan jalur
+  per model.
+- Handler (`test_handle_setor_led.py`): tiap prasyarat gagal (LED, LKPS, list kosong, model tak dikenal) dan bentuk
+  hasil akhir; model reasoning diteruskan (tidak ditolak); label prodi dari DB.
 
 Backend (jest, `dokumen-led.service.spec.ts` + DTO):
 - `triggerSetorLed` mengantre `SETOR_LED` dengan payload benar; LKPS dokumen menang atas kiriman
@@ -204,8 +225,7 @@ menyentuh area itu.
 ## 9. Di luar cakupan
 
 UI dan flow; memasukkan hasil ke bab/canvas editor LED; skor angka dan skalanya; tabel DB baru;
-tag bukti dukung per IKU dan pemilihan bukti per IKU di request; model reasoning; segala
-perubahan pada AMI.
+tag bukti dukung per IKU dan pemilihan bukti per IKU di request; segala perubahan pada AMI.
 
 ## 10. Catatan terbuka
 

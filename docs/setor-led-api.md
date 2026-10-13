@@ -38,7 +38,7 @@ Role: PENJAMIN_MUTU atau PENYUSUN (PENYUSUN hanya untuk prodi yang ditugaskan)
 | `ikuList` | ya | 1-200 item. `kode` unik di dalam satu permintaan; `kode`, `indikator`, `target` tidak boleh kosong atau spasi saja. Teks `target` dikirim apa adanya (mis. `3,5 < MS ≤ 4,5`). |
 | `sumberLed` | tidak | `EDITOR` (default: teks bab di editor saat ini) atau `UNGGAHAN`. |
 | `lkpsBuktiDukungId` | tidak | Dipakai hanya bila dokumen belum punya LKPS; bila dokumen sudah punya LKPS, LKPS dokumen yang menang. |
-| `model` | tidak | Harus salah satu model yang dikonfigurasi server; model *reasoning* ditolak. |
+| `model` | tidak | Harus salah satu model yang dikonfigurasi server. Model *reasoning* (mis. `deepseek-r1`) diterima; server memilih cara memanggil tool-nya sendiri. |
 
 **Respons `201`** = baris `Job`. Yang dipakai klien adalah `id` (cuid) untuk semua pemanggilan berikutnya:
 
@@ -147,7 +147,6 @@ array. Sebaiknya tampilkan sebagai teks yang bisa diedit.
 |---|---|
 | `ikuList` kosong / field kosong / `kode` duplikat | `ikuList kosong -- …`, `IKU ke-N: '…' wajib diisi`, `Kode IKU duplikat: …` |
 | Model tidak dikenal | `Unknown model: <nama>. Available: [...]` |
-| Model reasoning | `Model reasoning (<nama>) belum didukung untuk setor ke LED -- …` |
 | Tidak ada model terkonfigurasi | `Tidak ada model yang dikonfigurasi (OLLAMA_MODEL / OPENROUTER_MODEL kosong).` |
 | Dokumen tanpa Set Akreditasi | `Dokumen ini belum memilih Set Akreditasi — …` |
 | LED kosong (sumber Editor) | `Belum ada tulisan di Editor yang bisa dinilai -- …` |
@@ -177,6 +176,10 @@ sehingga pembatalan bisa memakan waktu sampai selesainya panggilan itu.
 - Narasi dan Capaian ditulis model dan **non-deterministik**: IKU yang sama bisa sukses di satu run dan
   "capaian tidak ditemukan" di run lain. Perlakukan hasil sebagai **draf yang harus dibaca penulis**.
 - Capaian yang hanya bisa ditebak sengaja dianggap tidak ditemukan (tidak ada narasi "diperkirakan").
+- Server menyertakan nama dan jenjang program studi dokumen (D3/D4/S1/S2/S3) ke model, supaya target atau tabel
+  yang punya varian per jenis program dibaca sesuai prodi. Jenis seperti PJJ tidak tersimpan di data prodi: kirim
+  di teks `target` (mis. `PJJ: RIPK ≥ 3,25`) bila relevan. Bila varian tak bisa dipastikan, IKU menjadi
+  "capaian tidak ditemukan", bukan ditebak.
 - Sumber Capaian saat ini: tabel LKPS, teks LED di editor (atau unggahan), dan bukti dukung prodi. IKU yang angkanya
   hanya ada di dokumen di luar itu (mis. inventaris) akan `error`.
 
