@@ -12,6 +12,7 @@ import contextvars
 import json
 import logging
 import re
+import threading
 from typing import Awaitable, Callable, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
@@ -40,6 +41,18 @@ CANCEL_POLL_SECONDS: float = 3  # cek flag batal tiap ini detik, walau belum ada
 
 TOOLS = [get_lkps_table, search_led_evidence, cari_bukti_dukung_prodi]
 TOOLS_BY_NAME = {t.name: t for t in TOOLS}
+
+
+class SetorLedCancelled(Exception):
+    """Pekerjaan satu IKU dihentikan karena job dibatalkan. Bukan galat: dilempar thread LLM saat ia melihat sinyal batal."""
+
+
+def _cek_batal(cancel_event: threading.Event | None) -> None:
+    """Titik berhenti kooperatif. Membatalkan task asyncio tidak menghentikan thread executor yang sedang memanggil
+    LLM; thread hanya bisa berhenti dengan memeriksa sinyal ini sebelum tiap langkah mahal (panggilan LLM / tool).
+    Panggilan yang SUDAH berjalan tetap selesai (klien HTTP sinkron tidak bisa diputus), tapi tidak ada langkah baru."""
+    if cancel_event is not None and cancel_event.is_set():
+        raise SetorLedCancelled()
 
 
 def _extract_json(teks: str):
@@ -110,8 +123,11 @@ def _jalankan_tool(call: dict) -> str:
         return json.dumps({"error": f"{type(exc).__name__}: tool gagal dijalankan"}, ensure_ascii=False)
 
 
-def cari_capaian(llm, iku: IkuInput, tabel_lkps: list[str]) -> tuple[dict | None, str]:
-    """Tahap 1. Mengembalikan (capaian atau None, bahan) -- bahan = gabungan hasil tool untuk tahap 2."""
+def cari_capaian(
+    llm, iku: IkuInput, tabel_lkps: list[str], cancel_event: threading.Event | None = None
+) -> tuple[dict | None, str]:
+    """Tahap 1. Mengembalikan (capaian atau None, bahan) -- bahan = gabungan hasil tool untuk tahap 2.
+    Raise SetorLedCancelled bila `cancel_event` menyala (diperiksa sebelum tiap panggilan LLM dan tool)."""
     pesan = [SystemMessage(content=SYSTEM_CAPAIAN), HumanMessage(content=bangun_prompt_capaian(iku, tabel_lkps))]
     bahan: list[str] = []
 
@@ -119,27 +135,34 @@ def cari_capaian(llm, iku: IkuInput, tabel_lkps: list[str]) -> tuple[dict | None
         return "\n\n".join(bahan)[:MAX_BAHAN_CHARS]
 
     for _ in range(MAX_TOOL_STEPS):
+        _cek_batal(cancel_event)
         jawaban = llm.invoke(pesan)
         pesan.append(jawaban)
         panggilan = getattr(jawaban, "tool_calls", None) or []
         if not panggilan:
             return parse_capaian(jawaban.content, kode=iku.kode), _bahan()
         for call in panggilan:
+            _cek_batal(cancel_event)
             keluaran = _jalankan_tool(call)
             bahan.append(f"[{call.get('name')}] {keluaran[:MAX_BAHAN_PER_TOOL]}")
             pesan.append(ToolMessage(content=keluaran, tool_call_id=call.get("id"), name=call.get("name")))
 
     # Batas langkah habis: paksa jawaban akhir. Bila model masih meminta tool, parse_capaian -> None.
     pesan.append(HumanMessage(content="Batas pemanggilan tool tercapai. Berikan jawaban akhir JSON sekarang."))
+    _cek_batal(cancel_event)
     return parse_capaian(llm.invoke(pesan).content, kode=iku.kode), _bahan()
 
 
-def tulis_evaluasi_narasi(llm, iku: IkuInput, capaian: dict, bahan: str, model: str | None = None):
-    """Tahap 2. Satu percobaan + satu ulang bila JSON/enum tidak valid; lalu SetorLedError."""
+def tulis_evaluasi_narasi(
+    llm, iku: IkuInput, capaian: dict, bahan: str, model: str | None = None, cancel_event: threading.Event | None = None
+):
+    """Tahap 2. Satu percobaan + satu ulang bila JSON/enum tidak valid; lalu SetorLedError.
+    Raise SetorLedCancelled bila `cancel_event` menyala (diperiksa sebelum tiap panggilan LLM, termasuk retry)."""
     prompt_awal = no_think(bangun_prompt_evaluasi(iku, capaian, bahan), model)
     prompt = prompt_awal
     terakhir: SetorLedError | None = None
     for _ in range(2):
+        _cek_batal(cancel_event)
         jawaban = llm.invoke(prompt)
         try:
             return validasi_keluaran_llm(_extract_json(str(jawaban.content or "")))
@@ -157,15 +180,20 @@ def tulis_evaluasi_narasi(llm, iku: IkuInput, capaian: dict, bahan: str, model: 
     raise terakhir  # type: ignore[misc]  # loop selalu berjalan >= 1 kali
 
 
-def _proses_iku_sync(iku: IkuInput, model: str | None, tabel_lkps: list[str]) -> dict:
-    """Seluruh pekerjaan satu IKU (sinkron, jalan di thread executor karena tool & LLM sinkron)."""
+def _proses_iku_sync(
+    iku: IkuInput, model: str | None, tabel_lkps: list[str], cancel_event: threading.Event | None = None
+) -> dict:
+    """Seluruh pekerjaan satu IKU (sinkron, jalan di thread executor karena tool & LLM sinkron).
+    Raise SetorLedCancelled bila `cancel_event` menyala: thread berhenti di titik aman berikutnya."""
+    _cek_batal(cancel_event)
     llm_tool = build_setor_llm(model, tools=TOOLS)
-    capaian, bahan = cari_capaian(llm_tool, iku, tabel_lkps)
+    capaian, bahan = cari_capaian(llm_tool, iku, tabel_lkps, cancel_event)
     if capaian is None:
         raise SetorLedError("Capaian tidak ditemukan di LKPS/LED/bukti dukung")
 
+    _cek_batal(cancel_event)
     llm_narasi = build_setor_llm(model, temperature=0.2, num_predict=3000)
-    evaluasi, inti, tambahan = tulis_evaluasi_narasi(llm_narasi, iku, capaian, bahan, model)
+    evaluasi, inti, tambahan = tulis_evaluasi_narasi(llm_narasi, iku, capaian, bahan, model, cancel_event)
     return hasil_sukses(iku.kode, capaian, evaluasi, inti, tambahan)
 
 
@@ -179,6 +207,7 @@ async def proses_iku(
     study_program_id: Optional[str],
     model: Optional[str],
     tabel_lkps: list[str],
+    cancel_event: threading.Event | None = None,
 ) -> dict:
     """Satu IKU, dibatasi semaphore. Tidak pernah raise (selain CancelledError): kegagalan menjadi
     hasil_gagal supaya IKU lain tetap jalan. Pesan galat tak terduga sengaja generik (tanpa teks mentah)."""
@@ -191,8 +220,10 @@ async def proses_iku(
             )
             ctx = contextvars.copy_context()
             return await asyncio.get_running_loop().run_in_executor(
-                None, ctx.run, _proses_iku_sync, iku, model, tabel_lkps
+                None, ctx.run, _proses_iku_sync, iku, model, tabel_lkps, cancel_event
             )
+        except SetorLedCancelled:
+            return hasil_gagal(iku.kode, "Dibatalkan")
         except SetorLedError as exc:
             return hasil_gagal(iku.kode, str(exc))
         except Exception as exc:  # noqa: BLE001
@@ -215,9 +246,11 @@ async def jalankan_setor_led(
     """Jalankan semua IKU paralel. Mengembalikan (hasil berurutan sesuai input untuk IKU yang selesai,
     dibatalkan). `is_cancelled` dipoll tiap CANCEL_POLL_SECONDS meski belum ada IKU yang selesai (endpoint
     LLM yang macet bisa membuat tak satu pun selesai berminit-menit); bila true, tugas yang belum selesai
-    dibatalkan dan yang sudah selesai tetap dikembalikan."""
+    dibatalkan dan yang sudah selesai tetap dikembalikan. Thread LLM yang sedang berjalan ikut dihentikan lewat
+    `cancel_event` (lihat _cek_batal), bukan hanya task-nya."""
     tabel_lkps = daftar_tabel_lkps(tenant_id, dokumen_id)
     semaphore = asyncio.Semaphore(max_parallel)
+    cancel_event = threading.Event()
     tugas = {
         asyncio.ensure_future(
             proses_iku(
@@ -229,6 +262,7 @@ async def jalankan_setor_led(
                 study_program_id=study_program_id,
                 model=model,
                 tabel_lkps=tabel_lkps,
+                cancel_event=cancel_event,
             )
         ): iku.kode
         for iku in iku_list
@@ -238,21 +272,33 @@ async def jalankan_setor_led(
     pending = set(tugas)
     selesai = 0
     dibatalkan = False
-    while pending:
-        done, pending = await asyncio.wait(pending, timeout=CANCEL_POLL_SECONDS, return_when=asyncio.FIRST_COMPLETED)
-        for t in done:
-            hasil_per_kode[tugas[t]] = t.result()
-            selesai += 1
-            if on_progress is not None:
-                await on_progress(selesai, len(iku_list))
-        if is_cancelled is not None and await is_cancelled():
-            dibatalkan = True
-            break
+    try:
+        while pending:
+            done, pending = await asyncio.wait(
+                pending, timeout=CANCEL_POLL_SECONDS, return_when=asyncio.FIRST_COMPLETED
+            )
+            for t in done:
+                hasil_per_kode[tugas[t]] = t.result()
+                selesai += 1
+                if on_progress is not None:
+                    await on_progress(selesai, len(iku_list))
+            if is_cancelled is not None and await is_cancelled():
+                dibatalkan = True
+                break
 
-    if dibatalkan:
-        for t in pending:
-            t.cancel()
-        await asyncio.gather(*pending, return_exceptions=True)
-        logger.info("Setor LED dibatalkan (%d/%d IKU selesai)", selesai, len(iku_list))
+        if dibatalkan:
+            cancel_event.set()  # hentikan thread LLM dulu; task.cancel() saja tidak menghentikannya
+            for t in pending:
+                if t.done() and not t.cancelled() and t.exception() is None:
+                    # Selesai selagi flag batal diperiksa (await is_cancelled): hasilnya sudah jadi, jangan dibuang.
+                    hasil_per_kode[tugas[t]] = t.result()
+                    selesai += 1
+                else:
+                    t.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+            logger.info("Setor LED dibatalkan (%d/%d IKU selesai)", selesai, len(iku_list))
+    finally:
+        # Juga bila coroutine ini sendiri dibatalkan/gagal: thread yang tersisa tidak boleh lanjut memanggil LLM.
+        cancel_event.set()
 
     return [hasil_per_kode[i.kode] for i in iku_list if i.kode in hasil_per_kode], dibatalkan

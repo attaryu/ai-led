@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -13,6 +14,7 @@ from agent.context import current_assessment_context
 from setor_led import pipeline
 from setor_led.pipeline import (
     MAX_TOOL_STEPS,
+    SetorLedCancelled,
     cari_capaian,
     daftar_tabel_lkps,
     jalankan_setor_led,
@@ -288,7 +290,7 @@ def _hasil_ok(kode):
 def test_proses_iku_runs_the_sync_work_with_assessment_context_set():
     dilihat = {}
 
-    def sync(iku, model, tabel):
+    def sync(iku, model, tabel, cancel_event=None):
         ctx = current_assessment_context.get()
         dilihat.update(tenant=ctx.tenant_id, dokumen=ctx.dokumen_id, indikator=ctx.indicator_no, prodi=ctx.study_program_id)
         return _hasil_ok(iku.kode)
@@ -445,3 +447,137 @@ def test_runner_reports_not_cancelled_when_the_flag_is_false():
         hasil, dibatalkan = asyncio.run(jalankan_setor_led(_ikus("A"), is_cancelled=tidak_batal, **RUN_KW))
 
     assert dibatalkan is False and len(hasil) == 1
+
+
+# ── pembatalan sampai ke thread LLM ────────────────────────────────────────────
+# Membatalkan task asyncio tidak menghentikan thread executor yang sedang memanggil LLM. Tanpa sinyal kooperatif,
+# thread itu terus menjalankan sisa langkah (sampai 6 tool + tahap 2 + retry) dan menghabiskan kredit setelah "batal".
+
+def test_cari_capaian_stops_before_the_next_llm_call_once_cancelled():
+    batal = threading.Event()
+    llm = FakeLLM(_panggil_tool(), _panggil_tool(), CAPAIAN_JSON)
+
+    class AlatYangDibatalkanSaatJalan(FakeTool):
+        def invoke(self, args):
+            batal.set()  # pembatalan tiba saat tool pertama berjalan
+            return super().invoke(args)
+
+    with patch.dict(pipeline.TOOLS_BY_NAME, {"get_lkps_table": AlatYangDibatalkanSaatJalan()}):
+        with pytest.raises(SetorLedCancelled):
+            cari_capaian(llm, IKU, ["6b"], cancel_event=batal)
+
+    assert llm.dipanggil == 1  # panggilan LLM ke-2 tidak pernah dikirim
+
+
+def test_cari_capaian_skips_remaining_tool_calls_of_the_same_step_once_cancelled():
+    batal = threading.Event()
+    dua_panggilan = AIMessage(content="", tool_calls=[
+        {"name": "get_lkps_table", "args": {"table_reference": "Tabel 6.b"}, "id": "c1"},
+        {"name": "search_led_evidence", "args": {"query": "q"}, "id": "c2"},
+    ])
+    pertama, kedua = FakeTool(), FakeTool()
+    pertama_invoke = pertama.invoke
+    pertama.invoke = lambda args: (batal.set(), pertama_invoke(args))[1]
+
+    with patch.dict(pipeline.TOOLS_BY_NAME, {"get_lkps_table": pertama, "search_led_evidence": kedua}):
+        with pytest.raises(SetorLedCancelled):
+            cari_capaian(FakeLLM(dua_panggilan, CAPAIAN_JSON), IKU, [], cancel_event=batal)
+
+    assert kedua.panggilan == []
+
+
+def test_cari_capaian_is_unchanged_without_a_cancel_event():
+    with patch.dict(pipeline.TOOLS_BY_NAME, {"get_lkps_table": FakeTool()}):
+        capaian, _ = cari_capaian(FakeLLM(_panggil_tool(), CAPAIAN_JSON), IKU, ["6b"])
+    assert capaian is not None
+
+
+def test_tulis_evaluasi_does_not_call_the_llm_once_cancelled():
+    batal = threading.Event()
+    batal.set()
+    llm = FakeLLM(JSON_OK)
+    with pytest.raises(SetorLedCancelled):
+        tulis_evaluasi_narasi(llm, IKU, CAPAIAN, "", cancel_event=batal)
+    assert llm.dipanggil == 0
+
+
+def test_tulis_evaluasi_does_not_retry_once_cancelled_during_the_first_call():
+    batal = threading.Event()
+
+    class Membatalkan(FakeLLM):
+        def invoke(self, masukan):
+            batal.set()
+            return super().invoke(masukan)
+
+    llm = Membatalkan("bukan json", JSON_OK)
+    with pytest.raises(SetorLedCancelled):
+        tulis_evaluasi_narasi(llm, IKU, CAPAIAN, "", cancel_event=batal)
+    assert llm.dipanggil == 1
+
+
+def test_proses_iku_sync_does_not_start_stage_two_once_cancelled():
+    batal = threading.Event()
+
+    def tahap1_lalu_batal(llm, iku, tabel, cancel_event=None):
+        batal.set()
+        return CAPAIAN, "bahan"
+
+    with (
+        patch("setor_led.pipeline.build_setor_llm") as bangun,
+        patch("setor_led.pipeline.cari_capaian", tahap1_lalu_batal),
+        patch("setor_led.pipeline.tulis_evaluasi_narasi") as tulis,
+    ):
+        with pytest.raises(SetorLedCancelled):
+            pipeline._proses_iku_sync(IKU, "m", [], batal)
+
+    tulis.assert_not_called()
+    assert bangun.call_count == 1  # model tahap 2 tidak sempat dibangun
+
+
+def test_runner_signals_cancel_to_running_threads_so_they_stop_calling_the_llm():
+    mulai, berhenti = threading.Event(), threading.Event()
+
+    def sync(iku, model, tabel, cancel_event=None):
+        mulai.set()
+        assert cancel_event.wait(timeout=5), "sinyal batal tidak pernah sampai ke thread"
+        berhenti.set()
+        raise SetorLedCancelled()
+
+    async def batal_setelah_thread_jalan():
+        while not mulai.is_set():
+            await asyncio.sleep(0.01)
+        return True
+
+    with (
+        patch("setor_led.pipeline._proses_iku_sync", sync),
+        patch("setor_led.pipeline.daftar_tabel_lkps", return_value=[]),
+        patch("setor_led.pipeline.CANCEL_POLL_SECONDS", 0.05),
+    ):
+        hasil, dibatalkan = asyncio.run(
+            jalankan_setor_led(_ikus("A"), is_cancelled=batal_setelah_thread_jalan, **RUN_KW)
+        )
+
+    assert dibatalkan is True and hasil == []
+    assert berhenti.is_set()  # thread keluar karena sinyal, bukan karena menunggu habis
+
+
+def test_runner_keeps_an_iku_that_finished_while_the_cancel_flag_was_being_checked():
+    async def tiruan(iku, semaphore, **kw):
+        await asyncio.sleep(30 if iku.kode == "LAMBAT" else 0.02)
+        return _hasil_ok(iku.kode)
+
+    async def batal_setelah_jeda():
+        await asyncio.sleep(0.2)  # IKU "CEPAT" selesai selama pengecekan flag ini
+        return True
+
+    with (
+        patch("setor_led.pipeline.proses_iku", tiruan),
+        patch("setor_led.pipeline.daftar_tabel_lkps", return_value=[]),
+        patch("setor_led.pipeline.CANCEL_POLL_SECONDS", 0.01),
+    ):
+        hasil, dibatalkan = asyncio.run(
+            jalankan_setor_led(_ikus("CEPAT", "LAMBAT"), is_cancelled=batal_setelah_jeda, **RUN_KW)
+        )
+
+    assert dibatalkan is True
+    assert [h["kode"] for h in hasil] == ["CEPAT"]  # hasil yang sudah jadi tidak boleh terbuang
