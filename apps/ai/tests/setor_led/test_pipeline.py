@@ -795,6 +795,9 @@ def test_proses_iku_sync_uses_the_json_protocol_for_reasoning_models():
     assert tahap1.kwargs["num_predict"] == pipeline.REASONING_NUM_PREDICT  # reasoning memakai banyak token <think>
     assert tahap1.kwargs["disable_reasoning"] is False  # seperti AMI: reasoning tetap hidup untuk tahap tool
     assert tahap2.kwargs["num_predict"] == pipeline.REASONING_NUM_PREDICT
+    # Uji live OpenRouter: deepseek-r1 menjawab 400 "Reasoning is mandatory for this endpoint and cannot be disabled"
+    # bila reasoning dimatikan. Model reasoning tidak boleh dimatikan reasoning-nya di tahap mana pun (seperti AMI).
+    assert tahap2.kwargs["disable_reasoning"] is False
     assert hasil["evaluasi"] == "MELAMPAUI"
 
 
@@ -812,3 +815,4 @@ def test_proses_iku_sync_keeps_native_tool_calling_for_other_models():
     json_loop.assert_not_called()
     assert bangun.call_args_list[0].kwargs["tools"] == pipeline.TOOLS
     assert bangun.call_args_list[1].kwargs["num_predict"] == 3000
+    assert bangun.call_args_list[1].kwargs.get("disable_reasoning") is None  # model chat: bawaan (dimatikan tanpa tools)

@@ -297,8 +297,13 @@ def _proses_iku_sync(
         raise SetorLedError("Capaian tidak ditemukan di LKPS/LED/bukti dukung")
 
     _cek_batal(cancel_event)
+    # Model reasoning tidak boleh dimatikan reasoning-nya: OpenRouter menjawab 400 "Reasoning is mandatory for this
+    # endpoint" untuk deepseek-r1. Model chat tetap memakai bawaan (dimatikan di tahap JSON tanpa tools).
     llm_narasi = build_setor_llm(
-        model, temperature=0.2, num_predict=REASONING_NUM_PREDICT if reasoning else 3000
+        model,
+        temperature=0.2,
+        num_predict=REASONING_NUM_PREDICT if reasoning else 3000,
+        **({"disable_reasoning": False} if reasoning else {}),
     )
     evaluasi, inti, tambahan = tulis_evaluasi_narasi(llm_narasi, iku, capaian, bahan, model, cancel_event, prodi=prodi)
     return hasil_sukses(iku.kode, capaian, evaluasi, inti, tambahan)
