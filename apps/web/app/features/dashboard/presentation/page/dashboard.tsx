@@ -69,7 +69,7 @@ export function Dashboard() {
 				<p className="text-sm text-muted-foreground">
 					{session?.role === 'Admin'
 						? 'Ringkasan organisasi level universitas (tenant).'
-						: 'Kesiapan akreditasi seluruh program studi di universitas ini.'}
+						: 'Kesiapan AMI seluruh program studi di universitas ini.'}
 				</p>
 			</div>
 
@@ -106,8 +106,7 @@ function InstitutionReadinessView() {
 				<div className="rounded-md border border-dashed border-border p-8 text-center">
 					<p className="text-sm font-medium">Belum ada program studi</p>
 					<p className="mt-1 text-sm text-muted-foreground">
-						Kesiapan akreditasi baru bisa dipantau setelah ada program studi yang
-						terdaftar.
+						Dokumen LED baru bisa disusun setelah ada program studi yang terdaftar.
 					</p>
 				</div>
 			) : (

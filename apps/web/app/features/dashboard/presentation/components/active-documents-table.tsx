@@ -32,7 +32,7 @@ const deadlineTones: Record<DeadlineUrgency, string> = {
 	LEWAT: 'text-destructive',
 };
 
-const Kosong = () => <span className="text-sm text-muted-foreground">—</span>;
+const cellPad = 'px-3';
 
 /**
  * Tabel "Dokumen LED aktif" Dashboard Utama: satu baris per Dokumen LED yang
@@ -41,7 +41,7 @@ const Kosong = () => <span className="text-sm text-muted-foreground">—</span>;
  * tidak pernah digabung; tidak ada rata-rata institusi.
  *
  * `amiTersedia = false` (ringkasan AMI belum/gagal dimuat) mengosongkan dua
- * kolom AMI menjadi "—" tanpa mengganggu kolom lainnya.
+ * kolom AMI diganti satu "—" tanpa mengganggu kolom lainnya.
  *
  * Rincian per bab tetap tidak dirender: bar kelengkapan menyebut pembagiannya
  * lewat tooltip, dan angka bab satu per satu adalah pertanyaan §6.1.
@@ -66,15 +66,15 @@ export function ActiveDocumentsTable({
 	}
 
 	return (
-		<Table>
+		<Table className="min-w-2xl">
 			<TableHeader>
 				<TableRow>
-					<TableHead>Program Studi</TableHead>
-					<TableHead>Status dokumen</TableHead>
-					<TableHead>Progres bab</TableHead>
-					<TableHead>Peninjauan skor AMI</TableHead>
-					<TableHead>Rata-rata skor AMI</TableHead>
-					<TableHead className="w-px">Aksi</TableHead>
+					<TableHead className={cellPad}>Program Studi</TableHead>
+					<TableHead className={cellPad}>Status dokumen</TableHead>
+					<TableHead className={cellPad}>Tenggat</TableHead>
+					<TableHead className={cellPad}>Progres bab</TableHead>
+					<TableHead className={cellPad}>Penilaian AMI</TableHead>
+					<TableHead className={cn(cellPad, 'w-px')}>Aksi</TableHead>
 				</TableRow>
 			</TableHeader>
 			<TableBody>
@@ -101,7 +101,7 @@ function ActiveDocumentTableRow({
 
 	return (
 		<TableRow>
-			<TableCell>
+			<TableCell className={cellPad}>
 				<Link
 					to={`/study-programs/${program.id}`}
 					className="font-medium hover:underline"
@@ -113,20 +113,21 @@ function ActiveDocumentTableRow({
 				</p>
 			</TableCell>
 
-			<TableCell>
-				<div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-					<LedProjectStatusBadge status={project.statusKeseluruhan} />
-					<span className="text-xs text-muted-foreground">
-						TA {project.tahunAkademik}
-					</span>
-				</div>
+			<TableCell className={cellPad}>
+				<LedProjectStatusBadge status={project.statusKeseluruhan} />
+				<p className="mt-1 text-xs text-muted-foreground">
+					Tahun Akademik {project.tahunAkademik}
+				</p>
+			</TableCell>
+
+			<TableCell className={cellPad}>
 				{/*
 				 * Tanggal dan sisa waktu dirender berdampingan, bukan salah satunya.
 				 * "terlambat 10 hari" saja tidak bisa dipakai menjadwalkan apa pun, dan
 				 * "31 Juli 2026" saja memaksa pembaca menghitung sendiri dari hari ini.
 				 */}
 				{tenggat && project.tenggat ? (
-					<p className="mt-1.5 text-xs">
+					<p className="text-xs">
 						<span className="whitespace-nowrap text-muted-foreground">
 							{formatDate(project.tenggat)}
 						</span>
@@ -144,13 +145,13 @@ function ActiveDocumentTableRow({
 					 * Tidak dipatok adalah pilihan yang sah (§14), bukan data yang hilang
 					 * — karena itu kalimat, bukan "—".
 					 */
-					<p className="mt-1.5 text-xs whitespace-nowrap text-muted-foreground">
+					<p className="text-xs whitespace-nowrap text-muted-foreground">
 						Tidak dipatok
 					</p>
 				)}
 			</TableCell>
 
-			<TableCell>
+			<TableCell className={cellPad}>
 				<div className="flex min-w-24 flex-col gap-1.5">
 					<ChapterProgressBar summary={chapterSummary} showLegend={false} />
 					<span className="text-xs tabular-nums text-muted-foreground">
@@ -159,36 +160,12 @@ function ActiveDocumentTableRow({
 				</div>
 			</TableCell>
 
-			<TableCell>
-				{amiTersedia ? (
-					<ReviewCell
-						overview={overview}
-						assessmentHref={`/led-projects/${project.id}/assessment`}
-					/>
-				) : (
-					<Kosong />
-				)}
-			</TableCell>
+			<AmiCell
+				overview={amiTersedia ? overview : undefined}
+				assessmentHref={`/led-projects/${project.id}/assessment`}
+			/>
 
-			<TableCell>
-				{amiTersedia && overview && overview.skorRataRata !== null ? (
-					<>
-						<p className="text-sm whitespace-nowrap tabular-nums">
-							{formatSkor(overview.skorRataRata)}
-							<span className="text-muted-foreground"> / {SKOR_MAKS}</span>
-						</p>
-						{overview.gagal > 0 && (
-							<p className="mt-1 max-w-28 text-xs text-muted-foreground">
-								{overview.gagal} indikator gagal dinilai
-							</p>
-						)}
-					</>
-				) : (
-					<Kosong />
-				)}
-			</TableCell>
-
-			<TableCell>
+			<TableCell className={cellPad}>
 				<Link
 					to={`/led-projects/${project.id}`}
 					className={cn(
@@ -205,24 +182,34 @@ function ActiveDocumentTableRow({
 }
 
 /**
- * Kolom peninjauan: seberapa banyak indikator sesi terbaru yang sudah ditinjau
- * Penjamin Mutu. Sesi yang belum selesai tidak punya jawaban untuk itu, jadi
- * yang tampil status sesinya. Teksnya menautkan ke halaman penilaian.
+ * Satu sel "Penilaian AMI". Selama sesi terbaru belum COMPLETED (atau
+ * ringkasan AMI tidak dimuat) sel hanya memuat satu kalimat keadaannya.
+ * `overview = undefined` berarti ringkasan AMI tidak tersedia.
  */
-function ReviewCell({
+function AmiCell({
 	overview,
 	assessmentHref,
 }: {
-	overview: AssessmentOverviewEntity | null;
+	overview: AssessmentOverviewEntity | null | undefined;
 	assessmentHref: string;
 }) {
+	if (overview === undefined) {
+		return (
+			<TableCell className={cellPad}>
+				<span className="text-sm text-muted-foreground">—</span>
+			</TableCell>
+		);
+	}
+
 	const sesi = overview?.sesi ?? null;
 
 	if (!overview || !sesi) {
 		return (
-			<span className="text-sm whitespace-nowrap text-muted-foreground">
-				Belum dinilai
-			</span>
+			<TableCell className={cellPad}>
+				<span className="text-sm whitespace-nowrap text-muted-foreground">
+					Belum dinilai
+				</span>
+			</TableCell>
 		);
 	}
 
@@ -234,17 +221,21 @@ function ReviewCell({
 					? 'Gagal'
 					: 'Dibatalkan';
 		return (
-			<Link
-				to={assessmentHref}
-				className={cn(
-					'text-sm whitespace-nowrap tabular-nums hover:underline',
-					sesi.status === 'RUNNING' && 'text-sky-700 dark:text-sky-400',
-					sesi.status === 'FAILED' && 'text-destructive',
-					sesi.status === 'CANCELLED' && 'text-muted-foreground',
-				)}
-			>
-				{label}
-			</Link>
+			<TableCell className={cellPad}>
+				<Link
+					to={assessmentHref}
+					className={cn(
+						'text-sm whitespace-nowrap tabular-nums hover:underline',
+						sesi.status === 'RUNNING'
+							? 'text-sky-700 dark:text-sky-400'
+							: sesi.status === 'FAILED'
+								? 'text-destructive'
+								: 'text-muted-foreground',
+					)}
+				>
+					{label}
+				</Link>
+			</TableCell>
 		);
 	}
 
@@ -254,24 +245,32 @@ function ReviewCell({
 			: Math.min(100, (overview.ditinjau / sesi.totalIndicators) * 100);
 
 	return (
-		<Link
-			to={assessmentHref}
-			className="flex min-w-24 flex-col gap-1.5 hover:underline"
-		>
-			<div className="h-1.5 w-full overflow-hidden rounded-full bg-muted-foreground/20">
-				<div
-					className="h-full rounded-full bg-emerald-500"
-					style={{ width: `${persen}%` }}
-				/>
-			</div>
-			<span className="text-xs tabular-nums text-muted-foreground">
-				{overview.ditinjau} dari {sesi.totalIndicators} indikator
-			</span>
-			{overview.dikoreksi > 0 && (
-				<span className="text-xs text-muted-foreground">
-					{overview.dikoreksi} dikoreksi
+		<TableCell className={cellPad}>
+			<Link
+				to={assessmentHref}
+				className="flex min-w-24 flex-col gap-2 hover:underline"
+			>
+				<span className="text-xs whitespace-nowrap tabular-nums text-muted-foreground">
+					Skor rata-rata:{' '}
+					{overview.skorRataRata !== null ? (
+						<span className="font-semibold text-foreground">
+							{formatSkor(overview.skorRataRata)} / {SKOR_MAKS}
+						</span>
+					) : (
+						'—'
+					)}
 				</span>
-			)}
-		</Link>
+
+				<div className="h-1.5 w-full overflow-hidden rounded-full bg-muted-foreground/20">
+					<div
+						className="h-full rounded-full bg-emerald-500"
+						style={{ width: `${persen}%` }}
+					/>
+				</div>
+				<span className="text-xs tabular-nums whitespace-nowrap text-muted-foreground">
+					{overview.ditinjau} dari {sesi.totalIndicators} indikator
+				</span>
+			</Link>
+		</TableCell>
 	);
 }

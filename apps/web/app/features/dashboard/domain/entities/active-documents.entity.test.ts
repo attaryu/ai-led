@@ -188,9 +188,7 @@ describe('summarizeActiveDocuments', () => {
 		expect(summarizeActiveDocuments(rows, true)).toEqual({
 			dokumenAktif: 4,
 			tenggatMendesak: 2,
-			terlambat: 1,
 			perluDitinjau: 2,
-			perluPerhatian: 2,
 		});
 	});
 
@@ -202,27 +200,51 @@ describe('summarizeActiveDocuments', () => {
 		expect(summarizeActiveDocuments(noAmi, false)).toEqual({
 			dokumenAktif: 1,
 			tenggatMendesak: 1,
-			terlambat: 1,
 			perluDitinjau: null,
-			perluPerhatian: null,
 		});
 	});
 
-	it('sesi RUNNING tidak dihitung perlu ditinjau', () => {
-		const running = buildActiveDocumentRows({
-			readiness: [readiness('1', 'A')],
-			overviews: [overview('1', { status: 'RUNNING' })],
+	it('sesi RUNNING, FAILED, atau tanpa sesi tidak dihitung perlu ditinjau', () => {
+		const campur = buildActiveDocumentRows({
+			readiness: [
+				readiness('1', 'A'),
+				readiness('2', 'B'),
+				readiness('3', 'C'),
+				readiness('4', 'D'),
+			],
+			overviews: [
+				overview('1', { status: 'RUNNING' }),
+				overview('2', { status: 'FAILED' }),
+				overview('3', { sesi: false }),
+			],
 		});
-		expect(summarizeActiveDocuments(running, true).perluDitinjau).toBe(0);
+		expect(summarizeActiveDocuments(campur, true).perluDitinjau).toBe(0);
+	});
+
+	it('sesi COMPLETED yang seluruh indikatornya sudah ditinjau tidak dihitung', () => {
+		const tuntas = buildActiveDocumentRows({
+			readiness: [readiness('1', 'A'), readiness('2', 'B')],
+			overviews: [
+				overview('1', { total: 10, ditinjau: 10 }),
+				overview('2', { total: 10, ditinjau: 9 }),
+			],
+		});
+		expect(summarizeActiveDocuments(tuntas, true).perluDitinjau).toBe(1);
+	});
+
+	it('prodi tanpa dokumen aktif tidak dihitung', () => {
+		const campur = buildActiveDocumentRows({
+			readiness: [readiness('1', 'A'), readiness('2', 'B', { aktif: false })],
+			overviews: [],
+		});
+		expect(summarizeActiveDocuments(campur, true).dokumenAktif).toBe(1);
 	});
 
 	it('tanpa dokumen aktif semuanya nol', () => {
 		expect(summarizeActiveDocuments([], true)).toEqual({
 			dokumenAktif: 0,
 			tenggatMendesak: 0,
-			terlambat: 0,
 			perluDitinjau: 0,
-			perluPerhatian: 0,
 		});
 	});
 });

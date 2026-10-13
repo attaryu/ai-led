@@ -34,23 +34,20 @@ export type ActiveDocumentRow = {
 };
 
 /**
- * Empat angka kartu. Satuannya **dokumen**, tidak pernah bab atau indikator:
+ * Tiga angka kartu. Satuannya **dokumen**, tidak pernah bab atau indikator:
  * tiap dokumen punya jumlah bab dan rubrik yang berbeda, jadi menjumlahkan
- * sub-unit lintas dokumen menghasilkan angka yang tidak bermakna.
+ * sub-unit lintas dokumen menghasilkan angka yang tidak bermakna. Angka AMI
+ * adalah jumlah dokumen yang masih punya tinjauan tertunda.
  *
- * Dua angka AMI bernilai `null` bila ringkasan AMI belum/tidak tersedia —
+ * Angka AMI bernilai `null` bila ringkasan AMI belum/tidak tersedia —
  * bukan nol, karena nol berarti "sudah dicek dan tidak ada".
  */
 export type ActiveDocumentStats = {
 	dokumenAktif: number;
 	/** Tenggat LEWAT atau DEKAT. */
 	tenggatMendesak: number;
-	/** Bagian dari {@link tenggatMendesak} yang sudah LEWAT. */
-	terlambat: number;
 	/** Sesi terbaru COMPLETED dan belum seluruh indikatornya ditinjau. */
 	perluDitinjau: number | null;
-	/** Sesi terbaru punya skor rendah atau indikator gagal. */
-	perluPerhatian: number | null;
 };
 
 /**
@@ -110,12 +107,8 @@ export function summarizeActiveDocuments(
 	return {
 		dokumenAktif: rows.length,
 		tenggatMendesak: terlambat + dekat,
-		terlambat,
 		perluDitinjau: amiTersedia
 			? rows.filter((row) => row.belumDitinjau > 0).length
-			: null,
-		perluPerhatian: amiTersedia
-			? rows.filter((row) => row.perluPerhatian > 0).length
 			: null,
 	};
 }

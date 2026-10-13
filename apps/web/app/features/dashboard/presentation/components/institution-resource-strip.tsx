@@ -1,15 +1,28 @@
-import { ArrowRightIcon, WarningCircleIcon } from '@phosphor-icons/react';
+import {
+	ArrowRightIcon,
+	ArrowsClockwiseIcon,
+	BooksIcon,
+	CheckCircleIcon,
+	ClockIcon,
+	StackIcon,
+	WarningCircleIcon,
+	type Icon,
+} from '@phosphor-icons/react';
 import { Link } from 'react-router';
 
 import { buttonVariants } from '~/core/components/ui/button';
 import {
 	Card,
+	CardAction,
 	CardContent,
-	CardDescription,
 	CardHeader,
 	CardTitle,
 } from '~/core/components/ui/card';
-import { formatRelativeTime } from '~/core/lib/format-time';
+import {
+	StatBlock,
+	StatIconBox,
+	type StatCardTone,
+} from '~/core/components/ui/stat-card';
 import { type InstitutionResources } from '../../domain/entities/institution-readiness.entity';
 
 /**
@@ -23,7 +36,24 @@ export function InstitutionResourceStrip({
 	sumberDaya: InstitutionResources;
 }) {
 	const { evidenceTenant } = sumberDaya;
-	const belumSiap = evidenceTenant.menunggu + evidenceTenant.diproses;
+
+	const tiles: {
+		label: string;
+		value: number;
+		tone: StatCardTone;
+		icon: Icon;
+	}[] = [
+		{ label: 'Total', value: evidenceTenant.total, tone: 'default', icon: StackIcon },
+		{ label: 'Siap', value: evidenceTenant.siap, tone: 'success', icon: CheckCircleIcon },
+		{
+			label: 'Diproses',
+			value: evidenceTenant.diproses,
+			tone: 'info',
+			icon: ArrowsClockwiseIcon,
+		},
+		{ label: 'Menunggu', value: evidenceTenant.menunggu, tone: 'default', icon: ClockIcon },
+		{ label: 'Gagal', value: evidenceTenant.gagal, tone: 'warning', icon: WarningCircleIcon },
+	];
 
 	return (
 		<section className="flex flex-col gap-3">
@@ -31,70 +61,16 @@ export function InstitutionResourceStrip({
 				<p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 					Sumber Daya Institusi
 				</p>
-				<p className="mt-1 text-sm text-muted-foreground">
-					Bekal yang berlaku lintas penyusunan, bukan ukuran pekerjaan yang
-					sedang disusun.
-				</p>
 			</div>
 
 			<div className="grid gap-4">
 				<Card size="sm">
 					<CardHeader>
-						<CardTitle>Bukti Dukung Universitas</CardTitle>
-						<CardDescription>
-							{evidenceTenant.total === 0
-								? 'Belum ada berkas level universitas.'
-								: `${evidenceTenant.siap} dari ${evidenceTenant.total} berkas siap dipakai AI (${evidenceTenant.persenSiap}%).`}
-						</CardDescription>
-					</CardHeader>
-					<CardContent className="flex flex-col gap-3">
-						{/*
-						 * Cakupannya hanya `owner_tipe = TENANT` supaya angkanya cocok
-						 * dengan daftar di halaman yang dituju tombolnya (§4.4) — aturan
-						 * yang sama dengan panel Bukti Dukung di §5.1c.
-						 */}
-						{evidenceTenant.total > 0 && (
-							<div
-								className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
-								role="progressbar"
-								aria-valuenow={evidenceTenant.persenSiap}
-								aria-valuemin={0}
-								aria-valuemax={100}
-								aria-label="Bukti dukung universitas yang siap"
-							>
-								<div
-									className="h-full rounded-full bg-primary transition-[width]"
-									style={{ width: `${evidenceTenant.persenSiap}%` }}
-								/>
-							</div>
-						)}
-
-						{belumSiap > 0 && (
-							<p className="text-xs text-muted-foreground">
-								{belumSiap} berkas masih dalam antrean ekstraksi.
-							</p>
-						)}
-
-						{evidenceTenant.gagal > 0 && (
-							<p className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400">
-								<WarningCircleIcon
-									className="mt-0.5 size-3.5 shrink-0"
-									weight="fill"
-								/>
-								{evidenceTenant.gagal} berkas gagal diproses dan bisa dicoba
-								ulang.
-							</p>
-						)}
-
-						{evidenceTenant.terakhirDiunggah &&
-							evidenceTenant.berkasTerakhir && (
-								<p className="truncate text-xs text-muted-foreground">
-									Terakhir: {evidenceTenant.berkasTerakhir} ·{' '}
-									{formatRelativeTime(evidenceTenant.terakhirDiunggah)}
-								</p>
-							)}
-
-						<div>
+						<CardTitle className="flex items-center gap-3">
+							<StatIconBox icon={BooksIcon} size="sm" />
+							Bukti Dukung Universitas
+						</CardTitle>
+						<CardAction className="self-center">
 							<Link
 								to="/dashboard/evidence"
 								className={buttonVariants({ variant: 'outline', size: 'sm' })}
@@ -102,7 +78,33 @@ export function InstitutionResourceStrip({
 								Buka perpustakaan
 								<ArrowRightIcon className="size-4" />
 							</Link>
-						</div>
+						</CardAction>
+					</CardHeader>
+					<CardContent>
+						{/*
+						 * Cakupannya hanya `owner_tipe = TENANT` supaya angkanya cocok
+						 * dengan daftar di halaman yang dituju tombolnya (§4.4) — aturan
+						 * yang sama dengan panel Bukti Dukung di §5.1c.
+						 */}
+						{evidenceTenant.total === 0 ? (
+							<p className="text-sm text-muted-foreground">
+								Belum ada berkas level universitas.
+							</p>
+						) : (
+							<div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+								{tiles.map(({ label, value, tone, icon }) => (
+									<StatBlock
+										key={label}
+										label={label}
+										value={String(value)}
+										icon={icon}
+										size="sm"
+										tone={value === 0 ? 'muted' : tone}
+										className="rounded-lg bg-muted/50 px-3 py-2.5 ring-1 ring-border"
+									/>
+								))}
+							</div>
+						)}
 					</CardContent>
 				</Card>
 			</div>

@@ -1,8 +1,14 @@
+import {
+	ClockCountdownIcon,
+	FileTextIcon,
+	SealCheckIcon,
+} from '@phosphor-icons/react';
+
 import { StatCard, type StatCardTone } from '~/core/components/ui/stat-card';
 import { type ActiveDocumentStats } from '../../domain/entities/active-documents.entity';
 
 /**
- * Nol terbaca tenang (redup), bukan sebagai peringatan; nada peringatan hanya
+ * Nol terbaca tenang (redup), bukan sebagai peringatan; nada berwarna hanya
  * untuk angka yang memang menuntut tindakan.
  */
 const toneFor = (value: number | null, active: StatCardTone): StatCardTone =>
@@ -11,13 +17,15 @@ const toneFor = (value: number | null, active: StatCardTone): StatCardTone =>
 const show = (value: number | null) => (value === null ? '—' : String(value));
 
 /**
- * Empat kartu angka di atas tabel Dokumen LED aktif, dalam dua pasang
- * berlabel. Satuannya selalu **dokumen**: tiap dokumen punya jumlah bab dan
- * rubrik yang berbeda, jadi menjumlahkan bab atau indikator lintas dokumen
- * tidak bermakna.
+ * Tiga kartu angka di atas tabel Dokumen LED aktif, dalam satu grid tanpa
+ * judul kelompok dan tanpa keterangan tambahan. Satuannya selalu **dokumen**,
+ * tidak pernah bab atau indikator: tiap dokumen punya jumlah bab dan rubrik
+ * yang berbeda, jadi menjumlahkan sub-unit lintas dokumen tidak bermakna.
+ * Kartu AMI menghitung dokumen yang punya tinjauan tertunda.
  *
- * `tampilkanAmi = false` (ringkasan AMI gagal dimuat) menyembunyikan pasangan
- * Penilaian AMI sama sekali — nol di sana akan terbaca "sudah dicek, tidak ada".
+ * `tampilkanAmi = false` (ringkasan AMI gagal dimuat) menyembunyikan kartu AMI
+ * sama sekali — nol di sana akan terbaca "sudah dicek, tidak ada". Selama
+ * ringkasan masih dimuat, angkanya '—'.
  */
 export function ActiveDocumentStatCards({
 	stats,
@@ -27,52 +35,30 @@ export function ActiveDocumentStatCards({
 	tampilkanAmi: boolean;
 }) {
 	return (
-		<div className="grid gap-x-4 gap-y-6 lg:grid-cols-2">
-			<StatGroup label="Penyusunan LED">
-				<StatCard
-					label="Dokumen aktif"
-					value={String(stats.dokumenAktif)}
-					tone={toneFor(stats.dokumenAktif, 'default')}
-				/>
-				<StatCard
-					label="Tenggat mendesak"
-					value={String(stats.tenggatMendesak)}
-					hint={stats.terlambat > 0 ? `${stats.terlambat} terlambat` : undefined}
-					tone={toneFor(stats.tenggatMendesak, stats.terlambat > 0 ? 'danger' : 'warning')}
-				/>
-			</StatGroup>
-
+		<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+			<StatCard
+				boxed
+				icon={FileTextIcon}
+				label="Dokumen LED aktif"
+				value={String(stats.dokumenAktif)}
+				tone={toneFor(stats.dokumenAktif, 'default')}
+			/>
+			<StatCard
+				boxed
+				icon={ClockCountdownIcon}
+				label="Tenggat mendesak"
+				value={String(stats.tenggatMendesak)}
+				tone={toneFor(stats.tenggatMendesak, 'danger')}
+			/>
 			{tampilkanAmi && (
-				<StatGroup label="Penilaian AMI">
-					<StatCard
-						label="Perlu ditinjau"
-						value={show(stats.perluDitinjau)}
-						tone={toneFor(stats.perluDitinjau, 'default')}
-					/>
-					<StatCard
-						label="Perlu perhatian"
-						value={show(stats.perluPerhatian)}
-						tone={toneFor(stats.perluPerhatian, 'warning')}
-					/>
-				</StatGroup>
+				<StatCard
+					boxed
+					icon={SealCheckIcon}
+					label="Menunggu tinjauan AMI"
+					value={show(stats.perluDitinjau)}
+					tone={toneFor(stats.perluDitinjau, 'info')}
+				/>
 			)}
-		</div>
-	);
-}
-
-function StatGroup({
-	label,
-	children,
-}: {
-	label: string;
-	children: React.ReactNode;
-}) {
-	return (
-		<div className="flex flex-col gap-2">
-			<p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-				{label}
-			</p>
-			<div className="grid flex-1 gap-4 sm:grid-cols-2">{children}</div>
 		</div>
 	);
 }
