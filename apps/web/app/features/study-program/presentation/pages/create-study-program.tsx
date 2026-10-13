@@ -9,11 +9,7 @@ import { Button } from '~/core/components/ui/button';
 import {
 	Card,
 	CardContent,
-	CardHeader,
-	CardTitle,
-	CardDescription,
 } from '~/core/components/ui/card';
-import { fromDateInputValue } from '~/core/lib/format-time';
 import {
 	createStudyProgramSchema,
 	type CreateStudyProgramDto,
@@ -37,22 +33,13 @@ export function CreateStudyProgram() {
 			jenjang: 'S1',
 			fakultas: '',
 			ketuaProdi: '',
-			peringkatAkreditasi: 'BELUM_TERAKREDITASI',
-			nomorSkAkreditasi: '',
-			berlakuSampaiAkreditasi: '',
 		},
 	});
 
 	const onSubmit = async (data: CreateStudyProgramDto) => {
 		setFormError(null);
 		try {
-			await studyProgramRepository.create({
-				...data,
-				nomorSkAkreditasi: data.nomorSkAkreditasi.trim() || null,
-				berlakuSampaiAkreditasi: fromDateInputValue(
-					data.berlakuSampaiAkreditasi,
-				),
-			});
+			await studyProgramRepository.create(data);
 			navigate('/dashboard/study-programs');
 		} catch (e) {
 			setFormError(e instanceof ApiError ? e.message : 'Gagal menyimpan Program Studi.');
@@ -76,19 +63,7 @@ export function CreateStudyProgram() {
 				</div>
 			</div>
 
-			{/*
-			 * CardHeader di sini tidak dibuang seperti di formulir lain: kalimatnya
-			 * memuat aturan yang tidak bisa diketahui dari kolomnya sendiri — dua
-			 * kolom wajib yang justru boleh kosong dalam satu keadaan tertentu.
-			 * Yang dibuang cuma judul kartu dan kalimat penutup soal tombol Simpan.
-			 */}
 			<Card>
-				<CardHeader>
-					<CardDescription>
-						Nomor SK dan masa berlaku boleh kosong kalau program studi ini
-						belum terakreditasi.
-					</CardDescription>
-				</CardHeader>
 				<CardContent>
 					<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 						{formError && (

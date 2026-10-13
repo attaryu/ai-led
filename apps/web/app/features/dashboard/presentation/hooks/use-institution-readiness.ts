@@ -7,8 +7,6 @@ import { type EvidenceEntity } from '~/features/evidence/domain/entities/evidenc
 import { ledProjectRepository } from '~/features/led-project/data/repositories/led-project.repository';
 import { type LedProjectEntity } from '~/features/led-project/domain/entities/led-project.entity';
 import { studyProgramRepository } from '~/features/study-program/data/repositories/study-program.repository';
-import { userRepository } from '~/features/users/data/repositories/user.repository';
-import { type UserEntity } from '~/features/users/domain/entities/user.entity';
 import {
 	buildInstitutionReadiness,
 	type InstitutionReadiness,
@@ -40,23 +38,20 @@ function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
  * dibaca.
  */
 async function read(): Promise<InstitutionReadiness> {
-	// `.catch(() => [])` di evidence/users menjaga dashboard tetap tampil kalau
-	// viewer bukan role yang boleh baca level tenant untuk keduanya (evidence:
-	// Pimpinan/Penjamin Mutu, lihat `bukti-dukung.service.ts::findAll`; users:
-	// Admin/Pimpinan, lihat `UsersController.findAll`) walau halaman ini
-	// biasanya cuma dibuka mereka.
-	const [programs, projects, chapters, evidences, users]: [
+	// `.catch(() => [])` di evidence menjaga dashboard tetap tampil kalau viewer
+	// bukan role yang boleh baca level tenant (Pimpinan/Penjamin Mutu, lihat
+	// `bukti-dukung.service.ts::findAll`) walau halaman ini biasanya cuma
+	// dibuka mereka.
+	const [programs, projects, chapters, evidences]: [
 		Awaited<ReturnType<typeof studyProgramRepository.findAll>>,
 		LedProjectEntity[],
 		ChapterEntity[],
 		EvidenceEntity[],
-		UserEntity[],
 	] = await Promise.all([
 		studyProgramRepository.findAll(),
 		ledProjectRepository.findAll(),
 		chapterRepository.findAll(),
 		evidenceRepository.findAllTenant().catch(() => []),
-		userRepository.findAll().catch(() => []),
 	]);
 
 	return buildInstitutionReadiness({
@@ -71,12 +66,6 @@ async function read(): Promise<InstitutionReadiness> {
 		 * dashboard dokumennya dibuka — itu memang keadaan sebenarnya.
 		 */
 		chaptersByProject: groupBy(chapters, (chapter) => chapter.ledProjectId),
-		penyusunByProgram: groupBy(
-			users.filter(
-				(user) => user.role === 'Penyusun' && Boolean(user.studyProgramId),
-			),
-			(user) => user.studyProgramId!,
-		),
 		evidenceTenant: evidences.filter(
 			(evidence) => evidence.ownerTipe === 'TENANT',
 		),
@@ -89,28 +78,34 @@ async function read(): Promise<InstitutionReadiness> {
  *
  * Berlangganan `storage-update` seperti daftar lain di aplikasi ini: datanya
  * berubah dari halaman lain — Penjamin Mutu membuat Dokumen LED baru, bukti
- * dukung selesai diekstraksi, Pimpinan menugaskan Penyusun ke prodi.
+ * dukung selesai diekstraksi.
  */
 const EMPTY_READINESS = buildInstitutionReadiness({
 	programs: [],
 	projectsByProgram: new Map(),
 	chaptersByProject: new Map(),
-	penyusunByProgram: new Map(),
 	evidenceTenant: [],
 });
 
-export function useInstitutionReadiness(): InstitutionReadiness {
-	const [readiness, setReadiness] =
-		React.useState<InstitutionReadiness>(EMPTY_READINESS);
+export type InstitutionReadinessState = InstitutionReadiness & {
+	/** `false` sampai pembacaan pertama selesai, supaya UI tidak menampilkan "kosong" sesaat. */
+	loaded: boolean;
+};
+
+export function useInstitutionReadiness(): InstitutionReadinessState {
+	const [state, setState] = React.useState<InstitutionReadinessState>({
+		...EMPTY_READINESS,
+		loaded: false,
+	});
 
 	React.useEffect(() => {
 		const load = () => {
-			read().then(setReadiness);
+			read().then((readiness) => setState({ ...readiness, loaded: true }));
 		};
 		load();
 		window.addEventListener('storage-update', load);
 		return () => window.removeEventListener('storage-update', load);
 	}, []);
 
-	return readiness;
+	return state;
 }

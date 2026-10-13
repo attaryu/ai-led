@@ -130,6 +130,25 @@ export type BackendEvalResult = {
 	error: string | null;
 };
 
+/** Satu elemen `GET /assessment/overview` — satu per Dokumen LED tenant. */
+export type BackendAssessmentOverview = {
+	documentId: string;
+	studyProgramId: string;
+	session: {
+		id: string;
+		status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+		totalIndicators: number;
+		completedIndicators: number;
+		createdAt: string;
+	} | null;
+	scored: number;
+	failed: number;
+	averageScore: number | null;
+	lowScoreCount: number;
+	reviewed: number;
+	corrected: number;
+};
+
 export type TriggerAssessmentPayload = {
 	indikatorList?: number[];
 	/** Kunci "nomor|sub" (mis. "43|I") baris yang dinilai; mengalahkan `indikatorList` bila diisi. */
@@ -164,6 +183,11 @@ export const assessmentRemoteSource = {
 	/** 78 indikator AMI, dipakai pemilih tag indikator di unggah bukti dukung. */
 	findIndicators(): Promise<AssessmentIndicator[]> {
 		return apiFetch<AssessmentIndicator[]>('/assessment/indicators');
+	},
+
+	/** Ringkasan lintas dokumen untuk Dashboard Utama (Pimpinan, Penjamin Mutu). */
+	findOverview(): Promise<BackendAssessmentOverview[]> {
+		return apiFetch<BackendAssessmentOverview[]>('/assessment/overview');
 	},
 
 	findSessions(dokumenId: string): Promise<BackendAssessmentSession[]> {

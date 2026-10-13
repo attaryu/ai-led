@@ -1,8 +1,4 @@
-import {
-	ArrowRightIcon,
-	UsersThreeIcon,
-	WarningCircleIcon,
-} from '@phosphor-icons/react';
+import { ArrowRightIcon, WarningCircleIcon } from '@phosphor-icons/react';
 import { Link } from 'react-router';
 
 import { buttonVariants } from '~/core/components/ui/button';
@@ -23,27 +19,11 @@ import { type InstitutionResources } from '../../domain/entities/institution-rea
  */
 export function InstitutionResourceStrip({
 	sumberDaya,
-	totalProdi,
-	dapatKelolaUser,
 }: {
 	sumberDaya: InstitutionResources;
-	totalProdi: number;
-	/**
-	 * Tautan ke Manajemen User hanya dirender untuk yang berhak (§1). Penjamin
-	 * Mutu tidak punya menu itu sama sekali (§4.2), jadi menyodorkan tautan
-	 * kepadanya hanya berujung pengalihan — cacat yang sama yang sudah dihindari
-	 * §5.1c.
-	 */
-	dapatKelolaUser: boolean;
 }) {
-	const { evidenceTenant, prodiTanpaPenyusun } = sumberDaya;
+	const { evidenceTenant } = sumberDaya;
 	const belumSiap = evidenceTenant.menunggu + evidenceTenant.diproses;
-
-	// Penyebutnya total prodi, sama dengan hitungan "n dari m prodi sedang
-	// menyusun" di subjudul §4.0c, supaya dua angka di halaman yang sama tidak
-	// diam-diam mengukur hal berbeda.
-	const persenTanpaPenyusun =
-		totalProdi === 0 ? 0 : Math.round((prodiTanpaPenyusun / totalProdi) * 100);
 
 	return (
 		<section className="flex flex-col gap-3">
@@ -57,7 +37,7 @@ export function InstitutionResourceStrip({
 				</p>
 			</div>
 
-			<div className="grid gap-4 sm:grid-cols-2">
+			<div className="grid gap-4">
 				<Card size="sm">
 					<CardHeader>
 						<CardTitle>Bukti Dukung Universitas</CardTitle>
@@ -123,55 +103,6 @@ export function InstitutionResourceStrip({
 								<ArrowRightIcon className="size-4" />
 							</Link>
 						</div>
-					</CardContent>
-				</Card>
-
-				{/*
-				 * Prodi tanpa Penyusun bukan angka biasa: dokumennya tidak akan pernah
-				 * bergerak sampai ada yang ditugaskan, jadi keadaan itu ditampilkan
-				 * sebagai peringatan (§5.1c).
-				 */}
-				<Card size="sm">
-					<CardHeader>
-						<CardTitle>Tim Penyusun</CardTitle>
-						<CardDescription>
-							{prodiTanpaPenyusun === 0
-								? `Seluruh ${totalProdi} program studi sudah punya Penyusun.`
-								: `${prodiTanpaPenyusun} dari ${totalProdi} program studi belum punya Penyusun (${persenTanpaPenyusun}%).`}
-						</CardDescription>
-					</CardHeader>
-					<CardContent className="flex flex-col gap-3">
-						{prodiTanpaPenyusun > 0 ? (
-							<p className="flex items-start gap-2 text-sm text-amber-700 dark:text-amber-400">
-								<WarningCircleIcon
-									className="mt-0.5 size-4 shrink-0"
-									weight="fill"
-								/>
-								Dokumen program studi itu tidak akan bergerak sampai ada pengguna yang
-								ditugaskan menulisnya.
-							</p>
-						) : (
-							<p className="flex items-start gap-2 text-sm text-muted-foreground">
-								<UsersThreeIcon
-									className="mt-0.5 size-4 shrink-0"
-									weight="duotone"
-								/>
-								Tiap program studi punya setidaknya satu pengguna yang bertugas menulis
-								dokumennya.
-							</p>
-						)}
-
-						{dapatKelolaUser && (
-							<div>
-								<Link
-									to="/dashboard/users"
-									className={buttonVariants({ variant: 'outline', size: 'sm' })}
-								>
-									Kelola penugasan
-									<ArrowRightIcon className="size-4" />
-								</Link>
-							</div>
-						)}
 					</CardContent>
 				</Card>
 			</div>

@@ -23,10 +23,10 @@ const deadlineStyles: Record<DeadlineUrgency, string> = {
 /**
  * Dokumen LED yang sedang disusun program studi ini (docs/application_flow.md §5.1b).
  *
- * Bentuknya sengaja satu kartu sederajat dengan `ProgramAccreditationCard`:
- * keduanya berdampingan dua kolom, dan yang kiri menjawab "program studi ini sekarang
- * terakreditasi apa" sementara yang kanan menjawab "usaha menuju akreditasi
- * berikutnya sudah sejauh mana". Dua pertanyaan, dua kartu, satu pandangan.
+ * Bentuknya sengaja satu kartu sederajat dengan `ProgramIdentityCard`:
+ * keduanya berdampingan dua kolom, dan yang kiri menjawab "program studi apa ini"
+ * sementara yang kanan menjawab "usaha menuju akreditasi berikutnya sudah
+ * sejauh mana". Dua pertanyaan, dua kartu, satu pandangan.
  *
  * **Kartu ini bukan tempat rincian.** Versi sebelumnya membongkar empat kartu
  * angka di sini — kelengkapan bab, kesiapan review, bukti dukung terpakai, sisa

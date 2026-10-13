@@ -175,3 +175,105 @@ describe('AssessmentService.upsertVerdict', () => {
     expect(assessmentVerdictUpsert).toHaveBeenCalled();
   });
 });
+
+describe('AssessmentService.getOverview', () => {
+  function makeOverviewService(data: {
+    documents: unknown[];
+    sessions?: unknown[];
+    results?: unknown[];
+    verdicts?: unknown[];
+  }) {
+    const ledDocumentFindMany = jest.fn().mockResolvedValue(data.documents);
+    const sessionFindMany = jest.fn().mockResolvedValue(data.sessions ?? []);
+    const resultFindMany = jest.fn().mockResolvedValue(data.results ?? []);
+    const verdictFindMany = jest.fn().mockResolvedValue(data.verdicts ?? []);
+    const prisma = {
+      ledDocument: { findMany: ledDocumentFindMany },
+      assessmentSession: { findMany: sessionFindMany },
+      indicatorResult: { findMany: resultFindMany },
+      assessmentVerdict: { findMany: verdictFindMany },
+    };
+    const service = new AssessmentService(
+      prisma as unknown as PrismaService,
+      { getOrThrow: jest.fn().mockReturnValue({ tenantId: 't1', userId: 'u1' }) } as never,
+      {} as DokumenLedService,
+    );
+    return { service, ledDocumentFindMany, sessionFindMany };
+  }
+
+  const session = {
+    id: 's1',
+    documentId: 'd1',
+    status: 'COMPLETED',
+    totalIndicators: 5,
+    completedIndicators: 5,
+    createdAt: new Date('2026-02-01T00:00:00Z'),
+  };
+
+  it('returns a null session and zeroed aggregates for a document without sessions', async () => {
+    const { service, ledDocumentFindMany } = makeOverviewService({
+      documents: [{ id: 'd1', studyProgramId: 'p1' }],
+    });
+
+    const [item] = await service.getOverview();
+
+    expect(item).toEqual({
+      documentId: 'd1',
+      studyProgramId: 'p1',
+      session: null,
+      scored: 0,
+      failed: 0,
+      averageScore: null,
+      lowScoreCount: 0,
+      reviewed: 0,
+      corrected: 0,
+    });
+    expect(ledDocumentFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { studyProgram: { tenantId: 't1' } } }),
+    );
+  });
+
+  it('aggregates scored/failed/average/low from the latest session only', async () => {
+    const { service } = makeOverviewService({
+      documents: [{ id: 'd1', studyProgramId: 'p1' }],
+      sessions: [session],
+      results: [
+        { sessionId: 's1', score: '4.00', error: null },
+        { sessionId: 's1', score: '2.00', error: null },
+        { sessionId: 's1', score: '1.50', error: null },
+        { sessionId: 's1', score: null, error: 'boom' },
+        { sessionId: 's1', score: null, error: null },
+      ],
+    });
+
+    const [item] = await service.getOverview();
+
+    expect(item.session).toEqual({
+      id: 's1',
+      status: 'COMPLETED',
+      totalIndicators: 5,
+      completedIndicators: 5,
+      createdAt: '2026-02-01T00:00:00.000Z',
+    });
+    expect(item.scored).toBe(3);
+    expect(item.failed).toBe(1);
+    expect(item.averageScore).toBe(2.5);
+    expect(item.lowScoreCount).toBe(2);
+  });
+
+  it('counts reviewed verdicts and only those whose final score differs from the machine score', async () => {
+    const { service } = makeOverviewService({
+      documents: [{ id: 'd1', studyProgramId: 'p1' }],
+      verdicts: [
+        { documentId: 'd1', finalScore: '2.50', machineScoreAtReview: '2.00' },
+        { documentId: 'd1', finalScore: '3.00', machineScoreAtReview: '3.00' },
+        { documentId: 'd1', finalScore: '3.00', machineScoreAtReview: null },
+      ],
+    });
+
+    const [item] = await service.getOverview();
+
+    expect(item.reviewed).toBe(3);
+    expect(item.corrected).toBe(1);
+  });
+});

@@ -9,6 +9,7 @@ import { cn } from '~/core/lib/utils';
  */
 const toneStyles = {
 	default: '',
+	muted: 'text-muted-foreground',
 	warning: 'text-amber-700 dark:text-amber-400',
 	danger: 'text-destructive',
 } as const;

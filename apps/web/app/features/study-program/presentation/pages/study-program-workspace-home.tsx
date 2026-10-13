@@ -12,7 +12,7 @@ import { useSession } from '~/features/auth/presentation/hooks/use-session';
 import { ledProjectRepository } from '~/features/led-project/data/repositories/led-project.repository';
 import { type StudyProgramEntity } from '../../domain/entities/study-program.entity';
 import { ActiveProjectCard } from '../components/active-project-card';
-import { ProgramAccreditationCard } from '../components/program-accreditation-card';
+import { ProgramIdentityCard } from '../components/program-identity-card';
 import { ProgramEvidencePanel } from '../components/program-evidence-panel';
 import { ProgramLedProjectHistory } from '../components/program-led-project-history';
 import { ProgramTeamPanel } from '../components/program-team-panel';
@@ -122,12 +122,12 @@ function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 					Dashboard Program Studi
 				</h2>
 				<p className="text-sm text-muted-foreground">
-					Akreditasi yang berlaku sekarang, dan penyusunan yang sedang berjalan.
+					Identitas program studi, dan penyusunan yang sedang berjalan.
 				</p>
 			</div>
 
 			<div className="grid items-start gap-4 lg:grid-cols-2">
-				<ProgramAccreditationCard program={program} />
+				<ProgramIdentityCard program={program} />
 
 				{penyusunanAktif ? (
 					<ActiveProjectCard

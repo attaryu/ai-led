@@ -10,11 +10,12 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Role } from '@ai-led/db';
 import { requireEnv } from '../config/env';
 import { Protected } from '../tenant/protected.decorator';
 import { AssessmentService } from './assessment.service';
+import { AssessmentOverviewItemDto } from './dto/assessment-overview.dto';
 import { RunEvalDto } from './dto/run-eval.dto';
 import { UpsertVerdictDto } from './dto/upsert-verdict.dto';
 
@@ -44,6 +45,14 @@ export class AssessmentController {
     }
 
     return upstream.json();
+  }
+
+  /** Ringkasan semua Dokumen LED tenant untuk Dashboard Utama; hanya PIMPINAN & PENJAMIN_MUTU. */
+  @Get('assessment/overview')
+  @Protected(Role.PIMPINAN, Role.PENJAMIN_MUTU)
+  @ApiOkResponse({ type: AssessmentOverviewItemDto, isArray: true })
+  getOverview() {
+    return this.assessmentService.getOverview();
   }
 
   @Get('dokumen/:dokumenId/assessment-sessions')
