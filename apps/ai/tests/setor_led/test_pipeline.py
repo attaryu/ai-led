@@ -229,6 +229,14 @@ def test_tulis_evaluasi_gives_up_after_one_retry():
     assert llm.dipanggil == 2
 
 
+def test_tulis_evaluasi_logs_the_raw_reply_when_it_is_unreadable(caplog):
+    # Tanpa potongan jawaban, "JSON tak terbaca" tidak bisa dibedakan: terpotong, prosa, atau kutip rusak.
+    with caplog.at_level("WARNING", logger="setor_led.pipeline"):
+        with pytest.raises(SetorLedError):
+            tulis_evaluasi_narasi(FakeLLM('{"evaluasi": "MEMENUHI", "analisisKetercapaian": "terpotong di sin'), IKU, CAPAIAN, "")
+    assert "terpotong di sin" in caplog.text and IKU.kode in caplog.text
+
+
 def test_tulis_evaluasi_reads_json_wrapped_in_think_and_fence():
     mentah = f"<think>bandingkan 3,46 dengan 3,25</think>\n{PAGAR}json\n{JSON_OK}\n{PAGAR}"
     evaluasi, _, _ = tulis_evaluasi_narasi(FakeLLM(mentah), IKU, CAPAIAN, "")

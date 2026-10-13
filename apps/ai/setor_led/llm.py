@@ -23,12 +23,18 @@ def build_setor_llm(
     if provider == "openrouter":
         from langchain_openai import ChatOpenAI
 
+        extra: dict = {}
+        if tools is None:
+            # Tahap JSON (tanpa tool): token "reasoning" model ikut memakan max_tokens, dan di uji E2E jawaban JSON
+            # kadang terpotong/kosong karenanya. Sama dengan llm/chat_model.py::build_plain_llm.
+            extra["extra_body"] = {"reasoning": {"enabled": False}}
         llm = ChatOpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=os.environ["OPENROUTER_API_KEY"],
             model=client.model,
             temperature=temperature,
             max_tokens=num_predict,
+            **extra,
         )
     else:
         from langchain_ollama import ChatOllama

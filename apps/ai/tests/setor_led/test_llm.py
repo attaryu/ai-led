@@ -63,6 +63,32 @@ def test_thinking_models_get_reasoning_disabled_only_without_tools():
         assert "reasoning" not in ollama.call_args.kwargs
 
 
+def test_openrouter_json_stage_disables_reasoning_so_it_cannot_eat_the_token_budget(monkeypatch):
+    # Uji E2E: deepseek-v4-flash menghabiskan ~2.000 dari 3.000 token keluaran untuk "reasoning", sehingga
+    # JSON tahap 2 kadang terpotong/kosong. Preseden: llm/chat_model.py::build_plain_llm.
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    with (
+        patch("setor_led.llm.create_ollama_client_from_env", return_value=_client("deepseek/x")),
+        patch("langchain_openai.ChatOpenAI") as openai,
+    ):
+        build_setor_llm("deepseek/x", num_predict=3000)
+    assert openai.call_args.kwargs["extra_body"] == {"reasoning": {"enabled": False}}
+    assert openai.call_args.kwargs["max_tokens"] == 3000
+
+
+def test_openrouter_tool_stage_keeps_the_models_default_reasoning(monkeypatch):
+    # Tahap 1 (loop tool) mengikuti perilaku AMI (_build_llm): reasoning tidak dimatikan.
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    with (
+        patch("setor_led.llm.create_ollama_client_from_env", return_value=_client("deepseek/x")),
+        patch("langchain_openai.ChatOpenAI") as openai,
+    ):
+        build_setor_llm("deepseek/x", tools=["t"])
+    assert "extra_body" not in openai.call_args.kwargs
+
+
 def test_openrouter_branch_uses_chatopenai(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
     monkeypatch.setenv("OPENROUTER_API_KEY", "k")

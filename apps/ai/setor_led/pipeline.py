@@ -143,7 +143,10 @@ def tulis_evaluasi_narasi(llm, iku: IkuInput, capaian: dict, bahan: str, model: 
             return validasi_keluaran_llm(_extract_json(str(jawaban.content or "")))
         except SetorLedError as exc:
             terakhir = exc
-            logger.warning("Keluaran tahap 2 untuk %s tidak valid: %s", iku.kode, exc)
+            logger.warning(
+                "Keluaran tahap 2 untuk %s tidak valid: %s | jawaban mentah (%d char): %.400r",
+                iku.kode, exc, len(str(jawaban.content or "")), str(jawaban.content or ""),
+            )
     raise terakhir  # type: ignore[misc]  # loop selalu berjalan >= 1 kali
 
 
