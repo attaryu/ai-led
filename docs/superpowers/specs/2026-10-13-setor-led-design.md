@@ -130,7 +130,7 @@ Aturan:
   kode: `≥ 3,25`, `3,5 < MS ≤ 4,5`, `NAPJ ≥ 3`). Nilai di luar enum dicoba ulang sekali, lalu
   `error` pada IKU itu.
 - **Capaian tidak ditemukan → tidak ada narasi.** IKU dikembalikan dengan
-  `error: "Capaian tidak ditemukan di LKPS/LED"`; penulis mengisi manual di editor.
+  `error: "Capaian tidak ditemukan di LKPS/LED/bukti dukung"`; penulis mengisi manual di editor.
 - `search_evidence_documents` (milik AMI) **tidak dipakai**: ia hanya mencari bukti yang di-tag ke
   indikator rubrik (`evidence_indicator_tags`), sedangkan IKU bukan indikator rubrik. Gantinya
   `cari_bukti_dukung_prodi` di atas. Konsekuensi: pencarian melintasi seluruh bukti prodi sehingga
