@@ -99,6 +99,30 @@ def test_parse_capaian_rejects_a_hedge_hidden_in_the_dasar_field_too():
     assert parse_capaian(mentah) is None
 
 
+def test_parse_capaian_logs_why_a_capaian_was_rejected(caplog):
+    # Tanpa log ini, "Capaian tidak ditemukan" tidak bisa dibedakan: model bilang tidak ada, penjaga keraguan
+    # menolak, atau jawaban tak terbaca (ditemukan saat uji E2E: MHS.8 gagal sekali tanpa jejak).
+    ragu = json.dumps({"ditemukan": True, "nilai": "Perkiraan capaian 90%", "sumber": "LED"})
+    ragu_di_dasar = json.dumps({"ditemukan": True, "nilai": "100%", "sumber": "LED", "dasar": "angka riilnya diperkirakan"})
+    with caplog.at_level("INFO", logger="setor_led.pipeline"):
+        assert parse_capaian(ragu, kode="IKU.X") is None
+        assert parse_capaian(ragu_di_dasar, kode="IKU.D") is None
+        assert parse_capaian('{"ditemukan": false}', kode="IKU.Y") is None
+        assert parse_capaian("ini bukan json", kode="IKU.Z") is None
+
+    log = caplog.text
+    assert "IKU.X" in log and "ragu-ragu di nilai" in log and "Perkiraan capaian 90%" in log
+    assert "IKU.D" in log and "ragu-ragu di dasar" in log
+    assert "IKU.Y" in log and "ditemukan=false" in log
+    assert "IKU.Z" in log and "tidak terbaca" in log and "ini bukan json" in log
+
+
+def test_cari_capaian_passes_the_iku_code_for_the_rejection_log(caplog):
+    with caplog.at_level("INFO", logger="setor_led.pipeline"):
+        cari_capaian(FakeLLM('{"ditemukan": false}'), IKU, [])
+    assert IKU.kode in caplog.text and "ditemukan=false" in caplog.text
+
+
 @pytest.mark.parametrize(
     "nilai",
     ["RIPK = 3,46", "Pedoman SMK3L PENS tersedia (SK No. 48/PL14/2025)", "100% (25 dari 25 jenis sarana terawat)"],

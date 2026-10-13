@@ -67,17 +67,28 @@ _RAGU = re.compile(
 )
 
 
-def parse_capaian(content: object) -> dict | None:
+def parse_capaian(content: object, kode: str = "") -> dict | None:
     """Jawaban akhir tahap 1 -> {"nilai", "sumber"[, "dasar"]}, atau None bila tidak ditemukan, tidak terbaca,
-    atau ragu-ragu (lihat _RAGU). `dasar` (rincian perhitungan/bukti) hanya untuk tahap 2, tidak masuk hasil job."""
-    data = _extract_json(content if isinstance(content, str) else str(content or ""))
-    if not isinstance(data, dict) or not data.get("ditemukan"):
+    atau ragu-ragu (lihat _RAGU). `dasar` (rincian perhitungan/bukti) hanya untuk tahap 2, tidak masuk hasil job.
+    `kode` hanya untuk log: alasan penolakan dicatat supaya "Capaian tidak ditemukan" bisa ditelusuri."""
+    teks = content if isinstance(content, str) else str(content or "")
+    data = _extract_json(teks)
+    if not isinstance(data, dict):
+        logger.info("Capaian %s ditolak: jawaban tahap 1 tidak terbaca sebagai JSON: %.300r", kode, teks)
+        return None
+    if not data.get("ditemukan"):
+        logger.info("Capaian %s: model menjawab ditemukan=false", kode)
         return None
     nilai = str(data.get("nilai") or "").strip()
     if not nilai:
+        logger.info("Capaian %s ditolak: ditemukan=true tetapi nilai kosong", kode)
         return None
     dasar = str(data.get("dasar") or "").strip()
-    if _RAGU.search(nilai) or _RAGU.search(dasar):
+    if _RAGU.search(nilai):
+        logger.warning("Capaian %s ditolak: ragu-ragu di nilai: %.300r", kode, nilai)
+        return None
+    if _RAGU.search(dasar):
+        logger.warning("Capaian %s ditolak: ragu-ragu di dasar (nilai=%.100r): %.300r", kode, nilai, dasar)
         return None
     capaian = {"nilai": nilai, "sumber": str(data.get("sumber") or "").strip() or "tidak disebutkan"}
     if dasar:
@@ -111,7 +122,7 @@ def cari_capaian(llm, iku: IkuInput, tabel_lkps: list[str]) -> tuple[dict | None
         pesan.append(jawaban)
         panggilan = getattr(jawaban, "tool_calls", None) or []
         if not panggilan:
-            return parse_capaian(jawaban.content), _bahan()
+            return parse_capaian(jawaban.content, kode=iku.kode), _bahan()
         for call in panggilan:
             keluaran = _jalankan_tool(call)
             bahan.append(f"[{call.get('name')}] {keluaran}")
@@ -119,7 +130,7 @@ def cari_capaian(llm, iku: IkuInput, tabel_lkps: list[str]) -> tuple[dict | None
 
     # Batas langkah habis: paksa jawaban akhir. Bila model masih meminta tool, parse_capaian -> None.
     pesan.append(HumanMessage(content="Batas pemanggilan tool tercapai. Berikan jawaban akhir JSON sekarang."))
-    return parse_capaian(llm.invoke(pesan).content), _bahan()
+    return parse_capaian(llm.invoke(pesan).content, kode=iku.kode), _bahan()
 
 
 def tulis_evaluasi_narasi(llm, iku: IkuInput, capaian: dict, bahan: str, model: str | None = None):
