@@ -32,6 +32,7 @@ def _run(job, *, set_id="set-1", hasil=None, dibatalkan=False, models=("qwen3.6:
         get_document_accreditation_set=MagicMock(return_value=set_id),
         get_available_models=MagicMock(return_value=list(models)),
         jalankan_setor_led=jalankan,
+        _program_studi_label=MagicMock(return_value=None),
     )
     defaults.update(overrides)
 
@@ -44,6 +45,7 @@ def _run(job, *, set_id="set-1", hasil=None, dibatalkan=False, models=("qwen3.6:
         stack.enter_context(patch("db.postgres_client.get_document_accreditation_set", defaults["get_document_accreditation_set"]))
         stack.enter_context(patch("llm.ollama_client.get_available_models", defaults["get_available_models"]))
         stack.enter_context(patch("setor_led.pipeline.jalankan_setor_led", defaults["jalankan_setor_led"]))
+        stack.enter_context(patch("worker._program_studi_label", defaults["_program_studi_label"]))
         stack.enter_context(patch("redis.asyncio.from_url", return_value=redis_client))
         result = asyncio.run(_handle_setor_led(job))
 
@@ -178,6 +180,7 @@ def test_cancel_flag_is_read_from_the_shared_redis_key():
         patch("db.postgres_client.get_document_accreditation_set", return_value="set-1"),
         patch("llm.ollama_client.get_available_models", return_value=["qwen3.6:35b"]),
         patch("setor_led.pipeline.jalankan_setor_led", AsyncMock(side_effect=jalankan)),
+        patch("worker._program_studi_label", return_value=None),
         patch("redis.asyncio.from_url", return_value=redis_client),
     ):
         asyncio.run(_handle_setor_led(_fake_job()))
@@ -185,6 +188,52 @@ def test_cancel_flag_is_read_from_the_shared_redis_key():
     redis_client.get.assert_awaited_with("job:cancel:job-1")
     assert seen["batal"] is True
     redis_client.aclose.assert_awaited_once()
+
+
+PRODI_LABEL = "Teknik Telekomunikasi (jenjang D4 / Diploma 4 / Sarjana Terapan)"
+
+
+def test_study_program_label_is_forwarded_to_the_pipeline():
+    _, d = _run(_fake_job(), _program_studi_label=MagicMock(return_value=PRODI_LABEL))
+    d["_program_studi_label"].assert_called_once_with("tenant-1", "prodi-1")
+    assert d["jalankan_setor_led"].call_args.kwargs["konteks_prodi"] == PRODI_LABEL
+
+
+def test_an_unknown_study_program_is_not_fatal():
+    result, d = _run(_fake_job(), _program_studi_label=MagicMock(return_value=None))
+    assert result["status"] == "completed"
+    assert d["jalankan_setor_led"].call_args.kwargs["konteks_prodi"] is None
+
+
+def _label(tenant_id="tenant-1", prodi_id="prodi-1", baris=None, galat=None):
+    from worker import _program_studi_label
+
+    cur = MagicMock()
+    cur.fetchone.return_value = baris
+    with patch("db.connection.tenant_cursor") as tc:
+        if galat is not None:
+            tc.side_effect = galat
+        tc.return_value.__enter__.return_value = cur
+        return _program_studi_label(tenant_id, prodi_id), cur, tc
+
+
+def test_program_studi_label_reads_name_and_level_of_the_prodi():
+    label, cur, tc = _label(baris={"name": "Teknik Telekomunikasi", "level": "D4"})
+    assert label == "Teknik Telekomunikasi (jenjang D4 / Diploma 4 / Sarjana Terapan)"
+    tc.assert_called_once_with("tenant-1")
+    sql, params = cur.execute.call_args.args
+    assert "org_study_programs" in sql and params == ("prodi-1",)
+
+
+def test_program_studi_label_is_none_when_the_row_is_missing_or_the_lookup_fails():
+    assert _label(baris=None)[0] is None
+    assert _label(galat=RuntimeError("db mati"))[0] is None  # konteks tambahan, bukan prasyarat
+
+
+def test_program_studi_label_skips_the_lookup_without_a_prodi_id():
+    label, cur, tc = _label(prodi_id=None, baris={"name": "X", "level": "D4"})
+    assert label is None
+    tc.assert_not_called()
 
 
 def test_process_job_routes_setor_led_to_its_handler():

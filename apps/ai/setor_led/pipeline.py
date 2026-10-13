@@ -124,11 +124,19 @@ def _jalankan_tool(call: dict) -> str:
 
 
 def cari_capaian(
-    llm, iku: IkuInput, tabel_lkps: list[str], cancel_event: threading.Event | None = None
+    llm,
+    iku: IkuInput,
+    tabel_lkps: list[str],
+    cancel_event: threading.Event | None = None,
+    prodi: str | None = None,
 ) -> tuple[dict | None, str]:
     """Tahap 1. Mengembalikan (capaian atau None, bahan) -- bahan = gabungan hasil tool untuk tahap 2.
-    Raise SetorLedCancelled bila `cancel_event` menyala (diperiksa sebelum tiap panggilan LLM dan tool)."""
-    pesan = [SystemMessage(content=SYSTEM_CAPAIAN), HumanMessage(content=bangun_prompt_capaian(iku, tabel_lkps))]
+    Raise SetorLedCancelled bila `cancel_event` menyala (diperiksa sebelum tiap panggilan LLM dan tool).
+    `prodi` = nama + jenjang prodi (lihat prompts.format_prodi), agar model tidak menebak varian jenis program."""
+    pesan = [
+        SystemMessage(content=SYSTEM_CAPAIAN),
+        HumanMessage(content=bangun_prompt_capaian(iku, tabel_lkps, prodi)),
+    ]
     bahan: list[str] = []
 
     def _bahan() -> str:
@@ -154,11 +162,17 @@ def cari_capaian(
 
 
 def tulis_evaluasi_narasi(
-    llm, iku: IkuInput, capaian: dict, bahan: str, model: str | None = None, cancel_event: threading.Event | None = None
+    llm,
+    iku: IkuInput,
+    capaian: dict,
+    bahan: str,
+    model: str | None = None,
+    cancel_event: threading.Event | None = None,
+    prodi: str | None = None,
 ):
     """Tahap 2. Satu percobaan + satu ulang bila JSON/enum tidak valid; lalu SetorLedError.
     Raise SetorLedCancelled bila `cancel_event` menyala (diperiksa sebelum tiap panggilan LLM, termasuk retry)."""
-    prompt_awal = no_think(bangun_prompt_evaluasi(iku, capaian, bahan), model)
+    prompt_awal = no_think(bangun_prompt_evaluasi(iku, capaian, bahan, prodi), model)
     prompt = prompt_awal
     terakhir: SetorLedError | None = None
     for _ in range(2):
@@ -181,19 +195,23 @@ def tulis_evaluasi_narasi(
 
 
 def _proses_iku_sync(
-    iku: IkuInput, model: str | None, tabel_lkps: list[str], cancel_event: threading.Event | None = None
+    iku: IkuInput,
+    model: str | None,
+    tabel_lkps: list[str],
+    cancel_event: threading.Event | None = None,
+    prodi: str | None = None,
 ) -> dict:
     """Seluruh pekerjaan satu IKU (sinkron, jalan di thread executor karena tool & LLM sinkron).
     Raise SetorLedCancelled bila `cancel_event` menyala: thread berhenti di titik aman berikutnya."""
     _cek_batal(cancel_event)
     llm_tool = build_setor_llm(model, tools=TOOLS)
-    capaian, bahan = cari_capaian(llm_tool, iku, tabel_lkps, cancel_event)
+    capaian, bahan = cari_capaian(llm_tool, iku, tabel_lkps, cancel_event, prodi=prodi)
     if capaian is None:
         raise SetorLedError("Capaian tidak ditemukan di LKPS/LED/bukti dukung")
 
     _cek_batal(cancel_event)
     llm_narasi = build_setor_llm(model, temperature=0.2, num_predict=3000)
-    evaluasi, inti, tambahan = tulis_evaluasi_narasi(llm_narasi, iku, capaian, bahan, model, cancel_event)
+    evaluasi, inti, tambahan = tulis_evaluasi_narasi(llm_narasi, iku, capaian, bahan, model, cancel_event, prodi=prodi)
     return hasil_sukses(iku.kode, capaian, evaluasi, inti, tambahan)
 
 
@@ -208,6 +226,7 @@ async def proses_iku(
     model: Optional[str],
     tabel_lkps: list[str],
     cancel_event: threading.Event | None = None,
+    konteks_prodi: str | None = None,
 ) -> dict:
     """Satu IKU, dibatasi semaphore. Tidak pernah raise (selain CancelledError): kegagalan menjadi
     hasil_gagal supaya IKU lain tetap jalan. Pesan galat tak terduga sengaja generik (tanpa teks mentah)."""
@@ -220,7 +239,7 @@ async def proses_iku(
             )
             ctx = contextvars.copy_context()
             return await asyncio.get_running_loop().run_in_executor(
-                None, ctx.run, _proses_iku_sync, iku, model, tabel_lkps, cancel_event
+                None, ctx.run, _proses_iku_sync, iku, model, tabel_lkps, cancel_event, konteks_prodi
             )
         except SetorLedCancelled:
             return hasil_gagal(iku.kode, "Dibatalkan")
@@ -242,6 +261,7 @@ async def jalankan_setor_led(
     model: Optional[str],
     on_progress: Optional[Callable[[int, int], Awaitable[None]]] = None,
     is_cancelled: Optional[Callable[[], Awaitable[bool]]] = None,
+    konteks_prodi: Optional[str] = None,
 ) -> tuple[list[dict], bool]:
     """Jalankan semua IKU paralel. Mengembalikan (hasil berurutan sesuai input untuk IKU yang selesai,
     dibatalkan). `is_cancelled` dipoll tiap CANCEL_POLL_SECONDS meski belum ada IKU yang selesai (endpoint
@@ -263,6 +283,7 @@ async def jalankan_setor_led(
                 model=model,
                 tabel_lkps=tabel_lkps,
                 cancel_event=cancel_event,
+                konteks_prodi=konteks_prodi,
             )
         ): iku.kode
         for iku in iku_list

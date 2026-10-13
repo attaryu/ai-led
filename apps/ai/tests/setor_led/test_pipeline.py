@@ -290,7 +290,7 @@ def _hasil_ok(kode):
 def test_proses_iku_runs_the_sync_work_with_assessment_context_set():
     dilihat = {}
 
-    def sync(iku, model, tabel, cancel_event=None):
+    def sync(iku, model, tabel, cancel_event=None, prodi=None):
         ctx = current_assessment_context.get()
         dilihat.update(tenant=ctx.tenant_id, dokumen=ctx.dokumen_id, indikator=ctx.indicator_no, prodi=ctx.study_program_id)
         return _hasil_ok(iku.kode)
@@ -518,7 +518,7 @@ def test_tulis_evaluasi_does_not_retry_once_cancelled_during_the_first_call():
 def test_proses_iku_sync_does_not_start_stage_two_once_cancelled():
     batal = threading.Event()
 
-    def tahap1_lalu_batal(llm, iku, tabel, cancel_event=None):
+    def tahap1_lalu_batal(llm, iku, tabel, cancel_event=None, prodi=None):
         batal.set()
         return CAPAIAN, "bahan"
 
@@ -537,16 +537,19 @@ def test_proses_iku_sync_does_not_start_stage_two_once_cancelled():
 def test_runner_signals_cancel_to_running_threads_so_they_stop_calling_the_llm():
     mulai, berhenti = threading.Event(), threading.Event()
 
-    def sync(iku, model, tabel, cancel_event=None):
+    def sync(iku, model, tabel, cancel_event=None, prodi=None):
         mulai.set()
         assert cancel_event.wait(timeout=5), "sinyal batal tidak pernah sampai ke thread"
         berhenti.set()
         raise SetorLedCancelled()
 
     async def batal_setelah_thread_jalan():
-        while not mulai.is_set():
+        # Berbatas waktu: bila thread tidak pernah mulai (mis. tanda tangan tiruan salah), tes gagal, bukan menggantung.
+        for _ in range(300):
+            if mulai.is_set():
+                return True
             await asyncio.sleep(0.01)
-        return True
+        raise AssertionError("thread tidak pernah mulai")
 
     with (
         patch("setor_led.pipeline._proses_iku_sync", sync),
@@ -581,3 +584,57 @@ def test_runner_keeps_an_iku_that_finished_while_the_cancel_flag_was_being_check
 
     assert dibatalkan is True
     assert [h["kode"] for h in hasil] == ["CEPAT"]  # hasil yang sudah jadi tidak boleh terbuang
+
+
+# ── jenis program studi diteruskan ke kedua tahap ──────────────────────────────
+
+PRODI = "Teknik Telekomunikasi (jenjang D4 / Sarjana Terapan)"
+
+
+class Pengintai(FakeLLM):
+    """FakeLLM yang menyimpan masukan terakhir (pesan tahap 1 berupa list, prompt tahap 2 berupa str)."""
+
+    def invoke(self, masukan):
+        self.masukan_terakhir = masukan
+        return super().invoke(masukan)
+
+
+def test_cari_capaian_puts_the_study_program_in_the_stage_one_prompt():
+    llm = Pengintai('{"ditemukan": false}')
+    cari_capaian(llm, IKU, ["6d"], prodi=PRODI)
+    pesan_pengguna = llm.masukan_terakhir[1].content
+    assert f"Program studi: {PRODI}" in pesan_pengguna
+
+
+def test_tulis_evaluasi_puts_the_study_program_in_the_stage_two_prompt():
+    llm = Pengintai(JSON_OK)
+    tulis_evaluasi_narasi(llm, IKU, CAPAIAN, "", prodi=PRODI)
+    assert f"Program studi: {PRODI}" in llm.masukan_terakhir
+
+
+def test_proses_iku_sync_gives_the_study_program_to_both_stages():
+    with (
+        patch("setor_led.pipeline.build_setor_llm"),
+        patch("setor_led.pipeline.cari_capaian", return_value=(CAPAIAN, "bahan")) as tahap1,
+        patch("setor_led.pipeline.tulis_evaluasi_narasi", return_value=("MELAMPAUI", INTI, None)) as tahap2,
+    ):
+        pipeline._proses_iku_sync(IKU, "m", ["6d"], None, PRODI)
+
+    assert tahap1.call_args.kwargs["prodi"] == PRODI
+    assert tahap2.call_args.kwargs["prodi"] == PRODI
+
+
+def test_runner_hands_the_study_program_to_every_iku():
+    dilihat = []
+
+    async def tiruan(iku, semaphore, **kw):
+        dilihat.append(kw.get("konteks_prodi"))
+        return _hasil_ok(iku.kode)
+
+    with (
+        patch("setor_led.pipeline.proses_iku", tiruan),
+        patch("setor_led.pipeline.daftar_tabel_lkps", return_value=[]),
+    ):
+        asyncio.run(jalankan_setor_led(_ikus("A", "B"), konteks_prodi=PRODI, **RUN_KW))
+
+    assert dilihat == [PRODI, PRODI]

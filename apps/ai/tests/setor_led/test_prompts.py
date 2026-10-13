@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from setor_led.prompts import SYSTEM_CAPAIAN, bangun_prompt_capaian, bangun_prompt_evaluasi
+import pytest
+
+from setor_led.prompts import SYSTEM_CAPAIAN, bangun_prompt_capaian, bangun_prompt_evaluasi, format_prodi
 from setor_led.schema import EVALUASI, NARASI_INTI, NARASI_TAMBAHAN, IkuInput
 
 IKU = IkuInput(kode="IKU.REL.MHS.8", indikator="Rata-rata masa studi (MS) lulusan", target="STR PJJ: 3,5 < MS ≤ 4,5")
@@ -91,3 +93,43 @@ def test_evaluasi_prompt_does_not_embed_led_pens_sample_text():
     # Spec §10: LED PENS bertanda "Hanya untuk Internal PENS" -- jangan masuk ke kode yang di-commit.
     prompt = bangun_prompt_evaluasi(IKU, {"nilai": "x", "sumber": "y"}, "")
     assert "PENS" not in prompt and "PPMPP" not in prompt
+
+
+# ── jenis program studi ────────────────────────────────────────────────────────
+# Target di LED memakai awalan jenis program ("PJJ: ...", "STR PJJ: ...") dan tabel LKPS (mis. 6.d) punya blok per
+# jenis program. Tanpa konteks prodi, model menebak varian mana yang berlaku.
+
+PRODI = "Teknik Telekomunikasi (jenjang D4 / Sarjana Terapan)"
+
+
+@pytest.mark.parametrize(
+    "level, label",
+    [("D3", "Diploma 3"), ("D4", "Diploma 4 / Sarjana Terapan"), ("S1", "Sarjana"), ("S2", "Magister"), ("S3", "Doktor")],
+)
+def test_format_prodi_names_the_level(level, label):
+    assert format_prodi("Teknik Telekomunikasi", level) == f"Teknik Telekomunikasi (jenjang {level} / {label})"
+
+
+def test_format_prodi_tolerates_an_unknown_level():
+    assert format_prodi("Prodi X", "XX") == "Prodi X (jenjang XX)"
+    assert format_prodi("Prodi X", None) == "Prodi X"
+
+
+def test_capaian_prompt_states_the_study_program_only_when_known():
+    dengan = bangun_prompt_capaian(IKU, ["6d"], prodi=PRODI)
+    tanpa = bangun_prompt_capaian(IKU, ["6d"])
+    assert f"Program studi: {PRODI}" in dengan
+    assert "Program studi:" not in tanpa
+
+
+def test_evaluasi_prompt_states_the_study_program_only_when_known():
+    capaian = {"nilai": "MS = 4,05", "sumber": "LKPS Tabel 6.d"}
+    assert f"Program studi: {PRODI}" in bangun_prompt_evaluasi(IKU, capaian, "", prodi=PRODI)
+    assert "Program studi:" not in bangun_prompt_evaluasi(IKU, capaian, "")
+
+
+def test_prompts_tell_the_model_not_to_guess_between_program_variants():
+    capaian = {"nilai": "x", "sumber": "y"}
+    assert "beberapa varian" in SYSTEM_CAPAIAN.lower() and "jangan menebak" in SYSTEM_CAPAIAN.lower()
+    evaluasi = bangun_prompt_evaluasi(IKU, capaian, "", prodi=PRODI).lower()
+    assert "beberapa varian" in evaluasi and "sesuai program studi" in evaluasi

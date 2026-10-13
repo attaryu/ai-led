@@ -2445,6 +2445,25 @@ async def _handle_assessment_ami(job) -> dict:
     }
 
 
+def _program_studi_label(tenant_id: str, study_program_id: str | None) -> str | None:
+    """"Nama prodi (jenjang D4 / Diploma 4 / Sarjana Terapan)" untuk prompt setor ke LED, atau None bila prodi tidak
+    ada/gagal dibaca. Konteks tambahan (agar model tidak menebak varian jenis program pada target/tabel LKPS),
+    bukan prasyarat: kegagalan di sini tidak boleh menghentikan job."""
+    if not study_program_id:
+        return None
+    from db.connection import tenant_cursor
+    from setor_led.prompts import format_prodi
+
+    try:
+        with tenant_cursor(tenant_id) as cur:
+            cur.execute("SELECT name, level FROM org_study_programs WHERE id = %s", (study_program_id,))
+            row = cur.fetchone()
+    except Exception:
+        logger.exception("Gagal membaca prodi %s untuk konteks setor ke LED; lanjut tanpa", study_program_id)
+        return None
+    return format_prodi(row["name"], row["level"]) if row else None
+
+
 async def _handle_setor_led(job) -> dict:
     """"Setor ke LED": mengisi tabel analisis IKU (kategori Evaluasi + narasi) untuk satu Dokumen LED.
     Terpisah dari _handle_assessment_ami -- tidak memakai rubrik/skor 0-4 dan tidak menulis
@@ -2537,6 +2556,7 @@ async def _handle_setor_led(job) -> dict:
             model=model,
             on_progress=_report_progress,
             is_cancelled=_is_cancelled,
+            konteks_prodi=_program_studi_label(tenant_id, study_program_id),
         )
     finally:
         await redis_client.aclose()
