@@ -92,6 +92,10 @@ kiriman klien hanya dipakai (dan menjadi LKPS dokumen) bila dokumen belum punya.
 Pada `error` per IKU, field capaian/evaluasi/narasi tidak ada. Pada `cancelled`, IKU yang sudah
 selesai tetap dikembalikan.
 
+**Catatan untuk klien (UI):** status job BullMQ/`Job` bernilai `COMPLETED` juga saat worker mengembalikan
+`result.status: "error"` (prasyarat gagal) atau `"cancelled"`. Klien harus membaca **`result.status`**, bukan hanya
+`status`, untuk membedakan sukses, gagal, dan dibatalkan (terlihat pada uji E2E 2026-10-13).
+
 ## 4. Perubahan wiring (mengikuti pola `ASSESSMENT_AMI`)
 
 - `packages/db/prisma/schema.prisma`: enum `JobType` + `SETOR_LED`; migrasi Prisma baru
@@ -140,6 +144,13 @@ Aturan:
   `error` pada IKU itu.
 - **Capaian tidak ditemukan → tidak ada narasi.** IKU dikembalikan dengan
   `error: "Capaian tidak ditemukan di LKPS/LED/bukti dukung"`; penulis mengisi manual di editor.
+  Capaian yang hanya **ditebak/disimpulkan** model juga dianggap tidak ditemukan: prompt tahap 1 mewajibkan
+  capaian eksplisit di sumber (atau terhitung langsung dari angka sumber), dan `parse_capaian` menolak nilai
+  yang berisi penanda keraguan ("diperkirakan", "tidak terdapat angka eksplisit", dst.). Temuan uji E2E: IKU.REL.SPR.5
+  (K3L, tanpa angka di LKPS/LED) sebelumnya menghasilkan narasi "diperkirakan memenuhi target".
+- **`capaian.nilai` singkat.** Satu baris berisi angka/fakta inti (mis. `RIPK = 3,46`). Rincian perhitungan
+  diminta di field `dasar` yang hanya diteruskan ke tahap 2 dan **tidak** masuk hasil job (kunci hasil tetap
+  `{nilai, sumber}`).
 - `search_evidence_documents` (milik AMI) **tidak dipakai**: ia hanya mencari bukti yang di-tag ke
   indikator rubrik (`evidence_indicator_tags`), sedangkan IKU bukan indikator rubrik. Gantinya
   `cari_bukti_dukung_prodi` di atas. Konsekuensi: pencarian melintasi seluruh bukti prodi sehingga
