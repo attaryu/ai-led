@@ -2474,7 +2474,9 @@ async def _handle_setor_led(job) -> dict:
         return {"status": "error", "error": str(e)}
 
     available = get_available_models()
-    model = payload.get("model") or available[0]
+    model = payload.get("model") or (available[0] if available else None)
+    if model is None:
+        return {"status": "error", "error": "Tidak ada model yang dikonfigurasi (OLLAMA_MODEL / OPENROUTER_MODEL kosong)."}
     if model not in available:
         return {"status": "error", "error": f"Unknown model: {model}. Available: {available}"}
     if is_reasoning_model(model):

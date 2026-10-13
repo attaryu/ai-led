@@ -88,6 +88,13 @@ def test_unknown_model_is_rejected():
     d["jalankan_setor_led"].assert_not_called()
 
 
+def test_no_configured_model_is_a_clear_error_not_a_crash():
+    # OLLAMA_MODEL/OPENROUTER_MODEL kosong -> available == []; dulu `available[0]` melempar IndexError (job FAILED).
+    result, d = _run(_fake_job(), models=())
+    assert result["status"] == "error" and "model" in result["error"].lower()
+    d["jalankan_setor_led"].assert_not_called()
+
+
 def test_requested_model_is_forwarded():
     _, d = _run(_fake_job(model="llama3.3:70b"), models=("qwen3.6:35b", "llama3.3:70b"))
     assert d["jalankan_setor_led"].call_args.kwargs["model"] == "llama3.3:70b"
