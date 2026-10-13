@@ -622,12 +622,18 @@ def extract_panduan_structure(pdf_path: Path, work_dir: Path) -> list[dict]:
 
     work_dir: folder kerja sementara utk output MinerU markdown -- pemanggil
     yang membersihkannya, sama seperti ingestion.evidence_pipeline.process_file."""
+    from . import mineru_service
     from .evidence_mineru import mineru_extract
 
     # start_page=3 (0-based = 4th page): Dimas skips the cover/front-matter pages of a Pedoman, which are not
     # part of the BAB structure (_exclude_daftar_isi below still covers a Daftar Isi that starts later).
-    md_path = mineru_extract(Path(pdf_path), Path(work_dir) / "mineru_md", start_page=3)
-    markdown = md_path.read_text(encoding="utf-8")
+    if mineru_service.service_enabled():
+        # Gateway `mineru` (varian gpu/cpu/api) -- parse_pdf memakai halaman 1-based. Tanpa cabang ini,
+        # varian api tetap memanggil MinerU 3.4.5 in-process yang butuh model lokal (offline di container).
+        markdown = mineru_service.parse_pdf(Path(pdf_path), start_page=4)
+    else:
+        md_path = mineru_extract(Path(pdf_path), Path(work_dir) / "mineru_md", start_page=3)
+        markdown = md_path.read_text(encoding="utf-8")
 
     chunker = MineruChunker()
     chunker.parse(markdown)
