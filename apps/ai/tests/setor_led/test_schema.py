@@ -1,0 +1,122 @@
+"""setor_led.schema: input IKU, validasi keluaran LLM, dan bentuk hasil per IKU."""
+
+from __future__ import annotations
+
+import pytest
+
+from setor_led.schema import (
+    IkuInput,
+    SetorLedError,
+    hasil_gagal,
+    hasil_sukses,
+    parse_iku_list,
+    validasi_keluaran_llm,
+)
+
+INTI = {
+    "analisisKetercapaian": "Capaian memenuhi target.",
+    "usulanTargetTahunDepan": "Pertahankan.",
+    "strategiPencapaian": "1) Monitoring.",
+    "sarprasDibutuhkan": "1) LMS.",
+}
+TAMBAHAN = {
+    "faktorPendukung": "LSP tersedia.",
+    "faktorPenghambat": "Sosialisasi kurang.",
+    "akarMasalah": "Belum terintegrasi.",
+    "tindakLanjut": "Integrasikan.",
+}
+
+
+def _iku(**override):
+    return {"kode": "IKU.REL.MHS.3", "indikator": "Rata-rata IPK lulusan", "target": "RIPK ≥ 3,25", **override}
+
+
+def test_parse_iku_list_returns_trimmed_inputs():
+    hasil = parse_iku_list([_iku(kode="  IKU.A  ")])
+    assert hasil == [IkuInput(kode="IKU.A", indikator="Rata-rata IPK lulusan", target="RIPK ≥ 3,25")]
+
+
+@pytest.mark.parametrize("raw", [None, [], "bukan list", {}])
+def test_parse_iku_list_rejects_empty_or_non_list(raw):
+    with pytest.raises(ValueError, match="ikuList"):
+        parse_iku_list(raw)
+
+
+@pytest.mark.parametrize("field", ["kode", "indikator", "target"])
+def test_parse_iku_list_rejects_blank_fields(field):
+    with pytest.raises(ValueError, match=field):
+        parse_iku_list([_iku(**{field: "   "})])
+
+
+def test_parse_iku_list_rejects_non_object_item():
+    with pytest.raises(ValueError, match="bukan objek"):
+        parse_iku_list(["IKU.A"])
+
+
+def test_parse_iku_list_rejects_duplicate_kode():
+    with pytest.raises(ValueError, match="duplikat"):
+        parse_iku_list([_iku(), _iku()])
+
+
+def test_parse_iku_list_keeps_unicode_target_verbatim():
+    hasil = parse_iku_list([_iku(target="3,5 < MS ≤ 4,5")])
+    assert hasil[0].target == "3,5 < MS ≤ 4,5"
+
+
+def test_validasi_accepts_memenuhi_without_tambahan():
+    evaluasi, inti, tambahan = validasi_keluaran_llm({"evaluasi": "MEMENUHI", **INTI})
+    assert evaluasi == "MEMENUHI" and inti == INTI and tambahan is None
+
+
+def test_validasi_ignores_tambahan_when_not_belum_memenuhi():
+    _, _, tambahan = validasi_keluaran_llm({"evaluasi": "MELAMPAUI", **INTI, "tambahan": TAMBAHAN})
+    assert tambahan is None
+
+
+def test_validasi_requires_tambahan_when_belum_memenuhi():
+    evaluasi, _, tambahan = validasi_keluaran_llm({"evaluasi": "BELUM_MEMENUHI", **INTI, "tambahan": TAMBAHAN})
+    assert evaluasi == "BELUM_MEMENUHI" and tambahan == TAMBAHAN
+
+    with pytest.raises(SetorLedError, match="tambahan"):
+        validasi_keluaran_llm({"evaluasi": "BELUM_MEMENUHI", **INTI})
+    with pytest.raises(SetorLedError, match="akarMasalah"):
+        validasi_keluaran_llm(
+            {"evaluasi": "BELUM_MEMENUHI", **INTI, "tambahan": {**TAMBAHAN, "akarMasalah": " "}}
+        )
+
+
+@pytest.mark.parametrize("evaluasi", ["memenuhi", "Melampaui standar", "", None, 3])
+def test_validasi_rejects_evaluasi_outside_enum(evaluasi):
+    with pytest.raises(SetorLedError, match="Evaluasi"):
+        validasi_keluaran_llm({"evaluasi": evaluasi, **INTI})
+
+
+def test_validasi_rejects_missing_or_blank_narasi():
+    for kunci in INTI:
+        rusak = {**INTI, kunci: "   "}
+        with pytest.raises(SetorLedError, match=kunci):
+            validasi_keluaran_llm({"evaluasi": "MEMENUHI", **rusak})
+    with pytest.raises(SetorLedError, match="JSON"):
+        validasi_keluaran_llm(None)
+    with pytest.raises(SetorLedError, match="JSON"):
+        validasi_keluaran_llm(["bukan", "dict"])
+
+
+def test_hasil_sukses_has_the_documented_keys():
+    hasil = hasil_sukses("IKU.A", {"nilai": "RIPK = 3,46", "sumber": "LKPS Tabel 6.b"}, "MEMENUHI", INTI, None)
+    assert hasil == {
+        "kode": "IKU.A",
+        "capaian": {"nilai": "RIPK = 3,46", "sumber": "LKPS Tabel 6.b"},
+        "evaluasi": "MEMENUHI",
+        **INTI,
+    }
+    assert "tambahan" not in hasil and "error" not in hasil
+
+
+def test_hasil_sukses_includes_tambahan_only_when_given():
+    hasil = hasil_sukses("IKU.A", {"nilai": "8,93%", "sumber": "LKPS 6.c"}, "BELUM_MEMENUHI", INTI, TAMBAHAN)
+    assert hasil["tambahan"] == TAMBAHAN
+
+
+def test_hasil_gagal_has_only_kode_and_error():
+    assert hasil_gagal("IKU.A", "Capaian tidak ditemukan") == {"kode": "IKU.A", "error": "Capaian tidak ditemukan"}
