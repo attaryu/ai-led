@@ -198,6 +198,21 @@ def test_cari_capaian_stops_after_max_tool_steps_then_forces_a_final_answer():
     assert llm.dipanggil == MAX_TOOL_STEPS + 1  # MAX_TOOL_STEPS langkah + satu paksaan jawaban akhir
 
 
+def test_cari_capaian_gives_every_tool_a_share_of_the_evidence_not_just_the_first():
+    # Satu tabel LKPS besar tidak boleh menggusur hasil LED/bukti yang dipanggil sesudahnya.
+    llm = FakeLLM(
+        _panggil_tool(),
+        _panggil_tool("search_led_evidence", {"query": "masa studi"}, "c2"),
+        CAPAIAN_JSON,
+    )
+    alat = {"get_lkps_table": FakeTool("x" * 50_000), "search_led_evidence": FakeTool("PENANDA-DARI-LED")}
+    with patch.dict(pipeline.TOOLS_BY_NAME, alat):
+        _, bahan = cari_capaian(llm, IKU, ["6d"])
+
+    assert "PENANDA-DARI-LED" in bahan
+    assert len(bahan) <= pipeline.MAX_BAHAN_CHARS
+
+
 def test_cari_capaian_caps_collected_evidence_size():
     llm = FakeLLM(_panggil_tool(), CAPAIAN_JSON)
     with patch.dict(pipeline.TOOLS_BY_NAME, {"get_lkps_table": FakeTool(keluaran="x" * 50_000)}):
@@ -220,6 +235,24 @@ def test_tulis_evaluasi_retries_once_on_an_invalid_enum():
     llm = FakeLLM(buruk, JSON_OK)
     evaluasi, _, _ = tulis_evaluasi_narasi(llm, IKU, CAPAIAN, "")
     assert evaluasi == "MELAMPAUI" and llm.dipanggil == 2
+
+
+def test_tulis_evaluasi_retry_tells_the_model_what_was_wrong():
+    # Retry dengan prompt identik hampir pasti menghasilkan kesalahan yang sama; beri tahu alasannya.
+    dilihat = []
+
+    class Mata(FakeLLM):
+        def invoke(self, masukan):
+            dilihat.append(masukan)
+            return super().invoke(masukan)
+
+    buruk = json.dumps({"evaluasi": "Melampaui standar", **INTI})
+    tulis_evaluasi_narasi(Mata(buruk, JSON_OK), IKU, CAPAIAN, "")
+
+    assert len(dilihat) == 2
+    assert "ditolak" not in dilihat[0].lower()
+    assert dilihat[1].startswith(dilihat[0])  # prompt asli utuh
+    assert "ditolak" in dilihat[1].lower() and "Evaluasi di luar daftar" in dilihat[1]
 
 
 def test_tulis_evaluasi_gives_up_after_one_retry():

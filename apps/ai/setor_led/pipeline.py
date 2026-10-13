@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 MAX_TOOL_STEPS = 6          # panggilan tool maksimum per IKU sebelum model dipaksa menjawab
 MAX_BAHAN_CHARS = 6000      # batas bahan tool yang diteruskan ke tahap 2
+MAX_BAHAN_PER_TOOL = 2000   # jatah tiap hasil tool: satu tabel LKPS besar tidak boleh menggusur hasil LED/bukti
 CANCEL_POLL_SECONDS: float = 3  # cek flag batal tiap ini detik, walau belum ada IKU yang selesai
 
 TOOLS = [get_lkps_table, search_led_evidence, cari_bukti_dukung_prodi]
@@ -125,7 +126,7 @@ def cari_capaian(llm, iku: IkuInput, tabel_lkps: list[str]) -> tuple[dict | None
             return parse_capaian(jawaban.content, kode=iku.kode), _bahan()
         for call in panggilan:
             keluaran = _jalankan_tool(call)
-            bahan.append(f"[{call.get('name')}] {keluaran}")
+            bahan.append(f"[{call.get('name')}] {keluaran[:MAX_BAHAN_PER_TOOL]}")
             pesan.append(ToolMessage(content=keluaran, tool_call_id=call.get("id"), name=call.get("name")))
 
     # Batas langkah habis: paksa jawaban akhir. Bila model masih meminta tool, parse_capaian -> None.
@@ -135,7 +136,8 @@ def cari_capaian(llm, iku: IkuInput, tabel_lkps: list[str]) -> tuple[dict | None
 
 def tulis_evaluasi_narasi(llm, iku: IkuInput, capaian: dict, bahan: str, model: str | None = None):
     """Tahap 2. Satu percobaan + satu ulang bila JSON/enum tidak valid; lalu SetorLedError."""
-    prompt = no_think(bangun_prompt_evaluasi(iku, capaian, bahan), model)
+    prompt_awal = no_think(bangun_prompt_evaluasi(iku, capaian, bahan), model)
+    prompt = prompt_awal
     terakhir: SetorLedError | None = None
     for _ in range(2):
         jawaban = llm.invoke(prompt)
@@ -143,6 +145,11 @@ def tulis_evaluasi_narasi(llm, iku: IkuInput, capaian: dict, bahan: str, model: 
             return validasi_keluaran_llm(_extract_json(str(jawaban.content or "")))
         except SetorLedError as exc:
             terakhir = exc
+            # Retry dengan prompt identik hampir pasti mengulang kesalahan yang sama: sebutkan alasannya.
+            prompt = (
+                f"{prompt_awal}\n\nJawaban sebelumnya ditolak: {exc}. "
+                "Jawab ulang HANYA dengan satu objek JSON yang valid sesuai format di atas."
+            )
             logger.warning(
                 "Keluaran tahap 2 untuk %s tidak valid: %s | jawaban mentah (%d char): %.400r",
                 iku.kode, exc, len(str(jawaban.content or "")), str(jawaban.content or ""),
