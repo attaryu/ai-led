@@ -41,6 +41,12 @@ describe('TriggerSetorLedDto', () => {
     expect(await errorsFor({ ikuList: [iku], bogus: 1 })).not.toHaveLength(0);
   });
 
+  it('caps ikuList at 200 items (each IKU spawns an LLM task and lands in the job payload)', async () => {
+    const banyak = (n: number) => Array.from({ length: n }, (_, i) => ({ ...iku, kode: `IKU.${i}` }));
+    expect(await errorsFor({ ikuList: banyak(200) })).toHaveLength(0);
+    expect(await errorsFor({ ikuList: banyak(201) })).not.toHaveLength(0);
+  });
+
   it('rejects an invalid sumberLed', async () => {
     expect(await errorsFor({ ikuList: [iku], sumberLed: 'NGAWUR' })).not.toHaveLength(0);
   });

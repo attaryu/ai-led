@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { LedSourceMode } from '@ai-led/db';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsEnum,
@@ -37,10 +38,12 @@ export class IkuInputDto {
 export class TriggerSetorLedDto {
   @ApiProperty({
     type: [IkuInputDto],
-    description: 'Daftar IKU yang diisi tabel analisisnya (minimal 1; `kode` unik dalam satu permintaan)',
+    description: 'Daftar IKU yang diisi tabel analisisnya (1-200; `kode` unik dalam satu permintaan)',
   })
   @IsArray()
   @ArrayMinSize(1)
+  // Tiap IKU memulai satu task + dua model LLM dan ikut tersimpan di payload job; tabel C5.1/C6.1 hanya puluhan baris.
+  @ArrayMaxSize(200)
   @ValidateNested({ each: true })
   @Type(() => IkuInputDto)
   ikuList!: IkuInputDto[];
