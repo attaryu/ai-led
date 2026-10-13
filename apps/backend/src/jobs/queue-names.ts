@@ -26,4 +26,7 @@ export const QUEUE_NAME_BY_JOB_TYPE: Record<JobType, string> = {
   [JobType.INGESTION_LED]: INGESTION_QUEUE,
   // Penilaian RAGAS atas satu section: pekerjaan LLM, antrean yang sama dengan GENERASI_BAB.
   [JobType.PENILAIAN_RAGAS]: GENERATION_QUEUE,
+  // Setor ke LED: pencarian capaian + penulisan narasi per IKU, sifat kerjanya sama dengan
+  // ASSESSMENT_AMI (agent bertool atas LED/LKPS), jadi berbagi antrean yang sama.
+  [JobType.SETOR_LED]: ASSESSMENT_QUEUE,
 };

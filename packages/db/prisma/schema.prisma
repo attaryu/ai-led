@@ -120,6 +120,7 @@ enum JobType {
   INGESTION_LKPS
   INGESTION_LED
   PENILAIAN_RAGAS
+  SETOR_LED
 }
 
 enum JobStatus {

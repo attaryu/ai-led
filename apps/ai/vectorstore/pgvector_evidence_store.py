@@ -140,6 +140,33 @@ def list_available_evidence_ids(
         return [row["id"] for row in cur.fetchall()]
 
 
+def list_prodi_evidence_ids(tenant_id: str, study_program_id: str | None) -> dict[str, str]:
+    """{evidence_id: document_name} seluruh Bukti Dukung milik prodi ini ditambah yang berlaku
+    tenant-wide (study_program_id IS NULL). TANPA filter tag indikator -- beda dari
+    list_available_evidence_ids (AMI), karena IKU di tabel LED bukan indikator rubrik dan tidak punya tag.
+
+    study_program_id None -> hanya yang tenant-wide (bukan "semua prodi"): prodi lain tidak boleh
+    terlihat. kind=LKPS tidak ikut; LKPS dibaca lewat get_lkps_table.
+    """
+    if study_program_id:
+        lingkup = "AND (ef.study_program_id = %s OR ef.study_program_id IS NULL)"
+        params: tuple = (tenant_id, study_program_id)
+    else:
+        lingkup = "AND ef.study_program_id IS NULL"
+        params = (tenant_id,)
+    with _cursor(tenant_id) as cur:
+        cur.execute(
+            f"""
+            SELECT ef.id, ef.document_name
+            FROM evidence_files ef
+            WHERE ef.tenant_id = %s AND ef.kind = 'BUKTI_DUKUNG'
+            {lingkup}
+            """,
+            params,
+        )
+        return {row["id"]: row["document_name"] for row in cur.fetchall()}
+
+
 def search_evidence(
     query: str,
     tenant_id: str,

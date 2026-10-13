@@ -13,6 +13,7 @@ import { TenantContextService } from '../tenant/tenant-context.service';
 import { ConfirmLedUploadDto } from './dto/confirm-led-upload.dto';
 import { CreateDokumenLedDto } from './dto/create-dokumen-led.dto';
 import { TriggerAssessmentDto } from './dto/trigger-assessment.dto';
+import { TriggerSetorLedDto } from './dto/trigger-setor-led.dto';
 import { UpdateDokumenLedDto } from './dto/update-dokumen-led.dto';
 
 const LED_EXTENSIONS = ['.pdf', '.docx'];
@@ -277,6 +278,42 @@ export class DokumenLedService {
         ? { laporanBuktiDukungId: dto.laporanBuktiDukungId }
         : {}),
       ...(dto?.model ? { model: dto.model } : {}),
+    });
+  }
+
+  /**
+   * "Setor ke LED": job terpisah dari AMI yang mengisi tabel analisis IKU (kategori Evaluasi + narasi).
+   * Aturan LKPS sama dengan triggerAssessment (LKPS dokumen menang; kiriman klien hanya dipakai, dan jadi
+   * LKPS dokumen, bila dokumen belum punya) -- ditulis ulang di sini, bukan di-refactor, supaya jalur AMI
+   * tidak tersentuh.
+   */
+  async triggerSetorLed(id: string, dto: TriggerSetorLedDto) {
+    const dokumen = await this.findOne(id);
+    const { tenantId, userId } = this.tenantContext.getOrThrow();
+
+    const kode = dto.ikuList.map((iku) => iku.kode);
+    if (new Set(kode).size !== kode.length) {
+      throw new BadRequestException('Kode IKU harus unik dalam satu permintaan');
+    }
+
+    if (dto.lkpsBuktiDukungId && !dokumen.lkpsEvidenceId) {
+      await this.assertDocumentLkps(dokumen, dto.lkpsBuktiDukungId);
+      await this.prisma.ledDocument.update({
+        where: { id: dokumen.id },
+        data: { lkpsEvidenceId: dto.lkpsBuktiDukungId },
+      });
+    }
+    const lkpsBuktiDukungId = dokumen.lkpsEvidenceId ?? dto.lkpsBuktiDukungId;
+
+    return this.jobsService.enqueue(JobType.SETOR_LED, {
+      dokumenId: dokumen.id,
+      tenantId,
+      programStudiId: dokumen.studyProgramId,
+      createdByUserId: userId,
+      ikuList: dto.ikuList.map(({ kode, indikator, target }) => ({ kode, indikator, target })),
+      ...(dto.sumberLed ? { sumberLed: dto.sumberLed } : {}),
+      ...(lkpsBuktiDukungId ? { lkpsBuktiDukungId } : {}),
+      ...(dto.model ? { model: dto.model } : {}),
     });
   }
 
