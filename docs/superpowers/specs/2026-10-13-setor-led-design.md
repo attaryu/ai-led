@@ -92,7 +92,10 @@ selesai tetap dikembalikan.
 - `apps/backend/src/dokumen-led/`: DTO `trigger-setor-led.dto.ts`, `triggerSetorLed()` di
   service, route di controller.
 - `apps/ai/worker.py`: dispatch `SETOR_LED` ke `_handle_setor_led` (handler tipis).
-- `apps/ai/setor_led/` (baru): `schema.py`, `prompts.py`, `pipeline.py`.
+- `apps/ai/setor_led/` (baru): `schema.py`, `prompts.py`, `pipeline.py`, `tools.py`
+  (tool pencarian bukti dukung tingkat prodi, lihat §5).
+- `apps/ai/vectorstore/pgvector_evidence_store.py`: fungsi baru `list_prodi_evidence_ids`
+  (fungsi `list_available_evidence_ids` milik AMI tidak diubah).
 
 `QUEUE_NAMES` di `worker.py` dan `queue-names.ts` tidak berubah (memakai `assessment-queue`).
 
@@ -105,10 +108,18 @@ Tidak membuat `AssessmentSession` — setor LED tidak memakai tabel AMI.
 
 Per IKU (independen, tanpa state bersama):
 
-1. **Cari Capaian.** Loop tool kecil (maks. ±6 langkah) dengan tool asli
-   `get_lkps_table` dan `search_led_evidence`. Daftar nama tabel LKPS yang tersedia diberikan di
-   awal agar LLM tidak menebak. Keluaran `{nilai, sumber}` atau "tidak ditemukan". Tool membaca
+1. **Cari Capaian.** Loop tool kecil (maks. ±6 langkah) dengan tiga tool: `get_lkps_table` dan
+   `search_led_evidence` (dipakai ulang apa adanya) dan `cari_bukti_dukung_prodi` (baru, di
+   `setor_led/tools.py`). Daftar nama tabel LKPS yang tersedia diberikan di awal agar LLM tidak
+   menebak. Keluaran `{nilai, sumber}` atau "tidak ditemukan". Tool bawaan membaca
    `AssessmentContext` (tenant, dokumen); diisi dengan `indicator_no=0` — kode tool tidak diubah.
+   `cari_bukti_dukung_prodi(query)` mencari ke seluruh Bukti Dukung (`kind=BUKTI_DUKUNG`) milik
+   prodi dokumen ini plus yang berlaku tenant-wide (`study_program_id IS NULL`), **tanpa tag
+   indikator**: `list_prodi_evidence_ids(tenant, prodi)` (mengembalikan `{id: document_name}`)
+   lalu `search_evidence(...)` yang sudah ada. `search_evidence` hanya mengembalikan
+   `bukti_dukung_id`; tool memetakannya ke `document_name` dari hasil `list_prodi_evidence_ids`
+   supaya `sumber` bisa berbunyi mis. "Bukti dukung: <nama berkas>".
+   Bila prodi tidak punya bukti, tool mengembalikan list kosong (bukan error).
 2. **Evaluasi + narasi.** Satu panggilan LLM berformat JSON (pola `_handle_simulasi_skor`:
    `build_plain_llm`, `no_think`, `with_retry`, `_extract_json`). Masukan: indikator, target,
    capaian, potongan bukti dari tahap 1. Keluaran: `evaluasi` (enum) + narasi; plus bagian
@@ -120,8 +131,10 @@ Aturan:
   `error` pada IKU itu.
 - **Capaian tidak ditemukan → tidak ada narasi.** IKU dikembalikan dengan
   `error: "Capaian tidak ditemukan di LKPS/LED"`; penulis mengisi manual di editor.
-- `search_evidence_documents` **tidak dipakai di v1** (hanya mencari bukti yang di-tag ke
-  indikator rubrik; IKU bukan indikator rubrik).
+- `search_evidence_documents` (milik AMI) **tidak dipakai**: ia hanya mencari bukti yang di-tag ke
+  indikator rubrik (`evidence_indicator_tags`), sedangkan IKU bukan indikator rubrik. Gantinya
+  `cari_bukti_dukung_prodi` di atas. Konsekuensi: pencarian melintasi seluruh bukti prodi sehingga
+  hasil bisa bercampur dokumen tak relevan; kualitas bergantung pada query yang disusun LLM.
 - **Hanya model chat dengan tool calling asli.** Model reasoning (`is_reasoning_model()`)
   ditolak dengan pesan jelas; protokol JSON-tool `reasoning_graph.py` tidak diduplikasi.
 - Validasi `model` terhadap `get_available_models()` seperti AMI.
@@ -143,6 +156,9 @@ Tes otomatis tanpa LLM asli (LLM tiruan, seperti `tests/test_handle_assessment_a
 - Skema: enum evaluasi valid; `tambahan` hanya ada bila `BELUM_MEMENUHI`.
 - Pipeline: capaian ketemu → narasi lengkap; capaian tidak ketemu → `error` tanpa narasi; enum
   salah → retry sekali lalu error; satu IKU gagal tidak menjatuhkan IKU lain; batal; progress.
+- Tool bukti dukung: mengembalikan hasil dari bukti milik prodi dan tenant-wide saja (bukti prodi
+  lain tidak ikut); prodi tanpa bukti → list kosong, bukan error. Tes `list_prodi_evidence_ids`
+  yang butuh Postgres/pgvector di-skip tanpa `DATABASE_URL`, seperti `test_postgres_client.py`.
 - Handler (`test_handle_setor_led.py`): tiap prasyarat gagal (LED, LKPS, list kosong, model
   reasoning) dan bentuk hasil akhir.
 
@@ -150,8 +166,8 @@ Backend (jest, `dokumen-led.service.spec.ts` + DTO):
 - `triggerSetorLed` mengantre `SETOR_LED` dengan payload benar; LKPS dokumen menang atas kiriman
   klien; validasi DTO (list kosong, kode duplikat); peta antrean mencakup `SETOR_LED`.
 
-**Uji manual (bukan otomatis):** jalankan dengan LKPS di `docs/reference/` untuk IKU.REL.MHS.3 dan
-IKU.REL.SPR.2 dari LED PENS, bandingkan Capaian dan Evaluasi dengan yang tertulis di PDF. Satu-satunya
+**Uji manual (bukan otomatis):** jalankan dengan LKPS di `docs/reference/` untuk IKU.REL.MHS.3,
+IKU.REL.SPR.2, dan IKU.REL.SPR.5 (kasus tanpa LKPS) dari LED PENS, bandingkan Capaian dan Evaluasi dengan yang tertulis di PDF. Satu-satunya
 cek kualitas LLM yang nyata.
 
 ## 8. Kenapa AMI tidak diubah
@@ -168,12 +184,16 @@ menyentuh area itu.
 ## 9. Di luar cakupan
 
 UI dan flow; memasukkan hasil ke bab/canvas editor LED; skor angka dan skalanya; tabel DB baru;
-tool bukti dukung dan model reasoning; segala perubahan pada AMI.
+tag bukti dukung per IKU dan pemilihan bukti per IKU di request; model reasoning; segala
+perubahan pada AMI.
 
 ## 10. Catatan terbuka
 
 - Prompt memakai deskripsi gaya per bagian, **bukan** contoh dari LED PENS (dokumen bertanda
   "Hanya untuk Internal PENS"), agar konten itu tidak masuk ke kode yang di-commit.
-- Kualitas pencarian Capaian untuk IKU berbentuk non-LKPS (mis. dokumen K3L, SK) bergantung pada
-  isi LED setengah jadi; IKU seperti itu mungkin sering berakhir `error` capaian tidak ditemukan.
-  Dinilai dari uji manual, bukan diasumsikan.
+- Capaian IKU non-LKPS (mis. K3L, SK) kini bisa ditemukan lewat `cari_bukti_dukung_prodi`, tapi
+  hanya bila bukti terkait sudah diunggah dan terindeks di prodi. Kualitas pencarian lintas seluruh
+  bukti prodi belum teruji; IKU.REL.SPR.5 (K3L, capaian "100%" tanpa tautan LKPS di LED contoh)
+  dipakai sebagai kasus uji manual utama. Kalau banyak IKU tetap berakhir `error` capaian tidak
+  ditemukan, opsi lanjutan: lunakkan aturan §5 (narasi tetap ditulis dengan capaian `null`) atau
+  pilihan bukti per IKU di request.
