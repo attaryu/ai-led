@@ -88,10 +88,11 @@ export class JobsService implements OnModuleDestroy {
    * separate Python process for every job type here — is mid-loop; NestJS
    * can't reach into it directly, so it sets a Redis flag under the SAME
    * `bullJobId` the worker already has in scope, and the worker (currently
-   * only `_handle_assessment_ami`'s `_run_assessment_pipeline` loop — the
-   * only job type long enough for cancellation to matter) polls it between
-   * indicators and stops dispatching new ones once it sees it. Cancelling an
-   * already-completed/failed job is a harmless no-op either way.
+   * `_handle_assessment_ami`'s `_run_assessment_pipeline` loop and
+   * `_handle_setor_led`'s `jalankan_setor_led` loop — the job types long
+   * enough for cancellation to matter) polls it and stops dispatching new
+   * work once it sees it. Cancelling an already-completed/failed job is a
+   * harmless no-op either way.
    */
   async cancel(jobId: string) {
     const { tenantId } = this.tenantContext.getOrThrow();
@@ -102,14 +103,18 @@ export class JobsService implements OnModuleDestroy {
     // "Gagal membatalkan penilaian" tanpa jejak error di log mana pun.
     // `bullJobId` hanya unik PER ANTREAN (generation/ingestion/assessment punya
     // counter sendiri, jadi "12" bisa ada di tiga-tiganya). Pencocokan
-    // bullJobId karenanya dibatasi ke antrean yang jobnya memang bisa
-    // dibatalkan -- satu-satunya yang membaca flag ini adalah ASSESSMENT_AMI
-    // (worker.py `job:cancel:{id}`). Tanpa batasan itu, membatalkan penilaian
-    // bisa mengenai job ingestion yang kebetulan bernomor sama.
+    // bullJobId karenanya dibatasi ke jenis job yang memang bisa dibatalkan --
+    // yang membaca flag ini hanya ASSESSMENT_AMI dan SETOR_LED (worker.py
+    // `job:cancel:{id}`), dan keduanya berbagi assessment-queue sehingga
+    // nomornya tidak bentrok satu sama lain. Tanpa batasan itu, membatalkan
+    // penilaian bisa mengenai job ingestion yang kebetulan bernomor sama.
     const job = await this.prisma.job.findFirst({
       where: {
         tenantId,
-        OR: [{ id: jobId }, { bullJobId: jobId, type: JobType.ASSESSMENT_AMI }],
+        OR: [
+          { id: jobId },
+          { bullJobId: jobId, type: { in: [JobType.ASSESSMENT_AMI, JobType.SETOR_LED] } },
+        ],
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -126,4 +131,47 @@ export class JobsService implements OnModuleDestroy {
 
     await this.redis.set(cancelFlagKey(job.bullJobId), '1', 'EX', CANCEL_FLAG_TTL_SECONDS);
   }
+
+  /**
+   * Status + hasil satu job, tenant-scoped. Baris Postgres `Job` hanya ditulis saat enqueue dan tidak
+   * pernah diperbarui, jadi status/hasil SEBENARNYA dibaca dari BullMQ (hasil = return value worker,
+   * disimpan BullMQ sesuai `removeOnComplete` di jobs.module.ts, saat ini 1000 job terakhir per antrean).
+   * Tanpa ini, hasil sebuah job hanya terkirim sekali lewat SSE `completed`: tab yang ditutup/dimuat ulang
+   * sebelum event itu tiba kehilangan hasilnya. Bila BullMQ sudah membuang job-nya, jatuh ke baris Postgres.
+   */
+  async getJob(jobId: string) {
+    const { tenantId } = this.tenantContext.getOrThrow();
+    const job = await this.prisma.job.findFirst({ where: { id: jobId, tenantId } });
+    if (!job) throw new NotFoundException('Job not found');
+
+    const bullJob = await this.queueFor(job.type).getJob(job.bullJobId);
+    const state = bullJob ? await bullJob.getState() : 'unknown';
+    if (!bullJob || state === 'unknown') {
+      return {
+        id: job.id,
+        type: job.type,
+        status: job.status,
+        progress: job.progress as unknown,
+        result: (job.result as unknown) ?? null,
+        error: job.error ?? null,
+      };
+    }
+
+    return {
+      id: job.id,
+      type: job.type,
+      status: viewStatusFromBullState(state),
+      progress: bullJob.progress as unknown,
+      result: (bullJob.returnvalue as unknown) ?? null,
+      error: bullJob.failedReason ?? null,
+    };
+  }
+}
+
+/** Status ala tabel `Job` (WAITING/ACTIVE/COMPLETED/FAILED) dari state BullMQ. */
+function viewStatusFromBullState(state: string): 'WAITING' | 'ACTIVE' | 'COMPLETED' | 'FAILED' {
+  if (state === 'completed') return 'COMPLETED';
+  if (state === 'failed') return 'FAILED';
+  if (state === 'active') return 'ACTIVE';
+  return 'WAITING'; // waiting, delayed, prioritized, waiting-children
 }
