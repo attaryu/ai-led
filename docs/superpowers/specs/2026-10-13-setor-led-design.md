@@ -163,8 +163,12 @@ Aturan:
   `agent/reasoning_graph.py` (parser `_extract_json`, pengingat bila bukan JSON, normalisasi nama argumen `table_id`
   / `q`), tetapi kodenya terpisah di `setor_led/`; file AMI tidak diubah. Loop dibatasi `MAX_TOOL_STEPS` tool + satu
   jawaban paksa + `MAX_JSON_RETRY` pengingat. Tahap 1 reasoning tetap berpikir (`disable_reasoning=False`) dengan
-  anggaran `REASONING_NUM_PREDICT=8192`; tahap 2 tetap tanpa reasoning. Belum diuji dengan model reasoning sungguhan
-  (deepseek-r1/qwq). Jalur JSON dicoba live dengan deepseek-v4-flash (OpenRouter) yang dipaksa lewat
+  anggaran `REASONING_NUM_PREDICT=8192`; tahap 2 model reasoning juga tidak dimatikan reasoning-nya (OpenRouter
+  menjawab 400 "Reasoning is mandatory for this endpoint" untuk `deepseek/deepseek-r1` bila dimatikan; model chat tetap
+  dimatikan di tahap JSON). Uji penuh dengan `deepseek/deepseek-r1` asli via OpenRouter, lewat backend → antrean →
+  worker (4 IKU): MHS.3 sukses (RIPK 3,46, MELAMPAUI, narasi lengkap), tiga IKU lain "capaian tidak ditemukan"
+  (model menjawab `ditemukan=false`; konsisten dengan sifat non-deterministik uji sebelumnya). Perilaku `<think>`
+  inline di Ollama (deepseek-r1/qwq lokal) belum dicoba. Sebelum itu jalur JSON dicoba live dengan deepseek-v4-flash (OpenRouter) yang dipaksa lewat
   `LLM_REASONING_MODE=true`: IKU.REL.MHS.3 menemukan RIPK 3,46 dari `get_lkps_table`; IKU.REL.MHS.8 ditemukan lewat
   empat panggilan tool (capaian kualitatif "rentang 3,5 < MS ≤ 4,5", bersumber LED bab C.6); IKU.REL.SPR.5 tetap
   "capaian tidak ditemukan" setelah lima panggilan tool, tanpa tebakan. Catatan: `is_reasoning_model("")` selalu
