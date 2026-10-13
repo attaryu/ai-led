@@ -55,9 +55,18 @@ POST /dokumen/:id/setor-led
 → 201  baris Job { id, type: "SETOR_LED", status: "WAITING", ... }
 ```
 
-Validasi DTO: `ikuList` minimal 1 item; `kode`, `indikator`, `target` wajib tidak kosong;
-`kode` unik dalam satu request. Progress lewat SSE yang ada (`JobEventsService`); hasil lewat
-`GET` job yang ada; batal lewat flag Redis `job:cancel:{bullJobId}` yang ada.
+Validasi DTO: `ikuList` 1-200 item; `kode`, `indikator`, `target` wajib tidak kosong (spasi saja ditolak);
+`kode` unik dalam satu request. Progress lewat SSE yang ada (`JobEventsService`); batal lewat flag Redis
+`job:cancel:{bullJobId}` yang ada (`POST /jobs/:id/cancel` menerima `Job.id` maupun `bullJobId`, kini juga untuk
+`SETOR_LED`).
+
+**Hasil: `GET /jobs/:id`** (baru, tenant-scoped; `id` = `Job.id` dari respons enqueue) mengembalikan
+`{ id, type, status, progress, result, error }`. Premis awal spec ("hasil lewat GET job yang ada") ternyata salah:
+baris Postgres `Job` hanya ditulis saat enqueue dan tidak pernah diperbarui, dan satu-satunya jalur hasil adalah
+event SSE `completed` sekali jalan, sehingga tab yang ditutup/dimuat ulang kehilangan hasil. `GET` membaca status
+dan return value dari BullMQ (disimpan sesuai `removeOnComplete`, kini 1000 job terakhir per antrean) dan jatuh ke
+baris Postgres bila BullMQ sudah membuang job-nya. Konsekuensi: hasil sebuah job bisa diambil selama BullMQ masih
+menyimpannya; setelah itu hilang (tidak ada tabel hasil, sesuai §2).
 
 Aturan LKPS sama dengan `triggerAssessment`: LKPS milik dokumen menang atas kiriman klien;
 kiriman klien hanya dipakai (dan menjadi LKPS dokumen) bila dokumen belum punya.
