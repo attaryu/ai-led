@@ -173,8 +173,8 @@ cek kualitas LLM yang nyata.
 ## 8. Kenapa AMI tidak diubah
 
 Justifikasi AMI adalah bukti audit skor rubrik, dan dikonsumsi oleh: parser `graph.py:868-924` dan
-`reasoning_graph.py`, penyimpanan `postgres_client.py:222-274`, **judge independen**
-(`graph.py:944`, menurunkan confidence bila tidak didukung bukti), **RAGAS**
+`reasoning_graph.py`, penyimpanan `postgres_client.py:217-274`, **judge independen**
+(`graph.py:945`, menurunkan confidence bila tidak didukung bukti), **RAGAS**
 (`eval/ragas_eval.py:398-470`), UI `assessment-detail-sheet.tsx`, PDF `assessment-pdf.ts`,
 skema zod FE `indicator-result.entity.ts`, dan benchmark `scripts/run_benchmark.py`. Narasi setor LED
 bersifat prospektif (usulan target, strategi, sarpras) sehingga tidak bisa diverifikasi ke bukti
