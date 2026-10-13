@@ -166,8 +166,11 @@ POST /jobs/:id/cancel      →  202 { "status": "cancel_requested" }
 ```
 
 `:id` boleh `Job.id` maupun `bullJobId`. Pembatalan bersifat kooperatif: worker memeriksa tiap beberapa detik dan job
-berakhir dengan `result.status: "cancelled"`. IKU yang sudah selesai tetap ada di `hasil`. Panggilan LLM yang sedang
-berjalan pada saat itu tidak ikut dihentikan seketika.
+berakhir dengan `result.status: "cancelled"`. IKU yang sudah selesai tetap ada di `hasil` (termasuk yang selesai tepat
+saat pembatalan diperiksa). Thread yang sedang memanggil LLM juga dihentikan lewat sinyal batal: ia berhenti sebelum
+langkah berikutnya (panggilan LLM atau tool), jadi tidak ada lagi biaya LLM baru setelah job berstatus `cancelled`.
+Satu panggilan LLM yang **sudah terkirim** pada saat batal tetap diselesaikan (klien HTTP sinkron tidak bisa diputus),
+sehingga pembatalan bisa memakan waktu sampai selesainya panggilan itu.
 
 ## 6. Hal yang perlu diketahui tentang kualitas
 
