@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { buktiDukungRefSchema } from './bukti-dukung-ref.entity';
 import { chapterScoreSchema } from './chapter-score.entity';
 import { ragasScoreSchema } from './ragas-score.entity';
+import { sectionOverviewSchema } from './section-overview.entity';
 
 /**
  * Satu bab dalam Dokumen LED (docs/database.md → BAB_DOKUMEN).
@@ -92,6 +93,11 @@ export const chapterSchema = z.object({
 	 * `.default([])` supaya baris lama tanpa kolom ini tetap lolos `findAll`.
 	 */
 	hasilSkorKriteriaAktif: z.array(chapterScoreSchema).default([]),
+	/**
+	 * Ringkasan sub-bab untuk tabel Progres per Bab. Hanya terisi dari daftar bab
+	 * satu dokumen; `[]` untuk bab tanpa sub-bab maupun backend lama.
+	 */
+	sections: z.array(sectionOverviewSchema).default([]),
 });
 
 export type ChapterEntity = z.infer<typeof chapterSchema>;
@@ -194,10 +200,6 @@ export type ChapterSummary = {
 	persenKesiapanReview: number;
 	/** Jumlah bukti dukung **unik** yang dirujuk seluruh bab. */
 	buktiDukungTerpakai: number;
-	/** ISO simpan terakhir lintas bab; `null` bila belum ada satu pun. */
-	terakhirDisimpan: string | null;
-	/** Judul bab pemilik `terakhirDisimpan`. */
-	babTerakhirDisentuh: string | null;
 };
 
 /**
@@ -210,8 +212,6 @@ export function summarizeChapters(chapters: ChapterEntity[]): ChapterSummary {
 	let terisi = 0;
 	let terkunci = 0;
 	let menungguReview = 0;
-	let terakhirDisimpan: string | null = null;
-	let babTerakhirDisentuh: string | null = null;
 	const perStatus: Record<ChapterProgress, number> = {
 		BELUM_DIISI: 0,
 		SEDANG_DISUSUN: 0,
@@ -227,15 +227,6 @@ export function summarizeChapters(chapters: ChapterEntity[]): ChapterSummary {
 		if (!chapter.terkunci && chapter.diajukanReviewPada) menungguReview += 1;
 		perStatus[deriveChapterProgress(chapter)] += 1;
 		for (const ref of chapter.buktiDukung) buktiDukungUnik.add(ref.id);
-
-		if (
-			chapter.terakhirDisimpan !== null &&
-			(terakhirDisimpan === null ||
-				chapter.terakhirDisimpan > terakhirDisimpan)
-		) {
-			terakhirDisimpan = chapter.terakhirDisimpan;
-			babTerakhirDisentuh = chapter.judulBab;
-		}
 	}
 
 	const total = chapters.length;
@@ -250,8 +241,6 @@ export function summarizeChapters(chapters: ChapterEntity[]): ChapterSummary {
 		persenKelengkapan: total === 0 ? 0 : Math.round((terisi / total) * 100),
 		persenKesiapanReview: total === 0 ? 0 : Math.round((terkunci / total) * 100),
 		buktiDukungTerpakai: buktiDukungUnik.size,
-		terakhirDisimpan,
-		babTerakhirDisentuh,
 	};
 }
 

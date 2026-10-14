@@ -8,6 +8,7 @@ import {
 	mapChapterSection,
 	mapDocumentRecommendation,
 	mapHasilSkor,
+	mapSectionOverview,
 	mapKontenBody,
 	mapRagas,
 	mapSectionSumber,
@@ -48,6 +49,7 @@ function toEntityFromBackend(row: BackendBabDokumen): ChapterEntity {
 		buktiDukung: mapBuktiDukungRef(row.buktiDukungBab),
 		ragas: mapRagas(row.ragasScores?.[0]),
 		hasilSkorKriteriaAktif: mapHasilSkor(row.hasilSkorKriteria),
+		sections: mapSectionOverview(row.sections),
 	};
 }
 

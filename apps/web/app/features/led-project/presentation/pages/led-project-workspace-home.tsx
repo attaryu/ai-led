@@ -1,6 +1,5 @@
 import {
 	ArrowRightIcon,
-	ClockCounterClockwiseIcon,
 	LockSimpleIcon,
 	NotebookIcon,
 	PaperclipIcon,
@@ -9,7 +8,6 @@ import { Link, useOutletContext } from 'react-router';
 
 import { buttonVariants } from '~/core/components/ui/button';
 import { StatCard } from '~/core/components/ui/stat-card';
-import { formatRelativeTime } from '~/core/lib/format-time';
 import { cn } from '~/core/lib/utils';
 import { ProjectAccreditationSetCard } from '~/features/accreditation-set/presentation/components/project-accreditation-set-card';
 import { useDocumentAmiOverview } from '~/features/assessment/presentation/hooks/use-document-ami-overview';
@@ -26,8 +24,8 @@ import { type LedProjectEntity } from '../../domain/entities/led-project.entity'
  * kartu Acuan Penilaian dengan dua kartu AMI (skor dan progres), lalu tabel
  * Progres per Bab selebar penuh. Kartu AMI hanya muncul bagi role yang boleh
  * membaca ringkasannya. Satu-satunya aksi ubah data di sini adalah memilih/
- * mengganti acuan penilaian, dan penjagaannya ada di kartunya. Judul bab di
- * tabel menautkan ke Editor Bab (§7), yang berdiri sebagai root URL sendiri di
+ * mengganti acuan penilaian, dan penjagaannya ada di kartunya. Tombol Buka di
+ * tabel (bab maupun sub-bab) menuju Editor Bab (§7), yang berdiri sebagai root URL sendiri di
  * `/editor/:projectId/:chapterId`.
  *
  * `ledProject` diambil dari layout (`LedProjectWorkspaceLayout`) lewat outlet
@@ -73,7 +71,7 @@ function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
 				</p>
 			</div>
 
-			<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+			<div className="grid gap-4 sm:grid-cols-3">
 				<StatCard
 					label="Kelengkapan Bab"
 					icon={NotebookIcon}
@@ -86,8 +84,8 @@ function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
 					icon={LockSimpleIcon}
 					value={`${summary.terkunci}/${summary.total}`}
 					progress={summary.persenKesiapanReview}
-					// Antrean menumpang hint kartu ini alih-alih jadi kartu kelima:
-					// grid-nya sudah penuh, dan pertanyaannya ("ada yang menunggu
+					// Antrean menumpang hint kartu ini alih-alih jadi kartu sendiri:
+					// pertanyaannya ("ada yang menunggu
 					// saya?") memang lanjutan langsung dari angka di atasnya.
 					hint={
 						summary.menungguReview > 0
@@ -100,18 +98,6 @@ function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
 					icon={PaperclipIcon}
 					value={String(summary.buktiDukungTerpakai)}
 					hint={`Dari ${buktiDukungTersedia} berkas tersedia untuk program studi ini`}
-				/>
-				<StatCard
-					label="Aktivitas Terakhir"
-					icon={ClockCounterClockwiseIcon}
-					value={
-						summary.terakhirDisimpan
-							? formatRelativeTime(summary.terakhirDisimpan)
-							: '—'
-					}
-					hint={
-						summary.babTerakhirDisentuh ?? 'Belum ada bab yang pernah disimpan'
-					}
 				/>
 			</div>
 

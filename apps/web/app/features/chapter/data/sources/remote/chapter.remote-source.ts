@@ -71,6 +71,24 @@ export type BackendBabDokumen = {
 	ragasScores?: BackendRagasScore[];
 	/** Sudah disaring `targetTipe = 'BAB_AKTIF'` oleh backend. */
 	hasilSkorKriteria?: BackendHasilSkorKriteria[];
+	/** Hanya pada `GET /dokumen/:id/bab`; backend lama tidak mengirimnya. */
+	sections?: BackendSectionOverview[];
+};
+
+/** Ringkasan sub-bab pada daftar bab satu dokumen (tanpa konten/panduan). */
+export type BackendSectionOverview = {
+	id: string;
+	parentId: string | null;
+	order: number;
+	title: string;
+	marker: string | null;
+	status: 'PENDING' | 'GENERATING' | 'GENERATED' | 'ERROR';
+	error: string | null;
+	locked: boolean;
+	reviewSubmittedAt: string | null;
+	qualityAssuranceNote: string | null;
+	notedByName: string | null;
+	notedAt: string | null;
 };
 
 /** Baris Prisma `SectionDraft` — checkpoint per-section, dikembalikan `GET bab/:id/sections/:sectionId/drafts`. Lebih tipis dari `BackendBabDraft`: tidak ada arsip bukti dukung/ragas per checkpoint. */

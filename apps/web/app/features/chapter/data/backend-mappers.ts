@@ -3,6 +3,7 @@ import { docToHtml, htmlToDoc, isProseDoc } from './prose-content';
 import { type BuktiDukungRef } from '../domain/entities/bukti-dukung-ref.entity';
 import { type ChapterScoreEntity } from '../domain/entities/chapter-score.entity';
 import { type ChapterSectionEntity } from '../domain/entities/chapter-section.entity';
+import { type SectionOverviewEntity } from '../domain/entities/section-overview.entity';
 import { type SectionSumber } from '../domain/entities/chunk-sumber.entity';
 import { type DocumentRecommendationEntity } from '../domain/entities/document-recommendation.entity';
 import { ragasMetrikEnum, type RagasMetrik, type RagasScore } from '../domain/entities/ragas-score.entity';
@@ -10,6 +11,7 @@ import {
 	type BackendBuktiDukungBab,
 	type BackendBuktiDukungDraft,
 	type BackendChapterSection,
+	type BackendSectionOverview,
 	type BackendDocumentRecommendation,
 	type BackendHasilSkorKriteria,
 	type BackendRagasScore,
@@ -192,4 +194,24 @@ export function mapChapterSection(row: BackendChapterSection): ChapterSectionEnt
 		catatanPada: row.notedAt,
 		diajukanReviewPada: row.reviewSubmittedAt,
 	};
+}
+
+/** Tahan backend lama yang belum mengirim `sections`: dianggap tanpa sub-bab. */
+export function mapSectionOverview(
+	rows: BackendSectionOverview[] | undefined,
+): SectionOverviewEntity[] {
+	return (rows ?? []).map((row) => ({
+		id: row.id,
+		parentId: row.parentId,
+		urutan: row.order,
+		judul: row.title,
+		marker: row.marker,
+		status: row.status,
+		error: row.error,
+		terkunci: row.locked,
+		diajukanReviewPada: row.reviewSubmittedAt,
+		catatanPenjaminMutu: row.qualityAssuranceNote,
+		catatanOlehNama: row.notedByName,
+		catatanPada: row.notedAt,
+	}));
 }
