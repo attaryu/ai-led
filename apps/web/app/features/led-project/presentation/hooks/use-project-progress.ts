@@ -2,9 +2,7 @@ import * as React from 'react';
 
 import { chapterRepository } from '~/features/chapter/data/repositories/chapter.repository';
 import {
-	pickChaptersNeedingAttention,
 	summarizeChapters,
-	type ChapterAttention,
 	type ChapterEntity,
 	type ChapterSummary,
 } from '~/features/chapter/domain/entities/chapter.entity';
@@ -13,7 +11,6 @@ import { evidenceRepository } from '~/features/evidence/data/repositories/eviden
 export type ProjectProgress = {
 	chapters: ChapterEntity[];
 	summary: ChapterSummary;
-	attention: ChapterAttention[];
 	/** Bukti dukung yang tersedia untuk prodi pemilik dokumen (tenant + prodi). */
 	buktiDukungTersedia: number;
 };
@@ -21,7 +18,6 @@ export type ProjectProgress = {
 const EMPTY_PROGRESS: ProjectProgress = {
 	chapters: [],
 	summary: summarizeChapters([]),
-	attention: [],
 	buktiDukungTersedia: 0,
 };
 
@@ -34,7 +30,6 @@ async function read(
 	return {
 		chapters,
 		summary: summarizeChapters(chapters),
-		attention: pickChaptersNeedingAttention(chapters),
 		buktiDukungTersedia: (
 			await evidenceRepository.findAvailableForStudyProgram(studyProgramId)
 		).length,

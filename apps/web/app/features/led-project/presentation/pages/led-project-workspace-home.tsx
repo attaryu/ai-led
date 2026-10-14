@@ -1,27 +1,34 @@
 import {
+	ArrowRightIcon,
 	ClockCounterClockwiseIcon,
 	LockSimpleIcon,
 	NotebookIcon,
 	PaperclipIcon,
 } from '@phosphor-icons/react';
-import { useOutletContext } from 'react-router';
+import { Link, useOutletContext } from 'react-router';
 
+import { buttonVariants } from '~/core/components/ui/button';
 import { StatCard } from '~/core/components/ui/stat-card';
 import { formatRelativeTime } from '~/core/lib/format-time';
-import { ProjectAccreditationSetBadge } from '~/features/accreditation-set/presentation/components/project-accreditation-set-badge';
+import { cn } from '~/core/lib/utils';
 import { ProjectAccreditationSetCard } from '~/features/accreditation-set/presentation/components/project-accreditation-set-card';
+import { useDocumentAmiOverview } from '~/features/assessment/presentation/hooks/use-document-ami-overview';
 import { ChapterProgressTable } from '../components/chapter-progress-table';
-import { ProjectAttentionPanel } from '../components/project-attention-panel';
+import { LedProjectStatusBadge } from '../components/led-project-status-badge';
+import { ProjectAmiCards } from '../components/project-ami-cards';
 import { useProjectProgress } from '../hooks/use-project-progress';
 import { type LedProjectEntity } from '../../domain/entities/led-project.entity';
 
 /**
  * Dashboard Dokumen — lapis Dokumen LED (docs/application_flow.md §6.1).
  *
- * Halaman ini murni baca: tidak ada aksi ubah data di sini, jadi tidak ada yang
- * perlu disembunyikan per role (§1) — penjagaannya sudah selesai di layout
- * lapis ini. Judul bab di tabel menautkan ke Editor Bab (§7), yang berdiri
- * sebagai root URL sendiri di `/editor/:projectId/:chapterId`.
+ * Urutannya: judul dokumen beserta status dan tautan Bukti Dukung, statistik,
+ * kartu Acuan Penilaian dengan dua kartu AMI (skor dan progres), lalu tabel
+ * Progres per Bab selebar penuh. Kartu AMI hanya muncul bagi role yang boleh
+ * membaca ringkasannya. Satu-satunya aksi ubah data di sini adalah memilih/
+ * mengganti acuan penilaian, dan penjagaannya ada di kartunya. Judul bab di
+ * tabel menautkan ke Editor Bab (§7), yang berdiri sebagai root URL sendiri di
+ * `/editor/:projectId/:chapterId`.
  *
  * `ledProject` diambil dari layout (`LedProjectWorkspaceLayout`) lewat outlet
  * context, bukan lookup terpisah — layout itu juga yang sudah menampilkan
@@ -37,24 +44,32 @@ export function LedProjectWorkspaceHome() {
  * menyentuh penyimpanan) untuk dokumen yang belum tentu ada.
  */
 function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
-	const { chapters, summary, attention, buktiDukungTersedia } =
+	const ami = useDocumentAmiOverview(ledProject.id);
+	const { chapters, summary, buktiDukungTersedia } =
 		useProjectProgress(ledProject.id, ledProject.studyProgramId);
 
 	return (
 		<div className="flex flex-col gap-8">
 			<div>
-				{/* Acuan penilaian menentukan arti seluruh angka di halaman ini, jadi
-				    ia harus terbaca tanpa menggulung — tapi cukup sebagai lencana
-				    sebaris judul. Rincian dan tempat menggantinya ada di kartu pada
-				    kolom kanan, karena keduanya jarang dibutuhkan. */}
-				<div className="flex flex-wrap items-center gap-3">
-					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						Dashboard Dokumen
+				<div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+					<h2 className="min-w-0 truncate font-heading text-2xl font-bold tracking-tight">
+						{ledProject.judul}
 					</h2>
-					<ProjectAccreditationSetBadge project={ledProject} />
+					<LedProjectStatusBadge status={ledProject.statusKeseluruhan} />
+					<Link
+						to={`/study-programs/${ledProject.studyProgramId}/evidence`}
+						className={cn(
+							buttonVariants({ variant: 'outline', size: 'sm' }),
+							'ml-auto',
+						)}
+					>
+						Bukti Dukung
+						<ArrowRightIcon className="size-4" />
+					</Link>
 				</div>
 				<p className="text-sm text-muted-foreground">
-					Sejauh mana dokumen ini sudah tersusun, bab demi bab.
+					Tahun Akademik {ledProject.tahunAkademik} · Sejauh mana dokumen ini
+					sudah tersusun, bab demi bab.
 				</p>
 			</div>
 
@@ -101,27 +116,30 @@ function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
 			</div>
 
 			{/*
-			 * `minmax(0,1fr)` juga di lebar dasar, bukan hanya di `xl`. Tanpa itu
-			 * track satu kolomnya memakai `auto`, yang berarti "selebar min-content
-			 * anak terlebar" — dan track boleh melampaui wadahnya. Di 360 px itu
-			 * membuat seluruh baris ini meluber 31 px walau tiap anaknya sudah
-			 * `min-w-0`: yang meluber tracknya, bukan anaknya.
+			 * Tiga kolom dipesan sejak kartu AMI masih dimuat, supaya kartu Acuan
+			 * tidak melompat saat datanya tiba. Role tanpa hak baca ringkasan AMI
+			 * (atau ringkasan yang gagal) hanya punya kartu Acuan, yang lalu
+			 * mengisi baris penuh.
 			 */}
-			<div className="grid items-start gap-4 grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_20rem]">
-				{/*
-				 * Tabelnya diberi judul sendiri karena judul halaman sudah bicara di
-				 * level dokumen — tanpa ini ia jadi satu-satunya bagian tanpa label
-				 * di antara kartu-kartu di sampingnya.
-				 */}
-				<section className="flex min-w-0 flex-col gap-2">
-					<h3 className="font-heading text-base font-medium">Progres per Bab</h3>
-					<ChapterProgressTable projectId={ledProject.id} chapters={chapters} />
-				</section>
-				<div className="flex min-w-0 flex-col gap-4">
-					<ProjectAttentionPanel project={ledProject} attention={attention} />
-					<ProjectAccreditationSetCard project={ledProject} />
-				</div>
+			<div
+				className={cn(
+					'grid grid-cols-1 gap-4',
+					ami.status !== 'tersembunyi' && 'md:grid-cols-3',
+				)}
+			>
+				<ProjectAccreditationSetCard project={ledProject} />
+				<ProjectAmiCards projectId={ledProject.id} ami={ami} />
 			</div>
+
+			{/*
+			 * Tabelnya diberi judul sendiri karena judul halaman sudah bicara di
+			 * level dokumen. `min-w-0` supaya tabel lebar menggulung di kotaknya
+			 * sendiri, bukan mendorong halaman.
+			 */}
+			<section className="flex min-w-0 flex-col gap-2">
+				<h3 className="font-heading text-base font-medium">Progres per Bab</h3>
+				<ChapterProgressTable projectId={ledProject.id} chapters={chapters} />
+			</section>
 		</div>
 	);
 }

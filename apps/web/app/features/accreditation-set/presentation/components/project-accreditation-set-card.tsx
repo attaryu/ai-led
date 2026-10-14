@@ -1,12 +1,11 @@
 import * as React from 'react';
 import { Link } from 'react-router';
-import { LockSimpleIcon } from '@phosphor-icons/react';
+import { InfoIcon } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
 import {
 	Card,
 	CardContent,
-	CardDescription,
 	CardHeader,
 	CardTitle,
 } from '~/core/components/ui/card';
@@ -17,6 +16,11 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from '~/core/components/ui/dialog';
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from '~/core/components/ui/tooltip';
 import { cn } from '~/core/lib/utils';
 import { type LedProjectEntity } from '~/features/led-project/domain/entities/led-project.entity';
 import { accreditationSetRepository } from '../../data/repositories/accreditation-set.repository';
@@ -98,23 +102,13 @@ function DaftarPilihan({
 	);
 }
 
-/** Satu baris keterangan bertitik dua, sejajar dengan baris di sebelahnya. */
-function Baris({ label, children }: { label: string; children: React.ReactNode }) {
-	return (
-		<div className="flex items-baseline justify-between gap-3 text-sm">
-			<span className="shrink-0 text-muted-foreground">{label}</span>
-			<span className="min-w-0 text-right">{children}</span>
-		</div>
-	);
-}
-
 /**
- * Rincian acuan penilaian dokumen, beserta tempat memilih dan menggantinya.
+ * Acuan penilaian dokumen, beserta tempat memilih dan menggantinya.
  *
- * Ditaruh di kolom kanan bersama Perlu Perhatian dan Status Dokumen, bukan di
- * kepala halaman: rinciannya jarang dibaca dan aksinya nyaris tidak pernah
- * dipakai, jadi ia tidak pantas berebut perhatian dengan judul. Yang perlu
- * terbaca sekilas sudah diwakili lencana di sebelah judul.
+ * Sengaja hanya memuat nama set dan aksinya: rincian lembaga, siklus, dan
+ * kriteria sudah ada di halaman set itu sendiri. Alasan acuan tak bisa diganti
+ * disimpan di tooltip judul, bukan di badan kartu, karena ia hanya jawaban atas
+ * pertanyaan "kenapa tidak ada tombolnya" dan tidak perlu terbaca setiap saat.
  */
 export function ProjectAccreditationSetCard({
 	project,
@@ -127,71 +121,53 @@ export function ProjectAccreditationSetCard({
 	const [errorPilih, setErrorPilih] = React.useState<string | null>(null);
 
 	return (
-		<Card size="sm">
+		<Card size="sm" className="h-full">
 			<CardHeader>
-				<CardTitle>Acuan Penilaian</CardTitle>
-				<CardDescription>
-					{set
-						? 'Rubrik dan panduan yang dipakai menilai dokumen ini.'
-						: 'Penyusunan bab tetap bisa berjalan; acuan diperlukan saat dokumen ini dinilai.'}
-				</CardDescription>
+				<CardTitle className="flex items-center gap-1.5">
+					Acuan Penilaian
+					{set && sudahDinilai && (
+						<Tooltip>
+							<TooltipTrigger
+								render={
+									<button
+										type="button"
+										aria-label="Kenapa acuan tidak bisa diganti"
+										className="cursor-pointer rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+									/>
+								}
+							>
+								<InfoIcon className="size-4" />
+							</TooltipTrigger>
+							<TooltipContent>
+								Acuan tidak bisa diganti lagi. Ia sudah dipakai menilai dokumen
+								ini.
+							</TooltipContent>
+						</Tooltip>
+					)}
+				</CardTitle>
 			</CardHeader>
 
 			<CardContent className="flex flex-col items-start gap-3">
 				{set ? (
-					<>
-						<div className="w-full">
-							<Link
-								to={`/dashboard/accreditation-sets/${set.id}`}
-								className="font-medium text-primary underline-offset-4 hover:underline"
-							>
-								{set.nama}
-							</Link>
-						</div>
+					<Link
+						to={`/dashboard/accreditation-sets/${set.id}`}
+						className="font-medium text-primary underline-offset-4 hover:underline"
+					>
+						{set.nama}
+					</Link>
+				) : (
+					<p className="text-sm text-muted-foreground">Belum dipilih</p>
+				)}
 
-						<div className="flex w-full flex-col gap-1">
-							<Baris label="Lembaga">{set.lembaga}</Baris>
-							<Baris label="Siklus">
-								<span className="tabular-nums">{set.tahunSiklus}</span>
-							</Baris>
-							<Baris label="Kriteria">
-								<span className="tabular-nums">
-									{set.kriteria.length} kriteria
-								</span>
-							</Baris>
-						</div>
-
-						{bolehMengganti && (
-							<Button
-								variant="outline"
-								size="sm"
-								className="cursor-pointer"
-								onClick={() => setDialogTerbuka(true)}
-							>
-								Ganti Acuan
-							</Button>
-						)}
-
-						{sudahDinilai && (
-							<p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-								<LockSimpleIcon className="mt-0.5 size-3.5 shrink-0" />
-								Acuan tidak bisa diganti lagi. Ia sudah dipakai menilai
-								dokumen ini.
-							</p>
-						)}
-					</>
-				) : bolehMengganti ? (
+				{bolehMengganti && (
 					<Button
+						variant={set ? 'outline' : 'default'}
 						size="sm"
 						className="cursor-pointer"
 						onClick={() => setDialogTerbuka(true)}
 					>
-						Pilih Acuan
+						{set ? 'Ganti Acuan' : 'Pilih Acuan'}
 					</Button>
-				) : (
-					<p className="text-xs text-muted-foreground">
-						Penjamin Mutu yang menentukan acuan penilaian dokumen ini.
-					</p>
 				)}
 			</CardContent>
 

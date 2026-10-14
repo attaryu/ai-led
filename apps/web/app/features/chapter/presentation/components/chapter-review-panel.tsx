@@ -65,10 +65,8 @@ const statusVisual: Record<
  * Isi tab "Review" — keadaan kunci bab dan catatan Penjamin Mutu (§12.2).
  *
  * Dibaca **semua role** yang boleh membuka babnya, bukan hanya Penjamin Mutu:
- * inilah satu-satunya tempat Penyusun bisa tahu kenapa babnya dikunci. Sebelum
- * tab ini ada, `catatanPenjaminMutu` cuma dipakai panel Perlu Perhatian untuk
- * menyalakan penanda "Ada catatan Penjamin Mutu" — badan catatannya sendiri
- * tidak pernah dirender di mana pun.
+ * inilah satu-satunya tempat Penyusun bisa tahu kenapa babnya dikunci. Badan
+ * catatannya dirender di sini; tabel Progres per Bab hanya mengutip satu baris.
  *
  * Panel ini rumah **catatan**, bukan kuncinya: tombol Kunci/Buka Kunci berdiri
  * di header supaya tetap terjangkau dari tab mana pun.

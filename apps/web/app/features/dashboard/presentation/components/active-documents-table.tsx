@@ -13,18 +13,12 @@ import {
 import { formatDate, formatDayCount } from '~/core/lib/format-time';
 import { cn } from '~/core/lib/utils';
 import { type AssessmentOverviewEntity } from '~/features/assessment/domain/entities/assessment-overview.entity';
+import { AssessmentOverviewSummary } from '~/features/assessment/presentation/components/assessment-overview-summary';
 import { type DeadlineUrgency } from '~/features/led-project/domain/entities/led-project.entity';
 import { ChapterProgressBar } from '~/features/led-project/presentation/components/chapter-progress-bar';
 import { LedProjectStatusBadge } from '~/features/led-project/presentation/components/led-project-status-badge';
 import { type ActiveDocumentRow } from '../../domain/entities/active-documents.entity';
 
-const SKOR_MAKS = 4;
-
-const formatSkor = (nilai: number) =>
-	nilai.toLocaleString('id-ID', {
-		minimumFractionDigits: 2,
-		maximumFractionDigits: 2,
-	});
 
 const deadlineTones: Record<DeadlineUrgency, string> = {
 	AMAN: 'text-muted-foreground',
@@ -204,9 +198,8 @@ function ActiveDocumentTableRow({
 }
 
 /**
- * Satu sel "Penilaian AMI". Selama sesi terbaru belum COMPLETED (atau
- * ringkasan AMI tidak dimuat) sel hanya memuat satu kalimat keadaannya.
- * `overview = undefined` berarti ringkasan AMI tidak tersedia.
+ * Satu sel "Penilaian AMI". `overview = undefined` berarti ringkasan AMI tidak
+ * tersedia; isi selnya dipakai bersama kartu Dashboard Dokumen.
  */
 function AmiCell({
 	overview,
@@ -215,84 +208,16 @@ function AmiCell({
 	overview: AssessmentOverviewEntity | null | undefined;
 	assessmentHref: string;
 }) {
-	if (overview === undefined) {
-		return (
-			<TableCell className={cellPad}>
-				<span className="text-sm text-muted-foreground">—</span>
-			</TableCell>
-		);
-	}
-
-	const sesi = overview?.sesi ?? null;
-
-	if (!overview || !sesi) {
-		return (
-			<TableCell className={cellPad}>
-				<span className="text-sm whitespace-nowrap text-muted-foreground">
-					Belum dinilai
-				</span>
-			</TableCell>
-		);
-	}
-
-	if (sesi.status !== 'COMPLETED') {
-		const label =
-			sesi.status === 'RUNNING'
-				? `Sedang berjalan ${sesi.completedIndicators}/${sesi.totalIndicators}`
-				: sesi.status === 'FAILED'
-					? 'Gagal'
-					: 'Dibatalkan';
-		return (
-			<TableCell className={cellPad}>
-				<Link
-					to={assessmentHref}
-					className={cn(
-						'text-sm whitespace-nowrap tabular-nums hover:underline',
-						sesi.status === 'RUNNING'
-							? 'text-sky-700 dark:text-sky-400'
-							: sesi.status === 'FAILED'
-								? 'text-destructive'
-								: 'text-muted-foreground',
-					)}
-				>
-					{label}
-				</Link>
-			</TableCell>
-		);
-	}
-
-	const persen =
-		sesi.totalIndicators === 0
-			? 0
-			: Math.min(100, (overview.ditinjau / sesi.totalIndicators) * 100);
-
 	return (
 		<TableCell className={cellPad}>
-			<Link
-				to={assessmentHref}
-				className="flex min-w-24 flex-col gap-2 hover:underline"
-			>
-				<span className="text-xs whitespace-nowrap tabular-nums text-muted-foreground">
-					Skor rata-rata:{' '}
-					{overview.skorRataRata !== null ? (
-						<span className="font-semibold text-foreground">
-							{formatSkor(overview.skorRataRata)} / {SKOR_MAKS}
-						</span>
-					) : (
-						'—'
-					)}
-				</span>
-
-				<div className="h-1.5 w-full overflow-hidden rounded-full bg-muted-foreground/20">
-					<div
-						className="h-full rounded-full bg-emerald-500"
-						style={{ width: `${persen}%` }}
-					/>
-				</div>
-				<span className="text-xs tabular-nums whitespace-nowrap text-muted-foreground">
-					{overview.ditinjau} dari {sesi.totalIndicators} indikator
-				</span>
-			</Link>
+			{overview === undefined ? (
+				<span className="text-sm text-muted-foreground">—</span>
+			) : (
+				<AssessmentOverviewSummary
+					overview={overview}
+					assessmentHref={assessmentHref}
+				/>
+			)}
 		</TableCell>
 	);
 }
