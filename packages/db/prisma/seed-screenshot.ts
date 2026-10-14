@@ -831,7 +831,8 @@ async function main() {
 			academicYear: d.year,
 			overallStatus: d.status,
 			deadline: d.deadlineDays === null ? null : inDays(d.deadlineDays),
-			accreditationSetId: SET_ID,
+			// Manajemen sengaja belum memilih instrumen (keadaan "belum dipilih").
+			accreditationSetId: d.id === 'ss-led-manajemen' ? null : SET_ID,
 			createdAt: ago(d.createdDaysAgo),
 		});
 
@@ -1009,6 +1010,14 @@ async function main() {
 				create: { evidenceId: e.id, accreditationSetId: SET_ID, indicatorNo: no },
 			});
 		}
+	}
+
+	// Dokumen yang sudah punya sesi AMI harus terhubung ke LKPS prodinya.
+	for (const [docId, lkpsId] of [
+		['demo-led', 'ss-ev-ti-lkps'],
+		['ss-led-si', 'ss-ev-si-lkps'],
+	]) {
+		await prisma.ledDocument.update({ where: { id: docId }, data: { lkpsEvidenceId: lkpsId } });
 	}
 
 	// Penilaian AMI selesai untuk dokumen TI dan SI.
