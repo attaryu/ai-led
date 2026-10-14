@@ -4,7 +4,13 @@ import { Link } from 'react-router';
 
 import { Button } from '~/core/components/ui/button';
 import { ScrollArea } from '~/core/components/ui/scroll-area';
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from '~/core/components/ui/tooltip';
 import { cn } from '~/core/lib/utils';
+import { progressVisual } from '~/features/led-project/presentation/components/chapter-status-badge';
 import { chapterRepository } from '../../data/repositories/chapter.repository';
 import { type ChapterEntity } from '../../domain/entities/chapter.entity';
 import {
@@ -12,6 +18,7 @@ import {
 	findTocPathForChapter,
 	type ChapterTocNode,
 } from '../../domain/entities/chapter-toc.entity';
+import { deriveTocNodeStatus } from '../../domain/entities/toc-node-status.entity';
 import { FormSection } from './section-form';
 
 /**
@@ -39,6 +46,11 @@ let posisiGulirToc: { projectId: string; atas: number } | null = null;
  * bukan menggulung. Simpul dekoratif (kelompok kriteria, atau sub-bab
  * referensi `ChapterTemplate` sebelum outline pernah dibuat) belum punya
  * konten sungguhan buat dituju, jadi labelnya cuma pemicu buka-tutup.
+ *
+ * Butir yang punya status nyata (bab, sub-bab ber-`sectionId` yang bukan wadah murni)
+ * menampilkan satu ikon status di ujung kanan, aturannya sama dengan tabel Progres per
+ * Bab (`deriveTocNodeStatus`). Sub-bab yang sedang/gagal dibangkitkan hanya mendapat
+ * petunjuk pada labelnya; ikonnya tetap "Belum diisi".
  *
  * Status terbentang dipegang halaman editor, bukan komponen ini — alasannya di
  * `chapter-editor.tsx`.
@@ -161,6 +173,7 @@ export function ChapterEditorToc({
 							node={node}
 							depth={0}
 							projectId={projectId}
+							chapters={chapters}
 							chapterIdBab={babNyata?.id}
 							chapterTerkunci={babNyata?.terkunci ?? false}
 							chapterAktifId={chapterAktif.id}
@@ -181,6 +194,7 @@ function TocNode({
 	node,
 	depth,
 	projectId,
+	chapters,
 	chapterIdBab,
 	chapterTerkunci,
 	chapterAktifId,
@@ -193,6 +207,7 @@ function TocNode({
 	node: ChapterTocNode;
 	depth: number;
 	projectId: string;
+	chapters: ChapterEntity[];
 	/** Id bab (nyata) pemilik simpul ini — sama untuk simpul akar dan seluruh keturunannya. */
 	chapterIdBab: string | undefined;
 	/** Sama untuk simpul akar dan seluruh keturunannya — gerbang tombol `[+]`. */
@@ -232,6 +247,23 @@ function TocNode({
 		if (perluBentangSendiri) onToggle(node.id);
 	}
 
+	const status = deriveTocNodeStatus(node, chapters);
+	const petunjuk = status?.hint ?? 'normal';
+	const keteranganJudul =
+		petunjuk === 'dibangkitkan'
+			? 'Sedang dibangkitkan'
+			: petunjuk === 'gagal'
+				? `Gagal dibangkitkan${status?.error ? `: ${status.error}` : ''}`
+				: undefined;
+	const teksJudul = (
+		<>
+			{node.label}
+			{petunjuk === 'dibangkitkan' && <span className="sr-only"> (sedang dibangkitkan)</span>}
+			{petunjuk === 'gagal' && <span className="sr-only"> (gagal dibangkitkan)</span>}
+		</>
+	);
+	const visualStatus = status ? progressVisual[status.progress] : null;
+
 	const kelasLabel = cn(
 		'flex-1 rounded-md px-1.5 py-1.5 text-left text-sm leading-snug transition-colors',
 		depth === 0 ? 'font-medium' : 'font-normal',
@@ -239,7 +271,10 @@ function TocNode({
 			? 'bg-sidebar-accent font-semibold text-sidebar-primary'
 			: diJalurAktif
 				? 'text-sidebar-primary'
-				: 'text-foreground/80',
+				: petunjuk === 'dibangkitkan'
+					? 'text-muted-foreground'
+					: 'text-foreground/80',
+		petunjuk === 'gagal' && !isAktif && 'bg-destructive/5',
 	);
 
 	return (
@@ -270,17 +305,19 @@ function TocNode({
 					<Link
 						to={`/editor/${projectId}/${chapterIdBab}`}
 						aria-current={isAktif ? 'page' : undefined}
+						title={keteranganJudul}
 						className={cn(kelasLabel, 'hover:bg-sidebar-accent')}
 					>
-						{node.label}
+						{teksJudul}
 					</Link>
 				) : node.sectionId && chapterIdBab ? (
 					<Link
 						to={`/editor/${projectId}/${chapterIdBab}/${node.sectionId}`}
 						aria-current={isAktif ? 'page' : undefined}
+						title={keteranganJudul}
 						className={cn(kelasLabel, 'hover:bg-sidebar-accent')}
 					>
-						{node.label}
+						{teksJudul}
 					</Link>
 				) : punyaAnak ? (
 					// Tanpa bab tujuan, satu-satunya hal berguna yang bisa dilakukan
@@ -319,6 +356,27 @@ function TocNode({
 						<PlusIcon className="size-3.5" />
 					</Button>
 				)}
+
+				{visualStatus && (
+					<Tooltip>
+						<TooltipTrigger
+							render={
+								<span
+									tabIndex={0}
+									role="img"
+									aria-label={visualStatus.label}
+									className={cn(
+										'mx-1 mt-2 flex size-4 shrink-0 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring',
+										visualStatus.iconClassName,
+									)}
+								/>
+							}
+						>
+							<visualStatus.icon className="size-4" weight="bold" />
+						</TooltipTrigger>
+						<TooltipContent>{visualStatus.label}</TooltipContent>
+					</Tooltip>
+				)}
 			</div>
 
 			{sedangTambah && (
@@ -335,6 +393,7 @@ function TocNode({
 							node={anak}
 							depth={depth + 1}
 							projectId={projectId}
+							chapters={chapters}
 							chapterIdBab={chapterIdBab}
 							chapterTerkunci={chapterTerkunci}
 							chapterAktifId={chapterAktifId}

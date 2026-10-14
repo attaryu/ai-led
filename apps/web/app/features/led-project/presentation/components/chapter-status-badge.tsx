@@ -12,19 +12,25 @@ import {
 	type ChapterProgress,
 } from '~/features/chapter/domain/entities/chapter.entity';
 
-const progressVisual: Record<
+/**
+ * Ikon, warna, dan label tiap status — satu sumber bagi badge di tabel Progres per
+ * Bab dan ikon status di Daftar Isi Editor.
+ */
+export const progressVisual: Record<
 	ChapterProgress,
-	{ label: string; icon: Icon; className: string }
+	{ label: string; icon: Icon; className: string; iconClassName: string }
 > = {
 	BELUM_DIISI: {
 		label: chapterProgressLabels.BELUM_DIISI,
 		icon: CircleDashedIcon,
+		iconClassName: 'text-slate-500 dark:text-slate-400',
 		className:
 			'bg-slate-100 text-slate-800 border-slate-200/50 dark:bg-slate-900/30 dark:text-slate-300 dark:border-slate-800/30',
 	},
 	SEDANG_DISUSUN: {
 		label: chapterProgressLabels.SEDANG_DISUSUN,
 		icon: PencilSimpleLineIcon,
+		iconClassName: 'text-amber-600 dark:text-amber-400',
 		className:
 			'bg-amber-100 text-amber-800 border-amber-200/50 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800/30',
 	},
@@ -34,12 +40,14 @@ const progressVisual: Record<
 	MENUNGGU_REVIEW: {
 		label: chapterProgressLabels.MENUNGGU_REVIEW,
 		icon: ClockIcon,
+		iconClassName: 'text-sky-600 dark:text-sky-400',
 		className:
 			'bg-sky-100 text-sky-800 border-sky-200/50 dark:bg-sky-900/30 dark:text-sky-300 dark:border-sky-800/30',
 	},
 	TERKUNCI: {
 		label: chapterProgressLabels.TERKUNCI,
 		icon: LockSimpleIcon,
+		iconClassName: 'text-emerald-600 dark:text-emerald-400',
 		className:
 			'bg-emerald-100 text-emerald-800 border-emerald-200/50 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800/30',
 	},

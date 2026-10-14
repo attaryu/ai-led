@@ -104,6 +104,37 @@ export function ChapterEditor() {
 		};
 	}, [projectId]);
 
+	/**
+	 * Bab yang disegarkan diam-diam untuk ikon status Daftar Isi. `chapters` di atas hanya
+	 * dimuat sekali per dokumen; tanpa ini ikon baru berubah setelah halaman dimuat ulang.
+	 * Dipisah dari `chapters` supaya bab aktif dan seluruh efek yang bergantung padanya tidak
+	 * ikut tersentak. Digerakkan `storage-update` (review, generate, simpan) dengan jeda.
+	 */
+	const [babSegar, setBabSegar] = React.useState<ChapterEntity[] | undefined>(undefined);
+	React.useEffect(() => {
+		setBabSegar(undefined);
+		if (!projectId) return undefined;
+		let cancelled = false;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const segarkan = () => {
+			clearTimeout(timer);
+			timer = setTimeout(() => {
+				chapterRepository
+					.findByProjectId(projectId)
+					.then((found) => {
+						if (!cancelled) setBabSegar(found);
+					})
+					.catch(() => undefined);
+			}, 800);
+		};
+		window.addEventListener('storage-update', segarkan);
+		return () => {
+			cancelled = true;
+			clearTimeout(timer);
+			window.removeEventListener('storage-update', segarkan);
+		};
+	}, [projectId]);
+
 	const chapter =
 		chapters && chapterId
 			? chapters.find((item) => item.id === chapterId)
@@ -297,7 +328,7 @@ export function ChapterEditor() {
 			judulDokumen={ledProject.judul}
 			studyProgramId={ledProject.studyProgramId}
 			chapter={chapter}
-			chapters={chapters}
+			chapters={babSegar ?? chapters}
 			section={section}
 			chapterToc={chapterToc}
 			tocTerbentang={tocTerbentang}
@@ -362,6 +393,11 @@ function ChapterEditorWorkspace({
 	const [babTerkini, setBabTerkini] = React.useState(chapter);
 	// Review (kunci/catatan/pengajuan) milik section yang terbuka, bukan bab.
 	const [sectionTerkini, setSectionTerkini] = React.useState(section);
+	// Daftar Isi membaca status dari daftar bab, jadi review diumumkan agar ikonnya disegarkan.
+	const tinjauanSelesai = React.useCallback((diperbarui: ChapterSectionEntity) => {
+		setSectionTerkini(diperbarui);
+		chapterRepository.notify();
+	}, []);
 	/** dimas: satu tombol Generate + ikon Tabel untuk section terbuka, sebaris dengan tools editor. */
 	const [kontrolGenerate, setKontrolGenerate] = React.useState<KontrolGenerate | null>(null);
 	const [tabelTerbuka, setTabelTerbuka] = React.useState(false);
@@ -610,7 +646,7 @@ function ChapterEditorWorkspace({
 				chapter={babView}
 				sectionId={section?.id ?? null}
 				izin={izin}
-				onReviewed={setSectionTerkini}
+				onReviewed={tinjauanSelesai}
 				status={autosave.status}
 				savedAt={autosave.savedAt}
 			/>
@@ -792,7 +828,7 @@ function ChapterEditorWorkspace({
 						// `setSectionTerkini`, bukan `adopsiIsiBaru`: review tidak menyentuh
 						// isi sama sekali, dan mendorong isi ke kanvas hanya akan memicu
 						// autosave untuk tulisan yang tidak berubah.
-						onReviewed={setSectionTerkini}
+						onReviewed={tinjauanSelesai}
 						savedAt={autosave.savedAt}
 						lebar={panel.lebar}
 						handleProps={panel.handleProps}
