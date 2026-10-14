@@ -120,7 +120,7 @@ Konsumen BullMQ untuk tiga jenis pekerjaan:
 |---|---|
 | `ingestion-queue` | Ekstraksi berkas (MinerU untuk PDF), chunking, embedding → tulis ke tabel vektor |
 | `generation-queue` | Generasi konten sub-bab, outline, rekomendasi, simulasi skor |
-| `assessment-queue` | Skoring AMI per dokumen (seluruh indikator) |
+| `assessment-queue` | Skoring AMI per dokumen (seluruh indikator); **setor ke LED** (`SETOR_LED`): mengisi tabel analisis IKU di LED (Evaluasi + narasi), hasilnya dikembalikan sebagai return value job dan dibaca lewat `GET /jobs/:id` |
 
 - Dijalankan sebagai **beberapa service dari image yang sama**, masing-masing mendengarkan antrean tertentu: worker ingestion **wajib** terpisah, worker generasi dan AMI boleh digabung atau dipisah (lihat [bagian 8.2](#82-pemisahan-worker-per-jenis-pekerjaan)).
 - **Membaca** tabel domain untuk menyusun prompt (rubrik, template, isi section, tag bukti) — diizinkan.

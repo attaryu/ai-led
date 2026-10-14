@@ -516,108 +516,82 @@ def test_reasoning_graph_qualitative_score_gets_decimal_refined():
     assert "aspek tambahan" in result["justification"]
 
 
-# ── independent judge ───────────────────────────────────────────────────────
+# ── judge keluar dari graph scoring ──────────────────────────────────────────
+
+_LED_HIT = {
+    "text": "Visi misi disusun lewat rapat pimpinan.",
+    "metadata": {"page_start": 12, "page_end": 12, "para_start": -1, "para_end": -1, "section_heading": ""},
+    "distance": 0.1,
+}
 
 
-def test_judge_runs_after_finalize_and_lowers_confidence_when_ungrounded():
-    import json
-    from unittest.mock import MagicMock, patch
+def _invoke_reasoning_graph(llm_messages, *, led_hits=None):
+    """Jalankan graph reasoning dengan LLM palsu; kembalikan (hasil, mock build_judge_llm)."""
+    from unittest.mock import MagicMock
 
-    from langchain_core.messages import AIMessage
-    from llm.ollama_client import OllamaClient
     from agent.reasoning_graph import build_reasoning_graph
-
-    rubric_tool_call = AIMessage(
-        content='{"action": "get_indicator_rubric", "args": {"indicator_no": 1}}'
-    )
-    checklist_response = AIMessage(content="- Dokumen VMTS tersedia\n- Proses partisipatif")
-    evidence_tool_call = AIMessage(
-        content='{"action": "search_led_evidence", "args": {"query": "visi misi"}}'
-    )
-    final_answer = AIMessage(
-        content=(
-            '{"action": "final", "score": 3, '
-            '"justification": "Program studi disusun partisipatif dengan 100 dosen.", '
-            '"confidence": 0.9, "recommendation": "Pertahankan praktik baik."}'
-        )
-    )
+    from llm.ollama_client import OllamaClient
 
     fake_llm = MagicMock()
-    fake_llm.invoke.side_effect = [
-        rubric_tool_call, checklist_response, evidence_tool_call, final_answer,
+    fake_llm.invoke.side_effect = llm_messages
+    fake_client = OllamaClient(base_url="http://fake:11434", model="deepseek-r1:14b", timeout_seconds=30)
+
+    with (
+        patch("agent.reasoning_graph._build_reasoning_llm", return_value=fake_llm),
+        patch("agent.graph.build_judge_llm") as judge_factory,
+        patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[]),
+        patch("agent.tools.led_tool.search_led", return_value=led_hits or []),
+    ):
+        graph = build_reasoning_graph(fake_client)
+        result = graph.invoke(_make_state(), config={"recursion_limit": 60})
+    return result, judge_factory
+
+
+def _reasoning_evidence_flow():
+    from langchain_core.messages import AIMessage
+
+    return [
+        AIMessage(content='{"action": "get_indicator_rubric", "args": {"indicator_no": 1}}'),
+        AIMessage(content="- Dokumen VMTS tersedia\n- Proses partisipatif"),
+        AIMessage(content='{"action": "search_led_evidence", "args": {"query": "visi misi"}}'),
+        AIMessage(
+            content=(
+                '{"action": "final", "score": 3, '
+                '"justification": "Program studi disusun partisipatif dengan 100 dosen.", '
+                '"confidence": 0.9, "recommendation": "Pertahankan praktik baik."}'
+            )
+        ),
     ]
 
-    fake_judge_llm = MagicMock()
-    fake_judge_llm.invoke.return_value = AIMessage(
-        content=json.dumps({
-            "grounded": False,
-            "hallucinated_claims": ["100 dosen tidak disebut di bukti manapun"],
-            "missing_facts": [],
-            "notes": "Angka 100 dosen mengada-ada.",
-        })
-    )
 
-    fake_client = OllamaClient(base_url="http://fake:11434", model="deepseek-r1:14b", timeout_seconds=30)
-
-    with (
-        patch("agent.reasoning_graph._build_reasoning_llm", return_value=fake_llm),
-        patch("agent.reasoning_graph.build_judge_llm", return_value=fake_judge_llm),
-        patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[]),
-        patch(
-            "agent.tools.led_tool.search_led",
-            return_value=[{
-                "text": "Visi misi disusun lewat rapat pimpinan.",
-                "metadata": {"page_start": 12, "page_end": 12, "para_start": -1, "para_end": -1, "section_heading": ""},
-                "distance": 0.1,
-            }],
-        ),
-    ):
-        graph = build_reasoning_graph(fake_client)
-        result = graph.invoke(_make_state(), config={"recursion_limit": 60})
+def test_reasoning_graph_never_builds_the_judge_and_stores_the_evidence_snapshot():
+    result, judge_factory = _invoke_reasoning_graph(_reasoning_evidence_flow(), led_hits=[_LED_HIT])
 
     assert result["final_score"] == 3.0
-    assert result["judge_verdict"]["grounded"] is False
-    assert result["confidence"] <= 0.3
-    fake_judge_llm.invoke.assert_called_once()
+    assert result["confidence"] == 0.9  # dulu bisa terpotong ke <=0.3 oleh judge
+    assert result["judge_evidence"].startswith("[search_led_evidence] ")
+    assert "Visi misi disusun lewat rapat pimpinan." in result["judge_evidence"]
+    judge_factory.assert_not_called()
 
 
-def test_judge_failure_does_not_block_result():
-    from unittest.mock import MagicMock, patch
-
+def test_reasoning_evidence_snapshot_is_empty_string_when_nothing_was_retrieved():
     from langchain_core.messages import AIMessage
-    from llm.ollama_client import OllamaClient
-    from agent.reasoning_graph import build_reasoning_graph
 
-    rubric_tool_call = AIMessage(
-        content='{"action": "get_indicator_rubric", "args": {"indicator_no": 1}}'
+    result, _ = _invoke_reasoning_graph(
+        [
+            AIMessage(content='{"action": "get_indicator_rubric", "args": {"indicator_no": 1}}'),
+            AIMessage(content="- Dokumen VMTS tersedia"),
+            AIMessage(
+                content=(
+                    '{"action": "final", "score": 2, "justification": "Bukti terbatas.", '
+                    '"confidence": 0.7, "recommendation": "Lengkapi bukti."}'
+                )
+            ),
+        ]
     )
-    checklist_response = AIMessage(content="- Dokumen VMTS tersedia")
-    final_answer = AIMessage(
-        content=(
-            '{"action": "final", "score": 2, "justification": "Bukti terbatas.", '
-            '"confidence": 0.7, "recommendation": "Lengkapi bukti."}'
-        )
-    )
-
-    fake_llm = MagicMock()
-    fake_llm.invoke.side_effect = [rubric_tool_call, checklist_response, final_answer]
-
-    fake_judge_llm = MagicMock()
-    fake_judge_llm.invoke.side_effect = RuntimeError("judge unreachable")
-
-    fake_client = OllamaClient(base_url="http://fake:11434", model="deepseek-r1:14b", timeout_seconds=30)
-
-    with (
-        patch("agent.reasoning_graph._build_reasoning_llm", return_value=fake_llm),
-        patch("agent.reasoning_graph.build_judge_llm", return_value=fake_judge_llm),
-        patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[]),
-    ):
-        graph = build_reasoning_graph(fake_client)
-        result = graph.invoke(_make_state(), config={"recursion_limit": 60})
 
     assert result["final_score"] == 2.0
-    assert result["confidence"] == 0.7
-    assert "error" in (result["judge_verdict"] or {})
+    assert result["judge_evidence"] == ""
 
 
 def test_search_evidence_documents_registered_in_tool_registry():

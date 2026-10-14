@@ -12,6 +12,39 @@ import { z } from 'zod';
  * kalau ditulis ke kolom yang sama, satu klik "Nilai Ulang" menghapus keputusan
  * manusia tanpa meninggalkan jejak.
  */
+/**
+ * Hasil judge on-demand: pemeriksaan independen apakah klaim dalam justifikasi didukung bukti
+ * yang diambil penilai. **Bukan ukuran ketepatan skor**, dan tidak pernah mengubah `confidence`.
+ * `null` pada {@link IndicatorResultEntity.judge} = belum dijudge.
+ */
+export const judgeVerdictSchema = z.object({
+	grounded: z.boolean(),
+	/** Klaim dalam justifikasi yang tidak didukung bukti. */
+	klaimTakTerdukung: z.array(z.string()),
+	/** Hal relevan yang ada di bukti tetapi tidak disebut justifikasi. */
+	faktaTerlewat: z.array(z.string()),
+	catatan: z.string(),
+	/** Model juri; `null` bila tidak tercatat. */
+	model: z.string().nullable(),
+	dinilaiPada: z.string().nullable(),
+});
+
+export type JudgeVerdictEntity = z.infer<typeof judgeVerdictSchema>;
+
+/** Progres satu run judge (angka apa adanya dari apps/ai; `done` sudah termasuk yang gagal). */
+export type JudgeProgress = {
+	total: number;
+	done: number;
+	skipped: number;
+	failed: number;
+};
+
+/** Satu pembacaan status run judge. Di domain (bukan di utils presentasi) karena repository mengembalikannya. */
+export type JudgeStatusSnapshot = JudgeProgress & {
+	status: 'pending' | 'running' | 'completed' | 'failed';
+	error: string | null;
+};
+
 export const indicatorResultSchema = z.object({
 	id: z.string(),
 	sesiId: z.string(),
@@ -41,6 +74,8 @@ export const indicatorResultSchema = z.object({
 	rekomendasi: z.string().nullable(),
 	/** Terisi bila indikator ini gagal dinilai; `skor` ikut `null`. */
 	error: z.string().nullable(),
+	/** `null` = belum dijudge (juga untuk sesi lama, yang tidak bisa dijudge — lihat spec judge on-demand). */
+	judge: judgeVerdictSchema.nullable(),
 	dinilaiPada: z.string(),
 });
 

@@ -254,12 +254,34 @@ def test_extract_panduan_structure_uses_mineru_then_chunks_it(tmp_path):
     pdf_path = tmp_path / "panduan.pdf"
     pdf_path.write_bytes(b"%PDF-1.4 fake")
 
-    with patch("ingestion.evidence_mineru.mineru_extract", return_value=real_md_path) as mock_extract:
+    # Eksplisit mematikan gateway: stack yang menyetel MINERU_SERVICE_URL tidak boleh mengubah jalur yang diuji di sini.
+    with (
+        patch("ingestion.mineru_service.service_enabled", return_value=False),
+        patch("ingestion.evidence_mineru.mineru_extract", return_value=real_md_path) as mock_extract,
+    ):
         bab_list = extract_panduan_structure(pdf_path, out_dir)
 
     mock_extract.assert_called_once()
     assert mock_extract.call_args.kwargs["start_page"] == 3  # Dimas: skip the first 3 (cover) pages
     assert [b["title"] for b in bab_list] == ["PENDAHULUAN", "LAPORAN EVALUASI DIRI"]
+
+
+def test_extract_panduan_structure_uses_the_mineru_gateway_when_enabled(tmp_path):
+    # Varian stack gpu/cpu/api menjalankan MinerU sebagai gateway. Tanpa cabang ini, ekstraksi struktur tetap memanggil
+    # MinerU 3.4.5 in-process yang butuh model lokal dan offline di container.
+    pdf_path = tmp_path / "panduan.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+
+    with (
+        patch("ingestion.mineru_service.service_enabled", return_value=True),
+        patch("ingestion.mineru_service.parse_pdf", return_value=REALISTIC_MD) as mock_parse,
+        patch("ingestion.evidence_mineru.mineru_extract", side_effect=AssertionError("in-process MinerU must not run")),
+    ):
+        bab_list = extract_panduan_structure(pdf_path, tmp_path / "unused_work_dir")
+
+    mock_parse.assert_called_once_with(pdf_path, start_page=4)  # 1-based: halaman ke-4 = start_page 3 (0-based) di jalur lama
+    assert [b["title"] for b in bab_list] == ["PENDAHULUAN", "LAPORAN EVALUASI DIRI"]
+    assert not (tmp_path / "unused_work_dir").exists()  # jalur gateway tidak menulis berkas kerja
 
 
 def test_normalize_lkps_sheet_strips_punctuation_and_lowercases():

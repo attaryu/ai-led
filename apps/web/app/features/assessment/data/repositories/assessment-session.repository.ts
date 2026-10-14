@@ -1,8 +1,12 @@
+import { ApiError } from '~/core/lib/api-client';
 import { mapEvalResult, mapResult, mapSession } from '../backend-mappers';
 import { assessmentRemoteSource, type TriggerAssessmentPayload } from '../sources/remote/assessment.remote-source';
 import { type AssessmentQuality } from '../../domain/entities/assessment-quality.entity';
 import { type AssessmentSessionEntity } from '../../domain/entities/assessment-session.entity';
-import { type IndicatorResultEntity } from '../../domain/entities/indicator-result.entity';
+import {
+	type IndicatorResultEntity,
+	type JudgeStatusSnapshot,
+} from '../../domain/entities/indicator-result.entity';
 
 /**
  * Sesi penilaian AMI beserta hasil AI-nya (docs/database.md →
@@ -65,5 +69,36 @@ export const assessmentSessionRepository = {
 			kualitas: mapEvalResult(row),
 			error: row.error,
 		};
+	},
+
+	/** Mulai judge on-demand; `indikator` kosong/undefined = seluruh sesi. */
+	async runJudge(
+		sessionId: string,
+		indikator?: { indikatorNo: number; subNo: string }[],
+	): Promise<{ judgeId: string; total: number; skipped: number }> {
+		// Backend/apps/ai memakai `indicatorNo`; entity web memakai `indikatorNo`.
+		const res = await assessmentRemoteSource.runJudge(
+			sessionId,
+			indikator?.map(({ indikatorNo, subNo }) => ({ indicatorNo: indikatorNo, subNo })),
+		);
+		return { judgeId: res.judge_id, total: res.total, skipped: res.skipped };
+	},
+
+	/** `null` bila apps/ai sudah melupakan judge ini (restart) — bukan galat, lihat assessment-judge-poll.ts. */
+	async findJudgeStatus(judgeId: string): Promise<JudgeStatusSnapshot | null> {
+		try {
+			const row = await assessmentRemoteSource.findJudgeStatus(judgeId);
+			return {
+				status: row.status,
+				total: row.total,
+				done: row.done,
+				skipped: row.skipped,
+				failed: row.failed,
+				error: row.error,
+			};
+		} catch (error) {
+			if (error instanceof ApiError && error.status === 404) return null;
+			throw error;
+		}
 	},
 };

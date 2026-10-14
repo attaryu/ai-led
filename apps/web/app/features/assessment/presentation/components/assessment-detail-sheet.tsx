@@ -17,6 +17,8 @@ import { rubricScoreTypeLabels } from '~/features/chapter/domain/entities/rubric
 import { type PenilaianFinalRow } from '../../domain/entities/assessment-session.entity';
 import { catatanKoreksiSchema } from '../../domain/entities/assessment-verdict.entity';
 import { AssessmentConfidenceBadge } from './assessment-confidence-badge';
+import { AssessmentJudgePanel } from './assessment-judge-panel';
+import { type StatusJudge } from '../hooks/use-assessment-judge';
 import { AssessmentScoreChip } from './assessment-score-chip';
 import { AssessmentStatusBadge } from './assessment-status-badge';
 import { formatSkor } from '../utils/assessment-format';
@@ -70,6 +72,12 @@ export function AssessmentDetailSheet({
 	onPindah,
 	onSimpan,
 	onCabut,
+	judgeBolehMenjalankan,
+	judgeBerjalan,
+	onJalankanJudge,
+	judgeStatus,
+	judgeRingkasan,
+	judgePesanGagal,
 }: {
 	row: PenilaianFinalRow | null;
 	/** Urutan ke berapa dalam daftar yang sedang tampil, mulai 1. */
@@ -80,6 +88,12 @@ export function AssessmentDetailSheet({
 	onPindah: (arah: -1 | 1) => void;
 	onSimpan: (input: { skorFinal: number; catatan: string }) => void;
 	onCabut: () => void;
+	judgeBolehMenjalankan: boolean;
+	judgeBerjalan: boolean;
+	onJalankanJudge: () => void;
+	judgeStatus: StatusJudge;
+	judgeRingkasan: string | null;
+	judgePesanGagal: string | null;
 }) {
 	const [pilihan, setPilihan] = React.useState<number | null>(null);
 	const [catatan, setCatatan] = React.useState('');
@@ -214,6 +228,18 @@ export function AssessmentDetailSheet({
 						</div>
 						<p className="mt-1 text-sm leading-relaxed">{hasil.justifikasi}</p>
 					</div>
+				)}
+
+				{hasil?.justifikasi && (
+					<AssessmentJudgePanel
+						judge={hasil.judge}
+						bolehMenjalankan={judgeBolehMenjalankan}
+						sedangBerjalan={judgeBerjalan}
+						onJalankan={onJalankanJudge}
+						status={judgeStatus}
+						ringkasan={judgeRingkasan}
+						pesanGagal={judgePesanGagal}
+					/>
 				)}
 
 				{hasil?.rekomendasi && (

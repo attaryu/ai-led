@@ -11,6 +11,7 @@ import { PrismaService } from '../database/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { DokumenLedService } from '../dokumen-led/dokumen-led.service';
 import { RunEvalDto } from './dto/run-eval.dto';
+import { RunJudgeDto } from './dto/run-judge.dto';
 import { UpsertVerdictDto } from './dto/upsert-verdict.dto';
 
 /** AMI assessment reads (session/results/reasoning) + Penjamin Mutu verdicts — the trigger itself stays in DokumenLedService. */
@@ -144,6 +145,7 @@ export class AssessmentService {
     return this.prisma.indicatorResult.findMany({
       where: { sessionId },
       orderBy: { indicatorNo: 'asc' },
+      omit: { judgeEvidence: true },
     });
   }
 
@@ -163,6 +165,7 @@ export class AssessmentService {
     const results = await this.prisma.indicatorResult.findMany({
       where: { session: { documentId: dokumenId } },
       orderBy: { createdAt: 'desc' },
+      omit: { judgeEvidence: true },
     });
     // Kunci = nomor + sub-indikator: 43.I dan 43.II adalah dua hasil berbeda, bukan satu yang saling menimpa.
     const terbaruPerIndikator = new Map<string, (typeof results)[number]>();
@@ -238,6 +241,64 @@ export class AssessmentService {
     }
 
     return upstream.json();
+  }
+
+  /**
+   * Proxy to apps/ai's `POST /assessment/:id/judge` -- judge grounding AMI on-demand (dulu node
+   * terakhir di tiap graph scoring). `findSessionScoped` dulu, seperti `runEval`: apps/ai tidak
+   * punya konsep tenant, jadi tanpa ini pengguna mana pun bisa memicu judge untuk sesi tenant lain.
+   * Tidak ada job BullMQ; progres dipoll lewat `findJudgeStatus`.
+   */
+  async runJudge(id: string, dto: RunJudgeDto) {
+    await this.findSessionScoped(id);
+
+    const indicators = dto.indicators?.map((item) => {
+      const subNoValid = item?.subNo === undefined || typeof item.subNo === 'string';
+      if (!item || !Number.isInteger(item.indicatorNo) || item.indicatorNo < 1 || !subNoValid) {
+        throw new BadRequestException('Daftar indikator judge tidak valid');
+      }
+      return { indicator_no: item.indicatorNo, sub_no: item.subNo ?? '' };
+    });
+
+    const aiServiceUrl = requireEnv('AI_SERVICE_URL');
+    let upstream: globalThis.Response;
+    try {
+      upstream = await fetch(`${aiServiceUrl}/assessment/${encodeURIComponent(id)}/judge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(indicators?.length ? { indicators } : {}),
+      });
+    } catch {
+      throw new BadGatewayException('AI service tidak dapat dihubungi');
+    }
+    if (!upstream.ok) {
+      throw new BadGatewayException('Gagal memulai judge');
+    }
+    return upstream.json();
+  }
+
+  /** Proxy to apps/ai's GET /assessment/judge/:judgeId, dibatasi lewat sesi milik run itu sendiri. */
+  async findJudgeStatus(judgeId: string) {
+    const aiServiceUrl = requireEnv('AI_SERVICE_URL');
+    let upstream: globalThis.Response;
+    try {
+      upstream = await fetch(`${aiServiceUrl}/assessment/judge/${encodeURIComponent(judgeId)}`);
+    } catch {
+      throw new BadGatewayException('AI service tidak dapat dihubungi');
+    }
+    if (upstream.status === 404) {
+      throw new NotFoundException('Judge tidak ditemukan');
+    }
+    if (!upstream.ok) {
+      throw new BadGatewayException('Gagal memuat status judge');
+    }
+
+    const result = (await upstream.json()) as { session_id?: string | null };
+    if (!result.session_id) {
+      throw new NotFoundException('Judge tidak ditemukan');
+    }
+    await this.findSessionScoped(result.session_id);
+    return result;
   }
 
   async findVerdicts(dokumenId: string) {

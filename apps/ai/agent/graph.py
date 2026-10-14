@@ -594,6 +594,33 @@ def build_judge_llm():
     return ChatOllama(**kwargs)
 
 
+def run_judge(justification: str, evidence_text: str) -> dict:
+    """Cek independen apakah klaim dalam `justification` didukung `evidence_text`,
+    memakai model juri terpisah (build_judge_llm). Dulu `judge_node` di dalam
+    graph; kini dipanggil on-demand (api/routes/assessment_judge.py).
+
+    Tidak pernah raise: kegagalan panggilan atau verdict yang tak terbaca
+    mengembalikan {"error": ...} supaya pemanggil bisa memutuskan (tidak
+    menyimpan, menghitung sebagai gagal)."""
+    try:
+        judge_llm = build_judge_llm()
+        prompt = JUDGE_PROMPT_TEMPLATE.format(
+            justification=justification[:1500],
+            evidence_text=evidence_text[:3000] or "(tidak ada bukti tercatat)",
+        )
+        response = judge_llm.invoke([HumanMessage(content=prompt)])
+        verdict = parse_judge_verdict(response.content or "")
+    except Exception as exc:
+        return {"error": str(exc)}
+    if verdict is None:
+        return {"error": "judge tidak menghasilkan verdict yang bisa dibaca"}
+    # JSON yang terbaca tapi tanpa `grounded` boolean (mis. {} atau "true") bukan verdict:
+    # disimpan, ia tampil "Belum dijudge" dan run seluruh sesi melewatinya selamanya.
+    if not isinstance(verdict, dict) or not isinstance(verdict.get("grounded"), bool):
+        return {"error": "verdict judge tidak memuat grounded boolean"}
+    return verdict
+
+
 def build_graph(ollama_client: OllamaClient, disable_evidence: bool = False) -> StateGraph:
     """Compile and return the assessment LangGraph.
 
@@ -940,40 +967,16 @@ def build_graph(ollama_client: OllamaClient, disable_evidence: bool = False) -> 
             state["justification"] = (state.get("justification") or "") + suffix
         return state
 
-    # ── Node: judge (independent post-hoc grounding check) ───────────────────
+    # ── Node: evidence_snapshot (masukan judge on-demand, tanpa LLM) ─────────
 
-    def judge_node(state: AssessmentState) -> AssessmentState:
-        """Check whether the final justification is grounded in evidence
-        actually retrieved this run, using a SEPARATE model (build_judge_llm)
-        so the assessment model isn't grading its own homework. Soft signal:
-        lowers confidence when ungrounded, never blocks or reruns scoring.
-        Skipped entirely if there's no score to judge."""
+    def evidence_snapshot_node(state: AssessmentState) -> AssessmentState:
+        """Simpan bukti yang dilihat penilai (sampai 3000 karakter) untuk judge
+        on-demand. Judge-nya sendiri tidak lagi jalan di sini: run_judge dipicu
+        pengguna, dan confidence tidak pernah disentuh olehnya. Tanpa skor
+        (parse gagal) tidak ada yang perlu di-judge, sama seperti judge lama."""
         if state.get("final_score") is None:
             return state
-
-        evidence_text = collect_evidence_text(state["messages"])
-        justification = state.get("justification") or ""
-
-        try:
-            judge_llm = build_judge_llm()
-            prompt = JUDGE_PROMPT_TEMPLATE.format(
-                justification=justification[:1500],
-                evidence_text=evidence_text[:3000] or "(tidak ada bukti tercatat)",
-            )
-            response = judge_llm.invoke([HumanMessage(content=prompt)])
-            verdict = parse_judge_verdict(response.content or "")
-        except Exception as exc:
-            verdict = {"error": str(exc)}
-
-        state["judge_verdict"] = verdict
-
-        if verdict and verdict.get("grounded") is False:
-            current_conf = state.get("confidence")
-            if current_conf is not None:
-                state["confidence"] = min(current_conf, 0.3)
-
-        steps = state.get("reasoning_steps", [])
-        state["reasoning_steps"] = list(steps) + [{"judge_verdict": verdict}]
+        state["judge_evidence"] = collect_evidence_text(state["messages"])[:3000]
         return state
 
     # ── Build graph ───────────────────────────────────────────────────────────
@@ -988,7 +991,7 @@ def build_graph(ollama_client: OllamaClient, disable_evidence: bool = False) -> 
     graph.add_node("force", force_finalize_node)
     graph.add_node("parse_output", parse_output_node)
     graph.add_node("decimal_refine", decimal_refine_node)
-    graph.add_node("judge", judge_node)
+    graph.add_node("evidence_snapshot", evidence_snapshot_node)
     graph.add_node("give_up", give_up_node)
 
     graph.set_entry_point("agent")
@@ -1008,8 +1011,8 @@ def build_graph(ollama_client: OllamaClient, disable_evidence: bool = False) -> 
     graph.add_edge("checklist", "agent")
     graph.add_edge("force", "agent")
     graph.add_edge("parse_output", "decimal_refine")
-    graph.add_edge("decimal_refine", "judge")
-    graph.add_edge("judge", END)
+    graph.add_edge("decimal_refine", "evidence_snapshot")
+    graph.add_edge("evidence_snapshot", END)
     graph.add_edge("give_up", END)
 
     return graph.compile()

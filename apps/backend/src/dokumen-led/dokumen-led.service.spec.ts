@@ -351,3 +351,91 @@ describe('DokumenLedService.triggerAssessment — pilihan per sub-indikator', ()
     expect(payload(m)).not.toHaveProperty('subIndikatorList');
   });
 });
+
+describe('DokumenLedService.triggerSetorLed', () => {
+  const ctx = { tenantId: 't1', role: Role.PENYUSUN, studyProgramId: 'p1' };
+  const iku = { kode: 'IKU.REL.MHS.3', indikator: 'Rata-rata minimal IPK lulusan', target: 'RIPK ≥ 3,25' };
+  const payload = (m: ReturnType<typeof makeService>) =>
+    (m.jobsService.enqueue as jest.Mock).mock.calls[0][1] as Record<string, unknown>;
+
+  it('enqueues a SETOR_LED job with the cross-service payload', async () => {
+    const m = makeService(ctx);
+    m.findFirst.mockResolvedValue({ id: 'd1', studyProgramId: 'p1', lkpsEvidenceId: null });
+
+    const res = await m.service.triggerSetorLed('d1', { ikuList: [iku] });
+
+    expect(m.jobsService.enqueue).toHaveBeenCalledWith(JobType.SETOR_LED, {
+      dokumenId: 'd1',
+      tenantId: 't1',
+      programStudiId: 'p1', // kunci payload lintas-service, sama seperti ASSESSMENT_AMI
+      createdByUserId: 'u1',
+      ikuList: [iku],
+    });
+    expect(res).toEqual({ id: 'job-1' });
+  });
+
+  it('omits optional keys that were not sent (not undefined)', async () => {
+    const m = makeService(ctx);
+    m.findFirst.mockResolvedValue({ id: 'd1', studyProgramId: 'p1', lkpsEvidenceId: null });
+    await m.service.triggerSetorLed('d1', { ikuList: [iku] });
+    const p = payload(m);
+    expect('sumberLed' in p).toBe(false);
+    expect('lkpsBuktiDukungId' in p).toBe(false);
+    expect('model' in p).toBe(false);
+  });
+
+  it('forwards sumberLed and model when given', async () => {
+    const m = makeService(ctx);
+    m.findFirst.mockResolvedValue({ id: 'd1', studyProgramId: 'p1', lkpsEvidenceId: null });
+    await m.service.triggerSetorLed('d1', { ikuList: [iku], sumberLed: 'UNGGAHAN' as never, model: 'qwen3.6:35b' });
+    expect(payload(m)).toMatchObject({ sumberLed: 'UNGGAHAN', model: 'qwen3.6:35b' });
+  });
+
+  it('strips unexpected properties from each IKU before enqueueing', async () => {
+    const m = makeService(ctx);
+    m.findFirst.mockResolvedValue({ id: 'd1', studyProgramId: 'p1', lkpsEvidenceId: null });
+    await m.service.triggerSetorLed('d1', { ikuList: [{ ...iku, ekstra: 'x' } as never] });
+    expect(payload(m).ikuList).toEqual([iku]);
+  });
+
+  it('rejects duplicate IKU kode without enqueueing', async () => {
+    const m = makeService(ctx);
+    m.findFirst.mockResolvedValue({ id: 'd1', studyProgramId: 'p1', lkpsEvidenceId: null });
+    await expect(m.service.triggerSetorLed('d1', { ikuList: [iku, { ...iku }] })).rejects.toThrow('unik');
+    expect(m.jobsService.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('throws NotFound when the document is not in this tenant', async () => {
+    const m = makeService(ctx);
+    m.findFirst.mockResolvedValue(null);
+    await expect(m.service.triggerSetorLed('x', { ikuList: [iku] })).rejects.toThrow('Dokumen LED tidak ditemukan');
+    expect(m.jobsService.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("uses the document's LKPS even when the client sends another", async () => {
+    const m = makeService(ctx);
+    m.findFirst.mockResolvedValue({ id: 'd1', studyProgramId: 'p1', lkpsEvidenceId: 'ev-dokumen' });
+    await m.service.triggerSetorLed('d1', { ikuList: [iku], lkpsBuktiDukungId: 'ev-lain' });
+    expect(payload(m).lkpsBuktiDukungId).toBe('ev-dokumen');
+    expect(m.update).not.toHaveBeenCalled();
+  });
+
+  it("adopts the client's LKPS as the document's LKPS when the document has none", async () => {
+    const m = makeService(ctx);
+    m.findFirst.mockResolvedValue({ id: 'd1', studyProgramId: 'p1', lkpsEvidenceId: null });
+    m.evidenceFindFirst.mockResolvedValue({ id: 'ev1' });
+    await m.service.triggerSetorLed('d1', { ikuList: [iku], lkpsBuktiDukungId: 'ev1' });
+    expect(m.update).toHaveBeenCalledWith({ where: { id: 'd1' }, data: { lkpsEvidenceId: 'ev1' } });
+    expect(payload(m).lkpsBuktiDukungId).toBe('ev1');
+  });
+
+  it("rejects a client LKPS that is not an LKPS of the document's prodi", async () => {
+    const m = makeService(ctx);
+    m.findFirst.mockResolvedValue({ id: 'd1', studyProgramId: 'p1', lkpsEvidenceId: null });
+    m.evidenceFindFirst.mockResolvedValue(null);
+    await expect(
+      m.service.triggerSetorLed('d1', { ikuList: [iku], lkpsBuktiDukungId: 'ev-asing' }),
+    ).rejects.toThrow('Berkas LKPS tidak ditemukan');
+    expect(m.jobsService.enqueue).not.toHaveBeenCalled();
+  });
+});

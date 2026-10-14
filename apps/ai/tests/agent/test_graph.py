@@ -746,147 +746,211 @@ def test_graph_uses_formula_tool_result_for_composite_indicator():
     assert '"clamped_score": 2.67' in formula_results[0].content
 
 
-# ── independent judge ───────────────────────────────────────────────────────
+# ── judge keluar dari graph scoring ──────────────────────────────────────────
+# run_judge dipanggil on-demand dari api/routes/assessment_judge.py; graph hanya
+# menyimpan cuplikan bukti (judge_evidence) sebagai masukannya.
 
-def test_judge_runs_after_parse_output_and_lowers_confidence_when_ungrounded():
-    """After a final score is parsed, an independent judge (separate model)
-    checks whether the justification is grounded in evidence that was
-    actually retrieved. When it flags the claim as ungrounded, confidence
-    must be capped down rather than left at the model's own self-report."""
-    import json
+_LED_HIT = {
+    "text": "Visi misi disusun lewat rapat pimpinan.",
+    "metadata": {"page_start": 12, "page_end": 12, "para_start": -1, "para_end": -1, "section_heading": ""},
+    "distance": 0.1,
+}
+
+
+def _rubric_call():
     from langchain_core.messages import AIMessage
-    from llm.ollama_client import OllamaClient
-    from agent.graph import build_graph
 
-    # search_led_evidence reads (tenant_id, dokumen_id) from agent.context —
-    # see agent/context.py. Covered by this module's autouse _assessment_context
-    # fixture (tenant-x/doc-1/set-x), same values this test used to set manually.
-
-    rubric_tool_call = AIMessage(
+    return AIMessage(
         content="",
         tool_calls=[{"name": "get_indicator_rubric", "args": {"indicator_no": 1}, "id": "call_1"}],
     )
-    checklist_response = AIMessage(content="- Dokumen VMTS tersedia\n- Proses partisipatif")
-    evidence_tool_call = AIMessage(
-        content="",
-        tool_calls=[{"name": "search_led_evidence", "args": {"query": "visi misi"}, "id": "call_2"}],
-    )
-    final_answer = AIMessage(
-        content=(
-            "SKOR: 3\nJUSTIFIKASI: Program studi disusun secara partisipatif dengan 100 dosen.\n"
-            "CONFIDENCE: 0.9\nREKOMENDASI: Pertahankan praktik baik."
+
+
+def _invoke_native_graph(llm_messages, *, led_hits=None):
+    """Jalankan graph native dengan LLM palsu; kembalikan (hasil, mock build_judge_llm)."""
+    from agent.graph import build_graph
+    from llm.ollama_client import OllamaClient
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = llm_messages
+    fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
+
+    with (
+        patch("agent.graph._build_llm", return_value=fake_llm),
+        patch("agent.graph.build_judge_llm") as judge_factory,
+        patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[]),
+        patch("agent.tools.led_tool.search_led", return_value=led_hits or []),
+    ):
+        graph = build_graph(fake_client)
+        result = graph.invoke(_make_state(), config={"recursion_limit": 60})
+    return result, judge_factory
+
+
+def _evidence_flow():
+    """rubrik -> checklist -> pencarian LED -> jawaban final (confidence 0.9)."""
+    from langchain_core.messages import AIMessage
+
+    return [
+        _rubric_call(),
+        AIMessage(content="- Dokumen VMTS tersedia\n- Proses partisipatif"),
+        AIMessage(
+            content="",
+            tool_calls=[{"name": "search_led_evidence", "args": {"query": "visi misi"}, "id": "call_2"}],
+        ),
+        AIMessage(
+            content=(
+                "SKOR: 3\nJUSTIFIKASI: Program studi disusun secara partisipatif dengan 100 dosen.\n"
+                "CONFIDENCE: 0.9\nREKOMENDASI: Pertahankan praktik baik."
+            )
+        ),
+    ]
+
+
+def _no_evidence_flow():
+    """rubrik -> checklist -> jawaban final tanpa pernah mencari bukti."""
+    from langchain_core.messages import AIMessage
+
+    return [
+        _rubric_call(),
+        AIMessage(content="- Dokumen VMTS tersedia"),
+        AIMessage(content="SKOR: 2\nJUSTIFIKASI: Bukti terbatas.\nCONFIDENCE: 0.7\nREKOMENDASI: Lengkapi bukti."),
+    ]
+
+
+def test_scoring_graph_never_builds_the_judge_and_leaves_confidence_alone():
+    result, judge_factory = _invoke_native_graph(_evidence_flow(), led_hits=[_LED_HIT])
+
+    assert result["final_score"] == 3.0
+    assert result["confidence"] == 0.9  # dulu bisa terpotong ke <=0.3 oleh judge
+    assert result.get("judge_verdict") is None
+    judge_factory.assert_not_called()
+
+
+def test_evidence_snapshot_holds_the_evidence_text_the_judge_would_have_seen():
+    result, _ = _invoke_native_graph(_evidence_flow(), led_hits=[_LED_HIT])
+
+    assert result["judge_evidence"].startswith("[search_led_evidence] ")
+    assert "Visi misi disusun lewat rapat pimpinan." in result["judge_evidence"]
+
+
+def test_evidence_snapshot_is_capped_at_3000_chars():
+    with patch("agent.graph.collect_evidence_text", return_value="x" * 5000):
+        result, _ = _invoke_native_graph(_no_evidence_flow())
+
+    assert result["judge_evidence"] == "x" * 3000
+
+
+def test_evidence_snapshot_is_empty_string_not_none_when_nothing_was_retrieved():
+    """"" = penilai memang tidak mengambil bukti (judge tetap boleh jalan); None dicadangkan untuk baris tanpa skor / sesi lama."""
+    result, _ = _invoke_native_graph(_no_evidence_flow())
+
+    assert result["final_score"] == 2.0
+    assert result["judge_evidence"] == ""
+
+
+def test_run_judge_returns_the_parsed_verdict_and_feeds_both_inputs_to_the_prompt():
+    import json
+    from langchain_core.messages import AIMessage
+    from agent.graph import run_judge
+
+    fake_judge_llm = MagicMock()
+    fake_judge_llm.invoke.return_value = AIMessage(
+        content=json.dumps(
+            {"grounded": False, "hallucinated_claims": ["100 dosen"], "missing_facts": [], "notes": "mengada-ada"}
         )
     )
 
-    fake_llm = MagicMock()
-    fake_llm.invoke.side_effect = [
-        rubric_tool_call, checklist_response, evidence_tool_call, final_answer,
-    ]
+    with patch("agent.graph.build_judge_llm", return_value=fake_judge_llm):
+        verdict = run_judge("Ada 100 dosen.", "[search_led_evidence] rapat pimpinan")
 
-    fake_judge_llm = MagicMock()
-    fake_judge_llm.invoke.return_value = AIMessage(
-        content=json.dumps({
-            "grounded": False,
-            "hallucinated_claims": ["100 dosen tidak disebut di bukti manapun"],
-            "missing_facts": [],
-            "notes": "Angka 100 dosen mengada-ada.",
-        })
-    )
-
-    fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
-
-    with (
-        patch("agent.graph._build_llm", return_value=fake_llm),
-        patch("agent.graph.build_judge_llm", return_value=fake_judge_llm),
-        patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[]),
-        patch(
-            "agent.tools.led_tool.search_led",
-            return_value=[{
-                "text": "Visi misi disusun lewat rapat pimpinan.",
-                "metadata": {"page_start": 12, "page_end": 12, "para_start": -1, "para_end": -1, "section_heading": ""},
-                "distance": 0.1,
-            }],
-        ),
-    ):
-        graph = build_graph(fake_client)
-        result = graph.invoke(_make_state(), config={"recursion_limit": 60})
-
-    assert result["final_score"] == 3.0
-    assert result["judge_verdict"]["grounded"] is False
-    assert result["confidence"] <= 0.3
-    fake_judge_llm.invoke.assert_called_once()
+    assert verdict["grounded"] is False
+    assert verdict["hallucinated_claims"] == ["100 dosen"]
+    prompt = fake_judge_llm.invoke.call_args.args[0][0].content
+    assert "Ada 100 dosen." in prompt
+    assert "[search_led_evidence] rapat pimpinan" in prompt
 
 
-def test_judge_leaves_confidence_untouched_when_grounded():
+def test_run_judge_truncates_inputs_like_the_old_inline_judge():
     import json
     from langchain_core.messages import AIMessage
-    from llm.ollama_client import OllamaClient
-    from agent.graph import build_graph
-
-    rubric_tool_call = AIMessage(
-        content="",
-        tool_calls=[{"name": "get_indicator_rubric", "args": {"indicator_no": 1}, "id": "call_1"}],
-    )
-    checklist_response = AIMessage(content="- Dokumen VMTS tersedia")
-    final_answer = AIMessage(
-        content="SKOR: 2\nJUSTIFIKASI: Bukti terbatas.\nCONFIDENCE: 0.7\nREKOMENDASI: Lengkapi bukti."
-    )
-
-    fake_llm = MagicMock()
-    fake_llm.invoke.side_effect = [rubric_tool_call, checklist_response, final_answer]
+    from agent.graph import run_judge
 
     fake_judge_llm = MagicMock()
-    fake_judge_llm.invoke.return_value = AIMessage(
-        content=json.dumps({"grounded": True, "hallucinated_claims": [], "missing_facts": [], "notes": "OK."})
-    )
+    fake_judge_llm.invoke.return_value = AIMessage(content=json.dumps({"grounded": True}))
 
-    fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
+    with patch("agent.graph.build_judge_llm", return_value=fake_judge_llm):
+        run_judge("§" * 2000, "¤" * 5000)
 
-    with (
-        patch("agent.graph._build_llm", return_value=fake_llm),
-        patch("agent.graph.build_judge_llm", return_value=fake_judge_llm),
-        patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[]),
-    ):
-        graph = build_graph(fake_client)
-        result = graph.invoke(_make_state(), config={"recursion_limit": 60})
-
-    assert result["confidence"] == 0.7
-    assert result["judge_verdict"]["grounded"] is True
+    prompt = fake_judge_llm.invoke.call_args.args[0][0].content
+    assert "§" * 1500 in prompt and "§" * 1501 not in prompt
+    assert "¤" * 3000 in prompt and "¤" * 3001 not in prompt
 
 
-def test_judge_failure_does_not_block_result():
+def test_run_judge_uses_the_placeholder_when_evidence_is_empty():
+    import json
     from langchain_core.messages import AIMessage
-    from llm.ollama_client import OllamaClient
-    from agent.graph import build_graph
+    from agent.graph import run_judge
 
-    rubric_tool_call = AIMessage(
-        content="",
-        tool_calls=[{"name": "get_indicator_rubric", "args": {"indicator_no": 1}, "id": "call_1"}],
-    )
-    checklist_response = AIMessage(content="- Dokumen VMTS tersedia")
-    final_answer = AIMessage(
-        content="SKOR: 2\nJUSTIFIKASI: Bukti terbatas.\nCONFIDENCE: 0.7\nREKOMENDASI: Lengkapi bukti."
-    )
+    fake_judge_llm = MagicMock()
+    fake_judge_llm.invoke.return_value = AIMessage(content=json.dumps({"grounded": False}))
 
-    fake_llm = MagicMock()
-    fake_llm.invoke.side_effect = [rubric_tool_call, checklist_response, final_answer]
+    with patch("agent.graph.build_judge_llm", return_value=fake_judge_llm):
+        run_judge("klaim tanpa bukti", "")
+
+    assert "(tidak ada bukti tercatat)" in fake_judge_llm.invoke.call_args.args[0][0].content
+
+
+def test_run_judge_returns_an_error_dict_when_the_llm_raises():
+    from agent.graph import run_judge
 
     fake_judge_llm = MagicMock()
     fake_judge_llm.invoke.side_effect = RuntimeError("judge unreachable")
 
-    fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
+    with patch("agent.graph.build_judge_llm", return_value=fake_judge_llm):
+        verdict = run_judge("klaim", "bukti")
 
-    with (
-        patch("agent.graph._build_llm", return_value=fake_llm),
-        patch("agent.graph.build_judge_llm", return_value=fake_judge_llm),
-        patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[]),
-    ):
-        graph = build_graph(fake_client)
-        result = graph.invoke(_make_state(), config={"recursion_limit": 60})
+    assert verdict == {"error": "judge unreachable"}
 
-    assert result["final_score"] == 2.0
-    assert result["confidence"] == 0.7
-    assert "error" in (result["judge_verdict"] or {})
+
+def test_run_judge_returns_an_error_dict_when_the_verdict_is_unparseable():
+    from langchain_core.messages import AIMessage
+    from agent.graph import run_judge
+
+    fake_judge_llm = MagicMock()
+    fake_judge_llm.invoke.return_value = AIMessage(content="bukan json sama sekali")
+
+    with patch("agent.graph.build_judge_llm", return_value=fake_judge_llm):
+        verdict = run_judge("klaim", "bukti")
+
+    assert "error" in verdict
+
+
+@pytest.mark.parametrize("content", ["{}", '{"grounded": "true"}', '{"grounded": 1}', '{"grounded": null}'])
+def test_run_judge_rejects_a_parseable_verdict_without_a_boolean_grounded(content):
+    from langchain_core.messages import AIMessage
+    from agent.graph import run_judge
+
+    fake_judge_llm = MagicMock()
+    fake_judge_llm.invoke.return_value = AIMessage(content=content)
+
+    with patch("agent.graph.build_judge_llm", return_value=fake_judge_llm):
+        verdict = run_judge("klaim", "bukti")
+
+    assert verdict == {"error": "verdict judge tidak memuat grounded boolean"}
+
+
+def test_run_judge_returns_grounded_false_as_is():
+    from langchain_core.messages import AIMessage
+    from agent.graph import run_judge
+
+    fake_judge_llm = MagicMock()
+    fake_judge_llm.invoke.return_value = AIMessage(content='{"grounded": false, "notes": "x"}')
+
+    with patch("agent.graph.build_judge_llm", return_value=fake_judge_llm):
+        verdict = run_judge("klaim", "bukti")
+
+    assert verdict["grounded"] is False
+    assert "error" not in verdict
 
 
 def test_graph_terminates_when_llm_never_finalizes():
@@ -913,6 +977,7 @@ def test_graph_terminates_when_llm_never_finalizes():
     assert fake_llm.invoke.call_count < 40
     assert result["final_score"] is None
     assert result["error"] is not None
+    assert result.get("judge_evidence") is None  # tanpa skor, tidak ada yang disnapshot
 
 
 def test_graph_force_retries_when_skor_present_but_no_justifikasi_marker():
@@ -926,7 +991,6 @@ def test_graph_force_retries_when_skor_present_but_no_justifikasi_marker():
 
     Regression test for _looks_like_finalized only requiring a bare 'Skor:'
     substring anywhere in the text."""
-    import json
     from langchain_core.messages import AIMessage
     from llm.ollama_client import OllamaClient
     from agent.graph import build_graph
@@ -949,18 +1013,10 @@ def test_graph_force_retries_when_skor_present_but_no_justifikasi_marker():
     fake_llm = MagicMock()
     fake_llm.invoke.side_effect = [rubric_tool_call, checklist_response, garbled, clean]
 
-    fake_judge_llm = MagicMock()
-    fake_judge_llm.invoke.return_value = AIMessage(
-        content=json.dumps(
-            {"grounded": True, "hallucinated_claims": [], "missing_facts": [], "notes": ""}
-        )
-    )
-
     fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
 
     with (
         patch("agent.graph._build_llm", return_value=fake_llm),
-        patch("agent.graph.build_judge_llm", return_value=fake_judge_llm),
         patch("agent.tools.rubric_tool._get_rubrics_for_set", return_value=[]),
     ):
         graph = build_graph(fake_client)

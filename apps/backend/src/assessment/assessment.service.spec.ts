@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { AssessmentService } from './assessment.service';
 import type { PrismaService } from '../database/prisma.service';
 import type { TenantContextService } from '../tenant/tenant-context.service';
@@ -52,6 +52,7 @@ function makeService() {
   return {
     service,
     findMany,
+    assessmentSessionFindFirst,
     dokumenLedService,
     rubricCriterionFindMany,
     assessmentVerdictUpsert,
@@ -173,6 +174,135 @@ describe('AssessmentService.upsertVerdict', () => {
 
     expect(rubricCriterionFindMany).not.toHaveBeenCalled();
     expect(assessmentVerdictUpsert).toHaveBeenCalled();
+  });
+});
+
+describe('AssessmentService judge on-demand', () => {
+  const originalEnv = process.env.AI_SERVICE_URL;
+  const originalFetch = global.fetch;
+
+  beforeEach(() => {
+    process.env.AI_SERVICE_URL = 'http://ai-service.test';
+  });
+
+  afterEach(() => {
+    process.env.AI_SERVICE_URL = originalEnv;
+    global.fetch = originalFetch;
+  });
+
+  it('runJudge returns 404 for a session outside the tenant/prodi scope and never calls apps/ai', async () => {
+    const { service, assessmentSessionFindFirst } = makeService();
+    assessmentSessionFindFirst.mockResolvedValue(null);
+    global.fetch = jest.fn();
+
+    await expect(service.runJudge('sess-lain', {})).rejects.toThrow(NotFoundException);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('runJudge sends an empty object for a whole-session judge', async () => {
+    const { service } = makeService();
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ judge_id: 'j1', total: 2, skipped: 0 }) });
+
+    const result = await service.runJudge('sess1', {});
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://ai-service.test/assessment/sess1/judge',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({}) }),
+    );
+    expect(result).toEqual({ judge_id: 'j1', total: 2, skipped: 0 });
+  });
+
+  it('runJudge treats an empty indicator list as a whole-session judge (sends {})', async () => {
+    const { service } = makeService();
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+
+    await service.runJudge('sess1', { indicators: [] });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://ai-service.test/assessment/sess1/judge',
+      expect.objectContaining({ body: JSON.stringify({}) }),
+    );
+  });
+
+  it('runJudge maps the indicator list to apps/ai snake_case, defaulting subNo to empty', async () => {
+    const { service } = makeService();
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+
+    await service.runJudge('sess1', { indicators: [{ indicatorNo: 7 }, { indicatorNo: 43, subNo: 'II' }] });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://ai-service.test/assessment/sess1/judge',
+      expect.objectContaining({
+        body: JSON.stringify({
+          indicators: [
+            { indicator_no: 7, sub_no: '' },
+            { indicator_no: 43, sub_no: 'II' },
+          ],
+        }),
+      }),
+    );
+  });
+
+  it.each([
+    [{ indicators: [{ indicatorNo: 0 }] }],
+    [{ indicators: [{ indicatorNo: 1.5 }] }],
+    [{ indicators: [{ indicatorNo: 3, subNo: 5 as unknown as string }] }],
+    [{ indicators: [null as never] }],
+  ])('runJudge rejects a malformed indicator list %j without calling apps/ai', async (dto) => {
+    const { service } = makeService();
+    global.fetch = jest.fn();
+
+    await expect(service.runJudge('sess1', dto)).rejects.toThrow(BadRequestException);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('runJudge raises a bad gateway when apps/ai is unreachable or refuses', async () => {
+    const { service } = makeService();
+    global.fetch = jest.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+    await expect(service.runJudge('sess1', {})).rejects.toThrow(BadGatewayException);
+
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 500 });
+    await expect(service.runJudge('sess1', {})).rejects.toThrow(BadGatewayException);
+  });
+
+  it('findJudgeStatus scopes the run through its own session id', async () => {
+    const { service, assessmentSessionFindFirst } = makeService();
+    const body = { judge_id: 'j1', session_id: 'sess1', status: 'running', total: 2, done: 1, skipped: 0, failed: 0 };
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => body });
+
+    const result = await service.findJudgeStatus('j1');
+
+    expect(global.fetch).toHaveBeenCalledWith('http://ai-service.test/assessment/judge/j1');
+    expect(assessmentSessionFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: 'sess1' }) }));
+    expect(result).toEqual(body);
+  });
+
+  it('findJudgeStatus maps an unknown run to 404 and rejects a run of a foreign session', async () => {
+    const { service, assessmentSessionFindFirst } = makeService();
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 404 });
+    await expect(service.findJudgeStatus('hilang')).rejects.toThrow(NotFoundException);
+
+    assessmentSessionFindFirst.mockResolvedValue(null);
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ session_id: 'sess-lain' }) });
+    await expect(service.findJudgeStatus('j2')).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe('AssessmentService never exposes judgeEvidence', () => {
+  it('findResults omits judgeEvidence', async () => {
+    const { service, findMany } = makeService();
+
+    await service.findResults('sess1');
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ omit: { judgeEvidence: true } }));
+  });
+
+  it('findResultsForDocument omits judgeEvidence', async () => {
+    const { service, findMany } = makeService();
+
+    await service.findResultsForDocument('d1');
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ omit: { judgeEvidence: true } }));
   });
 });
 

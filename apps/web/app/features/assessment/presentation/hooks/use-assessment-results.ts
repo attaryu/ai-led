@@ -137,5 +137,5 @@ export function useAssessmentResults({
 		[izin.canCorrect, projectId, muat],
 	);
 
-	return { baris, ringkasan, simpanKeputusan, cabutKeputusan };
+	return { baris, ringkasan, simpanKeputusan, cabutKeputusan, muatUlang: muat };
 }
