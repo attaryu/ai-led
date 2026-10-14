@@ -7,7 +7,13 @@ import {
 import { Prisma, Role } from '@ai-led/db';
 import { PrismaService } from '../database/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
-import { BabAccessService, withSectionReview, withSectionReviewSelect } from './bab-access.service';
+import {
+  BabAccessService,
+  withSectionList,
+  withSectionListSelect,
+  withSectionReview,
+  withSectionReviewSelect,
+} from './bab-access.service';
 import { CreateBabDokumenDto } from './dto/create-bab-dokumen.dto';
 import { UpdateBabDokumenDto } from './dto/update-bab-dokumen.dto';
 
@@ -44,9 +50,9 @@ export class BabDokumenService {
     const chapters = await this.prisma.documentChapter.findMany({
       where: { documentId: dokumenId },
       orderBy: { chapterOrder: 'asc' },
-      include: withSectionReviewSelect,
+      include: withSectionListSelect,
     });
-    return chapters.map(withSectionReview);
+    return chapters.map(withSectionList);
   }
 
   /** Selaraskan bab dokumen ke ChapterTemplate terkini -- create+rename aja, gak pernah hapus bab yatim. */

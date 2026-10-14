@@ -1,4 +1,4 @@
-import { withSectionReview } from './bab-access.service';
+import { withSectionList, withSectionReview } from './bab-access.service';
 
 describe('withSectionReview', () => {
   const base = { locked: false, reviewSubmittedAt: null };
@@ -21,5 +21,25 @@ describe('withSectionReview', () => {
     });
     expect(out.reviewSubmittedAt).toBe(at);
     expect(out).not.toHaveProperty('sections');
+  });
+});
+
+describe('withSectionList', () => {
+  const at = new Date('2026-09-21');
+
+  it('keeps sections while deriving the same chapter flags', () => {
+    const sections = [
+      { id: 'a', locked: true, reviewSubmittedAt: null },
+      { id: 'b', locked: true, reviewSubmittedAt: at },
+    ];
+    const out = withSectionList({ locked: false, reviewSubmittedAt: null, sections });
+    expect(out.sections).toBe(sections);
+    expect(out.locked).toBe(true);
+    expect(out.reviewSubmittedAt).toBe(at);
+  });
+
+  it('leaves chapter flags alone with no sections', () => {
+    const out = withSectionList({ locked: true, reviewSubmittedAt: null, sections: [] });
+    expect(out).toEqual({ locked: true, reviewSubmittedAt: null, sections: [] });
   });
 });

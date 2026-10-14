@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Role } from '@ai-led/db';
+import { Prisma, Role } from '@ai-led/db';
 import { PrismaService } from '../database/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 
@@ -14,6 +14,40 @@ export function withSectionReview<
   if (!sections?.length) return rest;
   return {
     ...rest,
+    locked: sections.every((s) => s.locked),
+    reviewSubmittedAt: sections.find((s) => s.reviewSubmittedAt)?.reviewSubmittedAt ?? null,
+  };
+}
+
+/** Lightweight section rows for the chapter list (no content/guidance/tableSpec/lkps*); parents (parentId null) first, then by order. */
+export const withSectionListSelect = {
+  sections: {
+    select: {
+      id: true,
+      parentId: true,
+      order: true,
+      title: true,
+      marker: true,
+      status: true,
+      error: true,
+      locked: true,
+      reviewSubmittedAt: true,
+      qualityAssuranceNote: true,
+      notedByName: true,
+      notedAt: true,
+    },
+    orderBy: [{ parentId: { sort: 'asc', nulls: 'first' } }, { order: 'asc' }],
+  },
+} as const satisfies Prisma.DocumentChapterInclude;
+
+/** Same chapter-level derivation as withSectionReview, but keeps the (lightweight) sections array. */
+export function withSectionList<
+  T extends { locked: boolean; reviewSubmittedAt: Date | null; sections: { locked: boolean; reviewSubmittedAt: Date | null }[] },
+>(bab: T): T {
+  const { sections } = bab;
+  if (!sections.length) return bab;
+  return {
+    ...bab,
     locked: sections.every((s) => s.locked),
     reviewSubmittedAt: sections.find((s) => s.reviewSubmittedAt)?.reviewSubmittedAt ?? null,
   };

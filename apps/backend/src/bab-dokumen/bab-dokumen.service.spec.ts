@@ -121,3 +121,59 @@ describe('BabDokumenService.findAllForDokumen (live sync)', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
+
+describe('BabDokumenService.findAllForDokumen (sections)', () => {
+  function makeService(chapters: unknown[]) {
+    const prisma = { documentChapter: { findMany: jest.fn().mockResolvedValue(chapters) } };
+    const access = {
+      findDokumenScoped: jest
+        .fn()
+        .mockResolvedValue({ id: 'doc-1', studyProgramId: 'prodi-1', accreditationSetId: null }),
+    };
+    const service = new BabDokumenService(prisma as never, {} as never, access as never);
+    return { service, prisma };
+  }
+
+  const sec = (id: string, locked: boolean, reviewSubmittedAt: Date | null = null) => ({
+    id,
+    parentId: null,
+    order: 1,
+    title: 't',
+    marker: null,
+    status: 'GENERATED',
+    error: null,
+    locked,
+    reviewSubmittedAt,
+    qualityAssuranceNote: null,
+    notedByName: null,
+    notedAt: null,
+  });
+
+  it('selects only lightweight section columns, scoped to the document', async () => {
+    const { service, prisma } = makeService([]);
+    await service.findAllForDokumen('doc-1');
+    const args = prisma.documentChapter.findMany.mock.calls[0][0];
+    expect(args.where).toEqual({ documentId: 'doc-1' });
+    const select = args.include.sections.select;
+    expect(Object.keys(select).sort()).toEqual(
+      ['error', 'id', 'locked', 'marker', 'notedAt', 'notedByName', 'order', 'parentId', 'qualityAssuranceNote', 'reviewSubmittedAt', 'status', 'title'].sort(),
+    );
+    for (const heavy of ['content', 'guidance', 'tableSpec', 'lkpsList', 'lkpsNeeded', 'selectedEvidenceIds', 'activeCheckpointId']) {
+      expect(select).not.toHaveProperty(heavy);
+    }
+  });
+
+  it('returns sections and derives chapter flags; chapters without sections keep theirs and get []', async () => {
+    const at = new Date('2026-09-21');
+    const { service } = makeService([
+      { id: 'c1', locked: false, reviewSubmittedAt: null, sections: [sec('a', true), sec('b', true, at)] },
+      { id: 'c2', locked: true, reviewSubmittedAt: null, sections: [] },
+    ]);
+    const [c1, c2] = await service.findAllForDokumen('doc-1');
+    expect(c1.locked).toBe(true);
+    expect(c1.reviewSubmittedAt).toBe(at);
+    expect(c1.sections.map((s) => s.id)).toEqual(['a', 'b']);
+    expect(c2.locked).toBe(true);
+    expect(c2.sections).toEqual([]);
+  });
+});
