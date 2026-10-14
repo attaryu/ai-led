@@ -235,14 +235,9 @@ export type RingkasanPenilaian = {
 	 *
 	 * **Lintas status**, termasuk yang berstatus `TINJAU_ULANG` — koreksinya tetap
 	 * ada, yang bergeser cuma dasarnya. Karena itu ia tidak bisa dikurangkan dari
-	 * {@link jumlahDitinjau} untuk mendapat "yang disetujui apa adanya"; angka itu
-	 * dihitung sendiri di bawah.
+	 * {@link jumlahDitinjau}.
 	 */
 	jumlahDikoreksi: number;
-	/** Ditinjau **dan** angkanya dibiarkan sama dengan hitungan AI. */
-	jumlahDisetujuiApaAdanya: number;
-	/** 0–100, dibulatkan. Penyebutnya seluruh indikator. */
-	persenDitinjau: number;
 	jumlahPerluDiperiksa: number;
 };
 
@@ -264,7 +259,6 @@ export function ringkasPenilaian(
 	let jumlahBelumDitinjau = 0;
 	let jumlahTinjauUlang = 0;
 	let jumlahDikoreksi = 0;
-	let jumlahDisetujuiApaAdanya = 0;
 	let jumlahPerluDiperiksa = 0;
 
 	for (const row of baris) {
@@ -277,7 +271,6 @@ export function ringkasPenilaian(
 		switch (row.statusTinjau) {
 			case 'DISETUJUI':
 				jumlahDitinjau += 1;
-				if (!row.mengubahSkor) jumlahDisetujuiApaAdanya += 1;
 				break;
 			case 'TINJAU_ULANG':
 				jumlahTinjauUlang += 1;
@@ -305,8 +298,6 @@ export function ringkasPenilaian(
 		jumlahBelumDitinjau,
 		jumlahTinjauUlang,
 		jumlahDikoreksi,
-		jumlahDisetujuiApaAdanya,
-		persenDitinjau: total === 0 ? 0 : Math.round((jumlahDitinjau / total) * 100),
 		jumlahPerluDiperiksa,
 	};
 }

@@ -1,6 +1,6 @@
+import { GaugeIcon, ListChecksIcon } from '@phosphor-icons/react';
 import { Link } from 'react-router';
 
-import { Card, CardContent, CardHeader, CardTitle } from '~/core/components/ui/card';
 import { StatCard } from '~/core/components/ui/stat-card';
 import {
 	formatSkor,
@@ -13,8 +13,8 @@ const tautan =
 const kartu = 'h-full transition-colors group-hover:bg-muted/40';
 
 /**
- * Dua kartu penilaian AMI Dashboard Dokumen: skor rata-rata dan progres
- * peninjauan. Tiap kartu menautkan ke halaman Penilaian AMI.
+ * Dua kartu penilaian AMI Dashboard Dokumen: skor rata-rata dan indikator yang
+ * sudah ditinjau. Tiap kartu menautkan ke halaman Penilaian AMI.
  *
  * Tidak merender apa pun sampai ringkasannya siap (lihat
  * `useDocumentAmiOverview`). Belum ada sesi tetap menampilkan keduanya,
@@ -38,47 +38,40 @@ export function ProjectAmiCards({
 			? `${formatSkor(selesai.skorRataRata)} / ${SKOR_MAKS}`
 			: '—';
 
-	const persen =
-		selesai && sesi && sesi.totalIndicators > 0
-			? Math.min(100, (selesai.ditinjau / sesi.totalIndicators) * 100)
-			: 0;
-
-	const keterangan = !sesi
-		? 'Belum dinilai'
-		: sesi.status === 'RUNNING'
-			? `Sedang berjalan ${sesi.completedIndicators}/${sesi.totalIndicators}`
-			: sesi.status === 'FAILED'
-				? 'Gagal'
-				: 'Dibatalkan';
+	// Selain COMPLETED, nilainya teks keadaan sesi, bukan angka.
+	const ditinjau =
+		selesai && sesi
+			? `${selesai.ditinjau}/${sesi.totalIndicators}`
+			: !sesi
+				? 'Belum dinilai'
+				: sesi.status === 'RUNNING'
+					? `Berjalan ${sesi.completedIndicators}/${sesi.totalIndicators}`
+					: sesi.status === 'FAILED'
+						? 'Gagal'
+						: 'Dibatalkan';
 
 	return (
 		<>
 			<Link to={href} className={tautan}>
-				<StatCard label="Skor AMI rata-rata" value={skor} className={kartu} />
+				<StatCard
+					boxed
+					icon={GaugeIcon}
+					label="Skor AMI rata-rata"
+					value={skor}
+					className={kartu}
+				/>
 			</Link>
 			<Link to={href} className={tautan}>
-				<Card size="sm" className={`${kartu} gap-3`}>
-					<CardHeader>
-						<CardTitle className="text-sm font-medium text-muted-foreground">
-							Progres penilaian AMI
-						</CardTitle>
-					</CardHeader>
-					<CardContent className="flex flex-col gap-2">
-						{selesai && (
-							<div className="h-1.5 w-full overflow-hidden rounded-full bg-muted-foreground/20">
-								<div
-									className="h-full rounded-full bg-emerald-500"
-									style={{ width: `${persen}%` }}
-								/>
-							</div>
-						)}
-						<p className="text-xs tabular-nums text-muted-foreground">
-							{selesai && sesi
-								? `${selesai.ditinjau} dari ${sesi.totalIndicators} indikator`
-								: keterangan}
-						</p>
-					</CardContent>
-				</Card>
+				<StatCard
+					boxed
+					icon={ListChecksIcon}
+					label="Indikator ditinjau"
+					value={ditinjau}
+					valueClassName={
+						selesai ? 'truncate' : 'truncate text-muted-foreground'
+					}
+					className={kartu}
+				/>
 			</Link>
 		</>
 	);

@@ -1,14 +1,7 @@
 import * as React from 'react';
-import { Link } from 'react-router';
-import { InfoIcon } from '@phosphor-icons/react';
+import { InfoIcon, PlusIcon, SealCheckIcon, SwapIcon } from '@phosphor-icons/react';
 
 import { Button } from '~/core/components/ui/button';
-import {
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
-} from '~/core/components/ui/card';
 import {
 	Dialog,
 	DialogContent,
@@ -21,6 +14,7 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from '~/core/components/ui/tooltip';
+import { StatCard } from '~/core/components/ui/stat-card';
 import { cn } from '~/core/lib/utils';
 import { type LedProjectEntity } from '~/features/led-project/domain/entities/led-project.entity';
 import { accreditationSetRepository } from '../../data/repositories/accreditation-set.repository';
@@ -49,7 +43,7 @@ function DaftarPilihan({
 			<DialogContent className="max-h-[85dvh] max-w-lg overflow-y-auto">
 				<DialogHeader>
 					<DialogTitle>
-						{terpilihId ? 'Ganti Acuan Penilaian' : 'Pilih Acuan Penilaian'}
+						{terpilihId ? 'Ganti Instrumen Akreditasi' : 'Pilih Instrumen Akreditasi'}
 					</DialogTitle>
 					<DialogDescription>
 						Set yang dipilih akan terkunci dari perubahan selama dokumen ini
@@ -103,11 +97,11 @@ function DaftarPilihan({
 }
 
 /**
- * Acuan penilaian dokumen, beserta tempat memilih dan menggantinya.
+ * Instrumen akreditasi dokumen, beserta ikon aksi untuk memilih dan menggantinya.
  *
- * Sengaja hanya memuat nama set dan aksinya: rincian lembaga, siklus, dan
- * kriteria sudah ada di halaman set itu sendiri. Alasan acuan tak bisa diganti
- * disimpan di tooltip judul, bukan di badan kartu, karena ia hanya jawaban atas
+ * Berbentuk kartu bergaya Dashboard Utama dan sengaja hanya memuat nama set dan
+ * aksinya: rincian lembaga, siklus, dan kriteria ada di halaman set itu sendiri.
+ * Alasan acuan tak bisa diganti disimpan di tooltip judul, bukan di badan kartu, karena ia hanya jawaban atas
  * pertanyaan "kenapa tidak ada tombolnya" dan tidak perlu terbaca setiap saat.
  */
 export function ProjectAccreditationSetCard({
@@ -121,17 +115,20 @@ export function ProjectAccreditationSetCard({
 	const [errorPilih, setErrorPilih] = React.useState<string | null>(null);
 
 	return (
-		<Card size="sm" className="h-full">
-			<CardHeader>
-				<CardTitle className="flex items-center gap-1.5">
-					Acuan Penilaian
-					{set && sudahDinilai && (
+		<>
+			<StatCard
+				boxed
+				icon={SealCheckIcon}
+				label="Instrumen Akreditasi"
+				labelExtra={
+					set &&
+					sudahDinilai && (
 						<Tooltip>
 							<TooltipTrigger
 								render={
 									<button
 										type="button"
-										aria-label="Kenapa acuan tidak bisa diganti"
+										aria-label="Kenapa instrumen tidak bisa diganti"
 										className="cursor-pointer rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
 									/>
 								}
@@ -139,41 +136,47 @@ export function ProjectAccreditationSetCard({
 								<InfoIcon className="size-4" />
 							</TooltipTrigger>
 							<TooltipContent>
-								Acuan tidak bisa diganti lagi. Ia sudah dipakai menilai dokumen
+								Instrumen tidak bisa diganti lagi. Ia sudah dipakai menilai dokumen
 								ini.
 							</TooltipContent>
 						</Tooltip>
-					)}
-				</CardTitle>
-			</CardHeader>
-
-			<CardContent className="flex flex-col items-start gap-3">
-				{set ? (
-					<Link
-						to={`/dashboard/accreditation-sets/${set.id}`}
-						className="font-medium text-primary underline-offset-4 hover:underline"
-					>
-						{set.nama}
-					</Link>
-				) : (
-					<p className="text-sm text-muted-foreground">Belum dipilih</p>
-				)}
-
-				{bolehMengganti && (
-					<Button
-						variant={set ? 'outline' : 'default'}
-						size="sm"
-						className="cursor-pointer"
-						onClick={() => setDialogTerbuka(true)}
-					>
-						{set ? 'Ganti Acuan' : 'Pilih Acuan'}
-					</Button>
-				)}
-			</CardContent>
-
-			{errorPilih && (
-				<p className="px-6 pb-4 text-xs text-destructive">{errorPilih}</p>
-			)}
+					)
+				}
+				value={set ? set.nama : 'Belum dipilih'}
+				valueClassName={cn('truncate', !set && 'text-muted-foreground')}
+				action={
+					bolehMengganti && (
+						<Tooltip>
+							<TooltipTrigger
+								render={
+									<Button
+										variant="ghost"
+										size="icon-sm"
+										className="cursor-pointer"
+										aria-label={set ? 'Ganti instrumen akreditasi' : 'Pilih instrumen akreditasi'}
+										onClick={() => setDialogTerbuka(true)}
+									/>
+								}
+							>
+								{set ? (
+									<SwapIcon className="size-4" />
+								) : (
+									<PlusIcon className="size-4" />
+								)}
+							</TooltipTrigger>
+							<TooltipContent>
+								{set ? 'Ganti instrumen akreditasi' : 'Pilih instrumen akreditasi'}
+							</TooltipContent>
+						</Tooltip>
+					)
+				}
+				footer={
+					errorPilih && (
+						<p className="mt-1.5 text-xs text-destructive">{errorPilih}</p>
+					)
+				}
+				className="h-full"
+			/>
 
 			<DaftarPilihan
 				terbuka={dialogTerbuka}
@@ -183,10 +186,10 @@ export function ProjectAccreditationSetCard({
 					setDialogTerbuka(false);
 					setErrorPilih(null);
 					pilih(dipilih).catch((e) =>
-						setErrorPilih(e instanceof Error ? e.message : 'Gagal mengganti acuan.'),
+						setErrorPilih(e instanceof Error ? e.message : 'Gagal mengganti instrumen.'),
 					);
 				}}
 			/>
-		</Card>
+		</>
 	);
 }

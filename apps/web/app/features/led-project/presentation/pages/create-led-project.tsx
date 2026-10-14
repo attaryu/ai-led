@@ -245,7 +245,7 @@ export function CreateLedProject() {
 
 							<Field data-invalid={!!errors.accreditationSetId}>
 								<FieldLabel htmlFor="accreditationSetId">
-									Acuan Penilaian
+									Instrumen Akreditasi
 								</FieldLabel>
 								{acuanTersedia.length === 0 ? (
 									// Menolak dengan alasan, bukan kolom kosong yang diam.

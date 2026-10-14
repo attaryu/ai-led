@@ -20,11 +20,12 @@ import { type LedProjectEntity } from '../../domain/entities/led-project.entity'
 /**
  * Dashboard Dokumen — lapis Dokumen LED (docs/application_flow.md §6.1).
  *
- * Urutannya: judul dokumen beserta status dan tautan Bukti Dukung, statistik,
- * kartu Acuan Penilaian dengan dua kartu AMI (skor dan progres), lalu tabel
- * Progres per Bab selebar penuh. Kartu AMI hanya muncul bagi role yang boleh
+ * Urutannya: judul dokumen beserta status dan tautan Bukti Dukung, tiga kartu
+ * angka, kartu Instrumen Akreditasi dengan dua kartu AMI (skor dan indikator
+ * ditinjau), lalu tabel Progres per Bab selebar penuh. Keenam kartu bergaya
+ * Dashboard Utama: hanya satu angka, tanpa bar maupun keterangan. Kartu AMI hanya muncul bagi role yang boleh
  * membaca ringkasannya. Satu-satunya aksi ubah data di sini adalah memilih/
- * mengganti acuan penilaian, dan penjagaannya ada di kartunya. Tombol Buka di
+ * mengganti instrumen akreditasi, dan penjagaannya ada di kartunya. Tombol Buka di
  * tabel (bab maupun sub-bab) menuju Editor Bab (§7), yang berdiri sebagai root URL sendiri di
  * `/editor/:projectId/:chapterId`.
  *
@@ -73,38 +74,29 @@ function ProjectProgressView({ ledProject }: { ledProject: LedProjectEntity }) {
 
 			<div className="grid gap-4 sm:grid-cols-3">
 				<StatCard
+					boxed
 					label="Kelengkapan Bab"
 					icon={NotebookIcon}
 					value={`${summary.terisi}/${summary.total}`}
-					progress={summary.persenKelengkapan}
-					hint={`${summary.persenKelengkapan}% bab sudah ada isinya`}
 				/>
 				<StatCard
+					boxed
 					label="Kesiapan Review"
 					icon={LockSimpleIcon}
 					value={`${summary.terkunci}/${summary.total}`}
-					progress={summary.persenKesiapanReview}
-					// Antrean menumpang hint kartu ini alih-alih jadi kartu sendiri:
-					// pertanyaannya ("ada yang menunggu
-					// saya?") memang lanjutan langsung dari angka di atasnya.
-					hint={
-						summary.menungguReview > 0
-							? `${summary.persenKesiapanReview}% terkunci · ${summary.menungguReview} bab menunggu review`
-							: `${summary.persenKesiapanReview}% bab sudah dikunci Penjamin Mutu`
-					}
 				/>
 				<StatCard
+					boxed
 					label="Bukti Dukung Dipakai"
 					icon={PaperclipIcon}
-					value={String(summary.buktiDukungTerpakai)}
-					hint={`Dari ${buktiDukungTersedia} berkas tersedia untuk program studi ini`}
+					value={`${summary.buktiDukungTerpakai}/${buktiDukungTersedia}`}
 				/>
 			</div>
 
 			{/*
-			 * Tiga kolom dipesan sejak kartu AMI masih dimuat, supaya kartu Acuan
+			 * Tiga kolom dipesan sejak kartu AMI masih dimuat, supaya kartu Instrumen
 			 * tidak melompat saat datanya tiba. Role tanpa hak baca ringkasan AMI
-			 * (atau ringkasan yang gagal) hanya punya kartu Acuan, yang lalu
+			 * (atau ringkasan yang gagal) hanya punya kartu Instrumen, yang lalu
 			 * mengisi baris penuh.
 			 */}
 			<div

@@ -212,7 +212,7 @@ export function deriveSetLock(dipakaiProyek: number): SetLock {
 		return {
 			terbuka: false,
 			bolehHapus: false,
-			alasan: `Set ini sudah dipakai ${dipakaiProyek} Dokumen LED, jadi isinya tidak bisa diubah lagi. Duplikasi setnya kalau acuannya perlu direvisi.`,
+			alasan: `Set ini sudah dipakai ${dipakaiProyek} Dokumen LED, jadi isinya tidak bisa diubah lagi. Duplikasi setnya kalau instrumennya perlu direvisi.`,
 		};
 	}
 

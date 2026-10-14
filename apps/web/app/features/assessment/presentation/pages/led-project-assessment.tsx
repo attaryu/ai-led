@@ -1,9 +1,9 @@
 import * as React from 'react';
 import {
-	ClipboardTextIcon,
 	FilePdfIcon,
+	GaugeIcon,
+	ListChecksIcon,
 	PencilSimpleIcon,
-	SealCheckIcon,
 	WarningCircleIcon,
 } from '@phosphor-icons/react';
 import { useParams, useSearchParams } from 'react-router';
@@ -252,59 +252,38 @@ function AssessmentView({ ledProject }: { ledProject: LedProjectEntity }) {
 
 			<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
 				<StatCard
-					label="Skor Rata-rata"
-					icon={ClipboardTextIcon}
-					value={formatSkor(sesiAktif ? ringkasan.rataRata : null)}
-					progress={sesiAktif ? ringkasan.persen : undefined}
-					hint={
-						sesiAktif
-							? skalaMaksimal !== null
-								? `${ringkasan.persen}% dari skala 0–${skalaMaksimal}`
-								: `${ringkasan.persen}% dari skor maksimal`
-							: 'Belum pernah dinilai'
+					boxed
+					label="Skor AMI rata-rata"
+					icon={GaugeIcon}
+					value={
+						sesiAktif && ringkasan.rataRata !== null && skalaMaksimal !== null
+							? `${formatSkor(ringkasan.rataRata)} / ${skalaMaksimal}`
+							: formatSkor(sesiAktif ? ringkasan.rataRata : null)
 					}
 				/>
 				{/*
-				 * Menggantikan kartu "Indikator Dinilai" (cakupan AI), yang hampir
-				 * selalu penuh dan karena itu jarang jadi pertanyaan. Yang benar-benar
-				 * ditanyakan Penjamin Mutu tiap hari adalah seberapa jauh **dia** sudah
-				 * memeriksa — jadi itulah yang diangkat jadi angka besar beserta barnya.
+				 * Yang ditanyakan Penjamin Mutu tiap hari adalah seberapa jauh dia sudah
+				 * memeriksa, bukan cakupan AI yang hampir selalu penuh.
 				 */}
 				<StatCard
-					label="Progres Peninjauan"
-					icon={SealCheckIcon}
+					boxed
+					label="Indikator ditinjau"
+					icon={ListChecksIcon}
 					value={`${ringkasan.jumlahDitinjau}/${ringkasan.total}`}
-					progress={ringkasan.persenDitinjau}
-					hint={
-						ringkasan.total === 0
-							? 'Jalankan penilaian lebih dulu'
-							: ringkasan.jumlahTinjauUlang > 0
-								? `${ringkasan.jumlahBelumDitinjau} belum ditinjau · ${ringkasan.jumlahTinjauUlang} perlu ditinjau ulang`
-								: ringkasan.jumlahBelumDitinjau === 0
-									? 'Seluruh indikator sudah ditinjau'
-									: `${ringkasan.jumlahBelumDitinjau} indikator belum ditinjau`
-					}
 					tone={ringkasan.jumlahTinjauUlang > 0 ? 'warning' : 'default'}
 				/>
 				<StatCard
-					label="Dikoreksi Penjamin Mutu"
+					boxed
+					label="Dikoreksi"
 					icon={PencilSimpleIcon}
 					value={String(ringkasan.jumlahDikoreksi)}
-					hint={
-						ringkasan.jumlahDikoreksi === 0
-							? 'Belum ada skor AI yang diubah'
-							: `${ringkasan.jumlahDisetujuiApaAdanya} lainnya disetujui apa adanya`
-					}
 				/>
+				{/* Angkanya menyusut tiap kali Penjamin Mutu menyetujui temuan. */}
 				<StatCard
-					label="Perlu Diperiksa"
+					boxed
+					label="Belum disetujui"
 					icon={WarningCircleIcon}
 					value={String(ringkasan.jumlahPerluDiperiksa)}
-					// Menyebut "belum disetujui", bukan mendaftar ketiga pemicunya:
-					// angkanya kini menyusut tiap kali Penjamin Mutu menyetujui sesuatu,
-					// dan daftar pemicu tanpa syarat itu akan membuat angkanya tampak
-					// tidak cocok dengan keterangannya sendiri.
-					hint="Temuan AI yang belum disetujui Penjamin Mutu"
 					tone={ringkasan.jumlahPerluDiperiksa > 0 ? 'warning' : 'default'}
 				/>
 			</div>

@@ -35,7 +35,7 @@ export const createLedProjectSchema = ledProjectSchema
 		 * sebelum aturan ini berlaku tetap boleh tidak punya acuan, dan halaman
 		 * ruang kerjanya punya tampilan tersendiri untuk keadaan itu.
 		 */
-		accreditationSetId: z.string().min(1, 'Acuan penilaian wajib dipilih'),
+		accreditationSetId: z.string().min(1, 'Instrumen akreditasi wajib dipilih'),
 		/**
 		 * LKPS prodi yang dipilih untuk dokumen ini. `''` = belum dipilih (`<select>` memakai
 		 * string kosong untuk "tidak ada"; dinormalkan ke `null` saat disimpan). Opsional di

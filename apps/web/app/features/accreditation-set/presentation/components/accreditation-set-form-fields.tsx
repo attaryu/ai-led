@@ -38,7 +38,7 @@ export function AccreditationSetFormFields({
 					{...register('nama')}
 				/>
 				<FieldDescription>
-					Nama yang muncul saat Dokumen LED memilih acuan penilaiannya.
+					Nama yang muncul saat Dokumen LED memilih instrumen akreditasinya.
 				</FieldDescription>
 				{errors.nama && <FieldError>{errors.nama.message}</FieldError>}
 			</Field>

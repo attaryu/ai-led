@@ -143,7 +143,7 @@ export function AccreditationSetCriteria() {
 		const lanjut = await konfirmasi({
 			judul: 'Tandai set ini siap dipakai?',
 			deskripsi:
-				'Set akan muncul sebagai pilihan acuan di Dokumen LED, dan statusnya tidak bisa ditarik kembali. Isinya sendiri baru terkunci setelah ada dokumen yang memakainya.',
+				'Set akan muncul sebagai pilihan instrumen di Dokumen LED, dan statusnya tidak bisa ditarik kembali. Isinya sendiri baru terkunci setelah ada dokumen yang memakainya.',
 			labelAksi: 'Tandai Siap',
 		});
 		if (!lanjut) return;

@@ -293,10 +293,9 @@ export function AssessmentResultList({
 					<div className="flex flex-col gap-1">
 						{tampil.map((row) => (
 							<AssessmentResultRow
-								// ponytail: dulu `key={row.kriteria.no}`. Dua belas indikator punya dua baris (sub-indikator
-								// I/II dengan `no` sama, mis. 43.I dan 43.II), jadi kuncinya kembar: React menyisakan/menggandakan
-								// baris saat daftar disaring, dan hasil pencarian berisi baris yang tidak cocok. Kode kriteria unik.
-								key={row.kriteria.kodeKriteria}
+								// Kunci nomor+sub-nomor, sama dengan kunci pemilihan: `no` kembar pada sub-indikator
+								// (43.I/43.II) dan `kodeKriteria` tidak dijamin unik (data contoh mengulang C1–C5).
+								key={kunciIndikator(row.kriteria.no, row.kriteria.subNo)}
 								row={row}
 								terpilih={kunciIndikator(row.kriteria.no, row.kriteria.subNo) === barisTerpilihNo}
 								onBuka={() => onBuka(row)}

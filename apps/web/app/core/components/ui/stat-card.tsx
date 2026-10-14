@@ -1,4 +1,5 @@
 import { type Icon } from '@phosphor-icons/react';
+import type * as React from 'react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '~/core/components/ui/card';
 import { cn } from '~/core/lib/utils';
@@ -65,6 +66,9 @@ export function StatBlock({
 	icon,
 	tone = 'default',
 	size = 'md',
+	labelExtra,
+	valueClassName,
+	footer,
 	className,
 }: {
 	label: string;
@@ -72,21 +76,33 @@ export function StatBlock({
 	icon: Icon;
 	tone?: StatCardTone;
 	size?: 'sm' | 'md';
+	/** Pelengkap di samping judul, mis. ikon info. */
+	labelExtra?: React.ReactNode;
+	/** Nilai teks panjang: terpotong satu baris dan terbaca penuh lewat `title`. */
+	valueClassName?: string;
+	/** Di bawah nilai, dalam wadah yang sama, mis. tombol aksi. */
+	footer?: React.ReactNode;
 	className?: string;
 }) {
 	return (
 		<div className={cn('flex items-center gap-3', className)}>
 			<StatIconBox icon={icon} tone={tone} size={size} />
 			<div className="flex min-w-0 flex-col">
-				<p className="truncate text-sm font-medium text-muted-foreground">{label}</p>
+				<div className="flex min-w-0 items-center gap-1.5">
+					<p className="truncate text-sm font-medium text-muted-foreground">{label}</p>
+					{labelExtra}
+				</div>
 				<p
+					title={valueClassName ? value : undefined}
 					className={cn(
-						'font-heading text-2xl font-bold tracking-tight tabular-nums',
+						'font-heading text-xl font-bold tracking-tight tabular-nums',
 						toneStyles[tone],
+						valueClassName,
 					)}
 				>
 					{value}
 				</p>
+				{footer}
 			</div>
 		</div>
 	);
@@ -106,6 +122,10 @@ export function StatCard({
 	progress,
 	tone = 'default',
 	boxed = false,
+	labelExtra,
+	valueClassName,
+	footer,
+	action,
 	className,
 }: {
 	label: string;
@@ -120,13 +140,30 @@ export function StatCard({
 	 * ikon tetap kecil di baris judul, seperti pemanggil lama.
 	 */
 	boxed?: boolean;
+	/** Hanya berlaku pada mode `boxed`; lihat {@link StatBlock}. */
+	labelExtra?: React.ReactNode;
+	valueClassName?: string;
+	footer?: React.ReactNode;
+	/** Aksi (mis. tombol ikon) di pojok kanan atas kartu `boxed`. */
+	action?: React.ReactNode;
 	className?: string;
 }) {
 	if (boxed && StatIcon) {
 		return (
-			<Card size="sm" className={className}>
+			<Card size="sm" className={cn(action && 'relative', className)}>
+				{action && <div className="absolute top-2 right-2">{action}</div>}
 				<CardContent>
-					<StatBlock label={label} value={value} icon={StatIcon} tone={tone} />
+					<StatBlock
+						// Ruang di kanan agar judul tidak tertimpa aksi.
+						className={action ? 'pr-8' : undefined}
+						label={label}
+						value={value}
+						icon={StatIcon}
+						tone={tone}
+						labelExtra={labelExtra}
+						valueClassName={valueClassName}
+						footer={footer}
+					/>
 				</CardContent>
 			</Card>
 		);
@@ -148,7 +185,7 @@ export function StatCard({
 			<CardContent className="flex flex-col gap-2">
 				<p
 					className={cn(
-						'font-heading text-2xl font-bold tracking-tight tabular-nums',
+						'font-heading text-xl font-bold tracking-tight tabular-nums',
 						toneStyles[tone],
 					)}
 				>
