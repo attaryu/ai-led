@@ -4,20 +4,6 @@ import { z } from 'zod';
 export const jenjangEnum = z.enum(['D3', 'D4', 'S1', 'S2', 'S3']);
 export type Jenjang = z.infer<typeof jenjangEnum>;
 
-/**
- * Peringkat akreditasi yang tersimpan di DB (tidak lagi ditampilkan di UI).
- * Memakai istilah LAM Teknik/BAN-PT
- * yang berlaku sekarang; peringkat lama (A/B/C) sengaja tidak disediakan karena
- * dokumen LED yang disusun di sini selalu memakai instrumen baru.
- */
-export const peringkatAkreditasiEnum = z.enum([
-	'UNGGUL',
-	'BAIK_SEKALI',
-	'BAIK',
-	'BELUM_TERAKREDITASI',
-]);
-export type PeringkatAkreditasi = z.infer<typeof peringkatAkreditasiEnum>;
-
 export const studyProgramSchema = z.object({
 	id: z.string(),
 	studyProgramName: z
@@ -42,14 +28,7 @@ export const studyProgramSchema = z.object({
 		.string()
 		.min(1, 'Ketua prodi wajib diisi')
 		.max(100, 'Ketua prodi maksimal 100 karakter'),
-	/**
-	 * Peringkat, nomor SK, dan masa berlaku akreditasi tidak lagi ditampilkan
-	 * maupun ditanyakan di UI (tidak dipakai pembangkitan AI maupun penilaian
-	 * AMI). Tetap dibaca longgar supaya payload lama masih terurai.
-	 */
-	peringkatAkreditasi: peringkatAkreditasiEnum.optional(),
-	nomorSkAkreditasi: z.string().nullish(),
-	berlakuSampaiAkreditasi: z.string().nullish(),
+	// Peringkat, nomor SK, dan masa berlaku akreditasi dari backend tidak dipakai UI.
 	createdAt: z.string(),
 });
 

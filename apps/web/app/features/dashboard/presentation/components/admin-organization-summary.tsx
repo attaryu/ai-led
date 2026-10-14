@@ -89,7 +89,7 @@ export function AdminOrganizationSummary() {
 					<CardHeader>
 						<CardTitle>Program Studi</CardTitle>
 						<CardDescription>
-							Tambah dan ubah data program studi beserta identitas akreditasinya.
+							Tambah dan ubah data program studi.
 						</CardDescription>
 					</CardHeader>
 					<CardContent>

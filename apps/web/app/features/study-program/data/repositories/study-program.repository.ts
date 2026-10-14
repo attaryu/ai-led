@@ -14,9 +14,6 @@ function toEntity(row: BackendProgramStudi): StudyProgramEntity {
 		jenjang: row.level,
 		fakultas: row.faculty,
 		ketuaProdi: row.programHead,
-		peringkatAkreditasi: row.accreditationRank,
-		nomorSkAkreditasi: row.accreditationDecreeNumber,
-		berlakuSampaiAkreditasi: row.accreditationValidUntil,
 		createdAt: row.createdAt,
 	};
 }

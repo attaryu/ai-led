@@ -1,8 +1,5 @@
 import { apiFetch } from '~/core/lib/api-client';
-import {
-	type Jenjang,
-	type PeringkatAkreditasi,
-} from '../../../domain/entities/study-program.entity';
+import { type Jenjang } from '../../../domain/entities/study-program.entity';
 
 /** Bentuk baris Prisma `StudyProgram` sebagaimana dikembalikan `/program-studi`. */
 export type BackendProgramStudi = {
@@ -13,10 +10,6 @@ export type BackendProgramStudi = {
 	level: Jenjang;
 	faculty: string;
 	programHead: string;
-	/** Opsional: tidak lagi ditanyakan UI, backend memberi nilai bawaan. */
-	accreditationRank?: PeringkatAkreditasi;
-	accreditationDecreeNumber: string | null;
-	accreditationValidUntil: string | null;
 	createdAt: string;
 };
 
