@@ -547,3 +547,53 @@ def test_lkps_needed_and_list_survive_confirm_and_outline_copy(fixture_ids, conn
             cur.execute("DELETE FROM writing_chapter_sections WHERE chapter_id = %s", (chapter_id,))
             cur.execute("DELETE FROM writing_document_chapters WHERE id = %s", (chapter_id,))
             cur.execute("DELETE FROM guide_references WHERE id = %s", (guide_id,))
+
+
+def test_judge_columns_roundtrip_stale_guard_and_rescore_clears_verdict(fixture_ids, conn):
+    import db.postgres_client as pc
+
+    tenant_id = fixture_ids["tenant_id"]
+    session_id = str(uuid.uuid4())
+    pc.create_session(
+        session_id,
+        tenant_id=tenant_id,
+        dokumen_id=fixture_ids["dokumen_id"],
+        created_by_user_id=fixture_ids["user_id"],
+        total_indicators=1,
+    )
+
+    def _kolom():
+        return [
+            (r["indicator_no"], r["sub_no"], r["justification"], r["judge_evidence"], r["judge_verdict"])
+            for r in pc.get_judge_rows(tenant_id, session_id)
+        ]
+
+    try:
+        pc.log_indicator_result(
+            tenant_id, session_id, indicator_no=1, score=3.0, justification="klaim A", confidence=0.9,
+            judge_evidence="bukti A",
+        )
+        assert _kolom() == [(1, "", "klaim A", "bukti A", None)]
+
+        assert pc.set_judge_verdict(tenant_id, session_id, 1, "", "klaim A", {"grounded": True}) is True
+        assert _kolom()[0][4] == {"grounded": True}
+
+        # penilaian ulang terjadi saat judge berjalan: justifikasi sudah berganti -> verdict kedaluwarsa ditolak
+        assert pc.set_judge_verdict(tenant_id, session_id, 1, "", "klaim LAIN", {"grounded": False}) is False
+        assert _kolom()[0][4] == {"grounded": True}
+
+        # penilaian ulang mengosongkan verdict dan mengganti bukti (bukti kosong "" tetap "", bukan NULL)
+        pc.log_indicator_result(
+            tenant_id, session_id, indicator_no=1, score=2.0, justification="klaim B", confidence=0.8,
+            judge_evidence="",
+        )
+        assert _kolom() == [(1, "", "klaim B", "", None)]
+
+        # jalur galat: tanpa bukti -> NULL
+        pc.log_indicator_result(
+            tenant_id, session_id, indicator_no=1, score=None, justification=None, confidence=None, error="gagal",
+        )
+        assert _kolom()[0][3] is None
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM assessment_sessions WHERE id = %s", (session_id,))

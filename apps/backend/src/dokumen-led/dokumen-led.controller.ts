@@ -15,6 +15,7 @@ import { DokumenLedService } from './dokumen-led.service';
 import { ConfirmLedUploadDto } from './dto/confirm-led-upload.dto';
 import { CreateDokumenLedDto } from './dto/create-dokumen-led.dto';
 import { TriggerAssessmentDto } from './dto/trigger-assessment.dto';
+import { TriggerSetorLedDto } from './dto/trigger-setor-led.dto';
 import { UpdateDokumenLedDto } from './dto/update-dokumen-led.dto';
 
 // Nested under program-studi for create/list (needs parent context), flat by id otherwise.
@@ -79,6 +80,16 @@ export class DokumenLedController {
     @Body() dto?: TriggerAssessmentDto,
   ) {
     return this.dokumenLedService.triggerAssessment(id, dto);
+  }
+
+  @Post('dokumen/:id/setor-led')
+  @Protected(...WRITE_ROLES)
+  @ApiOperation({
+    summary:
+      'Setor ke LED: isi tabel analisis IKU (Evaluasi + narasi) untuk dokumen LED (Producer SETOR_LED)',
+  })
+  triggerSetorLed(@Param('id') id: string, @Body() dto: TriggerSetorLedDto) {
+    return this.dokumenLedService.triggerSetorLed(id, dto);
   }
 
   @Post('dokumen/:id/led-upload')

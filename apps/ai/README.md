@@ -125,7 +125,7 @@ nama model (`deepseek-r1`/`qwq`/`o1-`/dst dianggap model reasoning →
 | 4 | `force` (maks 2x) | Kalau LLM belum kasih jawaban final berformat benar, belum pernah manggil satu tool pun, atau indikator quantitative/composite selesai tanpa pernah manggil `compute_formula_score`, kasih nudge spesifik dan ulangi. |
 | 5 | `parse_output` / `finalize` | Ekstrak SKOR/JUSTIFIKASI/CONFIDENCE/REKOMENDASI dari jawaban final. Pencarian nilai SKOR dibatasi ke teks sebelum label JUSTIFIKASI/CONFIDENCE/REKOMENDASI pertama — supaya rumus yang disebut ulang di dalam justifikasi tidak ketuker jadi skor akhir. |
 | 6 | `decimal_refine` | Untuk indikator **qualitative**: hitung interpolasi desimal proporsional antar-band (mis. 3.5) lewat 2 panggilan LLM kecil yang terstruktur (diff kriteria band, verifikasi tiap aspek vs bukti) — dihitung di Python, bukan dipercaya dari teks bebas model. Indikator **quantitative/composite** melapor hasil rumus apa adanya (boleh desimal), tidak dibulatkan. |
-| 7 | `judge` | Model terpisah (config `RAGAS_*`) mengecek apakah justifikasi benar-benar didukung bukti yang di-retrieve — menurunkan confidence kalau tidak, tidak pernah memblokir hasil. |
+| 7 | `evidence_snapshot` | Tanpa LLM: simpan cuplikan bukti yang benar-benar di-retrieve ke `judge_evidence` sebagai masukan judge. Judge-nya sendiri **tidak lagi jalan di graph** — dipicu pengguna lewat `POST /assessment/{session_id}/judge` (lihat bagian endpoint). |
 | 8 | `give_up` / `error_node` | Kalau tetap gagal setelah semua retry, error eksplisit disimpan lewat node nyata (bukan router conditional-edge — LangGraph tidak mem-persist mutation dari router) — tidak pernah diam-diam kasih hasil kosong/salah. |
 
 **Sumber bukti** (`sources_used`) — LED chunk (halaman/paragraf/section),
@@ -155,7 +155,7 @@ punya migrasi sendiri, hanya baca/tulis lewat `db/postgres_client.py`:
   `recommendation`, `model` (LLM yang menilai indikator ini), `sourcesUsed`
   (JSONB, lihat di atas)
 - **`ReasoningStep`** (`assessment_reasoning_steps`) — log chain-of-thought
-  per indikator (checklist, evidence auto-check, judge verdict, dst.),
+  per indikator (checklist, evidence auto-check, dst.; verdict judge bukan langkah reasoning lagi),
   untuk debugging/transparansi
 
 Tidak ada Supabase — `eval/ragas_eval.py::build_eval_samples` juga baca
@@ -194,6 +194,12 @@ Upload dokumen Bukti Dukung **tidak** lewat sini — itu jalur NestJS
 | GET | `/assessment/list` | Riwayat sesi |
 | GET | `/assessment/{session_id}/status` | Status + progress satu sesi |
 | GET | `/assessment/{session_id}/results` | Hasil lengkap per indikator + `model` + `sourcesUsed` |
+| POST | `/assessment/{session_id}/judge` | Jalankan judge grounding on-demand (background task). Body opsional `{"indicators": [{"indicator_no": int, "sub_no": str}]}` — kosong/tanpa `indicators` = seluruh sesi (baris yang sudah punya verdict dilewati); daftar eksplisit = jalankan ulang baris itu saja. Balikin `{judge_id, total, skipped}` |
+| GET | `/assessment/judge/{judge_id}` | Progres run judge: `{judge_id, session_id, status (pending/running/completed/failed), total, done, skipped, failed, error}`. Status hidup di memori proses (hilang kalau restart, 404 — verdict yang sudah tertulis tetap ada di Postgres) |
+
+Judge memakai model terpisah (config `RAGAS_*`) untuk mengecek apakah klaim
+justifikasi didukung `judge_evidence`; verdict ditulis ke
+`IndicatorResult.judgeVerdict` dan **tidak pernah mengubah `confidence`**.
 
 ### `/eval` — evaluasi RAGAS
 

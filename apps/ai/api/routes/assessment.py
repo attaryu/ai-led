@@ -652,6 +652,7 @@ async def _process_single_indicator(
                 error=error,
                 model=ollama_client.model,
                 sources_used=result.get("sources_used"),
+                judge_evidence=result.get("judge_evidence"),
             )
             return True
 

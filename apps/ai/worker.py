@@ -79,6 +79,8 @@ async def process_job(job, token: str):
         result = await _handle_simulasi_skor(job)
     elif job.name == "ASSESSMENT_AMI":
         result = await _handle_assessment_ami(job)
+    elif job.name == "SETOR_LED":
+        result = await _handle_setor_led(job)
     elif job.name == "INGESTION_BUKTI_DUKUNG":
         result = await _handle_ingestion_bukti_dukung(job)
     elif job.name == "INGESTION_RUBRIK_DOKUMEN":
@@ -2441,6 +2443,119 @@ async def _handle_assessment_ami(job) -> dict:
         "totalIndicators": sess["total_indicators"],
         "completedIndicators": sess["completed_indicators"],
     }
+
+
+def _program_studi_label(tenant_id: str, study_program_id: str | None) -> str | None:
+    """"Nama prodi (jenjang D4 / Diploma 4 / Sarjana Terapan)" untuk prompt setor ke LED, atau None bila prodi tidak
+    ada/gagal dibaca. Konteks tambahan (agar model tidak menebak varian jenis program pada target/tabel LKPS),
+    bukan prasyarat: kegagalan di sini tidak boleh menghentikan job."""
+    if not study_program_id:
+        return None
+    from db.connection import tenant_cursor
+    from setor_led.prompts import format_prodi
+
+    try:
+        with tenant_cursor(tenant_id) as cur:
+            cur.execute("SELECT name, level FROM org_study_programs WHERE id = %s", (study_program_id,))
+            row = cur.fetchone()
+    except Exception:
+        logger.exception("Gagal membaca prodi %s untuk konteks setor ke LED; lanjut tanpa", study_program_id)
+        return None
+    return format_prodi(row["name"], row["level"]) if row else None
+
+
+async def _handle_setor_led(job) -> dict:
+    """"Setor ke LED": mengisi tabel analisis IKU (kategori Evaluasi + narasi) untuk satu Dokumen LED.
+    Terpisah dari _handle_assessment_ami -- tidak memakai rubrik/skor 0-4 dan tidak menulis
+    AssessmentSession; hasilnya dikembalikan sebagai return value job (-> Job.result). Worker ini hanya
+    pemicu: prasyarat (LED terindeks, LKPS termuat, model valid) dicek di sini, logika per-IKU ada di
+    setor_led/pipeline.py.
+
+    Prasyarat sama dengan AMI (LED + LKPS wajib; tanpa salah satunya job berhenti dengan error, bukan
+    menulis dari konteks kosong). Model reasoning diterima: pipeline memilih jalurnya per model seperti AMI
+    (tool calling bawaan, atau protokol JSON untuk deepseek-r1/qwq dst.), bukan di sini.
+    """
+    from agent.tools.lkps_tool import load_lkps_for_document
+    from db.postgres_client import get_document_accreditation_set
+    from llm.ollama_client import get_available_models
+    from setor_led.pipeline import jalankan_setor_led
+    from setor_led.schema import parse_iku_list
+
+    payload = job.data
+    dokumen_id = payload["dokumenId"]
+    tenant_id = payload["tenantId"]
+    study_program_id = payload.get("programStudiId")
+
+    try:
+        iku_list = parse_iku_list(payload.get("ikuList"))
+    except ValueError as e:
+        return {"status": "error", "error": str(e)}
+
+    available = get_available_models()
+    model = payload.get("model") or (available[0] if available else None)
+    if model is None:
+        return {"status": "error", "error": "Tidak ada model yang dikonfigurasi (OLLAMA_MODEL / OPENROUTER_MODEL kosong)."}
+    if model not in available:
+        return {"status": "error", "error": f"Unknown model: {model}. Available: {available}"}
+
+    accreditation_set_id = get_document_accreditation_set(dokumen_id)
+    if accreditation_set_id is None:
+        return {
+            "status": "error",
+            "error": "Dokumen ini belum memilih Set Akreditasi — pilih Set Akreditasi dulu sebelum setor ke LED.",
+        }
+
+    led_error = await _prepare_led_index(tenant_id, dokumen_id, payload.get("sumberLed", "EDITOR"))
+    if led_error:
+        return {"status": "error", "error": led_error}
+
+    try:
+        lkps_loaded = load_lkps_for_document(
+            tenant_id, dokumen_id,
+            payload.get("lkpsBuktiDukungId") or _document_lkps_evidence_id(tenant_id, dokumen_id),
+        )
+    except Exception as e:
+        logger.exception("Gagal memuat LKPS untuk tenant=%s dokumen=%s", tenant_id, dokumen_id)
+        return {"status": "error", "error": f"Gagal membaca LKPS: {_err_msg(e)}"}
+    if not lkps_loaded:
+        return {"status": "error", "error": "LKPS belum dipilih untuk setor ke LED -- pilih atau unggah Data LKPS dulu."}
+
+    async def _report_progress(completed: int, total: int) -> None:
+        try:
+            await job.updateProgress({"completed": completed, "total": total})
+        except Exception:
+            logger.exception("Gagal mengirim progress job %s", job.id)
+
+    # Tombol Batalkan (JobsService.cancel di apps/backend) menitip flag lewat Redis dengan key job.id --
+    # NestJS tidak bisa menjangkau loop async di proses worker ini langsung. Sama dengan ASSESSMENT_AMI.
+    import redis.asyncio as aioredis
+
+    redis_client = aioredis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379"))
+
+    async def _is_cancelled() -> bool:
+        try:
+            return bool(await redis_client.get(f"job:cancel:{job.id}"))
+        except Exception:
+            logger.exception("Gagal cek status batal job %s, lanjut seperti biasa", job.id)
+            return False
+
+    try:
+        hasil, dibatalkan = await jalankan_setor_led(
+            iku_list,
+            max_parallel=int(os.environ.get("ASSESSMENT_MAX_PARALLEL", "5")),
+            tenant_id=tenant_id,
+            dokumen_id=dokumen_id,
+            accreditation_set_id=accreditation_set_id,
+            study_program_id=study_program_id,
+            model=model,
+            on_progress=_report_progress,
+            is_cancelled=_is_cancelled,
+            konteks_prodi=_program_studi_label(tenant_id, study_program_id),
+        )
+    finally:
+        await redis_client.aclose()
+
+    return {"status": "cancelled" if dibatalkan else "completed", "hasil": hasil}
 
 
 async def _handle_ingestion_bukti_dukung(job) -> dict:

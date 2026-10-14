@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from scalar_fastapi import get_scalar_api_reference
 
 from api.routes.assessment import router as assessment_router
+from api.routes.assessment_judge import router as assessment_judge_router
 from api.routes.chat import router as chat_router
 from api.routes.eval import router as eval_router
 from api.routes.structure import router as structure_router
@@ -32,6 +33,7 @@ app.add_middleware(
 )
 
 app.include_router(assessment_router)
+app.include_router(assessment_judge_router)
 app.include_router(upload_router)
 app.include_router(eval_router)
 app.include_router(chat_router)

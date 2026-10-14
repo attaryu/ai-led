@@ -1,4 +1,4 @@
-import { CaretRightIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
+import { CaretRightIcon, MagnifyingGlassIcon, WarningCircleIcon } from '@phosphor-icons/react';
 
 import { Checkbox } from '~/core/components/ui/checkbox';
 import { cn } from '~/core/lib/utils';
@@ -137,6 +137,15 @@ export function AssessmentResultRow({
 						<span className="text-xs text-muted-foreground">
 							{rubricScoreTypeLabels[kriteria.tipeSkor]}
 						</span>
+						{row.hasil?.judge?.grounded === false && (
+							<span
+								className="inline-flex shrink-0 items-center gap-1 text-xs text-amber-700 dark:text-amber-400"
+								title="Judge: justifikasi tidak sepenuhnya didukung bukti yang diambil AI. Bukan ukuran ketepatan skor."
+							>
+								<WarningCircleIcon className="size-3.5" />
+								Bukti kurang
+							</span>
+						)}
 					</span>
 				</span>
 

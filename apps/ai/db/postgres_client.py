@@ -226,6 +226,7 @@ def log_indicator_result(
     model: Optional[str] = None,
     sources_used: Optional[dict] = None,
     sub_no: str = "",
+    judge_evidence: Optional[str] = None,
 ) -> None:
     """Upsert a scored indicator into assessment_indicator_results. Kuncinya (session, indicator_no, sub_no):
     sub-indikator dengan nomor sama (43.I / 43.II) tidak saling menimpa."""
@@ -235,8 +236,8 @@ def log_indicator_result(
                 """
                 INSERT INTO assessment_indicator_results
                     (id, session_id, indicator_no, sub_no, score, justification,
-                     confidence, recommendation, error, model, sources_used)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     confidence, recommendation, error, model, sources_used, judge_evidence)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (session_id, indicator_no, sub_no) DO UPDATE SET
                     score = EXCLUDED.score,
                     justification = EXCLUDED.justification,
@@ -244,7 +245,10 @@ def log_indicator_result(
                     recommendation = EXCLUDED.recommendation,
                     error = EXCLUDED.error,
                     model = EXCLUDED.model,
-                    sources_used = EXCLUDED.sources_used
+                    sources_used = EXCLUDED.sources_used,
+                    judge_evidence = EXCLUDED.judge_evidence,
+                    -- dinilai ulang = justifikasi baru; verdict lama tidak boleh menempel padanya
+                    judge_verdict = NULL
                 """,
                 (
                     str(uuid.uuid4()),
@@ -258,6 +262,7 @@ def log_indicator_result(
                     error,
                     model,
                     psycopg2.extras.Json(sources_used) if sources_used is not None else None,
+                    judge_evidence,
                 ),
             )
     except Exception:
@@ -284,6 +289,47 @@ def get_indicator_results(tenant_id: str, session_id: str) -> list[dict]:
         if row["confidence"] is not None:
             row["confidence"] = float(row["confidence"])
     return rows
+
+
+def get_judge_rows(tenant_id: str, session_id: str) -> list[dict]:
+    """Baris hasil satu sesi beserta masukan/keluaran judge on-demand, urut (indicator_no, sub_no).
+    `judge_evidence` sengaja hanya dibaca di sini (apps/ai), tidak ikut `get_indicator_results`."""
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute(
+            """
+            SELECT indicator_no, sub_no, score, justification, error, judge_evidence, judge_verdict
+            FROM assessment_indicator_results WHERE session_id = %s ORDER BY indicator_no, sub_no
+            """,
+            (session_id,),
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+    for row in rows:
+        if row["score"] is not None:
+            row["score"] = float(row["score"])
+    return rows
+
+
+def set_judge_verdict(
+    tenant_id: str,
+    session_id: str,
+    indicator_no: int,
+    sub_no: str,
+    justification: Optional[str],
+    verdict: dict,
+) -> bool:
+    """Tulis verdict judge untuk satu baris -- hanya bila justifikasinya masih yang dinilai juri.
+    Penilaian ulang yang terjadi saat judge berjalan mengganti justifikasi, sehingga verdict
+    kedaluwarsa ditolak (return False) alih-alih menempel di teks baru."""
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute(
+            """
+            UPDATE assessment_indicator_results SET judge_verdict = %s
+            WHERE session_id = %s AND indicator_no = %s AND sub_no = %s
+              AND justification IS NOT DISTINCT FROM %s
+            """,
+            (psycopg2.extras.Json(verdict), session_id, indicator_no, sub_no or "", justification),
+        )
+        return cur.rowcount == 1
 
 
 def get_completed_indicator_numbers(
