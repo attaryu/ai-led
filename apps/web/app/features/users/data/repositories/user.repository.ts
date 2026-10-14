@@ -20,14 +20,12 @@ export const userRepository = {
 	/**
 	 * Penyusun yang ditugaskan ke satu prodi (`USER.program_studi_id`).
 	 *
-	 * Penyaringan role ikut di sini, bukan di halaman: role lain memang tidak
-	 * pernah punya `studyProgramId` terisi (docs/database.md §2), jadi
-	 * "anggota prodi" dan "Penyusun prodi" adalah pertanyaan yang sama.
+	 * Lewat endpoint khusus, bukan `findAll()`: `GET /users` tertutup untuk
+	 * Penjamin Mutu, padahal ia juga membuka dashboard prodi.
 	 */
 	async findPenyusunByStudyProgramId(studyProgramId: string): Promise<UserEntity[]> {
-		return (await this.findAll()).filter(
-			(u) => u.role === 'Penyusun' && u.studyProgramId === studyProgramId,
-		);
+		const rows = await userRemoteSource.findPenyusunByStudyProgramId(studyProgramId);
+		return rows.map(toUserEntity);
 	},
 
 	/** Admin-only di backend — lihat `UsersService.create`. */

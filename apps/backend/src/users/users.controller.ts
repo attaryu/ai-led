@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@ai-led/db';
 import { Protected } from '../tenant/protected.decorator';
@@ -22,6 +22,13 @@ export class UsersController {
   @Protected(Role.ADMIN, Role.PIMPINAN)
   findAll() {
     return this.usersService.findAll();
+  }
+
+  // Harus di atas rute berparameter (/:id) agar tidak tertelan.
+  @Get('penyusun')
+  @Protected(Role.ADMIN, Role.PIMPINAN, Role.PENJAMIN_MUTU)
+  findPenyusun(@Query('programStudiId') programStudiId?: string) {
+    return this.usersService.findPenyusunByProdi(programStudiId ?? '');
   }
 
   @Patch(':id')

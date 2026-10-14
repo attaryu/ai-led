@@ -28,6 +28,13 @@ export const userRemoteSource = {
 		return apiFetch<BackendUserWithProdi[]>('/users');
 	},
 
+	/** Penyusun satu prodi; Penjamin Mutu, Pimpinan, dan Admin boleh memanggilnya. */
+	findPenyusunByStudyProgramId(studyProgramId: string): Promise<BackendUserWithProdi[]> {
+		return apiFetch<BackendUserWithProdi[]>(
+			`/users/penyusun?programStudiId=${encodeURIComponent(studyProgramId)}`,
+		);
+	},
+
 	create(payload: CreateUserPayload): Promise<BackendUser> {
 		return apiFetch<BackendUser>('/users', { method: 'POST', body: payload });
 	},

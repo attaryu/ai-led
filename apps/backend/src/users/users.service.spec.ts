@@ -183,3 +183,56 @@ describe('UsersService.findAll', () => {
     expect(user).toMatchObject({ id: 'u1', studyProgram: { name: 'TI' } });
   });
 });
+
+describe('UsersService.findPenyusunByProdi', () => {
+  it('filters by tenant, PENYUSUN role and prodi, without passwordHash', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        id: 'u1',
+        tenantId: TENANT_ID,
+        fullName: 'Fajar',
+        email: 'f@example.com',
+        passwordHash: 'hash',
+        role: Role.PENYUSUN,
+        studyProgramId: 'prodi-1',
+        studyProgram: { name: 'SI' },
+      },
+    ]);
+    const { service, prisma } = makeService({ role: Role.PENJAMIN_MUTU });
+    (prisma.user as unknown as { findMany: jest.Mock }).findMany = findMany;
+
+    const result = await service.findPenyusunByProdi('prodi-1');
+
+    expect(findMany.mock.calls[0][0].where).toEqual({
+      tenantId: TENANT_ID,
+      role: Role.PENYUSUN,
+      studyProgramId: 'prodi-1',
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]).not.toHaveProperty('passwordHash');
+  });
+
+  it('rejects an empty programStudiId', async () => {
+    const { service } = makeService({ role: Role.PENJAMIN_MUTU });
+    await expect(service.findPenyusunByProdi('')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+});
+
+describe('UsersController role metadata', () => {
+  const rolesOf = (method: string): Role[] => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { UsersController } = require('./users.controller');
+    const proto = UsersController.prototype as Record<string, object>;
+    const keys = Reflect.getMetadataKeys(proto[method]);
+    const key = keys.find((k: string) => /role/i.test(String(k)));
+    return Reflect.getMetadata(key, proto[method]);
+  };
+
+  it('opens /users/penyusun to PENJAMIN_MUTU but keeps GET /users closed', () => {
+    expect(rolesOf('findPenyusun')).toContain(Role.PENJAMIN_MUTU);
+    expect(rolesOf('findPenyusun')).not.toContain(Role.PENYUSUN);
+    expect(rolesOf('findAll')).not.toContain(Role.PENJAMIN_MUTU);
+  });
+});

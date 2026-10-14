@@ -70,6 +70,24 @@ export class UsersService {
     return users.map(toSafeUser);
   }
 
+  /** Tim Penyusun satu prodi — dibuka juga untuk Penjamin Mutu tanpa membuka daftar pengguna penuh. */
+  async findPenyusunByProdi(programStudiId: string) {
+    if (!programStudiId) {
+      throw new BadRequestException('programStudiId wajib diisi');
+    }
+    const { tenantId } = this.tenantContext.getOrThrow();
+    const users = await this.prisma.user.findMany({
+      where: {
+        tenantId,
+        role: Role.PENYUSUN,
+        studyProgramId: programStudiId,
+      },
+      orderBy: { createdAt: 'desc' },
+      include: { studyProgram: { select: { name: true } } },
+    });
+    return users.map(toSafeUser);
+  }
+
   /** PIMPINAN may only move a Penyusun to another prodi (§4.2); ADMIN can edit the full profile. */
   async update(id: string, dto: UpdateUserDto) {
     const { tenantId, role: callerRole } = this.tenantContext.getOrThrow();

@@ -19,32 +19,39 @@ import {
 } from '~/features/led-project/domain/entities/led-project.entity';
 import { userRepository } from '~/features/users/data/repositories/user.repository';
 import { type UserEntity } from '~/features/users/domain/entities/user.entity';
+import {
+	SOURCE_LOADING,
+	toSourceState,
+	type SourceState,
+} from '../../domain/source-state';
 
-export type ProgramReadiness = {
+/** Dokumen LED prodi beserta bab dokumen yang sedang disusun. */
+export type ProgramDocuments = {
 	penyusunanAktif: LedProjectEntity | null;
 	arsip: LedProjectEntity[];
 	/** `null` bila belum menyusun, atau dokumennya tidak dipatok tenggat. */
 	tenggat: ProjectDeadline | null;
 	/** Ringkasan bab **yang sedang disusun**; nol semua bila belum menyusun. */
 	chapterSummary: ChapterSummary;
+};
+
+export type ProgramReadiness = {
+	dokumen: SourceState<ProgramDocuments>;
 	/**
 	 * Bukti dukung milik prodi ini saja — angka yang sama dengan yang terlihat di
 	 * Perpustakaan Bukti Dukung prodi (§5.2).
 	 */
-	evidenceProdi: EvidenceSummary;
-	penyusun: UserEntity[];
+	evidenceProdi: SourceState<EvidenceSummary>;
+	penyusun: SourceState<UserEntity[]>;
 };
 
-const EMPTY_READINESS: ProgramReadiness = {
-	penyusunanAktif: null,
-	arsip: [],
-	tenggat: null,
-	chapterSummary: summarizeChapters([]),
-	evidenceProdi: summarizeEvidence([]),
-	penyusun: [],
+const INITIAL_READINESS: ProgramReadiness = {
+	dokumen: SOURCE_LOADING,
+	evidenceProdi: SOURCE_LOADING,
+	penyusun: SOURCE_LOADING,
 };
 
-async function read(programId: string): Promise<ProgramReadiness> {
+async function readDocuments(programId: string): Promise<ProgramDocuments> {
 	const { aktif, arsip } = pickPenyusunanAktif(
 		await ledProjectRepository.findByStudyProgramId(programId),
 	);
@@ -53,19 +60,33 @@ async function read(programId: string): Promise<ProgramReadiness> {
 	// mencampur dokumen lama yang sudah tuntas akan selalu terlihat bagus dan
 	// menyembunyikan pekerjaan yang sebenarnya belum jalan.
 	const chapters = aktif ? await chapterRepository.findByProjectId(aktif.id) : [];
-	const chapterSummary = summarizeChapters(chapters);
-
-	const evidenceProdi = summarizeEvidence(
-		await evidenceRepository.findOwnedByStudyProgram(programId),
-	);
 
 	return {
 		penyusunanAktif: aktif,
 		arsip,
 		tenggat: aktif ? deriveDeadline(aktif.tenggat) : null,
-		chapterSummary,
-		evidenceProdi,
-		penyusun: await userRepository.findPenyusunByStudyProgramId(programId),
+		chapterSummary: summarizeChapters(chapters),
+	};
+}
+
+async function readEvidence(programId: string): Promise<EvidenceSummary> {
+	return summarizeEvidence(await evidenceRepository.findOwnedByStudyProgram(programId));
+}
+
+/**
+ * Tiap kelompok dibaca dan gagal sendiri-sendiri: 403 pada satu sumber tidak
+ * boleh mengosongkan panel lain.
+ */
+async function read(programId: string): Promise<ProgramReadiness> {
+	const [dokumen, evidenceProdi, penyusun] = await Promise.allSettled([
+		readDocuments(programId),
+		readEvidence(programId),
+		userRepository.findPenyusunByStudyProgramId(programId),
+	]);
+	return {
+		dokumen: toSourceState(dokumen),
+		evidenceProdi: toSourceState(evidenceProdi),
+		penyusun: toSourceState(penyusun),
 	};
 }
 
@@ -75,6 +96,10 @@ async function read(programId: string): Promise<ProgramReadiness> {
  * datanya bisa berubah dari halaman lain (bukti dukung baru diunggah, dokumen
  * baru dibuat Penjamin Mutu).
  *
+ * Setiap sumber punya status sendiri (`loading`/`ready`/`error`), sehingga
+ * halaman bisa membedakan "kosong" dari "gagal dimuat". Muat ulang menimpa
+ * status galat dengan hasil baru.
+ *
  * Perhitungannya sendiri hidup di domain, bukan di sini, agar dashboard agregat
  * institusi bisa memakainya ulang tanpa menyalin aturannya.
  *
@@ -83,7 +108,7 @@ async function read(programId: string): Promise<ProgramReadiness> {
  * dependensi efek akan memicu pembacaan ulang tanpa henti.
  */
 export function useProgramReadiness(programId: string): ProgramReadiness {
-	const [readiness, setReadiness] = React.useState<ProgramReadiness>(EMPTY_READINESS);
+	const [readiness, setReadiness] = React.useState<ProgramReadiness>(INITIAL_READINESS);
 
 	React.useEffect(() => {
 		let cancelled = false;

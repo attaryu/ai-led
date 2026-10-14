@@ -1,7 +1,10 @@
 import * as React from 'react';
 import { useOutletContext } from 'react-router';
 
+import { WarningCircleIcon } from '@phosphor-icons/react';
+
 import { Card, CardDescription, CardHeader, CardTitle } from '~/core/components/ui/card';
+import { summarizeChapters } from '~/features/chapter/domain/entities/chapter.entity';
 import { buildActiveDocumentRows } from '~/features/dashboard/domain/entities/active-documents.entity';
 import { ActiveDocumentsTable } from '~/features/dashboard/presentation/components/active-documents-table';
 import { EvidenceStatusCard } from '~/features/evidence/presentation/components/evidence-status-card';
@@ -39,8 +42,18 @@ export function StudyProgramWorkspaceHome() {
  * menyentuh penyimpanan) untuk prodi yang belum tentu ada.
  */
 function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
-	const { penyusunanAktif, arsip, tenggat, chapterSummary, evidenceProdi, penyusun } =
-		useProgramReadiness(program.id);
+	const { dokumen, evidenceProdi, penyusun } = useProgramReadiness(program.id);
+
+	// Tiap sumber gagal sendiri; sebelum dokumen terbaca, semuanya dianggap kosong
+	// tanpa ditampilkan (lihat `dokumen.status` di bawah).
+	const dokumenData = dokumen.status === 'ready' ? dokumen.data : null;
+	const penyusunanAktif = dokumenData?.penyusunanAktif ?? null;
+	const arsip = dokumenData?.arsip ?? [];
+	const tenggat = dokumenData?.tenggat ?? null;
+	const chapterSummary = React.useMemo(
+		() => dokumenData?.chapterSummary ?? summarizeChapters([]),
+		[dokumenData],
+	);
 
 	const overviews = useProgramAmiOverview(penyusunanAktif ? [penyusunanAktif.id] : []);
 
@@ -56,7 +69,9 @@ function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 		[program, penyusunanAktif, chapterSummary, tenggat, overviews],
 	);
 
-	const riwayat = arsip.filter((project) => project.statusKeseluruhan === 'SELESAI');
+	const riwayat = dokumenData
+		? arsip.filter((project) => project.statusKeseluruhan === 'SELESAI')
+		: null;
 
 	const meta = [
 		program.jenjang,
@@ -80,7 +95,12 @@ function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 				<h3 className="font-heading text-lg font-bold tracking-tight">
 					Dokumen LED
 				</h3>
-				{penyusunanAktif ? (
+				{dokumen.status === 'error' ? (
+					<p className="flex items-start gap-2 text-sm text-destructive">
+						<WarningCircleIcon className="mt-0.5 size-4 shrink-0" weight="fill" />
+						Gagal memuat Dokumen LED.
+					</p>
+				) : dokumen.status === 'loading' ? null : penyusunanAktif ? (
 					<ActiveDocumentsTable
 						rows={rows}
 						amiTersedia={overviews !== null}
@@ -112,14 +132,22 @@ function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 			{/* Hanya berkas milik prodi, sama dengan isi perpustakaan yang dituju tombolnya. */}
 			<EvidenceStatusCard
 				judul="Bukti Dukung Program Studi"
-				ringkasan={evidenceProdi}
+				ringkasan={evidenceProdi.status === 'ready' ? evidenceProdi.data : null}
 				href={`/study-programs/${program.id}/evidence`}
 				pesanKosong="Belum ada berkas milik program studi ini."
+				galat={evidenceProdi.status === 'error' ? 'Gagal memuat bukti dukung.' : undefined}
 			/>
 
 			<div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
-				<ProgramLedProjectHistory projects={riwayat} programId={program.id} />
-				<ProgramTeamPanel penyusun={penyusun} />
+				<ProgramLedProjectHistory
+					projects={riwayat}
+					programId={program.id}
+					galat={dokumen.status === 'error'}
+				/>
+				<ProgramTeamPanel
+					penyusun={penyusun.status === 'ready' ? penyusun.data : null}
+					galat={penyusun.status === 'error'}
+				/>
 			</div>
 		</div>
 	);

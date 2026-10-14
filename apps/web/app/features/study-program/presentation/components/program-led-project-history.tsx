@@ -1,4 +1,4 @@
-import { ArrowRightIcon } from '@phosphor-icons/react';
+import { ArrowRightIcon, WarningCircleIcon } from '@phosphor-icons/react';
 import { Link } from 'react-router';
 
 import { buttonVariants } from '~/core/components/ui/button';
@@ -32,12 +32,15 @@ export const MAX_PROGRAM_HISTORY_SHOWN = 5;
 export function ProgramLedProjectHistory({
 	projects,
 	programId,
+	galat = false,
 }: {
-	/** Sudah terurut terbaru di atas dan hanya yang SELESAI. */
-	projects: LedProjectEntity[];
+	/** Sudah terurut terbaru di atas dan hanya yang SELESAI; `null` selama belum dimuat. */
+	projects: LedProjectEntity[] | null;
 	programId: string;
+	/** Gagal dimuat; berbeda dari belum ada dokumen yang selesai. */
+	galat?: boolean;
 }) {
-	const shown = projects.slice(0, MAX_PROGRAM_HISTORY_SHOWN);
+	const shown = (projects ?? []).slice(0, MAX_PROGRAM_HISTORY_SHOWN);
 
 	return (
 		<section className="flex min-w-0 flex-col gap-3">
@@ -53,7 +56,12 @@ export function ProgramLedProjectHistory({
 				</Link>
 			</div>
 
-			{shown.length === 0 ? (
+			{galat ? (
+				<p className="flex items-start gap-2 rounded-md border border-border p-4 text-sm text-destructive">
+					<WarningCircleIcon className="mt-0.5 size-4 shrink-0" weight="fill" />
+					Gagal memuat riwayat Dokumen LED.
+				</p>
+			) : projects === null ? null : shown.length === 0 ? (
 				<p className="rounded-md border border-border p-4 text-sm text-muted-foreground">
 					Belum ada Dokumen LED yang selesai.
 				</p>

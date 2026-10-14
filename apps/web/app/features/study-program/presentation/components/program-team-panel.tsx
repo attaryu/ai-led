@@ -17,14 +17,27 @@ import { type UserEntity } from '~/features/users/domain/entities/user.entity';
  * dibuka juga oleh Penyusun dan Penjamin Mutu yang tidak berhak ke sana (§15),
  * dan menaruh tautan yang berujung penolakan hanya membingungkan.
  */
-export function ProgramTeamPanel({ penyusun }: { penyusun: UserEntity[] }) {
+export function ProgramTeamPanel({
+	penyusun,
+	galat = false,
+}: {
+	/** `null` selama belum selesai dimuat — panel tidak menampilkan apa pun. */
+	penyusun: UserEntity[] | null;
+	/** Gagal dimuat; berbeda dari prodi yang memang belum punya Penyusun. */
+	galat?: boolean;
+}) {
 	return (
 		<Card size="sm">
 			<CardHeader>
 				<CardTitle>Tim Penyusun</CardTitle>
 			</CardHeader>
 			<CardContent>
-				{penyusun.length === 0 ? (
+				{galat ? (
+					<p className="flex items-start gap-2 text-sm text-destructive">
+						<WarningCircleIcon className="mt-0.5 size-4 shrink-0" weight="fill" />
+						Gagal memuat tim penyusun.
+					</p>
+				) : penyusun === null ? null : penyusun.length === 0 ? (
 					<p className="flex items-start gap-2 text-sm text-amber-700 dark:text-amber-400">
 						<WarningCircleIcon className="mt-0.5 size-4 shrink-0" weight="fill" />
 						Penyusun ditempatkan oleh Pimpinan lewat menu Pengguna.

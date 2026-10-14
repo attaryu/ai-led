@@ -36,11 +36,15 @@ export function EvidenceStatusCard({
 	ringkasan,
 	href,
 	pesanKosong,
+	galat,
 }: {
 	judul: string;
-	ringkasan: EvidenceSummary;
+	/** `null` selama belum selesai dimuat — bagian isi tidak menampilkan apa pun. */
+	ringkasan: EvidenceSummary | null;
 	href: string;
 	pesanKosong: string;
+	/** Pesan bila pembacaan gagal; menggantikan isi kartu. */
+	galat?: string;
 }) {
 	const tiles: {
 		label: string;
@@ -48,16 +52,16 @@ export function EvidenceStatusCard({
 		tone: StatCardTone;
 		icon: Icon;
 	}[] = [
-		{ label: 'Total', value: ringkasan.total, tone: 'default', icon: StackIcon },
-		{ label: 'Siap', value: ringkasan.siap, tone: 'success', icon: CheckCircleIcon },
+		{ label: 'Total', value: ringkasan?.total ?? 0, tone: 'default', icon: StackIcon },
+		{ label: 'Siap', value: ringkasan?.siap ?? 0, tone: 'success', icon: CheckCircleIcon },
 		{
 			label: 'Diproses',
-			value: ringkasan.diproses,
+			value: ringkasan?.diproses ?? 0,
 			tone: 'info',
 			icon: ArrowsClockwiseIcon,
 		},
-		{ label: 'Menunggu', value: ringkasan.menunggu, tone: 'default', icon: ClockIcon },
-		{ label: 'Gagal', value: ringkasan.gagal, tone: 'warning', icon: WarningCircleIcon },
+		{ label: 'Menunggu', value: ringkasan?.menunggu ?? 0, tone: 'default', icon: ClockIcon },
+		{ label: 'Gagal', value: ringkasan?.gagal ?? 0, tone: 'warning', icon: WarningCircleIcon },
 	];
 
 	return (
@@ -78,7 +82,12 @@ export function EvidenceStatusCard({
 				</CardAction>
 			</CardHeader>
 			<CardContent>
-				{ringkasan.total === 0 ? (
+				{galat ? (
+					<p className="flex items-start gap-2 text-sm text-destructive">
+						<WarningCircleIcon className="mt-0.5 size-4 shrink-0" weight="fill" />
+						{galat}
+					</p>
+				) : ringkasan === null ? null : ringkasan.total === 0 ? (
 					<p className="text-sm text-muted-foreground">{pesanKosong}</p>
 				) : (
 					<div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
