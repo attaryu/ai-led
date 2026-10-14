@@ -186,3 +186,43 @@ sehingga pembatalan bisa memakan waktu sampai selesainya panggilan itu.
 ## 7. Di luar cakupan (belum ada)
 
 Menulis hasil ke bab/canvas editor, skor angka beserta skalanya, dan UI/flow. Semuanya milik sisi UI.
+
+## 8. Usulan penempatan di UI (belum dibangun)
+
+Bagian ini usulan untuk yang membangun UI, bukan perilaku yang sudah ada. Fakta tentang kode yang dirujuk sudah
+diperiksa (`apps/web`, `apps/ai/prose.py`), tetapi belum ada kode UI setor ke LED.
+
+**Posisi dalam alur LED:** (1) generasi LED setengah jadi, (2) setor ke LED (fitur ini), (3) generasi LED penuh,
+(4) skoring AMI akhir. AMI membaca teks Editor (`sumberLed: EDITOR`), jadi narasi hasil setor yang sudah diterapkan
+ikut menjadi isi LED yang dinilai; AMI tidak tahu mana teks yang berasal dari setor ke LED.
+
+**Titik pasang:** editor bab (`app/features/chapter/presentation/pages/chapter-editor.tsx`), pada section yang
+memegang tabel analisis IKU. Editor memakai Tiptap dengan `@tiptap/extension-table`, dan tabel di bab adalah tabel
+Tiptap biasa. Tabel dibuat penulis lewat dialog "Instruksi tabel" (`section-table-spec-dialog.tsx`), yang menyimpan
+`tableSpec` per section sebagai `{ id, caption, columns[] }`. Nama kolomnya bebas, `tableSpec` opsional per section,
+dan tidak ada definisi bawaan untuk tabel IKU.
+
+**Konsekuensinya:** baris tabel hanya bisa diubah otomatis menjadi `ikuList`, dan hasil hanya bisa ditaruh ke sel
+yang benar, bila nama kolomnya baku. Usulan: sediakan template `tableSpec` untuk tabel analisis IKU dengan kolom
+
+`No | Indikator | Target | Capaian | Evaluasi | Analisis ketercapaian | Usulan target tahun depan | Strategi pencapaian | Sarpras yang dibutuhkan`
+
+(tambah kolom Faktor pendukung / Faktor penghambat / Akar masalah / Tindak lanjut untuk tabel yang memuatnya).
+Daftar IKU lalu berasal dari baris tabel yang diisi penulis, bukan dari DB.
+
+**Alur yang diusulkan untuk langkah 2:**
+1. Penulis membuka section bertabel IKU dan menekan aksi "Isi otomatis dari LKPS/LED".
+2. UI membaca baris tabel (No, Indikator, Target) menjadi `ikuList`, lalu `POST /dokumen/:id/setor-led`.
+3. Progres tampil dari `progress { completed, total }` dengan tombol Batal (`POST /jobs/:id/cancel`).
+4. Hasil tampil sebagai pratinjau per baris yang bisa diedit; IKU `error` tampil sebagai baris kosong untuk diisi manual.
+5. Penulis menekan "Terapkan"; UI menulis nilai ke sel tabel Tiptap dan menyimpan bab seperti biasa.
+
+**Keputusan yang masih terbuka:**
+- Siapa yang mengisi kolom No / Indikator / Target: generator dari Pedoman atau penulis. Belum diperiksa apakah
+  generator mengisi ketiganya, dan apakah dialog `tableSpec` berlaku untuk sub-sub-bab.
+- Penyimpanan hasil. Tidak ada tabel hasil, jadi hasil yang belum diterapkan hilang saat job tersingkir dari antrean.
+  Pilihannya: UI menyimpan segera saat "Terapkan", atau ditambah tabel draf.
+- Setor ulang. Teks Editor yang sudah berisi hasil setor sebelumnya menjadi sumber Capaian untuk job berikutnya,
+  jadi model bisa mengutip keluarannya sendiri. Perlu aturan, misalnya hanya mengisi sel yang masih kosong.
+- Prasyarat (Set Akreditasi, LKPS, isi bab) lebih baik dicek UI sebelum tombol aktif; tanpa itu job langsung berakhir
+  `result.status: "error"` (lihat bagian 4).
