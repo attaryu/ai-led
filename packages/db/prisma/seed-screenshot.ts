@@ -211,6 +211,13 @@ const USERS: UserSeed[] = [
 		prodiId: 'ss-prodi-si',
 	},
 	{
+		key: 'si3',
+		email: 'penyusun.si3@demo.test',
+		fullName: 'Fajar Nugraha',
+		role: Role.PENYUSUN,
+		prodiId: 'ss-prodi-si',
+	},
+	{
 		key: 'mesin',
 		email: 'penyusun.mesin@demo.test',
 		fullName: 'Yoga Aditya',
@@ -250,7 +257,46 @@ type DocSeed = {
 	/** Pakai bab yang sudah ada di DB (demo-led) alih-alih membuat ulang bab 1. */
 	keepChapter1?: boolean;
 	sections?: boolean;
+	/** Judul bab sendiri (jumlah bab mengikuti `states`); bawaannya CHAPTER_TITLES. */
+	titles?: string[];
+	/** Menggeser jejak waktu bab ke belakang, untuk dokumen lama yang sudah selesai. */
+	staleDays?: number;
 };
+
+/** Susunan 10 bab LED Sistem Informasi (dokumen yang sedang disusun). */
+const SI_CHAPTER_TITLES = [
+	'Bab I Pendahuluan',
+	'Bab II Profil Unit Pengelola Program Studi',
+	'Bab III Visi, Misi, Tujuan, dan Strategi',
+	'Bab IV Tata Pamong, Tata Kelola, dan Kerja Sama',
+	'Bab V Mahasiswa',
+	'Bab VI Sumber Daya Manusia',
+	'Bab VII Keuangan, Sarana, dan Prasarana',
+	'Bab VIII Pendidikan',
+	'Bab IX Penelitian dan Pengabdian kepada Masyarakat',
+	'Bab X Analisis Capaian dan Penutup',
+];
+
+/** Sub-bab bab 1–4 LED Sistem Informasi; dua bab pertama sama dengan dokumen lain. */
+const SI_CHAPTER_SECTIONS: [string, string][][] = [
+	[
+		['1.1', 'Latar Belakang Penyusunan'],
+		['1.2', 'Tujuan dan Ruang Lingkup'],
+	],
+	[
+		['2.1', 'Visi, Misi, Tujuan, dan Strategi'],
+		['2.2', 'Struktur Organisasi dan Tata Kelola'],
+	],
+	[
+		['3.1', 'Visi dan Misi Program Studi'],
+		['3.2', 'Tujuan dan Sasaran Strategis'],
+		['3.3', 'Strategi Pencapaian'],
+	],
+	[
+		['4.1', 'Struktur Tata Pamong'],
+		['4.2', 'Kerja Sama Dalam dan Luar Negeri'],
+	],
+];
 
 const DOCS: DocSeed[] = [
 	{
@@ -286,8 +332,56 @@ const DOCS: DocSeed[] = [
 		status: StatusDokumen.DRAFT,
 		deadlineDays: 75,
 		createdDaysAgo: 45,
-		states: ['TERKUNCI', 'MENUNGGU_REVIEW', 'SEDANG_DISUSUN', 'SEDANG_DISUSUN', 'BELUM_DIISI'],
+		states: [
+			'TERKUNCI',
+			'TERKUNCI',
+			'TERKUNCI',
+			'MENUNGGU_REVIEW',
+			'SEDANG_DISUSUN',
+			'SEDANG_DISUSUN',
+			'SEDANG_DISUSUN',
+			'BELUM_DIISI',
+			'BELUM_DIISI',
+			'BELUM_DIISI',
+		],
 		sections: true,
+		titles: SI_CHAPTER_TITLES,
+	},
+	{
+		id: 'ss-led-si-2025',
+		prodiId: 'ss-prodi-si',
+		userKey: 'si',
+		title: 'Laporan Evaluasi Diri Sistem Informasi 2025',
+		year: '2024/2025',
+		status: StatusDokumen.SELESAI,
+		deadlineDays: -190,
+		createdDaysAgo: 410,
+		states: ['TERKUNCI', 'TERKUNCI', 'TERKUNCI', 'TERKUNCI', 'TERKUNCI'],
+		staleDays: 300,
+	},
+	{
+		id: 'ss-led-si-2024',
+		prodiId: 'ss-prodi-si',
+		userKey: 'si2',
+		title: 'Laporan Evaluasi Diri Sistem Informasi 2024',
+		year: '2023/2024',
+		status: StatusDokumen.SELESAI,
+		deadlineDays: -560,
+		createdDaysAgo: 780,
+		states: ['TERKUNCI', 'TERKUNCI', 'TERKUNCI', 'TERKUNCI', 'TERKUNCI'],
+		staleDays: 670,
+	},
+	{
+		id: 'ss-led-si-2023',
+		prodiId: 'ss-prodi-si',
+		userKey: 'si',
+		title: 'Laporan Evaluasi Diri Sistem Informasi 2023',
+		year: '2022/2023',
+		status: StatusDokumen.SELESAI,
+		deadlineDays: -930,
+		createdDaysAgo: 1150,
+		states: ['TERKUNCI', 'TERKUNCI', 'TERKUNCI', 'TERKUNCI'],
+		staleDays: 1040,
 	},
 	{
 		id: 'ss-led-mesin',
@@ -353,8 +447,12 @@ const CHAPTER_SECTIONS: [string, string][][] = [
 	[['5.1', 'Kesimpulan dan Rencana Tindak Lanjut']],
 ];
 
-function chapterBody(prodi: string, chapterIdx: number): string {
-	const heading = CHAPTER_TITLES[chapterIdx];
+function chapterBody(prodi: string, chapterIdx: number, titles: string[] = CHAPTER_TITLES): string {
+	const heading = titles[chapterIdx];
+	if (titles !== CHAPTER_TITLES && chapterIdx >= 2) {
+		const topic = heading.replace(/^Bab [IVX]+ /, '').toLowerCase();
+		return `<h2>${heading}</h2><p>Bab ini menguraikan ${topic} Program Studi ${prodi} berdasarkan data LKPS tahun berjalan dan dokumen resmi yang tersedia di perpustakaan bukti dukung.</p><p>Setiap capaian dirujuk ke bukti dukung agar dapat ditelusuri asesor, dan kesenjangan yang ditemukan dikaitkan dengan rencana perbaikan pada bab penutup.</p>`;
+	}
 	const paras = [
 		[
 			`Laporan ini disusun sebagai bagian dari evaluasi diri Program Studi ${prodi} menjelang siklus akreditasi berikutnya. Penyusunan mengacu pada pedoman LAM Teknik dan memanfaatkan data LKPS tahun berjalan.`,
@@ -532,6 +630,9 @@ const FOLDERS: { id: string; name: string; owner: 'tenant' | string; parent?: st
 	{ id: 'ss-fld-sarana', name: 'Keuangan dan Sarana', owner: 'tenant' },
 	{ id: 'ss-fld-ti-kurikulum', name: 'Kurikulum dan Pembelajaran', owner: 'demo-prodi' },
 	{ id: 'ss-fld-ti-sdm', name: 'Sumber Daya Manusia', owner: 'demo-prodi' },
+	{ id: 'ss-fld-si-kurikulum', name: 'Kurikulum dan Pembelajaran', owner: 'ss-prodi-si' },
+	{ id: 'ss-fld-si-sdm', name: 'Sumber Daya Manusia', owner: 'ss-prodi-si' },
+	{ id: 'ss-fld-si-lulusan', name: 'Mahasiswa dan Lulusan', owner: 'ss-prodi-si' },
 ];
 
 const EVIDENCE: EvidenceSeed[] = [
@@ -552,6 +653,16 @@ const EVIDENCE: EvidenceSeed[] = [
 	{ id: 'ss-ev-ti-mou', name: 'Perjanjian Kerja Sama dengan Mitra Industri', ext: 'pdf', sizeKb: 1320, status: StatusEkstraksi.SIAP, owner: 'demo-prodi', uploader: 'ti', daysAgo: 35, tags: [2, 6] },
 	{ id: 'ss-ev-ti-lkps', name: 'LKPS Teknik Informatika TS 2025', ext: 'xlsx', sizeKb: 1120, status: StatusEkstraksi.SIAP, owner: 'demo-prodi', uploader: 'ti', daysAgo: 25, kind: EvidenceKind.LKPS, period: 'TS 2025' },
 	{ id: 'ss-ev-ti-lkps-2024', name: 'LKPS Teknik Informatika TS 2024', ext: 'xlsx', sizeKb: 1090, status: StatusEkstraksi.SIAP, owner: 'demo-prodi', uploader: 'ti', daysAgo: 400, kind: EvidenceKind.LKPS, period: 'TS 2024' },
+	{ id: 'ss-ev-si-obe', name: 'Kurikulum OBE Sistem Informasi 2024', ext: 'pdf', sizeKb: 4310, status: StatusEkstraksi.SIAP, owner: 'ss-prodi-si', folder: 'ss-fld-si-kurikulum', uploader: 'si', daysAgo: 44, tags: [7] },
+	{ id: 'ss-ev-si-cpl', name: 'Matriks Pemetaan CPL dan Mata Kuliah SI', ext: 'xlsx', sizeKb: 410, status: StatusEkstraksi.SIAP, owner: 'ss-prodi-si', folder: 'ss-fld-si-kurikulum', uploader: 'si', daysAgo: 44, tags: [7] },
+	{ id: 'ss-ev-si-dosen', name: 'Daftar Dosen Tetap Program Studi', ext: 'pdf', sizeKb: 870, status: StatusEkstraksi.SIAP, owner: 'ss-prodi-si', folder: 'ss-fld-si-sdm', uploader: 'si2', daysAgo: 38, tags: [3, 4] },
+	{ id: 'ss-ev-si-sk-kaprodi', name: 'SK Pengangkatan Ketua Program Studi', ext: 'pdf', sizeKb: 310, status: StatusEkstraksi.SIAP, owner: 'ss-prodi-si', folder: 'ss-fld-si-sdm', uploader: 'si2', daysAgo: 36, tags: [2] },
+	{ id: 'ss-ev-si-mahasiswa', name: 'Data Mahasiswa dan Lulusan 5 Tahun Terakhir', ext: 'xlsx', sizeKb: 720, status: StatusEkstraksi.SIAP, owner: 'ss-prodi-si', folder: 'ss-fld-si-lulusan', uploader: 'si3', daysAgo: 30, tags: [5] },
+	{ id: 'ss-ev-si-survei', name: 'Hasil Survei Kepuasan Mahasiswa 2025', ext: 'pdf', sizeKb: 1260, status: StatusEkstraksi.SIAP, owner: 'ss-prodi-si', folder: 'ss-fld-si-lulusan', uploader: 'si3', daysAgo: 22, tags: [6] },
+	{ id: 'ss-ev-si-publikasi', name: 'Rekap Publikasi Dosen 2023-2025', ext: 'xlsx', sizeKb: 560, status: StatusEkstraksi.DIPROSES, owner: 'ss-prodi-si', folder: 'ss-fld-si-sdm', uploader: 'si2', daysAgo: 3, tags: [8] },
+	{ id: 'ss-ev-si-mou', name: 'Perjanjian Kerja Sama dengan Mitra Industri SI', ext: 'pdf', sizeKb: 1480, status: StatusEkstraksi.DIPROSES, owner: 'ss-prodi-si', uploader: 'si', daysAgo: 2, tags: [2, 6] },
+	{ id: 'ss-ev-si-ami', name: 'Laporan Audit Mutu Internal Program Studi 2025', ext: 'pdf', sizeKb: 2040, status: StatusEkstraksi.MENUNGGU, owner: 'ss-prodi-si', uploader: 'si', daysAgo: 0, tags: [9, 10] },
+	{ id: 'ss-ev-si-rps', name: 'Kumpulan RPS Semester Genap 2025', ext: 'pdf', sizeKb: 7420, status: StatusEkstraksi.GAGAL, owner: 'ss-prodi-si', folder: 'ss-fld-si-kurikulum', uploader: 'si3', daysAgo: 12, failure: 'Berkas melebihi batas ukuran ekstraksi. Pecah menjadi beberapa berkas lalu unggah ulang.' },
 	{ id: 'ss-ev-si-kurikulum', name: 'Dokumen Kurikulum Sistem Informasi 2024', ext: 'pdf', sizeKb: 3870, status: StatusEkstraksi.SIAP, owner: 'ss-prodi-si', uploader: 'si', daysAgo: 45, tags: [7] },
 	{ id: 'ss-ev-si-tracer', name: 'Hasil Tracer Study Sistem Informasi', ext: 'pdf', sizeKb: 980, status: StatusEkstraksi.SIAP, owner: 'ss-prodi-si', uploader: 'si', daysAgo: 40, tags: [5] },
 	{ id: 'ss-ev-si-lkps', name: 'LKPS Sistem Informasi TS 2025', ext: 'xlsx', sizeKb: 1060, status: StatusEkstraksi.SIAP, owner: 'ss-prodi-si', uploader: 'si', daysAgo: 20, kind: EvidenceKind.LKPS, period: 'TS 2025' },
@@ -644,20 +755,21 @@ async function main() {
 			createdAt: ago(d.createdDaysAgo),
 		});
 
-		for (let i = 0; i < 5; i++) {
+		const titles = d.titles ?? CHAPTER_TITLES;
+		const when = (days: number, hour?: number) => ago(days + (d.staleDays ?? 0), hour);
+		for (let i = 0; i < d.states.length; i++) {
 			if (i === 0 && d.keepChapter1) continue;
 			const state = d.states[i];
 			const chapterId = `${d.id}-bab-${i + 1}`;
 			const filled = state !== 'BELUM_DIISI';
 			const content = filled
-				? { format: 'html', body: chapterBody(prodi.name, i) }
+				? { format: 'html', body: chapterBody(prodi.name, i, titles) }
 				: {};
-			const savedAt = ago(Math.max(1, 25 - i * 4));
 
 			await put(prisma.documentChapter, chapterId, {
 				documentId: d.id,
 				chapterOrder: i + 1,
-				chapterTitle: CHAPTER_TITLES[i],
+				chapterTitle: titles[i],
 				workingContent: content,
 				locked: state === 'TERKUNCI',
 				qualityAssuranceNote:
@@ -665,8 +777,8 @@ async function main() {
 						? 'Isi bab sudah sesuai pedoman. Lanjutkan ke bab berikutnya.'
 						: null,
 				notedByName: state === 'TERKUNCI' ? users.pm.fullName : null,
-				notedAt: state === 'TERKUNCI' ? ago(5) : null,
-				reviewSubmittedAt: state === 'MENUNGGU_REVIEW' ? ago(2, 14) : null,
+				notedAt: state === 'TERKUNCI' ? when(5) : null,
+				reviewSubmittedAt: state === 'MENUNGGU_REVIEW' ? when(2, 14) : null,
 			});
 
 			if (!filled) continue;
@@ -681,7 +793,7 @@ async function main() {
 					contentSnapshot: content,
 					source: SumberDraft.AI,
 					createdByName: author.fullName,
-					createdAt: ago(18),
+					createdAt: when(18),
 				});
 				const v2 = await put(prisma.chapterDraft, `${chapterId}-v2`, {
 					chapterId,
@@ -691,7 +803,7 @@ async function main() {
 					contentSnapshot: content,
 					source: SumberDraft.MANUAL,
 					createdByName: author.fullName,
-					createdAt: ago(8),
+					createdAt: when(8),
 				});
 				void v1;
 				await prisma.documentChapter.update({
@@ -700,8 +812,9 @@ async function main() {
 				});
 			}
 
-			if (d.sections && i < 4) {
-				const parents = CHAPTER_SECTIONS[i];
+			const sectionList = d.titles ? SI_CHAPTER_SECTIONS : CHAPTER_SECTIONS.slice(0, 4);
+			if (d.sections && i < sectionList.length) {
+				const parents = sectionList[i];
 				for (let s = 0; s < parents.length; s++) {
 					const [marker, title] = parents[s];
 					await put(prisma.chapterSection, `${chapterId}-sec-${s + 1}`, {
@@ -716,7 +829,7 @@ async function main() {
 							body: `<p>${prodi.name} menguraikan ${title.toLowerCase()} berdasarkan dokumen resmi program studi dan data LKPS tahun berjalan. Seluruh rujukan dapat ditelusuri ke bukti dukung yang diunggah.</p>`,
 						},
 						model: 'demo',
-						generatedAt: ago(18),
+						generatedAt: when(18),
 						lkpsList: [],
 					});
 				}
@@ -729,7 +842,7 @@ async function main() {
 		const isTenant = f.owner === 'tenant';
 		await put(prisma.evidenceFolder, f.id, {
 			ownerType: isTenant ? OwnerTipe.TENANT : OwnerTipe.PROGRAM_STUDI,
-			tenantId: isTenant ? TENANT_ID : null,
+			tenantId: TENANT_ID,
 			studyProgramId: isTenant ? null : f.owner,
 			name: f.name,
 			parentId: f.parent ?? null,
@@ -744,7 +857,7 @@ async function main() {
 		await put(prisma.evidence, e.id, {
 			ownerType: isTenant ? OwnerTipe.TENANT : OwnerTipe.PROGRAM_STUDI,
 			kind: e.kind ?? EvidenceKind.BUKTI_DUKUNG,
-			tenantId: isTenant ? TENANT_ID : null,
+			tenantId: TENANT_ID,
 			studyProgramId: isTenant ? null : e.owner,
 			documentName: e.name,
 			fileUrl: `seed/${TENANT_ID}/${e.id}.${e.ext}`,
