@@ -12,8 +12,10 @@ import {
 } from '~/features/evidence/domain/entities/evidence.entity';
 import { ledProjectRepository } from '~/features/led-project/data/repositories/led-project.repository';
 import {
+	deriveDeadline,
 	pickPenyusunanAktif,
 	type LedProjectEntity,
+	type ProjectDeadline,
 } from '~/features/led-project/domain/entities/led-project.entity';
 import { userRepository } from '~/features/users/data/repositories/user.repository';
 import { type UserEntity } from '~/features/users/domain/entities/user.entity';
@@ -21,6 +23,8 @@ import { type UserEntity } from '~/features/users/domain/entities/user.entity';
 export type ProgramReadiness = {
 	penyusunanAktif: LedProjectEntity | null;
 	arsip: LedProjectEntity[];
+	/** `null` bila belum menyusun, atau dokumennya tidak dipatok tenggat. */
+	tenggat: ProjectDeadline | null;
 	/** Ringkasan bab **yang sedang disusun**; nol semua bila belum menyusun. */
 	chapterSummary: ChapterSummary;
 	/**
@@ -34,6 +38,7 @@ export type ProgramReadiness = {
 const EMPTY_READINESS: ProgramReadiness = {
 	penyusunanAktif: null,
 	arsip: [],
+	tenggat: null,
 	chapterSummary: summarizeChapters([]),
 	evidenceProdi: summarizeEvidence([]),
 	penyusun: [],
@@ -57,6 +62,7 @@ async function read(programId: string): Promise<ProgramReadiness> {
 	return {
 		penyusunanAktif: aktif,
 		arsip,
+		tenggat: aktif ? deriveDeadline(aktif.tenggat) : null,
 		chapterSummary,
 		evidenceProdi,
 		penyusun: await userRepository.findPenyusunByStudyProgramId(programId),

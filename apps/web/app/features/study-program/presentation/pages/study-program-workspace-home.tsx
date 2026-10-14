@@ -1,49 +1,29 @@
 import * as React from 'react';
-import { useNavigate, useOutletContext } from 'react-router';
+import { useOutletContext } from 'react-router';
 
-import { useConfirmDialog } from '~/core/components/ui/confirm-dialog';
-import {
-	Card,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from '~/core/components/ui/card';
-import { useSession } from '~/features/auth/presentation/hooks/use-session';
-import { ledProjectRepository } from '~/features/led-project/data/repositories/led-project.repository';
+import { Card, CardDescription, CardHeader, CardTitle } from '~/core/components/ui/card';
+import { buildActiveDocumentRows } from '~/features/dashboard/domain/entities/active-documents.entity';
+import { ActiveDocumentsTable } from '~/features/dashboard/presentation/components/active-documents-table';
+import { EvidenceStatusCard } from '~/features/evidence/presentation/components/evidence-status-card';
 import { type StudyProgramEntity } from '../../domain/entities/study-program.entity';
-import { ActiveProjectCard } from '../components/active-project-card';
-import { ProgramIdentityCard } from '../components/program-identity-card';
-import { ProgramEvidencePanel } from '../components/program-evidence-panel';
 import { ProgramLedProjectHistory } from '../components/program-led-project-history';
 import { ProgramTeamPanel } from '../components/program-team-panel';
+import { useProgramAmiOverview } from '../hooks/use-program-ami-overview';
 import { useProgramReadiness } from '../hooks/use-program-readiness';
 
 /**
  * Dashboard Program Studi (docs/application_flow.md §5.1).
  *
  * Subjek halaman ini adalah prodinya, bukan daftar dokumennya: akreditasi LAM
- * Teknik berjalan per prodi, satu dokumen pada satu waktu.
- *
- * **Aturan utama halaman ini: satu blok, satu kerangka waktu.** Dua kartu
- * teratas berdampingan justru karena kerangkanya berbeda dan perbedaan itu perlu
- * terbaca sekali pandang — kiri capaian yang sudah disahkan (masa lalu), kanan
- * usaha menuju akreditasi berikutnya (sekarang). Di bawahnya riwayat penyusunan
- * dan sumber daya prodi, keduanya lintas penyusunan.
+ * Teknik berjalan per prodi, satu dokumen pada satu waktu. Satu kolom, dari atas:
+ * judul + satu baris meta prodi, tabel Dokumen LED yang sedang disusun (komponen
+ * yang sama dengan Dashboard Utama), status Bukti Dukung milik prodi, lalu
+ * riwayat dokumen SELESAI berdampingan dengan Tim Penyusun.
  *
  * **Rincian penyusunan sengaja tidak ada di sini.** Kelengkapan per bab,
- * kesiapan review, bukti dukung terpakai, dan daftar hal yang perlu ditindak
- * punya rumahnya di Dashboard Project LED (§6.1); mengulangnya di lapis prodi
- * hanya membuat halaman ini jadi salinan lapis di bawahnya. Yang tersisa cuma
- * satu bar: cukup untuk tahu dokumennya bergerak atau tidak.
- *
- * Aturan "program studi ini tersendat di mana" yang dulu menggerakkan panel itu sudah
- * dihapus seluruhnya: sejak §4.0c dipecah jadi dua tabel, pemicunya berubah jadi
- * bentuk halaman — tabel Perlu Segera Disusun, kolom tenggat yang merah — bukan
- * lagi angka yang perlu dijumlahkan.
- *
- * Berbeda dari versi sebelumnya, halaman ini **punya** aksi ubah data — ubah dan
- * hapus Dokumen LED di tabel riwayat. Sesuai §1 keduanya tidak dirender sama
- * sekali di luar Penjamin Mutu, bukan sekadar dinonaktifkan.
+ * kesiapan review, dan daftar hal yang perlu ditindak punya rumahnya di
+ * Dashboard Project LED (§6.1). Halaman ini read-only: ubah dan hapus Dokumen
+ * LED ada di halaman Dokumen LED prodi.
  */
 export function StudyProgramWorkspaceHome() {
 	// Layout lapis ini (`StudyProgramWorkspaceLayout`) sudah mengambil prodinya
@@ -59,80 +39,52 @@ export function StudyProgramWorkspaceHome() {
  * menyentuh penyimpanan) untuk prodi yang belum tentu ada.
  */
 function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
-	const navigate = useNavigate();
-	const session = useSession();
-	const {
-		penyusunanAktif,
-		arsip,
-		chapterSummary,
-		evidenceProdi,
-		penyusun,
-	} = useProgramReadiness(program.id);
+	const { penyusunanAktif, arsip, tenggat, chapterSummary, evidenceProdi, penyusun } =
+		useProgramReadiness(program.id);
 
-	// Penyusunan Dokumen LED sepenuhnya wewenang Penjamin Mutu; Pimpinan read-only
-	// di level ini (§6.2) dan Penyusun tidak pernah punya aksi di sini (§15).
-	const canManage = session?.role === 'Penjamin Mutu';
+	const overviews = useProgramAmiOverview(penyusunanAktif ? [penyusunanAktif.id] : []);
 
-	/** Dibawa formulir supaya Batal dan simpan memulangkan ke dashboard ini. */
-	const { konfirmasi, confirmDialog } = useConfirmDialog();
-	const returnTo = `/study-programs/${program.id}`;
-
-	const handleDelete = React.useCallback(
-		async (id: string) => {
-			const lanjut = await konfirmasi({
-				judul: 'Hapus Dokumen LED ini?',
-				deskripsi:
-					'Seluruh bab beserta isinya ikut terhapus, dan tidak bisa dipulihkan.',
-				labelAksi: 'Hapus',
-				merusak: true,
-			});
-			if (!lanjut) return;
-
-			// `delete()` menyiarkan 'storage-update' sendiri setelah selesai — hook
-			// kesiapan berlangganan event yang sama, jadi barisnya hilang tanpa
-			// halaman ini perlu memuat ulang sendiri.
-			ledProjectRepository.delete(id).catch((e: unknown) => {
-				alert(e instanceof Error ? e.message : 'Gagal menghapus Dokumen LED.');
-			});
-		},
-		[konfirmasi],
+	// Baris dibentuk dengan aturan yang sama dengan Dashboard Utama, hanya
+	// untuk prodi ini. Ringkasan AMI yang gagal dimuat (`null`) mengosongkan
+	// kolom AMI, bukan tabelnya.
+	const rows = React.useMemo(
+		() =>
+			buildActiveDocumentRows({
+				readiness: [{ program, penyusunanAktif, chapterSummary, tenggat }],
+				overviews,
+			}),
+		[program, penyusunanAktif, chapterSummary, tenggat, overviews],
 	);
 
-	const handleEdit = React.useCallback(
-		(id: string) => {
-			navigate(
-				`/dashboard/led-projects/${id}/edit?returnTo=${encodeURIComponent(returnTo)}`,
-			);
-		},
-		[navigate, returnTo],
-	);
+	const riwayat = arsip.filter((project) => project.statusKeseluruhan === 'SELESAI');
 
-	/*
-	 * Yang sedang disusun ikut terdaftar di riwayat, di posisi paling atas:
-	 * `pickPenyusunanAktif` sudah memisahkannya dari arsip, dan menyatukannya
-	 * kembali di sini membuat tabelnya terbaca sebagai urutan penuh — kartu di
-	 * atas menonjolkan, tabel menempatkan.
-	 */
-	const riwayat = penyusunanAktif ? [penyusunanAktif, ...arsip] : arsip;
+	const meta = [
+		program.jenjang,
+		program.fakultas,
+		program.kode ? `Kode ${program.kode}` : '',
+		program.ketuaProdi ? `Ketua Program Studi: ${program.ketuaProdi}` : '',
+	]
+		.filter(Boolean)
+		.join(' · ');
 
 	return (
 		<div className="flex flex-col gap-8">
 			<div>
 				<h2 className="font-heading text-2xl font-bold tracking-tight">
-					Dashboard Program Studi
+					{program.studyProgramName}
 				</h2>
-				<p className="text-sm text-muted-foreground">
-					Identitas program studi, dan penyusunan yang sedang berjalan.
-				</p>
+				<p className="text-sm text-muted-foreground">{meta}</p>
 			</div>
 
-			<div className="grid items-start gap-4 lg:grid-cols-2">
-				<ProgramIdentityCard program={program} />
-
+			<section className="flex flex-col gap-3">
+				<h3 className="font-heading text-lg font-bold tracking-tight">
+					Dokumen LED
+				</h3>
 				{penyusunanAktif ? (
-					<ActiveProjectCard
-						project={penyusunanAktif}
-						summary={chapterSummary}
+					<ActiveDocumentsTable
+						rows={rows}
+						amiTersedia={overviews !== null}
+						kolomPertama="judul"
 					/>
 				) : (
 					/*
@@ -155,24 +107,20 @@ function ProgramReadinessView({ program }: { program: StudyProgramEntity }) {
 						</CardHeader>
 					</Card>
 				)}
-			</div>
+			</section>
+
+			{/* Hanya berkas milik prodi, sama dengan isi perpustakaan yang dituju tombolnya. */}
+			<EvidenceStatusCard
+				judul="Bukti Dukung Program Studi"
+				ringkasan={evidenceProdi}
+				href={`/study-programs/${program.id}/evidence`}
+				pesanKosong="Belum ada berkas milik program studi ini."
+			/>
 
 			<div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
-				<ProgramLedProjectHistory
-					projects={riwayat}
-					programId={program.id}
-					canManage={canManage}
-					onEdit={handleEdit}
-					onDelete={handleDelete}
-				/>
-
-				<div className="flex flex-col gap-4">
-					<ProgramEvidencePanel summary={evidenceProdi} programId={program.id} />
-					<ProgramTeamPanel penyusun={penyusun} />
-				</div>
+				<ProgramLedProjectHistory projects={riwayat} programId={program.id} />
+				<ProgramTeamPanel penyusun={penyusun} />
 			</div>
-
-			{confirmDialog}
 		</div>
 	);
 }

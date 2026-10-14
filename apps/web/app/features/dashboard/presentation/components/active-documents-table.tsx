@@ -49,9 +49,15 @@ const cellPad = 'px-3';
 export function ActiveDocumentsTable({
 	rows,
 	amiTersedia,
+	kolomPertama = 'program-studi',
 }: {
 	rows: ActiveDocumentRow[];
 	amiTersedia: boolean;
+	/**
+	 * `'judul'` dipakai Dashboard Program Studi: semua baris sudah satu prodi,
+	 * jadi yang membedakan dokumen adalah judulnya, bukan nama prodi.
+	 */
+	kolomPertama?: 'program-studi' | 'judul';
 }) {
 	if (rows.length === 0) {
 		return (
@@ -69,7 +75,9 @@ export function ActiveDocumentsTable({
 		<Table className="min-w-2xl">
 			<TableHeader>
 				<TableRow>
-					<TableHead className={cellPad}>Program Studi</TableHead>
+					<TableHead className={cellPad}>
+						{kolomPertama === 'judul' ? 'Judul dokumen' : 'Program Studi'}
+					</TableHead>
 					<TableHead className={cellPad}>Status dokumen</TableHead>
 					<TableHead className={cellPad}>Tenggat</TableHead>
 					<TableHead className={cellPad}>Progres bab</TableHead>
@@ -83,6 +91,7 @@ export function ActiveDocumentsTable({
 						key={row.project.id}
 						row={row}
 						amiTersedia={amiTersedia}
+						kolomPertama={kolomPertama}
 					/>
 				))}
 			</TableBody>
@@ -93,24 +102,37 @@ export function ActiveDocumentsTable({
 function ActiveDocumentTableRow({
 	row,
 	amiTersedia,
+	kolomPertama,
 }: {
 	row: ActiveDocumentRow;
 	amiTersedia: boolean;
+	kolomPertama: 'program-studi' | 'judul';
 }) {
 	const { program, project, chapterSummary, tenggat, overview } = row;
 
 	return (
 		<TableRow>
 			<TableCell className={cellPad}>
-				<Link
-					to={`/study-programs/${program.id}`}
-					className="font-medium hover:underline"
-				>
-					{program.studyProgramName}
-				</Link>
-				<p className="text-xs text-muted-foreground">
-					{program.jenjang} · {program.fakultas}
-				</p>
+				{kolomPertama === 'judul' ? (
+					<Link
+						to={`/led-projects/${project.id}`}
+						className="font-medium hover:underline"
+					>
+						{project.judul}
+					</Link>
+				) : (
+					<>
+						<Link
+							to={`/study-programs/${program.id}`}
+							className="font-medium hover:underline"
+						>
+							{program.studyProgramName}
+						</Link>
+						<p className="text-xs text-muted-foreground">
+							{program.jenjang} · {program.fakultas}
+						</p>
+					</>
+				)}
 			</TableCell>
 
 			<TableCell className={cellPad}>

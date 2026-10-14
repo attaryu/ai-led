@@ -3,7 +3,6 @@ import { UserIcon, WarningCircleIcon } from '@phosphor-icons/react';
 import {
 	Card,
 	CardContent,
-	CardDescription,
 	CardHeader,
 	CardTitle,
 } from '~/core/components/ui/card';
@@ -23,11 +22,6 @@ export function ProgramTeamPanel({ penyusun }: { penyusun: UserEntity[] }) {
 		<Card size="sm">
 			<CardHeader>
 				<CardTitle>Tim Penyusun</CardTitle>
-				<CardDescription>
-					{penyusun.length === 0
-						? 'Belum ada yang ditugaskan.'
-						: `${penyusun.length} orang ditugaskan di program studi ini.`}
-				</CardDescription>
 			</CardHeader>
 			<CardContent>
 				{penyusun.length === 0 ? (
@@ -36,21 +30,14 @@ export function ProgramTeamPanel({ penyusun }: { penyusun: UserEntity[] }) {
 						Penyusun ditempatkan oleh Pimpinan lewat menu Pengguna.
 					</p>
 				) : (
-					<ul className="flex flex-col gap-3">
+					<ul className="flex flex-col gap-2">
 						{penyusun.map((user) => (
-							<li key={user.id} className="flex items-start gap-2">
+							<li key={user.id} className="flex items-center gap-2 text-sm">
 								<UserIcon
-									className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+									className="size-4 shrink-0 text-muted-foreground"
 									weight="duotone"
 								/>
-								<div className="min-w-0">
-									<p className="truncate text-sm font-medium">
-										{user.namaLengkap}
-									</p>
-									<p className="truncate text-xs text-muted-foreground">
-										{user.email}
-									</p>
-								</div>
+								<span className="truncate">{user.namaLengkap}</span>
 							</li>
 						))}
 					</ul>
