@@ -46,15 +46,15 @@ function DaftarPilihan({
 						{terpilihId ? 'Ganti Instrumen Akreditasi' : 'Pilih Instrumen Akreditasi'}
 					</DialogTitle>
 					<DialogDescription>
-						Set yang dipilih akan terkunci dari perubahan selama dokumen ini
+						Instrumen yang dipilih akan terkunci dari perubahan selama dokumen ini
 						memakainya.
 					</DialogDescription>
 				</DialogHeader>
 
 				{pilihan.length === 0 ? (
 					<div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-						Belum ada set akreditasi yang berstatus siap. Set perlu dilengkapi
-						berkas dan isi rubriknya lebih dulu di menu Set Akreditasi.
+						Belum ada instrumen akreditasi yang berstatus siap. Instrumen perlu dilengkapi
+						berkas dan isi rubriknya lebih dulu di menu Instrumen Akreditasi.
 					</div>
 				) : (
 					<div className="flex flex-col gap-2">

@@ -28,7 +28,7 @@ export const getAccreditationSetColumns = ({
 	withActions = true,
 }: { withActions?: boolean } = {}): ColumnDef<AccreditationSetEntity, any>[] => [
 	columnHelper.accessor('nama', {
-		header: 'Nama Set',
+		header: 'Nama Instrumen',
 		cell: (info) => (
 			<Link
 				to={`/dashboard/accreditation-sets/${info.row.original.id}`}
@@ -89,7 +89,7 @@ export const getAccreditationSetColumns = ({
 						<Button
 							variant="ghost"
 							size="icon"
-							title="Hapus set"
+							title="Hapus instrumen"
 							className="cursor-pointer text-destructive hover:text-destructive"
 							onClick={() =>
 								info.table.options.meta?.onDeleteSet?.(info.row.original.id)

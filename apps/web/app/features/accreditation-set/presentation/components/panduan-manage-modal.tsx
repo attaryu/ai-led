@@ -65,8 +65,8 @@ export function PanduanManageModal({
 				<DialogHeader>
 					<DialogTitle>Kelola Panduan</DialogTitle>
 					<DialogDescription>
-						Panduan yang masih dipakai Set manapun tidak bisa dihapus dari sini --
-						lepas dulu dari tiap Set yang memakainya.
+						Panduan yang masih dipakai instrumen manapun tidak bisa dihapus dari sini --
+						lepas dulu dari tiap instrumen yang memakainya.
 					</DialogDescription>
 				</DialogHeader>
 
@@ -88,7 +88,7 @@ export function PanduanManageModal({
 										{item.judul}
 									</p>
 									<p className="text-xs text-muted-foreground">
-										{item.jumlahBab} bab · dipakai {item.jumlahSetPemakai} Set ·{' '}
+										{item.jumlahBab} bab · dipakai {item.jumlahSetPemakai} instrumen ·{' '}
 										{formatRelativeTimeLong(item.createdAt)}
 									</p>
 								</div>
@@ -99,7 +99,7 @@ export function PanduanManageModal({
 									disabled={item.jumlahSetPemakai > 0 || menghapusId === item.id}
 									title={
 										item.jumlahSetPemakai > 0
-											? `Masih dipakai ${item.jumlahSetPemakai} Set, lepas dulu sebelum bisa dihapus`
+											? `Masih dipakai ${item.jumlahSetPemakai} instrumen, lepas dulu sebelum bisa dihapus`
 											: undefined
 									}
 									className="shrink-0 cursor-pointer text-destructive hover:text-destructive disabled:cursor-not-allowed"

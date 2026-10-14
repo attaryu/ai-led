@@ -141,9 +141,9 @@ export function AccreditationSetCriteria() {
 		if (!setId) return;
 
 		const lanjut = await konfirmasi({
-			judul: 'Tandai set ini siap dipakai?',
+			judul: 'Tandai instrumen ini siap dipakai?',
 			deskripsi:
-				'Set akan muncul sebagai pilihan instrumen di Dokumen LED, dan statusnya tidak bisa ditarik kembali. Isinya sendiri baru terkunci setelah ada dokumen yang memakainya.',
+				'Instrumen akan muncul sebagai pilihan instrumen di Dokumen LED, dan statusnya tidak bisa ditarik kembali. Isinya sendiri baru terkunci setelah ada dokumen yang memakainya.',
 			labelAksi: 'Tandai Siap',
 		});
 		if (!lanjut) return;
@@ -155,7 +155,7 @@ export function AccreditationSetCriteria() {
 			reload();
 		} catch (e) {
 			setAksiError(
-				e instanceof Error ? e.message : 'Gagal menandai set sebagai siap.',
+				e instanceof Error ? e.message : 'Gagal menandai instrumen sebagai siap.',
 			);
 		}
 	}, [setId, reload, konfirmasi]);
@@ -165,7 +165,7 @@ export function AccreditationSetCriteria() {
 	if (!canView) {
 		return (
 			<div className="p-8 text-center text-muted-foreground">
-				Set akreditasi adalah bagian dari konten akreditasi, di luar kewenangan
+				Instrumen akreditasi adalah bagian dari konten akreditasi, di luar kewenangan
 				Admin.
 			</div>
 		);
@@ -174,7 +174,7 @@ export function AccreditationSetCriteria() {
 	if (notFound) {
 		return (
 			<div className="p-8 text-center text-muted-foreground">
-				Set akreditasi tidak ditemukan.
+				Instrumen akreditasi tidak ditemukan.
 			</div>
 		);
 	}
@@ -198,7 +198,7 @@ export function AccreditationSetCriteria() {
 					<Button
 						variant="outline"
 						size="icon"
-						title="Kembali ke set"
+						title="Kembali ke instrumen"
 						onClick={() => navigate(`/dashboard/accreditation-sets/${set.id}`)}
 						className="cursor-pointer"
 					>
@@ -273,10 +273,10 @@ export function AccreditationSetCriteria() {
 
 			{set.kriteria.length === 0 ? (
 				<div className="rounded-md border border-dashed border-border p-10 text-center">
-					<p className="font-medium">Isi rubrik set ini belum terbaca.</p>
+					<p className="font-medium">Isi rubrik instrumen ini belum terbaca.</p>
 					<p className="mt-1 text-sm text-muted-foreground">
 						Kriteria penilaian berasal dari berkas Dokumen Rubrik yang diunggah,
-						bukan diketik di sini. Set tanpa kriteria belum bisa ditandai siap.
+						bukan diketik di sini. Instrumen tanpa kriteria belum bisa ditandai siap.
 					</p>
 				</div>
 			) : (

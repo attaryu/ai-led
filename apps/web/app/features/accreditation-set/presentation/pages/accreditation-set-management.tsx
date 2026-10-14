@@ -34,10 +34,10 @@ export function AccreditationSetManagement() {
 	const handleDelete = React.useCallback(
 		async (id: string) => {
 			const lanjut = await konfirmasi({
-				judul: 'Hapus set akreditasi ini?',
+				judul: 'Hapus instrumen akreditasi ini?',
 				deskripsi:
-					'Berkas acuan dan isi rubriknya ikut terhapus. Set yang sudah dipakai Dokumen LED tidak bisa dihapus.',
-				labelAksi: 'Hapus Set',
+					'Berkas acuan dan isi rubriknya ikut terhapus. Instrumen yang sudah dipakai Dokumen LED tidak bisa dihapus.',
+				labelAksi: 'Hapus Instrumen',
 				merusak: true,
 			});
 			if (!lanjut) return;
@@ -51,7 +51,7 @@ export function AccreditationSetManagement() {
 				await accreditationSetRepository.delete(id);
 				loadData();
 			} catch (e) {
-				setAksiError(e instanceof Error ? e.message : 'Gagal menghapus set.');
+				setAksiError(e instanceof Error ? e.message : 'Gagal menghapus instrumen.');
 			}
 		},
 		[loadData, konfirmasi],
@@ -99,7 +99,7 @@ export function AccreditationSetManagement() {
 	if (!canView) {
 		return (
 			<div className="p-8 text-center text-muted-foreground">
-				Set akreditasi adalah bagian dari konten akreditasi, di luar kewenangan
+				Instrumen akreditasi adalah bagian dari konten akreditasi, di luar kewenangan
 				Admin.
 			</div>
 		);
@@ -112,16 +112,16 @@ export function AccreditationSetManagement() {
 					{/*
 					 * Satu judul untuk kedua hak akses, sama seperti di
 					 * study-program-management.tsx: halaman yang berganti nama antara
-					 * "Set Akreditasi" dan "Daftar Set Akreditasi" tidak memberi
+					 * "Instrumen Akreditasi" dan "Daftar Instrumen Akreditasi" tidak memberi
 					 * pembaca cara tahu kenapa namanya berbeda dari yang dilihat
 					 * rekannya.
 					 */}
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						Set Akreditasi
+						Instrumen Akreditasi
 					</h2>
 					<p className="text-sm text-muted-foreground">
 						Rubrik, panduan, dan template dari satu lembaga penilai untuk satu
-						siklus. Tiap Dokumen LED memilih set mana yang dipakainya.
+						siklus. Tiap Dokumen LED memilih instrumen mana yang dipakainya.
 					</p>
 				</div>
 				{canManage && (
@@ -130,7 +130,7 @@ export function AccreditationSetManagement() {
 						className="gap-2 cursor-pointer"
 					>
 						<PlusIcon className="size-4" />
-						Tambah Set
+						Tambah Instrumen
 					</Button>
 				)}
 			</div>
@@ -146,7 +146,7 @@ export function AccreditationSetManagement() {
 				data={halaman.rows}
 				rowCount={halaman.rowCount}
 				meta={tableMeta}
-				searchPlaceholder="Cari nama set, lembaga, atau siklus..."
+				searchPlaceholder="Cari nama instrumen, lembaga, atau siklus..."
 				sorting={sorting}
 				onSortingChange={setSorting}
 				globalFilter={globalFilter}

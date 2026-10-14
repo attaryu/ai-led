@@ -134,7 +134,7 @@ export function StructureConfirmModal({
 					<DialogTitle>{modeKelola ? 'Kelola Struktur Pedoman' : 'Pilih Struktur Pedoman'}</DialogTitle>
 					<DialogDescription>
 						{modeKelola
-							? 'Matikan sub-bab yang tidak diperlukan -- Dokumen LED baru dari set ini tidak akan menyertakannya di outline. Perubahan tersimpan langsung, tidak memengaruhi dokumen yang sudah ada.'
+							? 'Matikan sub-bab yang tidak diperlukan -- Dokumen LED baru dari instrumen ini tidak akan menyertakannya di outline. Perubahan tersimpan langsung, tidak memengaruhi dokumen yang sudah ada.'
 							: 'Un-centang bagian yang tidak diperlukan — bagian itu TIDAK akan dimasukkan ke sistem sama sekali.'}
 					</DialogDescription>
 				</DialogHeader>

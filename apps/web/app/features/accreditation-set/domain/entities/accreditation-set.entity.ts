@@ -83,8 +83,8 @@ export const accreditationSetSchema = z.object({
 	id: z.string(),
 	nama: z
 		.string()
-		.min(1, 'Nama set wajib diisi')
-		.max(100, 'Nama set maksimal 100 karakter'),
+		.min(1, 'Nama instrumen wajib diisi')
+		.max(100, 'Nama instrumen maksimal 100 karakter'),
 	/** Teks bebas, bukan enum: lembaga penilai baru bisa muncul kapan saja. */
 	lembaga: z
 		.string()
@@ -212,7 +212,7 @@ export function deriveSetLock(dipakaiProyek: number): SetLock {
 		return {
 			terbuka: false,
 			bolehHapus: false,
-			alasan: `Set ini sudah dipakai ${dipakaiProyek} Dokumen LED, jadi isinya tidak bisa diubah lagi. Duplikasi setnya kalau instrumennya perlu direvisi.`,
+			alasan: `Instrumen ini sudah dipakai ${dipakaiProyek} Dokumen LED, jadi isinya tidak bisa diubah lagi. Duplikasi instrumennya kalau instrumennya perlu direvisi.`,
 		};
 	}
 
@@ -236,11 +236,11 @@ export function cekSyaratSiap(set: AccreditationSetEntity): string | null {
 		...(panduanTerisi ? [] : ['Pedoman Penyusunan']),
 	];
 	if (namaKosong.length > 0) {
-		return `Set siap harus punya kedua berkas acuan — ${namaKosong.join(' dan ')} belum ada.`;
+		return `Instrumen siap harus punya kedua berkas acuan — ${namaKosong.join(' dan ')} belum ada.`;
 	}
 
 	if (set.kriteria.length < MIN_KRITERIA_SIAP) {
-		return 'Set siap harus punya isi rubrik — kriteria penilaiannya belum terbaca dari Dokumen Rubrik.';
+		return 'Instrumen siap harus punya isi rubrik — kriteria penilaiannya belum terbaca dari Dokumen Rubrik.';
 	}
 
 	return null;

@@ -204,7 +204,7 @@ export function AccreditationSetDetail() {
 			if (jumlahSetLain > 1) {
 				const lanjut = await konfirmasi({
 					judul: 'Ganti berkas Panduan ini?',
-					deskripsi: `Panduan ini dipakai ${jumlahSetLain} Set (termasuk ini) -- strukturnya akan diekstrak ulang dan SEMUA set itu perlu meninjau ulang hasilnya sebelum bisa dipakai lagi.`,
+					deskripsi: `Panduan ini dipakai ${jumlahSetLain} instrumen (termasuk ini) -- strukturnya akan diekstrak ulang dan SEMUA instrumen itu perlu meninjau ulang hasilnya sebelum bisa dipakai lagi.`,
 					labelAksi: 'Ganti Berkas',
 					merusak: true,
 				});
@@ -226,9 +226,9 @@ export function AccreditationSetDetail() {
 		if (!setId) return;
 
 		const lanjut = await konfirmasi({
-			judul: 'Lepas Panduan dari set ini?',
+			judul: 'Lepas Panduan dari instrumen ini?',
 			deskripsi:
-				'Set ini tidak lagi menunjuk Panduan manapun -- Panduan itu sendiri (dan set lain yang memakainya) tidak terpengaruh.',
+				'Instrumen ini tidak lagi menunjuk Panduan manapun -- Panduan itu sendiri (dan instrumen lain yang memakainya) tidak terpengaruh.',
 			labelAksi: 'Lepas Panduan',
 			merusak: true,
 		});
@@ -251,7 +251,7 @@ export function AccreditationSetDetail() {
 			const salinan = await accreditationSetRepository.duplicate(setId);
 			navigate(`/dashboard/accreditation-sets/${salinan.id}`);
 		} catch (e) {
-			setAksiError(e instanceof Error ? e.message : 'Gagal menduplikasi set.');
+			setAksiError(e instanceof Error ? e.message : 'Gagal menduplikasi instrumen.');
 		}
 	}, [setId, navigate]);
 
@@ -260,7 +260,7 @@ export function AccreditationSetDetail() {
 	if (!canView) {
 		return (
 			<div className="p-8 text-center text-muted-foreground">
-				Set akreditasi adalah bagian dari konten akreditasi, di luar kewenangan
+				Instrumen akreditasi adalah bagian dari konten akreditasi, di luar kewenangan
 				Admin.
 			</div>
 		);
@@ -269,7 +269,7 @@ export function AccreditationSetDetail() {
 	if (notFound) {
 		return (
 			<div className="p-8 text-center text-muted-foreground">
-				Set akreditasi tidak ditemukan.
+				Instrumen akreditasi tidak ditemukan.
 			</div>
 		);
 	}
@@ -277,7 +277,7 @@ export function AccreditationSetDetail() {
 	if (memuat || !set || !lock) {
 		return (
 			<div className="p-8 text-center text-muted-foreground">
-				Memuat set akreditasi...
+				Memuat instrumen akreditasi...
 			</div>
 		);
 	}
@@ -301,7 +301,7 @@ export function AccreditationSetDetail() {
 					<Button
 						variant="outline"
 						size="icon"
-						title="Kembali ke daftar set"
+						title="Kembali ke daftar instrumen"
 						onClick={() => navigate('/dashboard/accreditation-sets')}
 						className="cursor-pointer"
 					>
@@ -406,7 +406,7 @@ export function AccreditationSetDetail() {
 			{set.panduan?.structureParseStatus === 'GAGAL' && (
 				<div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
 					Ekstraksi struktur bab otomatis gagal: {set.panduan.structureParseError ?? 'penyebab tidak diketahui'}.
-					Dokumen LED baru dari set ini tetap memakai struktur bab standar — unggah ulang Panduan
+					Dokumen LED baru dari instrumen ini tetap memakai struktur bab standar — unggah ulang Panduan
 					Penulisan untuk mencoba lagi.
 				</div>
 			)}
@@ -473,7 +473,7 @@ export function AccreditationSetDetail() {
 			<div className="grid items-start gap-6 lg:grid-cols-[22rem_minmax(0,1fr)]">
 				<Card>
 					<CardHeader>
-						<CardTitle>Identitas Set</CardTitle>
+						<CardTitle>Identitas Instrumen</CardTitle>
 					</CardHeader>
 					<CardContent>
 						<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

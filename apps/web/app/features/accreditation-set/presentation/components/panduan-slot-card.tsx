@@ -97,7 +97,7 @@ export function PanduanSlotCard({
 						</div>
 						{jumlahSetLain > 1 && (
 							<p className="text-xs text-muted-foreground">
-								Dipakai {jumlahSetLain} Set (termasuk ini) -- mengganti berkasnya berlaku untuk semua.
+								Dipakai {jumlahSetLain} instrumen (termasuk ini) -- mengganti berkasnya berlaku untuk semua.
 							</p>
 						)}
 					</div>
@@ -117,7 +117,7 @@ export function PanduanSlotCard({
 							<Button
 								variant="ghost"
 								size="icon"
-								aria-label="Lepas Panduan dari set ini"
+								aria-label="Lepas Panduan dari instrumen ini"
 								disabled={uploading}
 								className="cursor-pointer text-destructive hover:text-destructive"
 								onClick={onDetach}

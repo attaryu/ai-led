@@ -123,7 +123,7 @@ export function hitungKesiapan(input: {
 		keterangan:
 			input.jumlahIndikator > 0
 				? `${input.jumlahIndikator} indikator dari master rubrik LAM Teknik`
-				: 'Set Akreditasi dokumen ini belum punya indikator.',
+				: 'Instrumen Akreditasi dokumen ini belum punya indikator.',
 		tautan: null,
 	};
 

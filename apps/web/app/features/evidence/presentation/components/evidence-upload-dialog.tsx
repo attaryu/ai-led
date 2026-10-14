@@ -529,7 +529,7 @@ export function EvidenceUploadDialog({
 					 */}
 					<Field>
 						<FieldLabel htmlFor="evidence-accreditation-set">
-							Set Akreditasi acuan (opsional)
+							Instrumen Akreditasi (opsional)
 						</FieldLabel>
 						<Select
 							id="evidence-accreditation-set"
@@ -563,7 +563,7 @@ export function EvidenceUploadDialog({
 							/>
 							<span className="min-w-0 flex-1 truncate">
 								{!accreditationSetId
-									? 'Pilih Set Akreditasi dulu untuk menandai indikator'
+									? 'Pilih Instrumen Akreditasi dulu untuk menandai indikator'
 									: indikatorTerpilih.size > 0
 										? `${indikatorTerpilih.size} indikator dipilih`
 										: 'Belum ditandai (tidak dipakai asesmen AMI)'}

@@ -58,7 +58,7 @@ function assertNomorBebas(
 
 	if (bentrok) {
 		throw new Error(
-			`Nomor indikator ${no}${subNo ? ` (sub ${subNo})` : ''} sudah dipakai kriteria lain di set ini.`,
+			`Nomor indikator ${no}${subNo ? ` (sub ${subNo})` : ''} sudah dipakai kriteria lain di instrumen ini.`,
 		);
 	}
 }

@@ -30,7 +30,7 @@ export function AccreditationSetFormFields({
 	return (
 		<FieldGroup>
 			<Field data-invalid={!!errors.nama}>
-				<FieldLabel htmlFor="nama">Nama Set</FieldLabel>
+				<FieldLabel htmlFor="nama">Nama Instrumen</FieldLabel>
 				<Input
 					id="nama"
 					placeholder="Contoh: LAM-Teknik 2026"

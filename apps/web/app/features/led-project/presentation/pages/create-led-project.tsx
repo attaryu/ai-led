@@ -254,8 +254,8 @@ export function CreateLedProject() {
 									// penyusunan dibuka — kalau belum ada, yang kurang bukan
 									// isian formulir ini, melainkan setnya sendiri.
 									<div className="text-sm text-destructive border border-destructive/20 bg-destructive/10 rounded-md p-3">
-										Belum ada set akreditasi yang siap dipakai. Lengkapi berkas
-										dan isi rubriknya lebih dulu di menu Set Akreditasi.
+										Belum ada instrumen akreditasi yang siap dipakai. Lengkapi berkas
+										dan isi rubriknya lebih dulu di menu Instrumen Akreditasi.
 									</div>
 								) : (
 									<Select

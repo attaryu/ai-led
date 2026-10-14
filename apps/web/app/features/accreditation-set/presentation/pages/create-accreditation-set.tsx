@@ -48,14 +48,14 @@ export function CreateAccreditationSet() {
 			// dituju pengguna sesudah membuatnya pasti mengunggah berkas.
 			navigate(`/dashboard/accreditation-sets/${created.id}`);
 		} catch (e) {
-			setFormError(e instanceof ApiError ? e.message : 'Gagal menyimpan set akreditasi.');
+			setFormError(e instanceof ApiError ? e.message : 'Gagal menyimpan instrumen akreditasi.');
 		}
 	};
 
 	if (!canManage) {
 		return (
 			<div className="p-8 text-center text-muted-foreground">
-				Hanya Penjamin Mutu yang dapat menambah set akreditasi.
+				Hanya Penjamin Mutu yang dapat menambah instrumen akreditasi.
 			</div>
 		);
 	}
@@ -73,19 +73,19 @@ export function CreateAccreditationSet() {
 				</Button>
 				<div>
 					<h2 className="font-heading text-2xl font-bold tracking-tight">
-						Tambah Set Akreditasi
+						Tambah Instrumen Akreditasi
 					</h2>
 					<p className="text-sm text-muted-foreground">
-						Berkas acuannya diunggah setelah set ini dibuat.
+						Berkas acuannya diunggah setelah instrumen ini dibuat.
 					</p>
 				</div>
 			</div>
 
 			<Card>
 				<CardHeader>
-					<CardTitle>Identitas Set</CardTitle>
+					<CardTitle>Identitas Instrumen</CardTitle>
 					<CardDescription>
-						Set menandai satu lembaga penilai untuk satu siklus akreditasi.
+						Instrumen menandai satu lembaga penilai untuk satu siklus akreditasi.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>

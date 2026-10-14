@@ -41,7 +41,7 @@ const menuItems: (AppShellNavItem & { roles: UserRole[] })[] = [
     roles: ["Pimpinan", "Penjamin Mutu"],
   },
   {
-    name: "Set Akreditasi",
+    name: "Instrumen Akreditasi",
     path: "/dashboard/accreditation-sets",
     icon: CertificateIcon,
     end: false,
