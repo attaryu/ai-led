@@ -16,6 +16,7 @@ import {
 	Jenjang,
 	OwnerTipe,
 	PeringkatAkreditasi,
+	Prisma,
 	PrismaClient,
 	Role,
 	RubricScoreType,
@@ -279,24 +280,97 @@ const SI_CHAPTER_TITLES = [
 	'Bab X Analisis Capaian dan Penutup',
 ];
 
-/** Sub-bab bab 1–4 LED Sistem Informasi; dua bab pertama sama dengan dokumen lain. */
-const SI_CHAPTER_SECTIONS: [string, string][][] = [
+type SectionStatus = 'PENDING' | 'GENERATING' | 'GENERATED' | 'ERROR';
+
+type SectionSeed = {
+	/** Kunci unik dalam bab; menjadi bagian id. */
+	key: string;
+	/** Kunci induk bila ini sub-sub-bab. */
+	parent?: string;
+	marker: string;
+	title: string;
+	status?: SectionStatus;
+	locked?: boolean;
+	/** Menunggu review Penjamin Mutu. */
+	review?: boolean;
+	error?: string;
+	/** Catatan Penjamin Mutu: [teks, berapa hari lalu]. */
+	note?: [string, number];
+};
+
+const L = { locked: true, status: 'GENERATED' as const };
+
+/** Pohon sub-bab LED Sistem Informasi (bab → sub-bab → sub-sub-bab); bab 8–10 sengaja kosong. */
+const SI_SECTION_TREE: SectionSeed[][] = [
 	[
-		['1.1', 'Latar Belakang Penyusunan'],
-		['1.2', 'Tujuan dan Ruang Lingkup'],
+		{ key: 'a', marker: 'A', title: 'Latar Belakang', ...L, note: ['Isi sudah sesuai pedoman.', 5] },
+		{ key: 'b', marker: 'B', title: 'Dasar Hukum dan Pedoman', ...L },
+		{ key: 'c', marker: 'C', title: 'Tujuan dan Ruang Lingkup', locked: true },
+		{ key: 'c1', parent: 'c', marker: 'C.1', title: 'Tujuan Penyusunan', ...L },
+		{ key: 'c2', parent: 'c', marker: 'C.2', title: 'Ruang Lingkup', ...L },
 	],
 	[
-		['2.1', 'Visi, Misi, Tujuan, dan Strategi'],
-		['2.2', 'Struktur Organisasi dan Tata Kelola'],
+		{ key: 'a', marker: 'A', title: 'Sejarah dan Perkembangan', ...L },
+		{ key: 'b', marker: 'B', title: 'Struktur Organisasi', ...L },
+		{ key: 'c', marker: 'C', title: 'Sumber Daya', locked: true },
+		{ key: 'c1', parent: 'c', marker: 'C.1', title: 'Dosen', ...L },
+		{ key: 'c2', parent: 'c', marker: 'C.2', title: 'Tenaga Kependidikan', ...L },
 	],
 	[
-		['3.1', 'Visi dan Misi Program Studi'],
-		['3.2', 'Tujuan dan Sasaran Strategis'],
-		['3.3', 'Strategi Pencapaian'],
+		{ key: 'a', marker: 'A', title: 'Visi dan Misi Program Studi', ...L },
+		{ key: 'b', marker: 'B', title: 'Tujuan dan Sasaran Strategis', ...L },
+		{ key: 'c', marker: 'C', title: 'Strategi Pencapaian', locked: true },
+		{ key: 'c1', parent: 'c', marker: 'C.1', title: 'Strategi Akademik', ...L },
+		{ key: 'c2', parent: 'c', marker: 'C.2', title: 'Strategi Non-Akademik', ...L },
 	],
 	[
-		['4.1', 'Struktur Tata Pamong'],
-		['4.2', 'Kerja Sama Dalam dan Luar Negeri'],
+		{ key: 'a', marker: 'A', title: 'Struktur Tata Pamong', ...L },
+		{ key: 'b', marker: 'B', title: 'Sistem Penjaminan Mutu', ...L },
+		{ key: 'c', marker: 'C', title: 'Kerja Sama' },
+		{ key: 'c1', parent: 'c', marker: 'C.1', title: 'Kerja Sama Dalam Negeri', ...L },
+		{ key: 'c2', parent: 'c', marker: 'C.2', title: 'Kerja Sama Luar Negeri', status: 'GENERATED', review: true },
+	],
+	[
+		{
+			key: 'a',
+			marker: 'A',
+			title: 'Profil Mahasiswa Baru',
+			status: 'GENERATED',
+			note: ['Lengkapi data mahasiswa baru tahun terakhir.', 1],
+		},
+		{ key: 'b', marker: 'B', title: 'Layanan Kemahasiswaan' },
+		{ key: 'b1', parent: 'b', marker: 'B.1', title: 'Bimbingan dan Konseling', status: 'GENERATED' },
+		{ key: 'b2', parent: 'b', marker: 'B.2', title: 'Beasiswa dan Bantuan Studi' },
+		{ key: 'c', marker: 'C', title: 'Prestasi dan Kelulusan', status: 'GENERATING' },
+	],
+	[
+		{ key: 'a', marker: 'A', title: 'Dosen' },
+		{ key: 'a1', parent: 'a', marker: 'A.1', title: 'Profil Dosen Tetap', status: 'GENERATED' },
+		{
+			key: 'a2',
+			parent: 'a',
+			marker: 'A.2',
+			title: 'Rasio Dosen terhadap Mahasiswa',
+			status: 'GENERATED',
+			note: [
+				'Tabel dosen tetap belum memuat NIDN dan bidang keahlian. Tambahkan rasio dosen terhadap mahasiswa tiga tahun terakhir, lalu cantumkan sumber datanya di LKPS. Perjelas juga uraian beban kerja dosen sebelum bagian ini diajukan untuk review.',
+				1,
+			],
+		},
+		{
+			key: 'b',
+			marker: 'B',
+			title: 'Tenaga Kependidikan',
+			status: 'ERROR',
+			error: 'Gagal membangkitkan: bukti dukung untuk sub-bab ini tidak ditemukan.',
+		},
+		{ key: 'c', marker: 'C', title: 'Pengembangan Sumber Daya Manusia' },
+	],
+	[
+		{ key: 'a', marker: 'A', title: 'Sumber dan Alokasi Dana', status: 'GENERATED' },
+		{ key: 'b', marker: 'B', title: 'Sarana dan Prasarana' },
+		{ key: 'b1', parent: 'b', marker: 'B.1', title: 'Ruang Kuliah dan Laboratorium' },
+		{ key: 'b2', parent: 'b', marker: 'B.2', title: 'Perpustakaan dan Fasilitas TI' },
 	],
 ];
 
@@ -768,7 +842,9 @@ async function main() {
 			const state = d.states[i];
 			const chapterId = `${d.id}-bab-${i + 1}`;
 			const filled = state !== 'BELUM_DIISI';
-			const draftNote = state === 'SEDANG_DISUSUN' ? d.draftNotes?.[i + 1] : undefined;
+			// Dokumen bersusunan sub-bab menyimpan catatan Penjamin Mutu di sub-bab, bukan di bab.
+			const draftNote = state === 'SEDANG_DISUSUN' && !d.titles ? d.draftNotes?.[i + 1] : undefined;
+			const chapterNote = !d.titles && state === 'TERKUNCI';
 			const content = filled
 				? { format: 'html', body: chapterBody(prodi.name, i, titles) }
 				: {};
@@ -779,12 +855,11 @@ async function main() {
 				chapterTitle: titles[i],
 				workingContent: content,
 				locked: state === 'TERKUNCI',
-				qualityAssuranceNote:
-					state === 'TERKUNCI'
-						? 'Isi bab sudah sesuai pedoman. Lanjutkan ke bab berikutnya.'
-						: (draftNote ?? null),
-				notedByName: state === 'TERKUNCI' || draftNote ? users.pm.fullName : null,
-				notedAt: state === 'TERKUNCI' ? when(5) : draftNote ? when(1, 10) : null,
+				qualityAssuranceNote: chapterNote
+					? 'Isi bab sudah sesuai pedoman. Lanjutkan ke bab berikutnya.'
+					: (draftNote ?? null),
+				notedByName: chapterNote || draftNote ? users.pm.fullName : null,
+				notedAt: chapterNote ? when(5) : draftNote ? when(1, 10) : null,
 				reviewSubmittedAt: state === 'MENUNGGU_REVIEW' ? when(2, 14) : null,
 			});
 
@@ -819,8 +894,48 @@ async function main() {
 				});
 			}
 
-			const sectionList = d.titles ? SI_CHAPTER_SECTIONS : CHAPTER_SECTIONS.slice(0, 4);
-			if (d.sections && i < sectionList.length) {
+			if (d.sections && d.titles) {
+				// Pohon sub-bab bertingkat: induk dulu, baru anak (parentId).
+				const tree = SI_SECTION_TREE[i] ?? [];
+				const idOf = (key: string) => `${chapterId}-sec-${key}`;
+				await prisma.chapterSection.deleteMany({
+					where: { chapterId, id: { startsWith: 'ss-', notIn: tree.map((t) => idOf(t.key)) } },
+				});
+				const orders: Record<string, number> = {};
+				for (const t of tree) {
+					const group = t.parent ?? '';
+					orders[group] = (orders[group] ?? 0) + 1;
+					const status = t.status ?? 'PENDING';
+					const generated = status === 'GENERATED';
+					await put(prisma.chapterSection, idOf(t.key), {
+						chapterId,
+						parentId: t.parent ? idOf(t.parent) : null,
+						order: orders[group],
+						title: t.title,
+						marker: t.marker,
+						guidance: `Uraikan ${t.title.toLowerCase()} berdasarkan data LKPS dan bukti dukung yang tersedia.`,
+						status,
+						content: generated
+							? {
+									format: 'html',
+									body: `<p>${prodi.name} menguraikan ${t.title.toLowerCase()} berdasarkan dokumen resmi program studi dan data LKPS tahun berjalan. Seluruh rujukan dapat ditelusuri ke bukti dukung yang diunggah.</p>`,
+								}
+							: Prisma.DbNull,
+						error: t.error ?? null,
+						model: generated ? 'demo' : null,
+						generatedAt: generated ? when(18) : null,
+						lkpsList: [],
+						locked: t.locked ?? false,
+						reviewSubmittedAt: t.review ? when(2, 14) : null,
+						qualityAssuranceNote: t.note?.[0] ?? null,
+						notedByName: t.note ? users.pm.fullName : null,
+						notedAt: t.note ? when(t.note[1], 10) : null,
+					});
+				}
+			}
+
+			const sectionList = CHAPTER_SECTIONS.slice(0, 4);
+			if (d.sections && !d.titles && i < sectionList.length) {
 				const parents = sectionList[i];
 				for (let s = 0; s < parents.length; s++) {
 					const [marker, title] = parents[s];
