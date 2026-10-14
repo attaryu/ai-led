@@ -261,6 +261,8 @@ type DocSeed = {
 	titles?: string[];
 	/** Menggeser jejak waktu bab ke belakang, untuk dokumen lama yang sudah selesai. */
 	staleDays?: number;
+	/** Catatan Penjamin Mutu pada bab yang masih disusun, per nomor urut bab (mulai 1). */
+	draftNotes?: Record<number, string>;
 };
 
 /** Susunan 10 bab LED Sistem Informasi (dokumen yang sedang disusun). */
@@ -346,6 +348,10 @@ const DOCS: DocSeed[] = [
 		],
 		sections: true,
 		titles: SI_CHAPTER_TITLES,
+		draftNotes: {
+			5: 'Lengkapi data mahasiswa baru tahun terakhir.',
+			6: 'Tabel dosen tetap belum memuat NIDN dan bidang keahlian. Tambahkan rasio dosen terhadap mahasiswa tiga tahun terakhir, lalu cantumkan sumber datanya di LKPS. Perjelas juga uraian beban kerja dosen sebelum bab ini diajukan untuk review.',
+		},
 	},
 	{
 		id: 'ss-led-si-2025',
@@ -762,6 +768,7 @@ async function main() {
 			const state = d.states[i];
 			const chapterId = `${d.id}-bab-${i + 1}`;
 			const filled = state !== 'BELUM_DIISI';
+			const draftNote = state === 'SEDANG_DISUSUN' ? d.draftNotes?.[i + 1] : undefined;
 			const content = filled
 				? { format: 'html', body: chapterBody(prodi.name, i, titles) }
 				: {};
@@ -775,9 +782,9 @@ async function main() {
 				qualityAssuranceNote:
 					state === 'TERKUNCI'
 						? 'Isi bab sudah sesuai pedoman. Lanjutkan ke bab berikutnya.'
-						: null,
-				notedByName: state === 'TERKUNCI' ? users.pm.fullName : null,
-				notedAt: state === 'TERKUNCI' ? when(5) : null,
+						: (draftNote ?? null),
+				notedByName: state === 'TERKUNCI' || draftNote ? users.pm.fullName : null,
+				notedAt: state === 'TERKUNCI' ? when(5) : draftNote ? when(1, 10) : null,
 				reviewSubmittedAt: state === 'MENUNGGU_REVIEW' ? when(2, 14) : null,
 			});
 
@@ -831,6 +838,9 @@ async function main() {
 						model: 'demo',
 						generatedAt: when(18),
 						lkpsList: [],
+						// Backend menurunkan status kunci/ajuan bab dari sub-bab, bukan dari flag bab.
+						locked: state === 'TERKUNCI',
+						reviewSubmittedAt: state === 'MENUNGGU_REVIEW' ? when(2, 14) : null,
 					});
 				}
 			}
