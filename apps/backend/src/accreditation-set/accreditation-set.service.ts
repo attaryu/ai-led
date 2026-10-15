@@ -73,14 +73,14 @@ export class AccreditationSetService {
     const set = await this.prisma.accreditationSet.findFirst({
       where: { id, tenantId },
     });
-    if (!set) throw new NotFoundException('Set akreditasi tidak ditemukan');
+    if (!set) throw new NotFoundException('Instrumen akreditasi tidak ditemukan');
 
     const dipakaiProyek = await this.prisma.ledDocument.count({
       where: { accreditationSetId: id },
     });
     if (dipakaiProyek > 0) {
       throw new ConflictException(
-        `Set ini sudah dipakai ${dipakaiProyek} Dokumen LED, jadi isinya tidak bisa diubah lagi. Duplikasi setnya kalau acuannya perlu direvisi.`,
+        `Instrumen ini sudah dipakai ${dipakaiProyek} Dokumen LED, jadi isinya tidak bisa diubah lagi. Duplikasi instrumennya kalau acuannya perlu direvisi.`,
       );
     }
     return set;
@@ -103,7 +103,7 @@ export class AccreditationSetService {
   async findById(id: string) {
     const { tenantId } = this.tenantContext.getOrThrow();
     const set = await this.findRaw(id, tenantId).catch(() => null);
-    if (!set) throw new NotFoundException('Set akreditasi tidak ditemukan');
+    if (!set) throw new NotFoundException('Instrumen akreditasi tidak ditemukan');
     return this.toResponse(set);
   }
 
@@ -133,7 +133,7 @@ export class AccreditationSetService {
       where: { id, tenantId },
     });
     if (!existing)
-      throw new NotFoundException('Set akreditasi tidak ditemukan');
+      throw new NotFoundException('Instrumen akreditasi tidak ditemukan');
 
     return this.prisma.accreditationSet.update({
       where: { id },
@@ -157,9 +157,9 @@ export class AccreditationSetService {
       where: { id, tenantId },
       include: { criteria: true, documents: true },
     });
-    if (!set) throw new NotFoundException('Set akreditasi tidak ditemukan');
+    if (!set) throw new NotFoundException('Instrumen akreditasi tidak ditemukan');
     if (set.status === AccreditationSetStatus.SIAP) {
-      throw new BadRequestException('Set ini sudah ditandai siap.');
+      throw new BadRequestException('Instrumen ini sudah ditandai siap.');
     }
 
     // PANDUAN_LAM tidak lagi lewat `documents` (ReferenceGuide reusable,
@@ -174,12 +174,12 @@ export class AccreditationSetService {
     }
     if (kosong.length > 0) {
       throw new BadRequestException(
-        `Set siap harus punya kedua berkas acuan — ${kosong.join(' dan ')} belum ada.`,
+        `Instrumen siap harus punya kedua berkas acuan — ${kosong.join(' dan ')} belum ada.`,
       );
     }
     if (set.criteria.length < MIN_KRITERIA_SIAP) {
       throw new BadRequestException(
-        'Set siap harus punya isi rubrik — kriteria penilaiannya belum terbaca dari Dokumen Rubrik.',
+        'Instrumen siap harus punya isi rubrik — kriteria penilaiannya belum terbaca dari Dokumen Rubrik.',
       );
     }
 
@@ -195,14 +195,14 @@ export class AccreditationSetService {
     const set = await this.prisma.accreditationSet.findFirst({
       where: { id, tenantId },
     });
-    if (!set) throw new NotFoundException('Set akreditasi tidak ditemukan');
+    if (!set) throw new NotFoundException('Instrumen akreditasi tidak ditemukan');
 
     const dipakaiProyek = await this.prisma.ledDocument.count({
       where: { accreditationSetId: id },
     });
     if (dipakaiProyek > 0) {
       throw new ConflictException(
-        `Set ini masih dipakai ${dipakaiProyek} Dokumen LED, jadi tidak bisa dihapus.`,
+        `Instrumen ini masih dipakai ${dipakaiProyek} Dokumen LED, jadi tidak bisa dihapus.`,
       );
     }
 
@@ -217,7 +217,7 @@ export class AccreditationSetService {
   async duplicate(id: string) {
     const { tenantId } = this.tenantContext.getOrThrow();
     const source = await this.findRaw(id, tenantId).catch(() => null);
-    if (!source) throw new NotFoundException('Set akreditasi tidak ditemukan');
+    if (!source) throw new NotFoundException('Instrumen akreditasi tidak ditemukan');
 
     const namaDasar = `${source.nama} (salinan)`;
     const namaTerpakai = new Set(
@@ -469,7 +469,7 @@ export class AccreditationSetService {
     const set = await this.prisma.accreditationSet.findFirst({
       where: { id, tenantId },
     });
-    if (!set) throw new NotFoundException('Set akreditasi tidak ditemukan');
+    if (!set) throw new NotFoundException('Instrumen akreditasi tidak ditemukan');
 
     await this.requireUnlocked(id, tenantId);
 
@@ -565,7 +565,7 @@ export class AccreditationSetService {
     if (!panduan) throw new NotFoundException('Panduan tidak ditemukan');
     if (panduan._count.usedBySets > 0) {
       throw new ConflictException(
-        `Panduan ini masih dipakai ${panduan._count.usedBySets} Set Akreditasi, tidak bisa dihapus`,
+        `Panduan ini masih dipakai ${panduan._count.usedBySets} Instrumen Akreditasi, tidak bisa dihapus`,
       );
     }
 
@@ -706,7 +706,7 @@ export class AccreditationSetService {
     const set = await this.prisma.accreditationSet.findFirst({
       where: { id, tenantId },
     });
-    if (!set) throw new NotFoundException('Set akreditasi tidak ditemukan');
+    if (!set) throw new NotFoundException('Instrumen akreditasi tidak ditemukan');
     if (!set.panduanId) return [];
 
     const templates = await this.prisma.chapterTemplate.findMany({
@@ -736,9 +736,9 @@ export class AccreditationSetService {
   async previewStructure(id: string) {
     const { tenantId } = this.tenantContext.getOrThrow();
     const set = await this.prisma.accreditationSet.findFirst({ where: { id, tenantId } });
-    if (!set) throw new NotFoundException('Set akreditasi tidak ditemukan');
+    if (!set) throw new NotFoundException('Instrumen akreditasi tidak ditemukan');
     if (!set.panduanId) {
-      throw new BadRequestException('Set ini belum punya Panduan Penulisan terpasang');
+      throw new BadRequestException('Instrumen ini belum punya Panduan Penulisan terpasang');
     }
 
     const aiServiceUrl = requireEnv('AI_SERVICE_URL');
@@ -762,9 +762,9 @@ export class AccreditationSetService {
   async confirmStructure(id: string, dto: ConfirmStructureDto) {
     const { tenantId } = this.tenantContext.getOrThrow();
     const set = await this.prisma.accreditationSet.findFirst({ where: { id, tenantId } });
-    if (!set) throw new NotFoundException('Set akreditasi tidak ditemukan');
+    if (!set) throw new NotFoundException('Instrumen akreditasi tidak ditemukan');
     if (!set.panduanId) {
-      throw new BadRequestException('Set ini belum punya Panduan Penulisan terpasang');
+      throw new BadRequestException('Instrumen ini belum punya Panduan Penulisan terpasang');
     }
 
     const aiServiceUrl = requireEnv('AI_SERVICE_URL');

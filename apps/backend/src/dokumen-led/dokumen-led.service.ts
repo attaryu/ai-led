@@ -59,9 +59,9 @@ export class DokumenLedService {
       where: { id: accreditationSetId, tenantId },
       select: { status: true },
     });
-    if (!set) throw new NotFoundException('Set Akreditasi tidak ditemukan');
+    if (!set) throw new NotFoundException('Instrumen Akreditasi tidak ditemukan');
     if (set.status !== AccreditationSetStatus.SIAP) {
-      throw new ConflictException('Set Akreditasi masih DRAF -- tandai SIAP dulu sebelum dipakai dokumen');
+      throw new ConflictException('Instrumen Akreditasi masih DRAF -- tandai SIAP dulu sebelum dipakai dokumen');
     }
   }
 
