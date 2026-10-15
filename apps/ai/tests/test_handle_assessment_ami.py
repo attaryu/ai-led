@@ -84,7 +84,7 @@ def test_document_without_a_chosen_set_fails_fast_without_calling_the_pipeline()
     result, defaults = _run(_fake_job(), get_document_accreditation_set=MagicMock(return_value=None))
 
     assert result["status"] == "error"
-    assert "Set Akreditasi" in result["error"]
+    assert "Instrumen Akreditasi" in result["error"]
     defaults["run_pipeline"].assert_not_called()
 
 

@@ -1260,7 +1260,7 @@ async def _handle_generasi_outline_bab(job) -> dict:
             "status": "error",
             "error": (
                 "Belum ada struktur bab resmi dari Panduan Penulisan untuk bab ini -- "
-                "pilih atau unggah dan konfirmasi Panduan Penulisan di Set Akreditasi dulu."
+                "pilih atau unggah dan konfirmasi Panduan Penulisan di Instrumen Akreditasi dulu."
             ),
         }
 
@@ -2329,7 +2329,7 @@ async def _handle_assessment_ami(job) -> dict:
     if accreditation_set_id is None:
         return {
             "status": "error",
-            "error": "Dokumen ini belum memilih Set Akreditasi — pilih Set Akreditasi dulu sebelum menjalankan penilaian.",
+            "error": "Dokumen ini belum memilih Instrumen Akreditasi — pilih Instrumen Akreditasi dulu sebelum menjalankan penilaian.",
         }
 
     # ariel led_index_state gate: never score against an empty/stale LED index.
@@ -2502,7 +2502,7 @@ async def _handle_setor_led(job) -> dict:
     if accreditation_set_id is None:
         return {
             "status": "error",
-            "error": "Dokumen ini belum memilih Set Akreditasi — pilih Set Akreditasi dulu sebelum setor ke LED.",
+            "error": "Dokumen ini belum memilih Instrumen Akreditasi — pilih Instrumen Akreditasi dulu sebelum setor ke LED.",
         }
 
     led_error = await _prepare_led_index(tenant_id, dokumen_id, payload.get("sumberLed", "EDITOR"))

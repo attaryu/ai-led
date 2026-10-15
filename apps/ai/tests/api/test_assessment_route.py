@@ -105,7 +105,7 @@ def test_start_rejects_document_without_accreditation_set(client):
     with patch("api.routes.assessment.get_document_accreditation_set", return_value=None):
         resp = client.post("/assessment/start", json=_start_body())
     assert resp.status_code == 400
-    assert "Set Akreditasi" in resp.json()["detail"]
+    assert "Instrumen Akreditasi" in resp.json()["detail"]
 
 
 def test_resume_rejects_document_without_accreditation_set(client):
@@ -115,7 +115,7 @@ def test_resume_rejects_document_without_accreditation_set(client):
     ):
         resp = client.post("/assessment/sess-1/resume", json=_resume_body())
     assert resp.status_code == 400
-    assert "Set Akreditasi" in resp.json()["detail"]
+    assert "Instrumen Akreditasi" in resp.json()["detail"]
 
 
 def test_start_missing_file_returns_400():

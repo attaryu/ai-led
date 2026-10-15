@@ -78,7 +78,7 @@ def _resolve_scope(dokumen_id: str | None) -> _Scope:
         )
         row = cur.fetchone()
     if not row or not row["accreditation_set_id"]:
-        raise SystemExit(f"Dokumen {dokumen_id} tidak ada atau belum memilih Set Akreditasi")
+        raise SystemExit(f"Dokumen {dokumen_id} tidak ada atau belum memilih Instrumen Akreditasi")
     return _Scope(row["tenant_id"], dokumen_id, row["accreditation_set_id"], row["study_program_id"])
 
 

@@ -294,7 +294,7 @@ async def start_assessment(
     if accreditation_set_id is None:
         raise HTTPException(
             status_code=400,
-            detail="Dokumen ini belum memilih Set Akreditasi — pilih Set Akreditasi dulu sebelum menjalankan penilaian.",
+            detail="Dokumen ini belum memilih Instrumen Akreditasi — pilih Instrumen Akreditasi dulu sebelum menjalankan penilaian.",
         )
     indicators = _derive_indicators(
         body.laporan_path, body.first_n_indicators, accreditation_set_id=accreditation_set_id
@@ -377,7 +377,7 @@ async def resume_assessment(
     if accreditation_set_id is None:
         raise HTTPException(
             status_code=400,
-            detail="Dokumen ini belum memilih Set Akreditasi — pilih Set Akreditasi dulu sebelum menjalankan penilaian.",
+            detail="Dokumen ini belum memilih Instrumen Akreditasi — pilih Instrumen Akreditasi dulu sebelum menjalankan penilaian.",
         )
 
     if body.laporan_path:

@@ -118,7 +118,7 @@ def test_default_model_that_is_a_reasoning_model_is_accepted_too():
 
 def test_document_without_accreditation_set_stops_the_job():
     result, d = _run(_fake_job(), get_document_accreditation_set=MagicMock(return_value=None))
-    assert result["status"] == "error" and "Set Akreditasi" in result["error"]
+    assert result["status"] == "error" and "Instrumen Akreditasi" in result["error"]
     d["jalankan_setor_led"].assert_not_called()
 
 

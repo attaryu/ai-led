@@ -523,7 +523,7 @@ def replace_rubric_criteria_for_set(
         )
         if cur.fetchone()["n"] > 0:
             raise RubricSetInUseError(
-                "Set ini sudah punya riwayat skor tersimpan, tidak bisa ditimpa otomatis — hubungi admin."
+                "Instrumen ini sudah punya riwayat skor tersimpan, tidak bisa ditimpa otomatis — hubungi admin."
             )
 
         cur.execute(
@@ -612,7 +612,7 @@ def replace_rubric_hierarchy_for_set(
         )
         if cur.fetchone()["n"] > 0:
             raise RubricSetInUseError(
-                "Set ini sudah punya riwayat skor tersimpan, tidak bisa ditimpa otomatis — hubungi admin."
+                "Instrumen ini sudah punya riwayat skor tersimpan, tidak bisa ditimpa otomatis — hubungi admin."
             )
 
         cur.execute(
