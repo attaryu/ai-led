@@ -148,7 +148,7 @@ array. Sebaiknya tampilkan sebagai teks yang bisa diedit.
 | `ikuList` kosong / field kosong / `kode` duplikat | `ikuList kosong -- …`, `IKU ke-N: '…' wajib diisi`, `Kode IKU duplikat: …` |
 | Model tidak dikenal | `Unknown model: <nama>. Available: [...]` |
 | Tidak ada model terkonfigurasi | `Tidak ada model yang dikonfigurasi (OLLAMA_MODEL / OPENROUTER_MODEL kosong).` |
-| Dokumen tanpa Set Akreditasi | `Dokumen ini belum memilih Set Akreditasi — …` |
+| Dokumen tanpa Instrumen Akreditasi | `Dokumen ini belum memilih Instrumen Akreditasi — …` |
 | LED kosong (sumber Editor) | `Belum ada tulisan di Editor yang bisa dinilai -- …` |
 | LKPS tidak ada / tak terbaca | `LKPS belum dipilih untuk setor ke LED -- …` / `Gagal membaca LKPS: …` |
 
@@ -224,5 +224,5 @@ Daftar IKU lalu berasal dari baris tabel yang diisi penulis, bukan dari DB.
   Pilihannya: UI menyimpan segera saat "Terapkan", atau ditambah tabel draf.
 - Setor ulang. Teks Editor yang sudah berisi hasil setor sebelumnya menjadi sumber Capaian untuk job berikutnya,
   jadi model bisa mengutip keluarannya sendiri. Perlu aturan, misalnya hanya mengisi sel yang masih kosong.
-- Prasyarat (Set Akreditasi, LKPS, isi bab) lebih baik dicek UI sebelum tombol aktif; tanpa itu job langsung berakhir
+- Prasyarat (Instrumen Akreditasi, LKPS, isi bab) lebih baik dicek UI sebelum tombol aktif; tanpa itu job langsung berakhir
   `result.status: "error"` (lihat bagian 4).

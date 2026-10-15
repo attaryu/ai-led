@@ -183,7 +183,7 @@ Aturan:
 ## 6. Penanganan error
 
 - **Level job** → `{status: "error", error}`: `ikuList` kosong atau `kode` duplikat, LED belum
-  terindeks, LKPS tidak tersedia, dokumen belum punya Set Akreditasi, model tidak dikenal atau
+  terindeks, LKPS tidak tersedia, dokumen belum punya Instrumen Akreditasi, model tidak dikenal atau
   tidak ada model terkonfigurasi.
 - **Level IKU** → field `error`, IKU lain tetap jalan: capaian tidak ditemukan, JSON model tidak
   terbaca, evaluasi di luar enum setelah retry, timeout LLM.
