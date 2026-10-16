@@ -9,6 +9,7 @@ from setor_led.prompts import (
     bangun_prompt_ekspresi,
     bangun_prompt_narasi,
     bangun_prompt_pilih_level,
+    bangun_prompt_variabel,
     format_prodi,
 )
 from setor_led.rubrik import RubrikIndikator
@@ -152,21 +153,10 @@ RUBRIK = RubrikIndikator(
 CAPAIAN_VAR = {"nilai": "NDS3 = 12, NDTPS = 40", "sumber": "LKPS Tabel 3.a", "variabel": {"NDS3": 12, "NDTPS": 40}}
 
 
-def test_capaian_prompt_includes_formula_text_and_asks_for_variables_with_null_for_missing():
-    prompt = bangun_prompt_capaian(SKOR_IKU, [], rumus=RUBRIK.formula)
-    assert "PDS3 = (NDS3 / NDTPS) x 100%" in prompt
-    assert '"variabel"' in prompt and "null" in prompt
-    assert "jangan menebak" in prompt.lower()
 
 
-def test_capaian_prompt_uses_exact_names_when_given():
-    prompt = bangun_prompt_capaian(SKOR_IKU, [], rumus="(2 * BOP) / 5000000", variabel=["BOP"])
-    assert "BOP" in prompt and "persis" in prompt
 
 
-def test_capaian_prompt_without_formula_is_unchanged():
-    assert '"variabel"' not in bangun_prompt_capaian(SKOR_IKU, [])
-    assert bangun_prompt_capaian(IKU, ["6b"]) == bangun_prompt_capaian(IKU, ["6b"], None, None, None)
 
 
 def test_ekspresi_prompt_has_formula_levels_and_variables_and_forbids_conditions():
@@ -202,3 +192,26 @@ def test_narasi_prompt_has_no_category_words_and_no_led_pens_sample():
     prompt = bangun_prompt_narasi(SKOR_IKU, CAPAIAN_VAR, 2.0, RUBRIK, "bahan", dengan_tambahan=True)
     for kata in ("MELAMPAUI", "MEMENUHI", "Hanya untuk Internal PENS"):
         assert kata not in prompt
+
+
+def test_capaian_prompt_has_no_formula_block_because_it_lowered_the_found_rate():
+    # Uji data nyata (deepseek-v4-flash, 4 indikator berumus): dengan blok rumus/variabel di tahap 1 capaian hanya
+    # ketemu 0-1 dari 4; tanpa blok itu 3 dari 4. Variabel diambil di langkah skor, bukan di tahap 1.
+    prompt = bangun_prompt_capaian(SKOR_IKU, ["6b"], PRODI)
+    assert '"variabel"' not in prompt and "Rubrik indikator ini memakai rumus" not in prompt
+
+
+def test_variabel_prompt_has_formula_levels_capaian_bahan_and_forbids_guessing():
+    capaian = {"nilai": "Rata-rata BOP", "sumber": "LKPS Tabel 2.b", "dasar": "(1+2+3)/3 = 2"}
+    prompt = bangun_prompt_variabel(SKOR_IKU, capaian, RUBRIK, "Hasil tool: 40 dosen", ["NDS3", "NDTPS"], PRODI)
+    assert "PDS3 = (NDS3 / NDTPS) x 100%" in prompt and "Level 4: Jika PDS3" in prompt
+    assert "Rata-rata BOP" in prompt and "(1+2+3)/3 = 2" in prompt and "Hasil tool: 40 dosen" in prompt
+    assert "NDS3, NDTPS" in prompt and "persis" in prompt
+    assert '"variabel"' in prompt and "null" in prompt and "jangan menebak" in prompt.lower()
+    assert "pecahan" in prompt.lower()  # satuan: persentase di rumus skor ditulis sebagai pecahan (20% = 0.2)
+    assert f"Program studi: {PRODI}" in prompt
+
+
+def test_variabel_prompt_lets_the_model_name_variables_when_no_names_are_given():
+    prompt = bangun_prompt_variabel(SKOR_IKU, CAPAIAN_VAR, RUBRIK, "", None)
+    assert "persis" not in prompt and "singkatan" in prompt.lower()

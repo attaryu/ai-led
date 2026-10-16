@@ -22,6 +22,7 @@ from setor_led.pipeline import (
     jalankan_setor_led,
     parse_capaian,
     proses_iku,
+    ambil_variabel,
     lengkapi_variabel,
     pilih_level,
     tentukan_skor,
@@ -254,14 +255,8 @@ def _dengan_variabel(**variabel):
 
 # parse_capaian membawa angka mentah rumus
 
-def test_parse_capaian_carries_variabel():
-    mentah = json.dumps({"ditemukan": True, "nilai": "PDS3 = 30%", "sumber": "LKPS", "variabel": {"NDS3": 12, "NDTPS": None}})
-    assert parse_capaian(mentah)["variabel"] == {"NDS3": 12, "NDTPS": None}
 
 
-def test_parse_capaian_ignores_a_variabel_that_is_not_an_object():
-    mentah = json.dumps({"ditemukan": True, "nilai": "PDS3 = 30%", "sumber": "LKPS", "variabel": [1, 2]})
-    assert "variabel" not in parse_capaian(mentah)
 
 
 # lengkapi_variabel
@@ -369,25 +364,54 @@ def test_pilih_level_does_not_call_the_llm_once_cancelled():
 
 # tentukan_skor
 
-def test_clean_formula_scores_in_code_and_never_asks_the_model_for_a_score():
-    llm = FakeLLM("tidak boleh dipanggil")
-    skor = tentukan_skor(llm, IKU, _dengan_variabel(BOP=9250000), RUBRIK_BERSIH, "")
-    assert skor == 3.7 and llm.dipanggil == 0
 
 
-def test_prose_formula_model_writes_the_expression_and_code_computes():
-    llm = FakeLLM(EKSPRESI_OK)
-    skor = tentukan_skor(llm, IKU, _dengan_variabel(NDS3=6, NDTPS=40), RUBRIK_PROSA, "")
-    assert skor == 3.5 and llm.dipanggil == 1  # 2 + (6/40)*10, dihitung kode
+
+
+
+
+VARIABEL_BOP = json.dumps({"variabel": {"BOP": 9250000}})
+VARIABEL_PROSA = json.dumps({"variabel": {"NDS3": 6, "NDTPS": 40}})
+
+
+def test_ambil_variabel_returns_numbers_for_the_requested_names():
+    assert ambil_variabel(FakeLLM(VARIABEL_BOP), IKU, CAPAIAN, RUBRIK_BERSIH, "", ["BOP"]) == {"BOP": 9250000.0}
+
+
+def test_ambil_variabel_retries_once_naming_what_was_missing_then_recovers():
+    llm = FakeLLM('{"variabel": {"BOP": null}}', VARIABEL_BOP)
+    assert ambil_variabel(llm, IKU, CAPAIAN, RUBRIK_BERSIH, "", ["BOP"]) == {"BOP": 9250000.0} and llm.dipanggil == 2
+
+
+def test_ambil_variabel_does_not_call_the_llm_once_cancelled():
+    batal = threading.Event()
+    batal.set()
+    llm = FakeLLM(VARIABEL_BOP)
+    with pytest.raises(SetorLedCancelled):
+        ambil_variabel(llm, IKU, CAPAIAN, RUBRIK_BERSIH, "", ["BOP"], cancel_event=batal)
+    assert llm.dipanggil == 0
+
+
+def test_clean_formula_variables_come_from_the_model_but_the_score_is_computed_by_code():
+    llm = FakeLLM(VARIABEL_BOP)
+    skor = tentukan_skor(llm, IKU, CAPAIAN, RUBRIK_BERSIH, "")
+    assert skor == 3.7 and llm.dipanggil == 1  # satu panggilan (variabel); skor dari kode
+
+
+def test_prose_formula_model_gives_variables_then_an_expression_and_code_computes():
+    llm = FakeLLM(VARIABEL_PROSA, EKSPRESI_OK)
+    skor = tentukan_skor(llm, IKU, CAPAIAN, RUBRIK_PROSA, "")
+    assert skor == 3.5 and llm.dipanggil == 2  # 2 + (6/40)*10, dihitung kode
 
 
 def test_missing_formula_variable_is_a_named_error_without_model_fallback():
-    llm = FakeLLM(EKSPRESI_OK)
+    llm = FakeLLM('{"variabel": {"NDS3": 6, "NDTPS": null}}')
     with pytest.raises(SetorLedError, match="NDTPS"):
-        tentukan_skor(llm, IKU, _dengan_variabel(NDS3=6, NDTPS=None), RUBRIK_PROSA, "")
+        tentukan_skor(llm, IKU, CAPAIAN, RUBRIK_PROSA, "")
+    assert llm.dipanggil == 2  # variabel + satu retry; tidak pernah meminta ekspresi atau level
+    llm = FakeLLM('{"variabel": {}}')
     with pytest.raises(SetorLedError, match="BOP"):
-        tentukan_skor(llm, IKU, _dengan_variabel(), RUBRIK_BERSIH, "")
-    assert llm.dipanggil == 0
+        tentukan_skor(llm, IKU, CAPAIAN, RUBRIK_BERSIH, "")
 
 
 def test_qualitative_indicator_picks_a_level_with_the_model():
@@ -580,22 +604,16 @@ def test_result_includes_tambahan_when_the_narrative_step_returns_it():
     assert hasil["tambahan"] == TAMBAHAN
 
 
-@pytest.mark.parametrize(
-    "rubrik, rumus, variabel",
-    [
-        (RUBRIK_BERSIH, "(2 x BOP) / 5.000.000", ["BOP"]),
-        (RUBRIK_PROSA, "PDS3 = (NDS3 / NDTPS) x 100%", None),
-        (RUBRIK_LEVEL, None, None),
-    ],
-)
-def test_stage_one_receives_the_formula_and_exact_variable_names_only_when_it_applies(rubrik, rumus, variabel):
+@pytest.mark.parametrize("rubrik", [RUBRIK_BERSIH, RUBRIK_PROSA, RUBRIK_LEVEL])
+def test_stage_one_never_receives_a_formula_block(rubrik):
+    # Blok rumus/variabel di tahap 1 menurunkan tingkat ketemunya capaian pada data nyata; variabel diambil di langkah skor.
     with (
         _skor_dan_narasi(rubrik=rubrik),
         patch("setor_led.pipeline.build_setor_llm"),
         patch("setor_led.pipeline.cari_capaian", return_value=(CAPAIAN, "bahan")) as tahap1,
     ):
         pipeline._proses_iku_sync(IKU, "m", [], *SYNC_ARGS)
-    assert tahap1.call_args.kwargs["rumus"] == rumus and tahap1.call_args.kwargs["variabel"] == variabel
+    assert "rumus" not in tahap1.call_args.kwargs and "variabel" not in tahap1.call_args.kwargs
 
 
 def test_an_unknown_kode_fails_only_that_iku():
@@ -763,7 +781,7 @@ def test_cari_capaian_is_unchanged_without_a_cancel_event():
 def test_proses_iku_sync_does_not_start_stage_two_once_cancelled():
     batal = threading.Event()
 
-    def tahap1_lalu_batal(llm, iku, tabel, cancel_event=None, prodi=None, rumus=None, variabel=None):
+    def tahap1_lalu_batal(llm, iku, tabel, cancel_event=None, prodi=None):
         batal.set()
         return CAPAIAN, "bahan"
 

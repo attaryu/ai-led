@@ -33,6 +33,7 @@ from setor_led.prompts import (
     bangun_prompt_ekspresi,
     bangun_prompt_narasi,
     bangun_prompt_pilih_level,
+    bangun_prompt_variabel,
 )
 from setor_led.rubrik import (
     NAMA_VARIABEL,
@@ -141,8 +142,6 @@ def parse_capaian(content: object, kode: str = "") -> dict | None:
     capaian = {"nilai": nilai, "sumber": str(data.get("sumber") or "").strip() or "tidak disebutkan"}
     if dasar:
         capaian["dasar"] = dasar
-    if isinstance(data.get("variabel"), dict):
-        capaian["variabel"] = data["variabel"]  # angka mentah rumus; divalidasi lengkapi_variabel, bukan di sini
     return capaian
 
 
@@ -165,16 +164,13 @@ def cari_capaian(
     tabel_lkps: list[str],
     cancel_event: threading.Event | None = None,
     prodi: str | None = None,
-    rumus: str | None = None,
-    variabel: list[str] | None = None,
 ) -> tuple[dict | None, str]:
     """Tahap 1. Mengembalikan (capaian atau None, bahan) -- bahan = gabungan hasil tool untuk tahap 2.
     Raise SetorLedCancelled bila `cancel_event` menyala (diperiksa sebelum tiap panggilan LLM dan tool).
-    `prodi` = nama + jenjang prodi (lihat prompts.format_prodi), agar model tidak menebak varian jenis program.
-    `rumus`/`variabel`: teks rumus rubrik dan (rumus bersih) nama variabelnya; model diminta ikut mengisi `variabel`."""
+    `prodi` = nama + jenjang prodi (lihat prompts.format_prodi), agar model tidak menebak varian jenis program."""
     pesan = [
         SystemMessage(content=SYSTEM_CAPAIAN),
-        HumanMessage(content=bangun_prompt_capaian(iku, tabel_lkps, prodi, rumus, variabel)),
+        HumanMessage(content=bangun_prompt_capaian(iku, tabel_lkps, prodi)),
     ]
     bahan: list[str] = []
 
@@ -217,8 +213,6 @@ def cari_capaian_json(
     tabel_lkps: list[str],
     cancel_event: threading.Event | None = None,
     prodi: str | None = None,
-    rumus: str | None = None,
-    variabel: list[str] | None = None,
 ) -> tuple[dict | None, str]:
     """Tahap 1 untuk model reasoning, yang tidak punya function calling bawaan: tool dipanggil lewat JSON di teks
     (`{"action": "<tool>", "args": {...}}` / `{"action": "final", ...}`), protokol yang sama dengan
@@ -226,7 +220,7 @@ def cari_capaian_json(
     cari_capaian. Jumlah panggilan LLM terbatas: MAX_TOOL_STEPS tool + 1 jawaban paksa + MAX_JSON_RETRY pengingat."""
     pesan = [
         SystemMessage(content=SYSTEM_CAPAIAN_JSON),
-        HumanMessage(content=bangun_prompt_capaian(iku, tabel_lkps, prodi, rumus, variabel)),
+        HumanMessage(content=bangun_prompt_capaian(iku, tabel_lkps, prodi)),
     ]
     bahan: list[str] = []
     langkah = 0       # tool yang sudah dijalankan
@@ -324,6 +318,29 @@ def _tanya_json(llm, prompt_awal: str, validasi, iku: IkuInput, cancel_event: th
     raise terakhir  # type: ignore[misc]  # loop selalu berjalan >= 1 kali
 
 
+def ambil_variabel(
+    llm,
+    iku: IkuInput,
+    capaian: dict,
+    rubrik: RubrikIndikator,
+    bahan: str,
+    nama: list[str] | None = None,
+    model: str | None = None,
+    cancel_event: threading.Event | None = None,
+    prodi: str | None = None,
+) -> dict[str, float]:
+    """Angka mentah rumus rubrik dari capaian yang sudah ditemukan. Sengaja BUKAN bagian tahap 1: meminta variabel
+    persis di tahap 1 menurunkan tingkat ketemunya capaian pada data nyata. `nama` = variabel wajib (rumus bersih);
+    None = nama dari model (rumus prosa). Variabel null/hilang -> SetorLedError bernama, setelah satu retry."""
+
+    def validasi(data: object) -> dict[str, float]:
+        mentah = data.get("variabel") if isinstance(data, dict) else None
+        return lengkapi_variabel({"variabel": mentah}, nama)
+
+    prompt = no_think(bangun_prompt_variabel(iku, capaian, rubrik, bahan, nama, prodi), model)
+    return _tanya_json(llm, prompt, validasi, iku, cancel_event)
+
+
 def tulis_ekspresi(
     llm,
     iku: IkuInput,
@@ -386,14 +403,16 @@ def tentukan_skor(
     cancel_event: threading.Event | None = None,
     prodi: str | None = None,
 ) -> float:
-    """Skor 0-4 menurut mode rubrik. Rumus bersih: kode menghitung langsung. Rumus prosa: model menulis ekspresi, kode
-    menghitung. Selain itu model memilih level. Variabel rumus yang hilang -> SetorLedError, tanpa jatuh ke model."""
+    """Skor 0-4 menurut mode rubrik. Rumus bersih: model mengisi variabel, kode menghitung. Rumus prosa: model mengisi
+    variabel lalu menulis ekspresi, kode menghitung. Selain itu model memilih level. Variabel yang hilang ->
+    SetorLedError bernama, tanpa jatuh ke penilaian model."""
     mode = mode_penilaian(rubrik)
     if mode == "rumus_bersih":
         ekspresi = ekspresi_bersih(rubrik.formula)
-        return hitung_skor_rumus(ekspresi, lengkapi_variabel(capaian, variabel_ekspresi(ekspresi)))
+        variabel = ambil_variabel(llm, iku, capaian, rubrik, bahan, variabel_ekspresi(ekspresi), model, cancel_event, prodi)
+        return hitung_skor_rumus(ekspresi, variabel)
     if mode == "rumus_prosa":
-        variabel = lengkapi_variabel(capaian)
+        variabel = ambil_variabel(llm, iku, capaian, rubrik, bahan, None, model, cancel_event, prodi)
         ekspresi = tulis_ekspresi(llm, iku, {**capaian, "variabel": variabel}, rubrik, bahan, model, cancel_event, prodi)
         return hitung_skor_rumus(ekspresi, variabel)
     return pilih_level(llm, iku, capaian, rubrik, bahan, model, cancel_event, prodi)
@@ -430,18 +449,16 @@ def _proses_iku_sync(
     Rubrik dimuat dan dicek lebih dulu: indikator yang tak bisa dinilai gagal sebelum ada biaya LLM."""
     _cek_batal(cancel_event)
     rubrik = muat_rubrik(tenant_id, accreditation_set_id, iku.kode)
-    mode = mode_penilaian(rubrik)
-    rumus = None if mode == "level" else rubrik.formula
-    nama = variabel_ekspresi(ekspresi_bersih(rubrik.formula)) if mode == "rumus_bersih" else None
+    mode_penilaian(rubrik)  # gagal cepat bila indikator tak bisa dinilai, sebelum ada biaya LLM
     # Routing seperti AMI (agent/graph.py::build_graph_auto): model reasoning -> tool lewat protokol JSON, selain itu
     # tool calling bawaan. is_reasoning_model membaca LLM_REASONING_MODE / REASONING_MODEL_PATTERNS.
     reasoning = is_reasoning_model(model or "")
     if reasoning:
         llm_tool = build_setor_llm(model, num_predict=REASONING_NUM_PREDICT, disable_reasoning=False)
-        capaian, bahan = cari_capaian_json(llm_tool, iku, tabel_lkps, cancel_event, prodi=prodi, rumus=rumus, variabel=nama)
+        capaian, bahan = cari_capaian_json(llm_tool, iku, tabel_lkps, cancel_event, prodi=prodi)
     else:
         llm_tool = build_setor_llm(model, tools=TOOLS)
-        capaian, bahan = cari_capaian(llm_tool, iku, tabel_lkps, cancel_event, prodi=prodi, rumus=rumus, variabel=nama)
+        capaian, bahan = cari_capaian(llm_tool, iku, tabel_lkps, cancel_event, prodi=prodi)
     if capaian is None:
         raise SetorLedError("Capaian tidak ditemukan di LKPS/LED/bukti dukung")
 
