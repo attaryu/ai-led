@@ -165,7 +165,7 @@ galat keluaran model (`Model tidak mengembalikan JSON yang bisa dibaca`, `Skor d
 | `Kode '<kode>' ambigu di rubrik (<n> baris)` | lebih dari satu baris rubrik berkode sama |
 | `Indikator '<kode>' komposit tanpa level sendiri -- pilih sub-indikatornya` | baris komposit tanpa level 0–4 |
 | `Rubrik '<kode>' tidak punya level 0-4` | rubrik tidak punya dasar penilaian |
-| `Variabel rumus tidak ditemukan: A, B` | angka mentah rumus tidak dinyatakan eksplisit di sumber (skor tidak ditebak) |
+| `Variabel rumus tidak ditemukan: A, B` | angka rumus tidak bisa diturunkan dari capaian/bahan (skor tidak ditebak). Umum pada angka yang butuh hitungan lintas tabel, mis. BOP per mahasiswa |
 | `Rumus gagal dihitung: …` / `Ekspresi skor …` | ekspresi hasil model tidak valid setelah satu retry |
 
 Tampilkan IKU `error` sebagai baris kosong yang bisa diisi manual, bukan sebagai kegagalan seluruh proses.
@@ -176,7 +176,7 @@ Tampilkan IKU `error` sebagai baris kosong yang bisa diisi manual, bukan sebagai
 POST /jobs/:id/cancel      →  202 { "status": "cancel_requested" }
 ```
 
-`:id` boleh `Job.id` maupun `bullJobId`. Pembatalan bersifat kooperatif: worker memeriksa tiap beberapa detik dan job
+`:id` boleh `Job.id` maupun `bullJobId`. **Job yang masih `WAITING` saat dibatalkan dihapus dari antrean**, sehingga `GET /jobs/:id` untuknya tetap menampilkan `WAITING` dari baris Postgres (tidak pernah menjadi `cancelled`); UI sebaiknya menganggap `cancel_requested` pada job `WAITING` sebagai selesai. Untuk job `ACTIVE`, pembatalan bersifat kooperatif: worker memeriksa tiap beberapa detik dan job
 berakhir dengan `result.status: "cancelled"`. IKU yang sudah selesai tetap ada di `hasil` (termasuk yang selesai tepat
 saat pembatalan diperiksa). Thread yang sedang memanggil LLM juga dihentikan lewat sinyal batal: ia berhenti sebelum
 langkah berikutnya (panggilan LLM atau tool), jadi tidak ada lagi biaya LLM baru setelah job berstatus `cancelled`.
@@ -189,10 +189,11 @@ sehingga pembatalan bisa memakan waktu sampai selesainya panggilan itu.
   dan "capaian tidak ditemukan" di run lain, dan dua model bisa memberi skor berbeda untuk indikator kualitatif yang
   sama (uji nyata: `deepseek-r1` memberi 2, `deepseek-v4-flash` memberi 4 untuk input yang sama). Perlakukan hasil
   sebagai **draf yang harus dibaca penulis**.
-- Skor dihitung tiga cara, sesuai rubrik indikator: **rumus aritmetika bersih** (6 dari 31 indikator berumus di
-  matriks LAM Teknik) dihitung kode langsung; **rumus berbentuk prosa** (25 dari 31): model menulis satu ekspresi
-  aritmetika untuk cabang aturan yang berlaku, kode menghitungnya; **kualitatif**: model memilih level 0–4 dari
-  deskripsi rubrik. Skor adalah **estimasi atas LED setengah jadi** dan boleh berbeda dari skor AMI.
+- Skor dihitung tiga cara, sesuai rubrik indikator. **Rumus aritmetika bersih** (19 dari 32 indikator berumus di set
+  nyata "Lam Teknik 2025"): model mengisi angka variabelnya dari capaian, kode menghitung. **Rumus berbentuk prosa**
+  (13 dari 32): model mengisi angka dasar lalu menulis satu ekspresi aritmetika untuk cabang aturan yang berlaku, kode
+  menghitungnya. **Kualitatif / tanpa rumus**: model memilih level 0–4 dari deskripsi rubrik. Skor adalah **estimasi
+  atas LED setengah jadi** dan boleh berbeda dari skor AMI.
 - Capaian yang hanya bisa ditebak sengaja dianggap tidak ditemukan (tidak ada narasi "diperkirakan"). Untuk indikator
   berumus, angka mentah yang tidak dinyatakan eksplisit membuat IKU `error` yang menyebut nama variabelnya.
 - Server menyertakan nama dan jenjang program studi dokumen (D3/D4/S1/S2/S3) ke model. Jenis seperti PJJ tidak

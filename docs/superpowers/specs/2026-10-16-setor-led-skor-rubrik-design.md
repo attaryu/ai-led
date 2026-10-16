@@ -38,10 +38,10 @@ pipeline sebagai bahan penilaian, tetapi tidak dikembalikan; menampilkannya di t
 | Topik | Keputusan |
 |---|---|
 | Bentuk `target` | **Skor target 0–4**, bilangan bulat dalam string (`"3"`), persis seperti yang dikirim UI Dimas sekarang. Bukan persentase, bukan teks ambang. |
-| Capaian (internal) | Tetap **dicari AI** (LKPS, LED, bukti dukung prodi) sebagai bahan penilaian, tidak dikembalikan. Untuk indikator berumus, tahap 1 **mengambil semua variabel rumus** (lihat §4). |
+| Capaian (internal) | Tetap **dicari AI** (LKPS, LED, bukti dukung prodi) sebagai bahan penilaian, tidak dikembalikan. Tahap 1 **tidak berubah**; angka mentah rumus diambil di langkah skor (§4). |
 | Skor | **Angka 0–4**, dikirim sebagai `score` (menggantikan `evaluasi`); kategori dibuang. Desimal (dibulatkan 2 digit) bila dihitung dari rumus; bulat bila dipilih model dari level. `target` tetap bilangan bulat. |
 | Output | **Hanya `score` + analisis.** `capaian` (`nilai`, `sumber`) tidak lagi ada di output; ia hanya bahan internal. |
-| Asal skor | Setor LED memetakan Capaian ke rubrik indikator (dicari lewat `kode`). Rumus aritmetika bersih (6 dari 31 berumus) dihitung **kode** langsung. Rumus berbentuk prosa (25 dari 31): **model menulis satu ekspresi aritmetika** dari rumus + level + angka mentah tahap 1, lalu **kode menghitungnya** (`compute_formula_score`, di-clamp 0–4). Kualitatif/tanpa rumus: **model** memilih level dari deskripsi. |
+| Asal skor | Setor LED memetakan Capaian ke rubrik indikator (dicari lewat `kode`). Rumus aritmetika bersih: **model mengisi variabel** dari capaian/bahan, **kode menghitung** (`compute_formula_score`, clamp 0–4). Rumus berbentuk prosa: model mengisi variabel lalu menulis satu ekspresi aritmetika, kode menghitungnya. Kualitatif/tanpa rumus: **model** memilih level dari deskripsi. |
 | Narasi | Empat bagian inti selalu. Empat bagian tambahan (faktor pendukung, faktor penghambat, akar masalah, tindak lanjut) ditulis bila **skor hasil < skor target**, dibandingkan sebagai integer oleh kode. |
 
 Keputusan "pemicu tambahan = Capaian < target dalam persen" yang diambil lebih awal pada hari yang sama **digantikan**
@@ -75,19 +75,24 @@ IKU `error` tetap `{ kode, error }`.
    beserta level 0–4 (`rubric_levels`), `score_type`, `formula`, `sub_score_formula`. `criterion_code` unik per set
    lewat konvensi penulis (`"4"` atau `"4.I"`, `postgres_client.py:590`). `get_rubric_criteria_for_set` yang ada tidak
    memilih kolom ini, jadi perlu fungsi baru; kode AMI tidak diubah.
-2. **Cari Capaian (tahap 1).** Loop tool yang sama (`cari_capaian` / `cari_capaian_json`). Untuk indikator berumus, prompt
-   memuat teks rumus (dan, bila rumusnya aritmetika bersih, daftar nama variabelnya), dan jawaban akhir ditambah
-   `variabel`: `{NAMA: angka | null}`, yaitu angka mentah yang dibutuhkan rumus/level; `null` bila tidak dinyatakan
-   eksplisit di sumber. `nilai` tetap satu baris ringkas, dipakai sebagai bahan tahap 2 (tidak dikembalikan di output).
+2. **Cari Capaian (tahap 1).** Loop tool yang sama (`cari_capaian` / `cari_capaian_json`), prompt tidak berubah.
+   `nilai` tetap satu baris ringkas dan `dasar` memuat rincian; keduanya, plus bahan dari tool, dipakai langkah
+   berikutnya (tidak dikembalikan di output). Catatan: versi awal rancangan ini meminta variabel rumus langsung di
+   tahap 1; uji dengan data nyata menurunkan tingkat ketemunya capaian (3 dari 4 indikator berumus tanpa blok itu,
+   0–1 dari 4 dengan blok itu), jadi pengambilan variabel dipindah ke langkah 3.
 3. **Tentukan skor.** Tiga mode, dipilih dari data rubrik:
-   - **Rumus bersih** (rumus berupa aritmetika sederhana setelah normalisasi `x` → `*` dan pemisah ribuan, mis.
-     `(2 x BOP) / 5.000.000`): kode menghitung langsung dengan `compute_formula_score` dari `variabel` tahap 1.
-   - **Rumus prosa** (definisi variabel turunan dan aturan bersyarat; teks level memuat ambang): model, tanpa tool,
-     membaca rumus + level + `variabel` lalu menuliskan satu ekspresi aritmetika untuk cabang aturan yang berlaku
-     (hanya angka, nama variabel, `+ - * / ( )`); kode menghitung ekspresi itu dengan `compute_formula_score`.
-   - **Level** (kualitatif, atau tanpa rumus): model memilih satu skor 0–4 dari deskripsi level beserta alasan singkat.
-   - Variabel yang `null`/hilang pada mode rumus: IKU `error` yang menyebut variabel apa yang hilang (tidak jatuh ke
-     model). Ekspresi model yang memuat variabel tak dikenal atau karakter di luar daftar: retry sekali, lalu `error`.
+   - **Rumus bersih** (rumus berupa aritmetika sederhana setelah normalisasi: `x` berspasi → `*`, pemisah ribuan,
+     koma desimal, titik penutup; hasilnya lolos pemeriksaan AST; `AxB` tanpa spasi dianggap prosa): satu panggilan
+     model mengisi `variabel` (nama persis dari rumus) dari capaian + bahan; kode menghitung dengan
+     `compute_formula_score`.
+   - **Rumus prosa** (definisi variabel turunan dan aturan bersyarat; ambang ada di teks level): model mengisi
+     `variabel` (hanya angka dasar), lalu menuliskan satu ekspresi aritmetika untuk cabang aturan yang berlaku
+     (hanya angka, nama variabel, `+ - * /`, minus unary, kurung; maks. 200 karakter; divalidasi dengan AST); kode
+     menghitung ekspresi itu.
+   - **Level** (kualitatif, atau tanpa rumus): model memilih satu skor bulat 0–4 dari deskripsi level beserta alasan.
+   - Variabel `null`/hilang pada mode rumus: retry sekali dengan alasan penolakan, lalu IKU `error` yang menyebut
+     variabel apa yang hilang (tidak jatuh ke penilaian model). Ekspresi model yang tidak lolos AST atau memakai
+     variabel tak dikenal: retry sekali, lalu `error`.
    - Rubrik tidak ditemukan untuk `kode`, lebih dari satu baris, atau tanpa level 0–4 (bila diperlukan): IKU `error`.
 4. **Tulis narasi (tahap 2).** Satu panggilan model berformat JSON: masukannya indikator, skor target, Capaian, skor
    hasil, deskripsi level terpilih. Analisis menyebut Capaian, skor hasil, dan skor target. Empat bagian tambahan
@@ -132,7 +137,7 @@ Volume Postgres lokal dev-v2 sudah tidak ada, jadi diperiksa sumber seed-nya, `a
 (data yang sama yang diisikan ke `rubric_criteria`): 64 baris, 31 kuantitatif, 23 kualitatif, 10 komposit.
 
 - Semua baris punya teks level 0–4 (tidak ada yang kosong). Tidak ada pasangan (nomor, sub) ganda.
-- Kolom `formula` terisi di 31 baris, tetapi hanya **6** yang berupa aritmetika sederhana (pada matriks.json; pada set nyata "Lam Teknik 2025" di DB: 19 bersih, 13 prosa, 40 tanpa rumus) (`(2 x BOP) / 5.000.000`;
+- Kolom `formula` terisi di 31 baris, tetapi hanya **6** yang berupa aritmetika sederhana (pada matriks.json; pada set nyata "Lam Teknik 2025" di DB, 72 kriteria: 19 bersih, 13 prosa, 40 tanpa rumus) (`(2 x BOP) / 5.000.000`;
   baris 9, 10, 11, 34, 38, 51) dan memakai `x` sebagai kali serta titik sebagai pemisah ribuan. **25** baris berisi definisi
   berbentuk prosa: beberapa variabel turunan (`PDS3 = (NDS3 / NDTPS) x 100%`), aturan bersyarat ("Jika RI ≥ a dan RN < b,
   maka RI = a"), dan kadang hanya `"4"`. Ambang skornya justru ada di teks level (mis. baris 29: "Jika PDS3 ≥ 20%, maka
@@ -167,5 +172,5 @@ Nama fungsi/berkas, format pesan error persis, cara menormalkan rumus bersih, da
 - Capaian tidak ada di output, tetapi analisis tetap menyebut Capaian yang ditemukan pipeline. Bila kolom Capaian
   di tabel LED diisi Dimas dari sumber lain, angkanya bisa berbeda dari yang disebut analisis. Perlu disepakati
   dengan Dimas dari mana Capaian di kolomnya berasal.
-- Tahap 1 yang mengambil banyak variabel rumus bisa menaikkan jumlah IKU "variabel tidak ditemukan"; ukuran
-  dampaknya baru diketahui setelah uji pada data nyata.
+- Uji API nyata (set "Lam Teknik 2025", LKPS PJJ Telekomunikasi): indikator berumus yang angkanya tidak ada atau butuh
+  hitungan lintas tabel (mis. BOP per mahasiswa, jumlah dosen tidak tetap) berakhir `error` bernama variabel, bukan skor tebakan.
