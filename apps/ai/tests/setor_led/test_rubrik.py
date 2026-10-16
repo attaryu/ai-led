@@ -124,3 +124,28 @@ def test_hitung_skor_rumus_clamps_to_4():
 def test_hitung_skor_rumus_reports_tool_error(ekspresi, variabel):
     with pytest.raises(SetorLedError, match="Rumus gagal dihitung"):
         hitung_skor_rumus(ekspresi, variabel)
+
+
+# ── review akhir: ekspresi harus aritmetika murni ──────────────────────────────
+
+def test_ekspresi_bersih_strips_a_sentence_ending_dot():
+    # Baris matriks nyata no. 51: "2 + (0,2 x NLP) ." -- titik penutup kalimat membuat eval SyntaxError.
+    assert ekspresi_bersih("2 + (0,2 x NLP) .") == "2 + (0.2 * NLP)"
+
+
+@pytest.mark.parametrize("formula", ["A ** B", "A.real + 1", "(1 x A) (2)", "A +", "A x"])
+def test_ekspresi_bersih_rejects_arithmetic_that_does_not_parse_or_is_not_plain(formula):
+    assert ekspresi_bersih(formula) is None
+
+
+@pytest.mark.parametrize(
+    "ekspresi",
+    ["9**9**9", "NDS3 ** NDTPS", "NDS3.__class__", "abs(NDS3)", "_X + 1", "A if B else C", "A < B", "1j * A", "True + A", "A +"],
+)
+def test_variabel_ekspresi_rejects_everything_but_plain_arithmetic(ekspresi):
+    with pytest.raises(SetorLedError, match="Ekspresi skor"):
+        variabel_ekspresi(ekspresi)
+
+
+def test_variabel_ekspresi_accepts_unary_minus_and_nested_parentheses():
+    assert variabel_ekspresi("-(A + 2) / (B * 0.5)") == ["A", "B"]

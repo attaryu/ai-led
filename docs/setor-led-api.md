@@ -189,8 +189,8 @@ sehingga pembatalan bisa memakan waktu sampai selesainya panggilan itu.
   dan "capaian tidak ditemukan" di run lain, dan dua model bisa memberi skor berbeda untuk indikator kualitatif yang
   sama (uji nyata: `deepseek-r1` memberi 2, `deepseek-v4-flash` memberi 4 untuk input yang sama). Perlakukan hasil
   sebagai **draf yang harus dibaca penulis**.
-- Skor dihitung tiga cara, sesuai rubrik indikator: **rumus aritmetika bersih** (5 dari 31 indikator berumus di
-  matriks LAM Teknik) dihitung kode langsung; **rumus berbentuk prosa** (26 dari 31): model menulis satu ekspresi
+- Skor dihitung tiga cara, sesuai rubrik indikator: **rumus aritmetika bersih** (6 dari 31 indikator berumus di
+  matriks LAM Teknik) dihitung kode langsung; **rumus berbentuk prosa** (25 dari 31): model menulis satu ekspresi
   aritmetika untuk cabang aturan yang berlaku, kode menghitungnya; **kualitatif**: model memilih level 0–4 dari
   deskripsi rubrik. Skor adalah **estimasi atas LED setengah jadi** dan boleh berbeda dari skor AMI.
 - Capaian yang hanya bisa ditebak sengaja dianggap tidak ditemukan (tidak ada narasi "diperkirakan"). Untuk indikator

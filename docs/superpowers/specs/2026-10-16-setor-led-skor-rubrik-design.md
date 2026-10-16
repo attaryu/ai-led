@@ -41,7 +41,7 @@ pipeline sebagai bahan penilaian, tetapi tidak dikembalikan; menampilkannya di t
 | Capaian (internal) | Tetap **dicari AI** (LKPS, LED, bukti dukung prodi) sebagai bahan penilaian, tidak dikembalikan. Untuk indikator berumus, tahap 1 **mengambil semua variabel rumus** (lihat §4). |
 | Skor | **Angka 0–4**, dikirim sebagai `score` (menggantikan `evaluasi`); kategori dibuang. Desimal (dibulatkan 2 digit) bila dihitung dari rumus; bulat bila dipilih model dari level. `target` tetap bilangan bulat. |
 | Output | **Hanya `score` + analisis.** `capaian` (`nilai`, `sumber`) tidak lagi ada di output; ia hanya bahan internal. |
-| Asal skor | Setor LED memetakan Capaian ke rubrik indikator (dicari lewat `kode`). Rumus aritmetika bersih (5 dari 31 berumus) dihitung **kode** langsung. Rumus berbentuk prosa (26 dari 31): **model menulis satu ekspresi aritmetika** dari rumus + level + angka mentah tahap 1, lalu **kode menghitungnya** (`compute_formula_score`, di-clamp 0–4). Kualitatif/tanpa rumus: **model** memilih level dari deskripsi. |
+| Asal skor | Setor LED memetakan Capaian ke rubrik indikator (dicari lewat `kode`). Rumus aritmetika bersih (6 dari 31 berumus) dihitung **kode** langsung. Rumus berbentuk prosa (25 dari 31): **model menulis satu ekspresi aritmetika** dari rumus + level + angka mentah tahap 1, lalu **kode menghitungnya** (`compute_formula_score`, di-clamp 0–4). Kualitatif/tanpa rumus: **model** memilih level dari deskripsi. |
 | Narasi | Empat bagian inti selalu. Empat bagian tambahan (faktor pendukung, faktor penghambat, akar masalah, tindak lanjut) ditulis bila **skor hasil < skor target**, dibandingkan sebagai integer oleh kode. |
 
 Keputusan "pemicu tambahan = Capaian < target dalam persen" yang diambil lebih awal pada hari yang sama **digantikan**
@@ -132,14 +132,14 @@ Volume Postgres lokal dev-v2 sudah tidak ada, jadi diperiksa sumber seed-nya, `a
 (data yang sama yang diisikan ke `rubric_criteria`): 64 baris, 31 kuantitatif, 23 kualitatif, 10 komposit.
 
 - Semua baris punya teks level 0–4 (tidak ada yang kosong). Tidak ada pasangan (nomor, sub) ganda.
-- Kolom `formula` terisi di 31 baris, tetapi hanya **5** yang berupa aritmetika sederhana (`(2 x BOP) / 5.000.000`;
-  baris 9, 10, 11, 34, 38) dan memakai `x` sebagai kali serta titik sebagai pemisah ribuan. **26** baris berisi definisi
+- Kolom `formula` terisi di 31 baris, tetapi hanya **6** yang berupa aritmetika sederhana (`(2 x BOP) / 5.000.000`;
+  baris 9, 10, 11, 34, 38, 51) dan memakai `x` sebagai kali serta titik sebagai pemisah ribuan. **25** baris berisi definisi
   berbentuk prosa: beberapa variabel turunan (`PDS3 = (NDS3 / NDTPS) x 100%`), aturan bersyarat ("Jika RI ≥ a dan RN < b,
   maka RI = a"), dan kadang hanya `"4"`. Ambang skornya justru ada di teks level (mis. baris 29: "Jika PDS3 ≥ 20%, maka
   Skor = 4"; level 3: "Skor = 2 + (PDS3 x 10)").
 - 10 baris komposit punya `sub_score_formula` (mis. `((I x 2)+ (II)) / 3`) dan sekaligus teks level.
 
-Akibatnya nama variabel tidak bisa diturunkan dengan regex dari `formula` untuk 26 rumus prosa. Diputuskan pengguna:
+Akibatnya nama variabel tidak bisa diturunkan dengan regex dari `formula` untuk 25 rumus prosa. Diputuskan pengguna:
 rumus bersih dihitung kode langsung, rumus prosa ditulis modelnya sebagai ekspresi dan dihitung kode (§4 langkah 3). Lihat §4 langkah 3 (diperbarui setelah verifikasi ini).
 
 ## 8. Diserahkan ke pembangun

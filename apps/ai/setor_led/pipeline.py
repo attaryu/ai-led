@@ -35,6 +35,7 @@ from setor_led.prompts import (
     bangun_prompt_pilih_level,
 )
 from setor_led.rubrik import (
+    NAMA_VARIABEL,
     RubrikIndikator,
     ekspresi_bersih,
     hitung_skor_rumus,
@@ -267,7 +268,7 @@ def cari_capaian_json(
         pesan += [jawaban, HumanMessage(content=f"Hasil tool ({aksi}):\n{keluaran[:MAX_PESAN_TOOL]}")]
 
 
-_EKSPRESI_BOLEH = re.compile(r"[\sA-Za-z0-9_+\-*/().]+")
+MAKS_PANJANG_EKSPRESI = 200  # ekspresi tulisan model; tidak ada alasan sah untuk lebih panjang
 
 
 def _ke_angka(nilai: object) -> float | None:
@@ -292,7 +293,11 @@ def lengkapi_variabel(capaian: dict, wajib: list[str] | None = None) -> dict[str
     hilang = [nama for nama in (wajib if wajib is not None else list(mentah)) if _ke_angka(mentah.get(nama)) is None]
     if hilang:
         raise SetorLedError(f"Variabel rumus tidak ditemukan: {', '.join(hilang)}")
-    return {nama: angka for nama, nilai in mentah.items() if (angka := _ke_angka(nilai)) is not None}
+    return {
+        nama: angka
+        for nama, nilai in mentah.items()
+        if NAMA_VARIABEL.fullmatch(str(nama)) and (angka := _ke_angka(nilai)) is not None
+    }
 
 
 def _tanya_json(llm, prompt_awal: str, validasi, iku: IkuInput, cancel_event: threading.Event | None):
@@ -338,9 +343,9 @@ def tulis_ekspresi(
         if not isinstance(ekspresi, str) or not ekspresi.strip():
             raise SetorLedError("Ekspresi skor kosong atau tidak terbaca")
         ekspresi = ekspresi.strip()
-        if not _EKSPRESI_BOLEH.fullmatch(ekspresi):
-            raise SetorLedError(f"Ekspresi skor memuat karakter yang tidak diizinkan: {ekspresi!r}")
-        asing = [nama for nama in variabel_ekspresi(ekspresi) if nama not in boleh]
+        if len(ekspresi) > MAKS_PANJANG_EKSPRESI:
+            raise SetorLedError(f"Ekspresi skor terlalu panjang ({len(ekspresi)} karakter)")
+        asing = [nama for nama in variabel_ekspresi(ekspresi) if nama not in boleh]  # menolak ** . () < dst.
         if asing:
             raise SetorLedError(f"Ekspresi skor memakai variabel yang tidak ada: {', '.join(asing)}")
         return ekspresi

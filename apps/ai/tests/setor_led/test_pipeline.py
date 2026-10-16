@@ -319,6 +319,26 @@ def test_tulis_ekspresi_does_not_call_the_llm_once_cancelled():
     assert llm.dipanggil == 0
 
 
+def test_tulis_ekspresi_rejects_power_and_attribute_access_then_gives_up():
+    # Hasil review akhir: "**" dan ".atribut" lolos penjaga karakter, padahal masuk ke eval.
+    for jahat in ("NDS3 ** 9", "NDS3.__class__", "9 ** 9 ** 9"):
+        llm = FakeLLM(json.dumps({"ekspresi": jahat, "alasan": "x"}))
+        with pytest.raises(SetorLedError, match="Ekspresi skor"):
+            tulis_ekspresi(llm, IKU, _dengan_variabel(NDS3=6), RUBRIK_PROSA, "")
+        assert llm.dipanggil == 2
+
+
+def test_tulis_ekspresi_rejects_an_overlong_expression():
+    panjang = " + ".join(["NDS3"] * 80)
+    llm = FakeLLM(json.dumps({"ekspresi": panjang, "alasan": "x"}))
+    with pytest.raises(SetorLedError, match="Ekspresi skor"):
+        tulis_ekspresi(llm, IKU, _dengan_variabel(NDS3=6), RUBRIK_PROSA, "")
+
+
+def test_lengkapi_variabel_drops_names_that_are_not_plain_identifiers():
+    assert lengkapi_variabel(_dengan_variabel(_X=1, NDS3=2)) == {"NDS3": 2.0}
+
+
 # pilih_level
 
 def test_pilih_level_returns_the_chosen_score():

@@ -5,6 +5,7 @@ Hanya MEMBACA data rubrik (tabel rubric_criteria/rubric_levels); graph dan tool 
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from dataclasses import dataclass
@@ -51,25 +52,49 @@ _RIBUAN = re.compile(r"(?<=\d)\.(?=\d{3}(?!\d))")
 _DESIMAL_KOMA = re.compile(r"(?<=\d),(?=\d)")
 _KARAKTER_BOLEH = re.compile(r"[\sA-Za-z0-9_+\-*/().]+")
 _ADA_HURUF = re.compile(r"[A-Za-z]")
-_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+NAMA_VARIABEL = re.compile(r"[A-Za-z][A-Za-z0-9_]*")  # tanpa garis bawah di depan: tidak ada nama dunder
 MAKS_PANJANG_RUMUS = 80
+_OPERATOR_BOLEH = (ast.Add, ast.Sub, ast.Mult, ast.Div)
 
 
 def ekspresi_bersih(formula: str | None) -> str | None:
     """Ekspresi aritmetika Python dari `formula` bila rumusnya aritmetika sederhana; None untuk prosa, angka
-    saja ("4"), atau kosong."""
+    saja ("4"), kosong, atau yang tidak lolos `variabel_ekspresi`."""
     if not formula or not formula.strip():
         return None
     teks = _KALI.sub(" * ", formula.strip())
     teks = _DESIMAL_KOMA.sub(".", _RIBUAN.sub("", teks))
+    teks = teks.rstrip(" .")  # titik penutup kalimat ("2 + (0,2 x NLP) .") membuat eval SyntaxError
     if len(teks) >= MAKS_PANJANG_RUMUS or not _KARAKTER_BOLEH.fullmatch(teks) or not _ADA_HURUF.search(teks):
+        return None
+    try:
+        variabel_ekspresi(teks)
+    except SetorLedError:
         return None
     return teks
 
 
 def variabel_ekspresi(ekspresi: str) -> list[str]:
-    """Nama variabel unik dalam ekspresi, urut kemunculan."""
-    return list(dict.fromkeys(_IDENTIFIER.findall(ekspresi)))
+    """Nama variabel unik dalam ekspresi, urut kemunculan. Ekspresi hanya boleh berisi angka, nama variabel biasa,
+    `+ - * /`, minus unary, dan tanda kurung (tanpa pangkat, atribut, pemanggilan, perbandingan, atau kondisi): itu
+    satu-satunya yang boleh sampai ke eval di compute_formula_score. Selain itu SetorLedError."""
+    try:
+        pohon = ast.parse(ekspresi.strip(), mode="eval")
+    except SyntaxError as exc:
+        raise SetorLedError(f"Ekspresi skor tidak valid: {exc.msg}") from None
+    nama: list[tuple[int, str]] = []
+    for node in ast.walk(pohon):
+        if isinstance(node, (ast.Expression, ast.BinOp, ast.Load, ast.USub, ast.UAdd, *_OPERATOR_BOLEH)):
+            continue
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+            continue
+        if isinstance(node, ast.Constant) and type(node.value) in (int, float):
+            continue
+        if isinstance(node, ast.Name) and NAMA_VARIABEL.fullmatch(node.id):
+            nama.append((node.col_offset, node.id))
+            continue
+        raise SetorLedError(f"Ekspresi skor hanya boleh berisi angka, variabel, + - * / dan kurung: {ekspresi.strip()!r}")
+    return list(dict.fromkeys(n for _, n in sorted(nama)))
 
 
 def mode_penilaian(rubrik: RubrikIndikator) -> str:
