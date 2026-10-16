@@ -3,12 +3,16 @@
 Catatan serah terima untuk yang membangun UI/flow. Desain lengkap ada di
 `docs/superpowers/specs/2026-10-13-setor-led-design.md`; berkas ini hanya memuat apa yang perlu diketahui klien.
 
-**Apa ini:** job terpisah dari AMI yang, untuk tiap IKU yang kamu kirim, mencari **Capaian** (dari LKPS / teks LED /
-bukti dukung prodi), menentukan **Evaluasi**, lalu menulis narasi untuk tabel analisis IKU di LED (mis. Tabel C5.1 dan
-C6.1). Hasilnya **tidak** ditulis ke bab/canvas oleh backend; klien yang menaruhnya ke editor (dan penulis tetap bisa
+**Apa ini:** job terpisah dari AMI yang, untuk tiap indikator rubrik yang kamu kirim, mencari **Capaian** (dari LKPS /
+teks LED / bukti dukung prodi), memetakannya ke rubrik indikator itu menjadi **`score` 0–4**, lalu menulis narasi
+analisis. Capaian dipakai sebagai bahan penilaian dan **tidak dikembalikan**; kolom Capaian di tabel diisi sisi UI.
+Hasilnya **tidak** ditulis ke bab/canvas oleh backend; klien yang menaruhnya ke editor (dan penulis tetap bisa
 mengedit).
 
-Contoh nilai di bawah berasal dari run uji nyata (LKPS-STR + narasi LED), bukan karangan.
+Rancangannya: `docs/superpowers/specs/2026-10-16-setor-led-skor-rubrik-design.md` (menggantikan kategori Evaluasi pada
+`2026-10-13-setor-led-design.md`). Contoh nilai di bawah berasal dari uji dengan model nyata (OpenRouter
+`deepseek/deepseek-r1` dan `deepseek/deepseek-v4-flash`) dan rubrik nyata dari `matrix.json`; alat pencarian (LKPS/LED)
+dipalsukan di uji itu.
 
 ---
 
@@ -23,9 +27,9 @@ Role: PENJAMIN_MUTU atau PENYUSUN (PENYUSUN hanya untuk prodi yang ditugaskan)
 ```json
 {
   "ikuList": [
-    { "kode": "IKU.REL.MHS.3",
-      "indikator": "Rata-rata minimal IPK lulusan dalam 3 tahun terakhir",
-      "target": "PJJ: RIPK ≥ 3,25" }
+    { "kode": "29",
+      "indikator": "Persentase DTPS berpendidikan Doktor",
+      "target": "3" }
   ],
   "sumberLed": "EDITOR",
   "lkpsBuktiDukungId": "…",
@@ -35,7 +39,7 @@ Role: PENJAMIN_MUTU atau PENYUSUN (PENYUSUN hanya untuk prodi yang ditugaskan)
 
 | Field | Wajib | Aturan |
 |---|---|---|
-| `ikuList` | ya | 1-200 item. `kode` unik di dalam satu permintaan; `kode`, `indikator`, `target` tidak boleh kosong atau spasi saja. Teks `target` dikirim apa adanya (mis. `3,5 < MS ≤ 4,5`). |
+| `ikuList` | ya | 1-200 item. `kode` unik di dalam satu permintaan dan **harus `criterionCode` indikator di Instrumen Akreditasi dokumen** (mis. `"29"`, `"4.I"`); `indikator` tidak boleh kosong. `target` = **skor target, bilangan bulat 0–4 dalam string** (`"0"`–`"4"`); selain itu `400`. |
 | `sumberLed` | tidak | `EDITOR` (default: teks bab di editor saat ini) atau `UNGGAHAN`. |
 | `lkpsBuktiDukungId` | tidak | Dipakai hanya bila dokumen belum punya LKPS; bila dokumen sudah punya LKPS, LKPS dokumen yang menang. |
 | `model` | tidak | Harus salah satu model yang dikonfigurasi server. Model *reasoning* (mis. `deepseek-r1`) diterima; server memilih cara memanggil tool-nya sendiri. |
@@ -47,8 +51,8 @@ Role: PENJAMIN_MUTU atau PENYUSUN (PENYUSUN hanya untuk prodi yang ditugaskan)
   "bullJobId": "1", "status": "WAITING", "progress": 0, "result": null, "error": null }
 ```
 
-**Galat langsung (HTTP):** `400` untuk validasi (list kosong, `kode` duplikat, field kosong, >200 item, properti tak
-dikenal, `sumberLed` salah), `401` tanpa token, `404` dokumen bukan milik tenant, `404` bila LKPS pilihan bukan LKPS
+**Galat langsung (HTTP):** `400` untuk validasi (list kosong, `kode` duplikat, field kosong, `target` bukan 0–4, >200 item,
+properti tak dikenal, `sumberLed` salah), `401` tanpa token, `404` dokumen bukan milik tenant, `404` bila LKPS pilihan bukan LKPS
 prodi dokumen ini.
 
 > Setiap `POST` membuat job baru. Worker saat ini memproses **satu job pada satu waktu per antrean**, jadi job kedua
@@ -95,30 +99,28 @@ selesai tidak akan menerima event `completed`. Pola yang aman: `GET /jobs/:id` d
 ## 3. Bentuk `result.hasil[]`
 
 Satu elemen per IKU, **urutannya sama dengan `ikuList`** (IKU yang belum selesai pada `cancelled` tidak muncul).
-Elemen yang sukses:
+Elemen yang sukses (contoh uji nyata, indikator 29 dengan NDS3 = 6 dan NDTPS = 40):
 
 ```json
 {
-  "kode": "IKU.REL.MHS.3",
-  "capaian": { "nilai": "RIPK = 3,46 (≥ target PJJ 3,25)", "sumber": "LKPS Tabel 6.b" },
-  "evaluasi": "MELAMPAUI",
-  "analisisKetercapaian": "Capaian rata-rata IPK lulusan sebesar 3,46 melampaui target PJJ …",
-  "usulanTargetTahunDepan": "Mempertahankan rata-rata IPK lulusan di atas 3,25 …",
-  "strategiPencapaian": "1) Meningkatkan kualitas pembelajaran … 2) Memperkuat program pembimbingan … 3) …",
-  "sarprasDibutuhkan": "1) Sistem informasi akademik yang terintegrasi … 2) … 3) …"
+  "kode": "29",
+  "score": 3.5,
+  "analisisKetercapaian": "Capaian PDS3 sebesar 15% (6 dari 40 DTPS) menghasilkan skor hasil 3,5 berdasarkan rubrik …",
+  "usulanTargetTahunDepan": "Target tahun depan adalah meningkatkan skor hasil menjadi 4 dengan memenuhi PDS3 ≥ 20% …",
+  "strategiPencapaian": "1) Mendorong DTPS yang sedang menempuh studi Doktor … 2) …",
+  "sarprasDibutuhkan": "1) Anggaran untuk beasiswa studi lanjut … 2) …",
+  "tambahan": { "faktorPendukung": "…", "faktorPenghambat": "…", "akarMasalah": "…", "tindakLanjut": "…" }
 }
 ```
 
-IKU yang `BELUM_MEMENUHI` punya objek tambahan:
-
-```json
-"tambahan": { "faktorPendukung": "…", "faktorPenghambat": "…", "akarMasalah": "…", "tindakLanjut": "…" }
-```
+`score` adalah angka 0–4: **desimal (2 digit) bila dihitung dari rumus rubrik**, bulat bila model memilih level dari
+deskripsi rubrik. **Tidak ada `capaian` dan tidak ada kategori `evaluasi`.** `tambahan` hanya ada bila `score` **lebih
+rendah** dari `target` (mis. `3,5 < 4`); bila `score ≥ target` field itu tidak ada.
 
 IKU yang gagal **hanya** punya dua field, tanpa narasi:
 
 ```json
-{ "kode": "IKU.REL.SPR.2", "error": "Capaian tidak ditemukan di LKPS/LED/bukti dukung" }
+{ "kode": "29", "error": "Variabel rumus tidak ditemukan: NDTPS" }
 ```
 
 Selalu periksa `error` per elemen sebelum membaca field lain.
@@ -128,16 +130,17 @@ Selalu periksa `error` per elemen sebelum membaca field lain.
 | Tabel LED | Sumber |
 |---|---|
 | No / Indikator / Target | dari request kamu (`kode`, `indikator`, `target`) |
-| Capaian | `capaian.nilai` (ringkas), `capaian.sumber` bila mau ditampilkan sebagai keterangan |
-| Evaluasi | `MELAMPAUI` → "Melampaui standar", `MEMENUHI` → "Memenuhi standar", `BELUM_MEMENUHI` → "Belum memenuhi standar" |
+| Capaian | **bukan dari respons ini**; diisi sisi UI dari sumbernya sendiri |
+| Evaluasi (skor) | `score` |
 | Analisis ketercapaian | `analisisKetercapaian` |
 | Usulan target tahun depan | `usulanTargetTahunDepan` |
 | Strategi pencapaian | `strategiPencapaian` |
 | Sarpras yang dibutuhkan | `sarprasDibutuhkan` |
-| Faktor pendukung / penghambat, Akar masalah, Tindak lanjut | `tambahan.*` (hanya `BELUM_MEMENUHI`) |
+| Faktor pendukung / penghambat, Akar masalah, Tindak lanjut | `tambahan.*` (hanya bila `score < target`) |
 
 Catatan format: `strategiPencapaian` dan `sarprasDibutuhkan` adalah **satu string** berpenomoran `1) … 2) …`, bukan
-array. Sebaiknya tampilkan sebagai teks yang bisa diedit.
+array. Sebaiknya tampilkan sebagai teks yang bisa diedit. Analisis menyebut Capaian yang ditemukan pipeline; bila
+kolom Capaian di UI berasal dari sumber lain, angkanya bisa berbeda dari yang tertulis di analisis.
 
 ## 4. Kegagalan yang perlu ditangani
 
@@ -153,8 +156,17 @@ array. Sebaiknya tampilkan sebagai teks yang bisa diedit.
 | LKPS tidak ada / tak terbaca | `LKPS belum dipilih untuk setor ke LED -- …` / `Gagal membaca LKPS: …` |
 
 **Level IKU** (`hasil[i].error`): `Capaian tidak ditemukan di LKPS/LED/bukti dukung` (paling umum; penulis mengisi
-manual), `Gagal diproses (<Jenis>) -- lihat log server untuk detail.`, atau galat keluaran model
-(`Model tidak mengembalikan JSON yang bisa dibaca`, `Evaluasi di luar daftar yang diizinkan: …`).
+manual), salah satu galat rubrik/skor (di bawah), `Gagal diproses (<Jenis>) -- lihat log server untuk detail.`, atau
+galat keluaran model (`Model tidak mengembalikan JSON yang bisa dibaca`, `Skor di luar rentang 0-4: …`).
+
+| Galat rubrik/skor | Penyebab |
+|---|---|
+| `Rubrik untuk kode '<kode>' tidak ditemukan di Instrumen Akreditasi dokumen` | `kode` bukan `criterionCode` di set dokumen |
+| `Kode '<kode>' ambigu di rubrik (<n> baris)` | lebih dari satu baris rubrik berkode sama |
+| `Indikator '<kode>' komposit tanpa level sendiri -- pilih sub-indikatornya` | baris komposit tanpa level 0–4 |
+| `Rubrik '<kode>' tidak punya level 0-4` | rubrik tidak punya dasar penilaian |
+| `Variabel rumus tidak ditemukan: A, B` | angka mentah rumus tidak dinyatakan eksplisit di sumber (skor tidak ditebak) |
+| `Rumus gagal dihitung: …` / `Ekspresi skor …` | ekspresi hasil model tidak valid setelah satu retry |
 
 Tampilkan IKU `error` sebagai baris kosong yang bisa diisi manual, bukan sebagai kegagalan seluruh proses.
 
@@ -173,23 +185,28 @@ sehingga pembatalan bisa memakan waktu sampai selesainya panggilan itu.
 
 ## 6. Hal yang perlu diketahui tentang kualitas
 
-- Narasi dan Capaian ditulis model dan **non-deterministik**: IKU yang sama bisa sukses di satu run dan
-  "capaian tidak ditemukan" di run lain. Perlakukan hasil sebagai **draf yang harus dibaca penulis**.
-- Capaian yang hanya bisa ditebak sengaja dianggap tidak ditemukan (tidak ada narasi "diperkirakan").
-- Server menyertakan nama dan jenjang program studi dokumen (D3/D4/S1/S2/S3) ke model, supaya target atau tabel
-  yang punya varian per jenis program dibaca sesuai prodi. Jenis seperti PJJ tidak tersimpan di data prodi: kirim
-  di teks `target` (mis. `PJJ: RIPK ≥ 3,25`) bila relevan. Bila varian tak bisa dipastikan, IKU menjadi
-  "capaian tidak ditemukan", bukan ditebak.
+- Capaian, skor kualitatif, dan narasi ditulis model dan **non-deterministik**: IKU yang sama bisa sukses di satu run
+  dan "capaian tidak ditemukan" di run lain, dan dua model bisa memberi skor berbeda untuk indikator kualitatif yang
+  sama (uji nyata: `deepseek-r1` memberi 2, `deepseek-v4-flash` memberi 4 untuk input yang sama). Perlakukan hasil
+  sebagai **draf yang harus dibaca penulis**.
+- Skor dihitung tiga cara, sesuai rubrik indikator: **rumus aritmetika bersih** (5 dari 31 indikator berumus di
+  matriks LAM Teknik) dihitung kode langsung; **rumus berbentuk prosa** (26 dari 31): model menulis satu ekspresi
+  aritmetika untuk cabang aturan yang berlaku, kode menghitungnya; **kualitatif**: model memilih level 0–4 dari
+  deskripsi rubrik. Skor adalah **estimasi atas LED setengah jadi** dan boleh berbeda dari skor AMI.
+- Capaian yang hanya bisa ditebak sengaja dianggap tidak ditemukan (tidak ada narasi "diperkirakan"). Untuk indikator
+  berumus, angka mentah yang tidak dinyatakan eksplisit membuat IKU `error` yang menyebut nama variabelnya.
+- Server menyertakan nama dan jenjang program studi dokumen (D3/D4/S1/S2/S3) ke model. Jenis seperti PJJ tidak
+  tersimpan di data prodi.
 - Sumber Capaian saat ini: tabel LKPS, teks LED di editor (atau unggahan), dan bukti dukung prodi. IKU yang angkanya
   hanya ada di dokumen di luar itu (mis. inventaris) akan `error`.
 
 ## 7. Di luar cakupan (belum ada)
 
-Menulis hasil ke bab/canvas editor, skor angka beserta skalanya, dan UI/flow. Semuanya milik sisi UI.
+Menulis hasil ke bab/canvas editor dan UI/flow (panel Penilaian Indikator di editor bab, commit `ad5577a`, milik sisi UI).
 
 ## 8. Usulan penempatan di UI (belum dibangun)
 
-Bagian ini usulan untuk yang membangun UI, bukan perilaku yang sudah ada. Fakta tentang kode yang dirujuk sudah
+Bagian ini adalah usulan awal untuk yang membangun UI (sebagian sudah diwujudkan sisi UI di panel Penilaian Indikator; di sana kolom Capaian harus diisi dari sumber UI karena respons tidak lagi memuat `capaian`). Fakta tentang kode yang dirujuk sudah
 diperiksa (`apps/web`, `apps/ai/prose.py`), tetapi belum ada kode UI setor ke LED.
 
 **Posisi dalam alur LED:** (1) generasi LED setengah jadi, (2) setor ke LED (fitur ini), (3) generasi LED penuh,

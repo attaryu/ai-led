@@ -1,5 +1,8 @@
 # Setor ke LED — Desain
 
+> **Diperbarui 2026-10-16:** kategori Evaluasi, `capaian` di output, dan bentuk `target` digantikan oleh skor rubrik 0–4;
+> lihat `2026-10-16-setor-led-skor-rubrik-design.md`. Bagian lain dokumen ini tetap berlaku.
+
 Tanggal: 2026-10-13 · Branch: `feat/setor-led` (worktree terpisah dari `dev-2`)
 
 ## 1. Tujuan dan konteks
