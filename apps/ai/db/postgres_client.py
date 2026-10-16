@@ -488,6 +488,41 @@ def get_rubric_criteria_for_set(tenant_id: str, accreditation_set_id: str) -> li
     ]
 
 
+def get_rubric_criteria_by_code(tenant_id: str, accreditation_set_id: str, kode: str) -> list[dict]:
+    """Baris rubrik berkode `criterion_code = kode` di set ini, lengkap dengan levelnya. Mengembalikan list karena
+    keunikan kode hanya konvensi penulis (lihat replace_rubric_criteria_for_set), bukan constraint DB: pemanggil
+    yang menilai nol atau lebih dari satu baris. `score_type` tetap berupa literal enum Postgres."""
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute(
+            """
+            SELECT id, criterion_code, description, score_type, formula, sub_score_formula
+            FROM rubric_criteria WHERE accreditation_set_id = %s AND criterion_code = %s
+            """,
+            (accreditation_set_id, kode),
+        )
+        criteria = [dict(r) for r in cur.fetchall()]
+        if not criteria:
+            return []
+        cur.execute(
+            "SELECT criterion_id, score, description FROM rubric_levels WHERE criterion_id = ANY(%s)",
+            ([c["id"] for c in criteria],),
+        )
+        levels_by_criterion: dict[str, dict[int, str]] = {}
+        for row in cur.fetchall():
+            levels_by_criterion.setdefault(row["criterion_id"], {})[row["score"]] = row["description"]
+    return [
+        {
+            "criterion_code": c["criterion_code"],
+            "description": c["description"],
+            "score_type": c["score_type"],
+            "formula": c["formula"],
+            "sub_score_formula": c["sub_score_formula"],
+            "levels": levels_by_criterion.get(c["id"], {}),
+        }
+        for c in criteria
+    ]
+
+
 def replace_rubric_criteria_for_set(
     tenant_id: str, accreditation_set_id: str, rubrics: list[IndicatorRubric]
 ) -> int:

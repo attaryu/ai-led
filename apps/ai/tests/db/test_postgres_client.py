@@ -597,3 +597,45 @@ def test_judge_columns_roundtrip_stale_guard_and_rescore_clears_verdict(fixture_
     finally:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM assessment_sessions WHERE id = %s", (session_id,))
+
+
+def test_get_rubric_criteria_by_code_returns_levels(fixture_ids, conn):
+    import db.postgres_client as pc
+
+    tenant_id = fixture_ids["tenant_id"]
+    set_id = f"test-set-{uuid.uuid4().hex[:8]}"
+    criterion_id = f"test-criterion-{uuid.uuid4().hex[:8]}"
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO accreditation_sets (id, tenant_id, nama, lembaga, tahun_siklus, status, updated_at)
+            VALUES (%s, %s, %s, %s, %s, 'SIAP', now())
+            """,
+            (set_id, tenant_id, "Test Set", "Test Lembaga", 2026),
+        )
+        cur.execute(
+            """
+            INSERT INTO rubric_criteria
+                (id, accreditation_set_id, indicator_no, criterion_code, criterion_group,
+                 description, score_type, lkps_table_refs, formula, sub_score_formula)
+            VALUES (%s, %s, 9, '9', 'Kelompok A', 'Indikator uji', 'KUANTITATIF', %s, '(2 x BOP) / 5.000.000', NULL)
+            """,
+            (criterion_id, set_id, ["Tabel 1"]),
+        )
+        cur.execute(
+            "INSERT INTO rubric_levels (id, criterion_id, score, description) VALUES (%s, %s, 4, %s)",
+            (f"{criterion_id}-lvl4", criterion_id, "Sangat baik"),
+        )
+
+    baris = pc.get_rubric_criteria_by_code(tenant_id, set_id, "9")
+    assert baris == [
+        {
+            "criterion_code": "9",
+            "description": "Indikator uji",
+            "score_type": "KUANTITATIF",
+            "formula": "(2 x BOP) / 5.000.000",
+            "sub_score_formula": None,
+            "levels": {4: "Sangat baik"},
+        }
+    ]
+    assert pc.get_rubric_criteria_by_code(tenant_id, set_id, "tidak-ada") == []

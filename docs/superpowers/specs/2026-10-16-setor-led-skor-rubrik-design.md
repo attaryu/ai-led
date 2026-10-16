@@ -124,6 +124,22 @@ Belum diperiksa pada data nyata; hasilnya bisa mengubah §4:
 - Apakah `criterionCode` dari `GET bab/:id/sections/:sectionId/indikator` (UI Dimas) selalu sama dengan
   `rubric_criteria.criterion_code`.
 
+### Hasil verifikasi data rubrik (2026-10-16)
+
+Volume Postgres lokal dev-v2 sudah tidak ada, jadi diperiksa sumber seed-nya, `ami-assessment/data/rubric_cache/matrix.json`
+(data yang sama yang diisikan ke `rubric_criteria`): 64 baris, 31 kuantitatif, 23 kualitatif, 10 komposit.
+
+- Semua baris punya teks level 0–4 (tidak ada yang kosong). Tidak ada pasangan (nomor, sub) ganda.
+- Kolom `formula` terisi di 31 baris, tetapi hanya **5** yang berupa aritmetika sederhana (`(2 x BOP) / 5.000.000`;
+  baris 9, 10, 11, 34, 38) dan memakai `x` sebagai kali serta titik sebagai pemisah ribuan. **26** baris berisi definisi
+  berbentuk prosa: beberapa variabel turunan (`PDS3 = (NDS3 / NDTPS) x 100%`), aturan bersyarat ("Jika RI ≥ a dan RN < b,
+  maka RI = a"), dan kadang hanya `"4"`. Ambang skornya justru ada di teks level (mis. baris 29: "Jika PDS3 ≥ 20%, maka
+  Skor = 4"; level 3: "Skor = 2 + (PDS3 x 10)").
+- 10 baris komposit punya `sub_score_formula` (mis. `((I x 2)+ (II)) / 3`) dan sekaligus teks level.
+
+Akibatnya nama variabel tidak bisa diturunkan dengan regex dari `formula`, dan "kode yang menghitung" hanya
+berlaku untuk sebagian kecil rumus. Lihat §4 langkah 3 (diperbarui setelah verifikasi ini).
+
 ## 8. Diserahkan ke pembangun
 
 Nama fungsi/berkas, format pesan error persis, cara menurunkan nama variabel dari `formula`, dan susunan tes.
