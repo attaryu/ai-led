@@ -6,9 +6,13 @@ from setor_led.prompts import (
     SYSTEM_CAPAIAN,
     SYSTEM_CAPAIAN_JSON,
     bangun_prompt_capaian,
+    bangun_prompt_ekspresi,
     bangun_prompt_evaluasi,
+    bangun_prompt_narasi,
+    bangun_prompt_pilih_level,
     format_prodi,
 )
+from setor_led.rubrik import RubrikIndikator
 from setor_led.schema import EVALUASI, NARASI_INTI, NARASI_TAMBAHAN, IkuInput
 
 IKU = IkuInput(kode="IKU.REL.MHS.8", indikator="Rata-rata masa studi (MS) lulusan", target="STR PJJ: 3,5 < MS ≤ 4,5")
@@ -162,3 +166,69 @@ def test_prompts_tell_the_model_not_to_guess_between_program_variants():
     assert "beberapa varian" in SYSTEM_CAPAIAN.lower() and "jangan menebak" in SYSTEM_CAPAIAN.lower()
     evaluasi = bangun_prompt_evaluasi(IKU, capaian, "", prodi=PRODI).lower()
     assert "beberapa varian" in evaluasi and "sesuai program studi" in evaluasi
+
+
+# ── Skor rubrik 0-4 (spec 2026-10-16) ──────────────────────────────────────────
+
+SKOR_IKU = IkuInput(kode="29", indikator="Persentase DTPS berpendidikan Doktor", target="3")
+RUBRIK = RubrikIndikator(
+    kode="29",
+    deskripsi="Persentase DTPS berpendidikan Doktor",
+    score_type="KUANTITATIF",
+    levels={4: "Jika PDS3 ≥ 20%, maka Skor = 4.", 3: "Jika PDS3 < 20%, maka Skor = 2 + (PDS3 x 10).", 0: "Tidak ada."},
+    formula="PDS3 = (NDS3 / NDTPS) x 100%",
+    sub_score_formula=None,
+)
+CAPAIAN_VAR = {"nilai": "NDS3 = 12, NDTPS = 40", "sumber": "LKPS Tabel 3.a", "variabel": {"NDS3": 12, "NDTPS": 40}}
+
+
+def test_capaian_prompt_includes_formula_text_and_asks_for_variables_with_null_for_missing():
+    prompt = bangun_prompt_capaian(SKOR_IKU, [], rumus=RUBRIK.formula)
+    assert "PDS3 = (NDS3 / NDTPS) x 100%" in prompt
+    assert '"variabel"' in prompt and "null" in prompt
+    assert "jangan menebak" in prompt.lower()
+
+
+def test_capaian_prompt_uses_exact_names_when_given():
+    prompt = bangun_prompt_capaian(SKOR_IKU, [], rumus="(2 * BOP) / 5000000", variabel=["BOP"])
+    assert "BOP" in prompt and "persis" in prompt
+
+
+def test_capaian_prompt_without_formula_is_unchanged():
+    assert '"variabel"' not in bangun_prompt_capaian(SKOR_IKU, [])
+    assert bangun_prompt_capaian(IKU, ["6b"]) == bangun_prompt_capaian(IKU, ["6b"], None, None, None)
+
+
+def test_ekspresi_prompt_has_formula_levels_and_variables_and_forbids_conditions():
+    prompt = bangun_prompt_ekspresi(SKOR_IKU, CAPAIAN_VAR, RUBRIK, "bahan")
+    assert "PDS3 = (NDS3 / NDTPS) x 100%" in prompt
+    assert "Level 4: Jika PDS3 ≥ 20%" in prompt and "Level 3:" in prompt
+    assert '"NDS3": 12' in prompt and '"NDTPS": 40' in prompt
+    assert '"ekspresi"' in prompt and "tanpa kondisi" in prompt.lower() and "satuan" in prompt.lower()
+
+
+def test_pilih_level_prompt_lists_every_level_and_demands_json_score():
+    prompt = bangun_prompt_pilih_level(SKOR_IKU, {"nilai": "SK tersedia", "sumber": "bukti"}, RUBRIK, "bahan")
+    for level in ("Level 4:", "Level 3:", "Level 0:"):
+        assert level in prompt
+    assert '"score"' in prompt and "SK tersedia" in prompt
+
+
+def test_narasi_prompt_states_score_and_target():
+    prompt = bangun_prompt_narasi(SKOR_IKU, CAPAIAN_VAR, 3.5, RUBRIK, "bahan", dengan_tambahan=False)
+    assert "Skor hasil: 3.5" in prompt and "Skor target: 3" in prompt
+    for kunci in NARASI_INTI:
+        assert kunci in prompt
+
+
+def test_narasi_prompt_asks_for_tambahan_only_when_requested():
+    ada = bangun_prompt_narasi(SKOR_IKU, CAPAIAN_VAR, 2.0, RUBRIK, "bahan", dengan_tambahan=True)
+    tidak = bangun_prompt_narasi(SKOR_IKU, CAPAIAN_VAR, 4.0, RUBRIK, "bahan", dengan_tambahan=False)
+    assert all(kunci in ada for kunci in NARASI_TAMBAHAN)
+    assert not any(kunci in tidak for kunci in NARASI_TAMBAHAN)
+
+
+def test_narasi_prompt_has_no_category_words_and_no_led_pens_sample():
+    prompt = bangun_prompt_narasi(SKOR_IKU, CAPAIAN_VAR, 2.0, RUBRIK, "bahan", dengan_tambahan=True)
+    for kata in ("MELAMPAUI", "MEMENUHI", "Hanya untuk Internal PENS"):
+        assert kata not in prompt
