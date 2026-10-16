@@ -132,7 +132,7 @@ Volume Postgres lokal dev-v2 sudah tidak ada, jadi diperiksa sumber seed-nya, `a
 (data yang sama yang diisikan ke `rubric_criteria`): 64 baris, 31 kuantitatif, 23 kualitatif, 10 komposit.
 
 - Semua baris punya teks level 0–4 (tidak ada yang kosong). Tidak ada pasangan (nomor, sub) ganda.
-- Kolom `formula` terisi di 31 baris, tetapi hanya **6** yang berupa aritmetika sederhana (`(2 x BOP) / 5.000.000`;
+- Kolom `formula` terisi di 31 baris, tetapi hanya **6** yang berupa aritmetika sederhana (pada matriks.json; pada set nyata "Lam Teknik 2025" di DB: 19 bersih, 13 prosa, 40 tanpa rumus) (`(2 x BOP) / 5.000.000`;
   baris 9, 10, 11, 34, 38, 51) dan memakai `x` sebagai kali serta titik sebagai pemisah ribuan. **25** baris berisi definisi
   berbentuk prosa: beberapa variabel turunan (`PDS3 = (NDS3 / NDTPS) x 100%`), aturan bersyarat ("Jika RI ≥ a dan RN < b,
   maka RI = a"), dan kadang hanya `"4"`. Ambang skornya justru ada di teks level (mis. baris 29: "Jika PDS3 ≥ 20%, maka

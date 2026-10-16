@@ -47,6 +47,8 @@ def muat_rubrik(tenant_id: str, accreditation_set_id: str, kode: str) -> RubrikI
 # Rumus bersih: aritmetika sederhana yang bisa langsung dievaluasi kode. Rumus rubrik lain berupa prosa (definisi
 # beberapa variabel turunan + aturan bersyarat); untuk itu model yang menuliskan ekspresinya.
 _KALI = re.compile(r"\s[xX]\s")
+# "AxB" tanpa spasi berarti A kali B di rubrik nyata, tetapi bagi kode itu satu nama variabel: jangan dianggap bersih.
+_KALI_RAPAT = re.compile(r"(?<=[A-Z0-9)])x(?=[A-Z0-9(])")
 # Titik di antara digit dan tepat tiga digit lagi = pemisah ribuan ("5.000.000"); rubrik memakai koma untuk desimal.
 _RIBUAN = re.compile(r"(?<=\d)\.(?=\d{3}(?!\d))")
 _DESIMAL_KOMA = re.compile(r"(?<=\d),(?=\d)")
@@ -64,6 +66,8 @@ def ekspresi_bersih(formula: str | None) -> str | None:
         return None
     teks = _KALI.sub(" * ", formula.strip())
     teks = _DESIMAL_KOMA.sub(".", _RIBUAN.sub("", teks))
+    if _KALI_RAPAT.search(teks):
+        return None
     teks = teks.rstrip(" .")  # titik penutup kalimat ("2 + (0,2 x NLP) .") membuat eval SyntaxError
     if len(teks) >= MAKS_PANJANG_RUMUS or not _KARAKTER_BOLEH.fullmatch(teks) or not _ADA_HURUF.search(teks):
         return None

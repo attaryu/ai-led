@@ -149,3 +149,18 @@ def test_variabel_ekspresi_rejects_everything_but_plain_arithmetic(ekspresi):
 
 def test_variabel_ekspresi_accepts_unary_minus_and_nested_parentheses():
     assert variabel_ekspresi("-(A + 2) / (B * 0.5)") == ["A", "B"]
+
+
+# ── data nyata dari DB (set "Lam Teknik 2025"): "AxB" berarti A kali B, bukan satu variabel bernama AxB ────────────
+
+FORMULA_NYATA_32 = "3.75 * ((A+B+(C/2))-(AxB)-(((AxC)/2)-((BxC)/2)+(AxBxC)/2))"
+
+
+@pytest.mark.parametrize("formula", [FORMULA_NYATA_32, "(AxB)", "(A+B)x(C)", "2x3 + A", "3,75 x ((A+B+(C/2))-(AxB)-(AxC)/2)-(BxC)/2)+(AxBxC)/2))"])
+def test_ekspresi_bersih_rejects_juxtaposed_multiplication_so_the_model_must_expand_it(formula):
+    assert ekspresi_bersih(formula) is None
+
+
+def test_ekspresi_bersih_still_accepts_spaced_multiplication():
+    assert ekspresi_bersih("(A x B) + C") == "(A * B) + C"
+    assert mode_penilaian(_rubrik(score_type="KUANTITATIF", formula=FORMULA_NYATA_32)) == "rumus_prosa"
