@@ -2465,9 +2465,9 @@ def _program_studi_label(tenant_id: str, study_program_id: str | None) -> str | 
 
 
 async def _handle_setor_led(job) -> dict:
-    """"Setor ke LED": mengisi tabel analisis IKU (kategori Evaluasi + narasi) untuk satu Dokumen LED.
-    Terpisah dari _handle_assessment_ami -- tidak memakai rubrik/skor 0-4 dan tidak menulis
-    AssessmentSession; hasilnya dikembalikan sebagai return value job (-> Job.result). Worker ini hanya
+    """"Setor ke LED": mengisi tabel analisis IKU (skor rubrik 0-4 + narasi) untuk satu Dokumen LED.
+    Terpisah dari _handle_assessment_ami -- hanya MEMBACA rubrik indikator (lewat `kode` = criterion_code) dan tidak
+    menulis AssessmentSession; hasilnya dikembalikan sebagai return value job (-> Job.result). Worker ini hanya
     pemicu: prasyarat (LED terindeks, LKPS termuat, model valid) dicek di sini, logika per-IKU ada di
     setor_led/pipeline.py.
 

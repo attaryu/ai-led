@@ -10,7 +10,6 @@ from setor_led.schema import (
     hasil_gagal,
     hasil_sukses,
     parse_iku_list,
-    validasi_keluaran_llm,
     validasi_narasi,
     validasi_skor,
 )
@@ -103,59 +102,15 @@ def test_validasi_narasi_rejects_missing_or_blank_inti():
         validasi_narasi("bukan objek", dengan_tambahan=False)
 
 
-def test_validasi_accepts_memenuhi_without_tambahan():
-    evaluasi, inti, tambahan = validasi_keluaran_llm({"evaluasi": "MEMENUHI", **INTI})
-    assert evaluasi == "MEMENUHI" and inti == INTI and tambahan is None
-
-
-def test_validasi_ignores_tambahan_when_not_belum_memenuhi():
-    _, _, tambahan = validasi_keluaran_llm({"evaluasi": "MELAMPAUI", **INTI, "tambahan": TAMBAHAN})
-    assert tambahan is None
-
-
-def test_validasi_requires_tambahan_when_belum_memenuhi():
-    evaluasi, _, tambahan = validasi_keluaran_llm({"evaluasi": "BELUM_MEMENUHI", **INTI, "tambahan": TAMBAHAN})
-    assert evaluasi == "BELUM_MEMENUHI" and tambahan == TAMBAHAN
-
-    with pytest.raises(SetorLedError, match="tambahan"):
-        validasi_keluaran_llm({"evaluasi": "BELUM_MEMENUHI", **INTI})
-    with pytest.raises(SetorLedError, match="akarMasalah"):
-        validasi_keluaran_llm(
-            {"evaluasi": "BELUM_MEMENUHI", **INTI, "tambahan": {**TAMBAHAN, "akarMasalah": " "}}
-        )
-
-
-@pytest.mark.parametrize("evaluasi", ["memenuhi", "Melampaui standar", "", None, 3])
-def test_validasi_rejects_evaluasi_outside_enum(evaluasi):
-    with pytest.raises(SetorLedError, match="Evaluasi"):
-        validasi_keluaran_llm({"evaluasi": evaluasi, **INTI})
-
-
-def test_validasi_rejects_missing_or_blank_narasi():
-    for kunci in INTI:
-        rusak = {**INTI, kunci: "   "}
-        with pytest.raises(SetorLedError, match=kunci):
-            validasi_keluaran_llm({"evaluasi": "MEMENUHI", **rusak})
-    with pytest.raises(SetorLedError, match="JSON"):
-        validasi_keluaran_llm(None)
-    with pytest.raises(SetorLedError, match="JSON"):
-        validasi_keluaran_llm(["bukan", "dict"])
-
-
-def test_hasil_sukses_has_the_documented_keys():
-    hasil = hasil_sukses("IKU.A", {"nilai": "RIPK = 3,46", "sumber": "LKPS Tabel 6.b"}, "MEMENUHI", INTI, None)
-    assert hasil == {
-        "kode": "IKU.A",
-        "capaian": {"nilai": "RIPK = 3,46", "sumber": "LKPS Tabel 6.b"},
-        "evaluasi": "MEMENUHI",
-        **INTI,
-    }
-    assert "tambahan" not in hasil and "error" not in hasil
+def test_hasil_sukses_has_score_and_narasi_and_no_capaian():
+    hasil = hasil_sukses("IKU.A", 3.7, INTI, None)
+    assert hasil == {"kode": "IKU.A", "score": 3.7, **INTI}
+    assert "capaian" not in hasil and "evaluasi" not in hasil
 
 
 def test_hasil_sukses_includes_tambahan_only_when_given():
-    hasil = hasil_sukses("IKU.A", {"nilai": "8,93%", "sumber": "LKPS 6.c"}, "BELUM_MEMENUHI", INTI, TAMBAHAN)
-    assert hasil["tambahan"] == TAMBAHAN
+    assert hasil_sukses("IKU.A", 1.0, INTI, TAMBAHAN)["tambahan"] == TAMBAHAN
+    assert "tambahan" not in hasil_sukses("IKU.A", 4.0, INTI, None)
 
 
 def test_hasil_gagal_has_only_kode_and_error():

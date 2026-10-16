@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import threading
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -21,15 +22,21 @@ from setor_led.pipeline import (
     jalankan_setor_led,
     parse_capaian,
     proses_iku,
-    tulis_evaluasi_narasi,
+    lengkapi_variabel,
+    pilih_level,
+    tentukan_skor,
+    tulis_ekspresi,
+    tulis_narasi,
 )
+from setor_led.rubrik import RubrikIndikator
 from setor_led.schema import SetorLedError, hasil_gagal, IkuInput
 
-IKU = IkuInput(kode="IKU.REL.MHS.3", indikator="Rata-rata IPK lulusan", target="PJJ: RIPK ≥ 3,25")
+IKU = IkuInput(kode="IKU.REL.MHS.3", indikator="Rata-rata IPK lulusan", target="3")
 INTI = {
     "analisisKetercapaian": "A", "usulanTargetTahunDepan": "U", "strategiPencapaian": "S", "sarprasDibutuhkan": "P",
 }
-JSON_OK = json.dumps({"evaluasi": "MELAMPAUI", **INTI})
+TAMBAHAN = {"faktorPendukung": "F", "faktorPenghambat": "H", "akarMasalah": "A", "tindakLanjut": "T"}
+JSON_OK = json.dumps({**INTI, "tambahan": TAMBAHAN})  # model boleh menyertakan tambahan; hanya dipakai bila diminta
 CAPAIAN_JSON = json.dumps({"ditemukan": True, "nilai": "RIPK = 3,46", "sumber": "LKPS Tabel 6.b"})
 PAGAR = "`" * 3  # pagar code fence Markdown, dibangun dari variabel supaya tidak memutus blok di dokumen plan
 
@@ -223,24 +230,168 @@ def test_cari_capaian_caps_collected_evidence_size():
     assert len(bahan) <= pipeline.MAX_BAHAN_CHARS
 
 
-# ── tulis_evaluasi_narasi (tahap 2) ────────────────────────────────────────────
+# ── skor rubrik 0-4 dan narasi (tahap 2) ──────────────────────────────────────
 
 CAPAIAN = {"nilai": "RIPK = 3,46", "sumber": "LKPS Tabel 6.b"}
+RUBRIK_LEVEL = RubrikIndikator(
+    kode="1", deskripsi="Kualitas tata kelola", score_type="KUALITATIF",
+    levels={4: "sangat baik", 2: "cukup", 0: "buruk"}, formula=None, sub_score_formula=None,
+)
+RUBRIK_BERSIH = RubrikIndikator(
+    kode="9", deskripsi="Dana operasional", score_type="KUANTITATIF",
+    levels={4: "BOP >= 10.000.000", 3: "BOP < 10.000.000"}, formula="(2 x BOP) / 5.000.000", sub_score_formula=None,
+)
+RUBRIK_PROSA = RubrikIndikator(
+    kode="29", deskripsi="Persentase DTPS Doktor", score_type="KUANTITATIF",
+    levels={4: "Jika PDS3 >= 20%, Skor = 4", 3: "Jika PDS3 < 20%, Skor = 2 + (PDS3 x 10)"},
+    formula="PDS3 = (NDS3 / NDTPS) x 100%", sub_score_formula=None,
+)
 
 
-def test_tulis_evaluasi_returns_validated_output():
-    evaluasi, inti, tambahan = tulis_evaluasi_narasi(FakeLLM(JSON_OK), IKU, CAPAIAN, "bahan")
-    assert evaluasi == "MELAMPAUI" and inti == INTI and tambahan is None
+def _dengan_variabel(**variabel):
+    return {**CAPAIAN, "variabel": variabel}
 
 
-def test_tulis_evaluasi_retries_once_on_an_invalid_enum():
-    buruk = json.dumps({"evaluasi": "Melampaui standar", **INTI})
-    llm = FakeLLM(buruk, JSON_OK)
-    evaluasi, _, _ = tulis_evaluasi_narasi(llm, IKU, CAPAIAN, "")
-    assert evaluasi == "MELAMPAUI" and llm.dipanggil == 2
+# parse_capaian membawa angka mentah rumus
+
+def test_parse_capaian_carries_variabel():
+    mentah = json.dumps({"ditemukan": True, "nilai": "PDS3 = 30%", "sumber": "LKPS", "variabel": {"NDS3": 12, "NDTPS": None}})
+    assert parse_capaian(mentah)["variabel"] == {"NDS3": 12, "NDTPS": None}
 
 
-def test_tulis_evaluasi_retry_tells_the_model_what_was_wrong():
+def test_parse_capaian_ignores_a_variabel_that_is_not_an_object():
+    mentah = json.dumps({"ditemukan": True, "nilai": "PDS3 = 30%", "sumber": "LKPS", "variabel": [1, 2]})
+    assert "variabel" not in parse_capaian(mentah)
+
+
+# lengkapi_variabel
+
+def test_lengkapi_variabel_returns_numbers_and_accepts_numeric_strings():
+    capaian = _dengan_variabel(NDS3=12, NDTPS="40", X="1,5")
+    assert lengkapi_variabel(capaian) == {"NDS3": 12.0, "NDTPS": 40.0, "X": 1.5}
+
+
+def test_lengkapi_variabel_names_every_missing_variable():
+    with pytest.raises(SetorLedError, match="Variabel rumus tidak ditemukan: B, C"):
+        lengkapi_variabel(_dengan_variabel(A=1, B=None, C="abc"))
+
+
+def test_lengkapi_variabel_requires_the_named_variables():
+    with pytest.raises(SetorLedError, match="Variabel rumus tidak ditemukan: B"):
+        lengkapi_variabel(_dengan_variabel(A=1), wajib=["A", "B"])
+
+
+@pytest.mark.parametrize("capaian", [CAPAIAN, _dengan_variabel(), {**CAPAIAN, "variabel": "12"}])
+def test_lengkapi_variabel_without_any_variable_is_an_error(capaian):
+    with pytest.raises(SetorLedError, match="Variabel rumus tidak ditemukan"):
+        lengkapi_variabel(capaian)
+
+
+# tulis_ekspresi
+
+EKSPRESI_OK = json.dumps({"ekspresi": "2 + ((NDS3 / NDTPS) * 10)", "alasan": "cabang PDS3 < 20%"})
+
+
+def test_tulis_ekspresi_returns_a_valid_expression():
+    assert tulis_ekspresi(FakeLLM(EKSPRESI_OK), IKU, _dengan_variabel(NDS3=6, NDTPS=40), RUBRIK_PROSA, "") == "2 + ((NDS3 / NDTPS) * 10)"
+
+
+def test_tulis_ekspresi_retries_once_on_an_unknown_variable():
+    buruk = json.dumps({"ekspresi": "2 + (ZZZ * 10)", "alasan": "x"})
+    llm = FakeLLM(buruk, EKSPRESI_OK)
+    assert tulis_ekspresi(llm, IKU, _dengan_variabel(NDS3=6, NDTPS=40), RUBRIK_PROSA, "") == "2 + ((NDS3 / NDTPS) * 10)"
+    assert llm.dipanggil == 2
+
+
+def test_tulis_ekspresi_rejects_conditions_and_words_then_gives_up():
+    llm = FakeLLM(json.dumps({"ekspresi": "4 if NDS3 > 1 else 3", "alasan": "x"}))
+    with pytest.raises(SetorLedError, match="[Ee]kspresi"):
+        tulis_ekspresi(llm, IKU, _dengan_variabel(NDS3=6), RUBRIK_PROSA, "")
+    assert llm.dipanggil == 2
+
+
+def test_tulis_ekspresi_does_not_call_the_llm_once_cancelled():
+    batal = threading.Event()
+    batal.set()
+    llm = FakeLLM(EKSPRESI_OK)
+    with pytest.raises(SetorLedCancelled):
+        tulis_ekspresi(llm, IKU, _dengan_variabel(NDS3=6, NDTPS=40), RUBRIK_PROSA, "", cancel_event=batal)
+    assert llm.dipanggil == 0
+
+
+# pilih_level
+
+def test_pilih_level_returns_the_chosen_score():
+    assert pilih_level(FakeLLM('{"score": 2, "alasan": "x"}'), IKU, CAPAIAN, RUBRIK_LEVEL, "") == 2.0
+
+
+def test_pilih_level_retries_once_when_the_score_is_out_of_range():
+    llm = FakeLLM('{"score": 7, "alasan": "x"}', '{"score": 2, "alasan": "x"}')
+    assert pilih_level(llm, IKU, CAPAIAN, RUBRIK_LEVEL, "") == 2.0 and llm.dipanggil == 2
+
+
+@pytest.mark.parametrize("balasan", ['{"score": 7}', '{"score": 2.5}', '{"score": "tinggi"}', "bukan json"])
+def test_pilih_level_gives_up_after_one_retry_on_an_unusable_score(balasan):
+    llm = FakeLLM(balasan)
+    with pytest.raises(SetorLedError):
+        pilih_level(llm, IKU, CAPAIAN, RUBRIK_LEVEL, "")
+    assert llm.dipanggil == 2
+
+
+def test_pilih_level_does_not_call_the_llm_once_cancelled():
+    batal = threading.Event()
+    batal.set()
+    llm = FakeLLM('{"score": 2}')
+    with pytest.raises(SetorLedCancelled):
+        pilih_level(llm, IKU, CAPAIAN, RUBRIK_LEVEL, "", cancel_event=batal)
+    assert llm.dipanggil == 0
+
+
+# tentukan_skor
+
+def test_clean_formula_scores_in_code_and_never_asks_the_model_for_a_score():
+    llm = FakeLLM("tidak boleh dipanggil")
+    skor = tentukan_skor(llm, IKU, _dengan_variabel(BOP=9250000), RUBRIK_BERSIH, "")
+    assert skor == 3.7 and llm.dipanggil == 0
+
+
+def test_prose_formula_model_writes_the_expression_and_code_computes():
+    llm = FakeLLM(EKSPRESI_OK)
+    skor = tentukan_skor(llm, IKU, _dengan_variabel(NDS3=6, NDTPS=40), RUBRIK_PROSA, "")
+    assert skor == 3.5 and llm.dipanggil == 1  # 2 + (6/40)*10, dihitung kode
+
+
+def test_missing_formula_variable_is_a_named_error_without_model_fallback():
+    llm = FakeLLM(EKSPRESI_OK)
+    with pytest.raises(SetorLedError, match="NDTPS"):
+        tentukan_skor(llm, IKU, _dengan_variabel(NDS3=6, NDTPS=None), RUBRIK_PROSA, "")
+    with pytest.raises(SetorLedError, match="BOP"):
+        tentukan_skor(llm, IKU, _dengan_variabel(), RUBRIK_BERSIH, "")
+    assert llm.dipanggil == 0
+
+
+def test_qualitative_indicator_picks_a_level_with_the_model():
+    llm = FakeLLM('{"score": 2, "alasan": "x"}')
+    assert tentukan_skor(llm, IKU, CAPAIAN, RUBRIK_LEVEL, "") == 2.0 and llm.dipanggil == 1
+
+
+# tulis_narasi
+
+def test_tulis_narasi_returns_validated_inti_without_tambahan_at_or_above_target():
+    inti, tambahan = tulis_narasi(FakeLLM(JSON_OK), IKU, CAPAIAN, 3.0, RUBRIK_LEVEL, "bahan")
+    assert inti == INTI and tambahan is None  # skor 3 == target 3
+
+
+@pytest.mark.parametrize("skor, target, ada", [(3.99, "4", True), (4.0, "4", False), (3.0, "3", False), (2.5, "3", True)])
+def test_tambahan_only_when_score_is_strictly_below_target(skor, target, ada):
+    iku = IkuInput(kode="K", indikator="i", target=target)
+    llm = Pengintai(JSON_OK)
+    _, tambahan = tulis_narasi(llm, iku, CAPAIAN, skor, RUBRIK_LEVEL, "")
+    assert (tambahan == TAMBAHAN) is ada
+    assert ("faktorPenghambat" in llm.masukan_terakhir) is ada  # prompt hanya memintanya bila skor < target
+
+
+def test_tulis_narasi_retries_once_and_tells_the_model_what_was_wrong():
     # Retry dengan prompt identik hampir pasti menghasilkan kesalahan yang sama; beri tahu alasannya.
     dilihat = []
 
@@ -249,34 +400,57 @@ def test_tulis_evaluasi_retry_tells_the_model_what_was_wrong():
             dilihat.append(masukan)
             return super().invoke(masukan)
 
-    buruk = json.dumps({"evaluasi": "Melampaui standar", **INTI})
-    tulis_evaluasi_narasi(Mata(buruk, JSON_OK), IKU, CAPAIAN, "")
+    buruk = json.dumps({**INTI, "analisisKetercapaian": ""})
+    tulis_narasi(Mata(buruk, JSON_OK), IKU, CAPAIAN, 3.0, RUBRIK_LEVEL, "")
 
     assert len(dilihat) == 2
     assert "ditolak" not in dilihat[0].lower()
     assert dilihat[1].startswith(dilihat[0])  # prompt asli utuh
-    assert "ditolak" in dilihat[1].lower() and "Evaluasi di luar daftar" in dilihat[1]
+    assert "ditolak" in dilihat[1].lower() and "analisisKetercapaian" in dilihat[1]
 
 
-def test_tulis_evaluasi_gives_up_after_one_retry():
+def test_tulis_narasi_gives_up_after_one_retry():
     llm = FakeLLM("bukan json")
     with pytest.raises(SetorLedError):
-        tulis_evaluasi_narasi(llm, IKU, CAPAIAN, "")
+        tulis_narasi(llm, IKU, CAPAIAN, 3.0, RUBRIK_LEVEL, "")
     assert llm.dipanggil == 2
 
 
-def test_tulis_evaluasi_logs_the_raw_reply_when_it_is_unreadable(caplog):
+def test_tulis_narasi_logs_the_raw_reply_when_it_is_unreadable(caplog):
     # Tanpa potongan jawaban, "JSON tak terbaca" tidak bisa dibedakan: terpotong, prosa, atau kutip rusak.
     with caplog.at_level("WARNING", logger="setor_led.pipeline"):
         with pytest.raises(SetorLedError):
-            tulis_evaluasi_narasi(FakeLLM('{"evaluasi": "MEMENUHI", "analisisKetercapaian": "terpotong di sin'), IKU, CAPAIAN, "")
+            tulis_narasi(FakeLLM('{"analisisKetercapaian": "terpotong di sin'), IKU, CAPAIAN, 3.0, RUBRIK_LEVEL, "")
     assert "terpotong di sin" in caplog.text and IKU.kode in caplog.text
 
 
-def test_tulis_evaluasi_reads_json_wrapped_in_think_and_fence():
-    mentah = f"<think>bandingkan 3,46 dengan 3,25</think>\n{PAGAR}json\n{JSON_OK}\n{PAGAR}"
-    evaluasi, _, _ = tulis_evaluasi_narasi(FakeLLM(mentah), IKU, CAPAIAN, "")
-    assert evaluasi == "MELAMPAUI"
+def test_tulis_narasi_reads_json_wrapped_in_think_and_fence():
+    mentah = f"<think>bandingkan 3,46 dengan 3</think>\n{PAGAR}json\n{JSON_OK}\n{PAGAR}"
+    inti, _ = tulis_narasi(FakeLLM(mentah), IKU, CAPAIAN, 3.0, RUBRIK_LEVEL, "")
+    assert inti == INTI
+
+
+def test_tulis_narasi_does_not_call_the_llm_once_cancelled():
+    batal = threading.Event()
+    batal.set()
+    llm = FakeLLM(JSON_OK)
+    with pytest.raises(SetorLedCancelled):
+        tulis_narasi(llm, IKU, CAPAIAN, 3.0, RUBRIK_LEVEL, "", cancel_event=batal)
+    assert llm.dipanggil == 0
+
+
+def test_tulis_narasi_does_not_retry_once_cancelled_during_the_first_call():
+    batal = threading.Event()
+
+    class Membatalkan(FakeLLM):
+        def invoke(self, masukan):
+            batal.set()
+            return super().invoke(masukan)
+
+    llm = Membatalkan("bukan json", JSON_OK)
+    with pytest.raises(SetorLedCancelled):
+        tulis_narasi(llm, IKU, CAPAIAN, 3.0, RUBRIK_LEVEL, "", cancel_event=batal)
+    assert llm.dipanggil == 1
 
 
 # ── proses_iku (satu IKU, async) ───────────────────────────────────────────────
@@ -285,13 +459,13 @@ KW = dict(tenant_id="t1", dokumen_id="d1", accreditation_set_id="s1", study_prog
 
 
 def _hasil_ok(kode):
-    return {"kode": kode, "evaluasi": "MEMENUHI"}
+    return {"kode": kode, "score": 3.0}
 
 
 def test_proses_iku_runs_the_sync_work_with_assessment_context_set():
     dilihat = {}
 
-    def sync(iku, model, tabel, cancel_event=None, prodi=None):
+    def sync(iku, model, tabel, cancel_event=None, prodi=None, tenant_id=None, accreditation_set_id=None):
         ctx = current_assessment_context.get()
         dilihat.update(tenant=ctx.tenant_id, dokumen=ctx.dokumen_id, indikator=ctx.indicator_no, prodi=ctx.study_program_id)
         return _hasil_ok(iku.kode)
@@ -316,45 +490,118 @@ def test_proses_iku_does_not_leak_raw_exception_text():
     assert "RuntimeError" in hasil["error"] and "rahasia" not in hasil["error"]
 
 
-def test_proses_iku_sync_reports_missing_capaian_without_calling_stage_two():
+@contextlib.contextmanager
+def _skor_dan_narasi(rubrik=RUBRIK_LEVEL, score=3.0, tambahan=None):
+    """Rubrik, skor, dan narasi ditiru: yang diuji urutan dan data yang mengalir antar-langkah."""
     with (
+        patch("setor_led.pipeline.muat_rubrik", return_value=rubrik),
+        patch("setor_led.pipeline.tentukan_skor", return_value=score) as skor,
+        patch("setor_led.pipeline.tulis_narasi", return_value=(INTI, tambahan)) as narasi,
+    ):
+        yield skor, narasi
+
+
+SYNC_ARGS = (None, None, "t1", "s1")  # cancel_event, prodi, tenant_id, accreditation_set_id
+
+
+def test_rubric_is_loaded_before_any_llm_call():
+    with (
+        patch("setor_led.pipeline.muat_rubrik", side_effect=SetorLedError("Rubrik untuk kode 'X' tidak ditemukan")) as muat,
+        patch("setor_led.pipeline.build_setor_llm") as bangun,
+    ):
+        with pytest.raises(SetorLedError, match="tidak ditemukan"):
+            pipeline._proses_iku_sync(IKU, "m", [], *SYNC_ARGS)
+    muat.assert_called_once_with("t1", "s1", IKU.kode)
+    bangun.assert_not_called()
+
+
+def test_a_rubric_that_cannot_be_scored_fails_before_any_llm_call():
+    sub = RubrikIndikator(kode="4", deskripsi="d", score_type="KOMPOSIT", levels={}, formula=None, sub_score_formula="(I + II) / 2")
+    with patch("setor_led.pipeline.muat_rubrik", return_value=sub), patch("setor_led.pipeline.build_setor_llm") as bangun:
+        with pytest.raises(SetorLedError, match="sub-indikator"):
+            pipeline._proses_iku_sync(IKU, "m", [], *SYNC_ARGS)
+    bangun.assert_not_called()
+
+
+def test_capaian_not_found_still_errors_before_scoring():
+    with (
+        _skor_dan_narasi() as (skor, narasi),
         patch("setor_led.pipeline.build_setor_llm") as bangun,
         patch("setor_led.pipeline.cari_capaian", return_value=(None, "")),
-        patch("setor_led.pipeline.tulis_evaluasi_narasi") as tulis,
     ):
         with pytest.raises(SetorLedError, match="Capaian tidak ditemukan"):
-            pipeline._proses_iku_sync(IKU, "m", [])
-    tulis.assert_not_called()
+            pipeline._proses_iku_sync(IKU, "m", [], *SYNC_ARGS)
+    skor.assert_not_called()
+    narasi.assert_not_called()
     assert bangun.call_count == 1  # model tahap 2 tidak dibangun
 
 
-def test_proses_iku_sync_gives_stage_two_the_dasar_but_keeps_it_out_of_the_result():
+def test_result_has_score_and_no_capaian_and_stage_two_sees_the_dasar():
     capaian = {**CAPAIAN, "dasar": "(3,58+3,48+3,33)/3 = 3,463"}
     with (
+        _skor_dan_narasi(score=3.7) as (skor, narasi),
         patch("setor_led.pipeline.build_setor_llm"),
         patch("setor_led.pipeline.cari_capaian", return_value=(capaian, "bahan")),
-        patch("setor_led.pipeline.tulis_evaluasi_narasi", return_value=("MELAMPAUI", INTI, None)) as tulis,
     ):
-        hasil = pipeline._proses_iku_sync(IKU, "m", [])
+        hasil = pipeline._proses_iku_sync(IKU, "m", [], *SYNC_ARGS)
 
-    assert tulis.call_args.args[2] == capaian  # tahap 2 melihat dasar perhitungannya
-    assert hasil["capaian"] == CAPAIAN  # hasil job tetap {nilai, sumber} saja, ringkas
+    assert hasil == {"kode": IKU.kode, "score": 3.7, **INTI}
+    assert skor.call_args.args[2] == capaian and narasi.call_args.args[2] == capaian  # dasar sampai ke tahap 2
+    assert narasi.call_args.args[3] == 3.7  # narasi menerima skor hasil
 
 
-def test_proses_iku_sync_builds_the_full_result():
+def test_result_includes_tambahan_when_the_narrative_step_returns_it():
     with (
+        _skor_dan_narasi(score=1.0, tambahan=TAMBAHAN),
         patch("setor_led.pipeline.build_setor_llm"),
         patch("setor_led.pipeline.cari_capaian", return_value=(CAPAIAN, "bahan")),
-        patch("setor_led.pipeline.tulis_evaluasi_narasi", return_value=("MELAMPAUI", INTI, None)),
     ):
-        hasil = pipeline._proses_iku_sync(IKU, "m", [])
-    assert hasil == {"kode": IKU.kode, "capaian": CAPAIAN, "evaluasi": "MELAMPAUI", **INTI}
+        hasil = pipeline._proses_iku_sync(IKU, "m", [], *SYNC_ARGS)
+    assert hasil["tambahan"] == TAMBAHAN
+
+
+@pytest.mark.parametrize(
+    "rubrik, rumus, variabel",
+    [
+        (RUBRIK_BERSIH, "(2 x BOP) / 5.000.000", ["BOP"]),
+        (RUBRIK_PROSA, "PDS3 = (NDS3 / NDTPS) x 100%", None),
+        (RUBRIK_LEVEL, None, None),
+    ],
+)
+def test_stage_one_receives_the_formula_and_exact_variable_names_only_when_it_applies(rubrik, rumus, variabel):
+    with (
+        _skor_dan_narasi(rubrik=rubrik),
+        patch("setor_led.pipeline.build_setor_llm"),
+        patch("setor_led.pipeline.cari_capaian", return_value=(CAPAIAN, "bahan")) as tahap1,
+    ):
+        pipeline._proses_iku_sync(IKU, "m", [], *SYNC_ARGS)
+    assert tahap1.call_args.kwargs["rumus"] == rumus and tahap1.call_args.kwargs["variabel"] == variabel
+
+
+def test_an_unknown_kode_fails_only_that_iku():
+    def muat(tenant, set_id, kode):
+        if kode == "A":
+            raise SetorLedError("Rubrik untuk kode 'A' tidak ditemukan")
+        return RUBRIK_LEVEL
+
+    with (
+        patch("setor_led.pipeline.muat_rubrik", muat),
+        patch("setor_led.pipeline.build_setor_llm"),
+        patch("setor_led.pipeline.cari_capaian", return_value=(CAPAIAN, "bahan")),
+        patch("setor_led.pipeline.tentukan_skor", return_value=3.0),
+        patch("setor_led.pipeline.tulis_narasi", return_value=(INTI, None)),
+    ):
+        hasil, dibatalkan = asyncio.run(jalankan_setor_led(_ikus("A", "B"), **RUN_KW))
+
+    assert dibatalkan is False
+    assert hasil[0] == {"kode": "A", "error": "Rubrik untuk kode 'A' tidak ditemukan"}
+    assert hasil[1]["kode"] == "B" and hasil[1]["score"] == 3.0
 
 
 # ── jalankan_setor_led (penjadwal) ─────────────────────────────────────────────
 
 def _ikus(*kode):
-    return [IkuInput(kode=k, indikator="i", target="t") for k in kode]
+    return [IkuInput(kode=k, indikator="i", target="3") for k in kode]
 
 
 RUN_KW = dict(max_parallel=2, tenant_id="t1", dokumen_id="d1", accreditation_set_id="s1", study_program_id="p1", model="m")
@@ -493,52 +740,30 @@ def test_cari_capaian_is_unchanged_without_a_cancel_event():
     assert capaian is not None
 
 
-def test_tulis_evaluasi_does_not_call_the_llm_once_cancelled():
-    batal = threading.Event()
-    batal.set()
-    llm = FakeLLM(JSON_OK)
-    with pytest.raises(SetorLedCancelled):
-        tulis_evaluasi_narasi(llm, IKU, CAPAIAN, "", cancel_event=batal)
-    assert llm.dipanggil == 0
-
-
-def test_tulis_evaluasi_does_not_retry_once_cancelled_during_the_first_call():
-    batal = threading.Event()
-
-    class Membatalkan(FakeLLM):
-        def invoke(self, masukan):
-            batal.set()
-            return super().invoke(masukan)
-
-    llm = Membatalkan("bukan json", JSON_OK)
-    with pytest.raises(SetorLedCancelled):
-        tulis_evaluasi_narasi(llm, IKU, CAPAIAN, "", cancel_event=batal)
-    assert llm.dipanggil == 1
-
-
 def test_proses_iku_sync_does_not_start_stage_two_once_cancelled():
     batal = threading.Event()
 
-    def tahap1_lalu_batal(llm, iku, tabel, cancel_event=None, prodi=None):
+    def tahap1_lalu_batal(llm, iku, tabel, cancel_event=None, prodi=None, rumus=None, variabel=None):
         batal.set()
         return CAPAIAN, "bahan"
 
     with (
+        _skor_dan_narasi() as (skor, narasi),
         patch("setor_led.pipeline.build_setor_llm") as bangun,
         patch("setor_led.pipeline.cari_capaian", tahap1_lalu_batal),
-        patch("setor_led.pipeline.tulis_evaluasi_narasi") as tulis,
     ):
         with pytest.raises(SetorLedCancelled):
-            pipeline._proses_iku_sync(IKU, "m", [], batal)
+            pipeline._proses_iku_sync(IKU, "m", [], batal, None, "t1", "s1")
 
-    tulis.assert_not_called()
+    skor.assert_not_called()
+    narasi.assert_not_called()
     assert bangun.call_count == 1  # model tahap 2 tidak sempat dibangun
 
 
 def test_runner_signals_cancel_to_running_threads_so_they_stop_calling_the_llm():
     mulai, berhenti = threading.Event(), threading.Event()
 
-    def sync(iku, model, tabel, cancel_event=None, prodi=None):
+    def sync(iku, model, tabel, cancel_event=None, prodi=None, tenant_id=None, accreditation_set_id=None):
         mulai.set()
         assert cancel_event.wait(timeout=5), "sinyal batal tidak pernah sampai ke thread"
         berhenti.set()
@@ -607,22 +832,23 @@ def test_cari_capaian_puts_the_study_program_in_the_stage_one_prompt():
     assert f"Program studi: {PRODI}" in pesan_pengguna
 
 
-def test_tulis_evaluasi_puts_the_study_program_in_the_stage_two_prompt():
+def test_tulis_narasi_puts_the_study_program_in_the_stage_two_prompt():
     llm = Pengintai(JSON_OK)
-    tulis_evaluasi_narasi(llm, IKU, CAPAIAN, "", prodi=PRODI)
+    tulis_narasi(llm, IKU, CAPAIAN, 3.0, RUBRIK_LEVEL, "", prodi=PRODI)
     assert f"Program studi: {PRODI}" in llm.masukan_terakhir
 
 
-def test_proses_iku_sync_gives_the_study_program_to_both_stages():
+def test_proses_iku_sync_gives_the_study_program_to_every_step():
     with (
+        _skor_dan_narasi() as (skor, narasi),
         patch("setor_led.pipeline.build_setor_llm"),
         patch("setor_led.pipeline.cari_capaian", return_value=(CAPAIAN, "bahan")) as tahap1,
-        patch("setor_led.pipeline.tulis_evaluasi_narasi", return_value=("MELAMPAUI", INTI, None)) as tahap2,
     ):
-        pipeline._proses_iku_sync(IKU, "m", ["6d"], None, PRODI)
+        pipeline._proses_iku_sync(IKU, "m", ["6d"], None, PRODI, "t1", "s1")
 
     assert tahap1.call_args.kwargs["prodi"] == PRODI
-    assert tahap2.call_args.kwargs["prodi"] == PRODI
+    assert skor.call_args.kwargs["prodi"] == PRODI
+    assert narasi.call_args.kwargs["prodi"] == PRODI
 
 
 def test_runner_hands_the_study_program_to_every_iku():
@@ -783,9 +1009,9 @@ def test_proses_iku_sync_uses_the_json_protocol_for_reasoning_models():
         patch("setor_led.pipeline.build_setor_llm") as bangun,
         patch("setor_led.pipeline.cari_capaian_json", return_value=(CAPAIAN, "bahan")) as json_loop,
         patch("setor_led.pipeline.cari_capaian") as native,
-        patch("setor_led.pipeline.tulis_evaluasi_narasi", return_value=("MELAMPAUI", INTI, None)),
+        _skor_dan_narasi(),
     ):
-        hasil = pipeline._proses_iku_sync(IKU, "deepseek-r1:32b", [], None, PRODI)
+        hasil = pipeline._proses_iku_sync(IKU, "deepseek-r1:32b", [], None, PRODI, "t1", "s1")
 
     json_loop.assert_called_once()
     native.assert_not_called()
@@ -798,7 +1024,7 @@ def test_proses_iku_sync_uses_the_json_protocol_for_reasoning_models():
     # Uji live OpenRouter: deepseek-r1 menjawab 400 "Reasoning is mandatory for this endpoint and cannot be disabled"
     # bila reasoning dimatikan. Model reasoning tidak boleh dimatikan reasoning-nya di tahap mana pun (seperti AMI).
     assert tahap2.kwargs["disable_reasoning"] is False
-    assert hasil["evaluasi"] == "MELAMPAUI"
+    assert hasil["score"] == 3.0
 
 
 def test_proses_iku_sync_keeps_native_tool_calling_for_other_models():
@@ -807,9 +1033,9 @@ def test_proses_iku_sync_keeps_native_tool_calling_for_other_models():
         patch("setor_led.pipeline.build_setor_llm") as bangun,
         patch("setor_led.pipeline.cari_capaian", return_value=(CAPAIAN, "bahan")) as native,
         patch("setor_led.pipeline.cari_capaian_json") as json_loop,
-        patch("setor_led.pipeline.tulis_evaluasi_narasi", return_value=("MELAMPAUI", INTI, None)),
+        _skor_dan_narasi(),
     ):
-        pipeline._proses_iku_sync(IKU, "qwen3.6:35b", [], None, None)
+        pipeline._proses_iku_sync(IKU, "qwen3.6:35b", [], None, None, "t1", "s1")
 
     native.assert_called_once()
     json_loop.assert_not_called()

@@ -1,7 +1,7 @@
 """Bentuk data proses "setor ke LED" (job SETOR_LED): input IKU, validasi keluaran LLM, dan
 bentuk hasil per IKU yang dikembalikan sebagai return value job (Job.result).
 
-Sengaja terpisah dari agent/ (AMI): Evaluasi di sini kategori tetap tiga nilai, bukan skor rubrik 0-4.
+Sengaja terpisah dari agent/ (AMI): hasil di sini berupa `score` 0-4 dari rubrik + narasi, tanpa capaian.
 """
 
 from __future__ import annotations
@@ -10,8 +10,6 @@ import math
 import re
 from dataclasses import dataclass
 
-EVALUASI: tuple[str, ...] = ("MELAMPAUI", "MEMENUHI", "BELUM_MEMENUHI")
-BELUM_MEMENUHI = "BELUM_MEMENUHI"
 NARASI_INTI: tuple[str, ...] = (
     "analisisKetercapaian",
     "usulanTargetTahunDepan",
@@ -102,38 +100,11 @@ def validasi_narasi(data: object, dengan_tambahan: bool) -> tuple[dict[str, str]
     return inti, _ambil_teks(sumber, NARASI_TAMBAHAN)
 
 
-def validasi_keluaran_llm(data: object) -> tuple[str, dict[str, str], dict[str, str] | None]:
-    """JSON tahap 2 -> (evaluasi, narasi inti, tambahan atau None). Bagian tambahan wajib hanya bila
-    BELUM_MEMENUHI dan diabaikan bila tidak. Raise SetorLedError bila tidak valid."""
-    if not isinstance(data, dict):
-        raise SetorLedError("Model tidak mengembalikan JSON yang bisa dibaca")
-
-    evaluasi = data.get("evaluasi")
-    if evaluasi not in EVALUASI:
-        raise SetorLedError(f"Evaluasi di luar daftar yang diizinkan: {evaluasi!r}")
-
-    inti = _ambil_teks(data, NARASI_INTI)
-    tambahan = None
-    if evaluasi == BELUM_MEMENUHI:
-        sumber = data.get("tambahan")
-        if not isinstance(sumber, dict):
-            raise SetorLedError(
-                "Bagian tambahan (faktor pendukung/penghambat, akar masalah, tindak lanjut) "
-                "wajib untuk IKU yang belum memenuhi standar"
-            )
-        tambahan = _ambil_teks(sumber, NARASI_TAMBAHAN)
-    return evaluasi, inti, tambahan
-
-
 def hasil_sukses(
-    kode: str, capaian: dict, evaluasi: str, inti: dict[str, str], tambahan: dict[str, str] | None
+    kode: str, score: float, inti: dict[str, str], tambahan: dict[str, str] | None
 ) -> dict:
-    hasil = {
-        "kode": kode,
-        "capaian": {"nilai": capaian["nilai"], "sumber": capaian["sumber"]},
-        "evaluasi": evaluasi,
-        **inti,
-    }
+    """Hasil satu IKU: skor rubrik + narasi. Capaian sengaja tidak ikut (ditampilkan sisi UI)."""
+    hasil = {"kode": kode, "score": score, **inti}
     if tambahan:
         hasil["tambahan"] = tambahan
     return hasil
