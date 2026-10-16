@@ -11,6 +11,8 @@ from setor_led.schema import (
     hasil_sukses,
     parse_iku_list,
     validasi_keluaran_llm,
+    validasi_narasi,
+    validasi_skor,
 )
 
 INTI = {
@@ -28,12 +30,12 @@ TAMBAHAN = {
 
 
 def _iku(**override):
-    return {"kode": "IKU.REL.MHS.3", "indikator": "Rata-rata IPK lulusan", "target": "RIPK ≥ 3,25", **override}
+    return {"kode": "IKU.REL.MHS.3", "indikator": "Rata-rata IPK lulusan", "target": "3", **override}
 
 
 def test_parse_iku_list_returns_trimmed_inputs():
     hasil = parse_iku_list([_iku(kode="  IKU.A  ")])
-    assert hasil == [IkuInput(kode="IKU.A", indikator="Rata-rata IPK lulusan", target="RIPK ≥ 3,25")]
+    assert hasil == [IkuInput(kode="IKU.A", indikator="Rata-rata IPK lulusan", target="3")]
 
 
 @pytest.mark.parametrize("raw", [None, [], "bukan list", {}])
@@ -58,9 +60,47 @@ def test_parse_iku_list_rejects_duplicate_kode():
         parse_iku_list([_iku(), _iku()])
 
 
-def test_parse_iku_list_keeps_unicode_target_verbatim():
-    hasil = parse_iku_list([_iku(target="3,5 < MS ≤ 4,5")])
-    assert hasil[0].target == "3,5 < MS ≤ 4,5"
+@pytest.mark.parametrize("target", ["0", "1", "2", "3", "4", " 4 "])
+def test_parse_iku_list_accepts_target_0_to_4(target):
+    assert parse_iku_list([_iku(target=target)])[0].target_skor == int(target)
+
+
+@pytest.mark.parametrize("target", ["5", "-1", "3.5", "tiga", "PJJ: RIPK ≥ 3,25", "3,5 < MS ≤ 4,5"])
+def test_parse_iku_list_rejects_non_score_target(target):
+    with pytest.raises(ValueError, match="target.*0-4"):
+        parse_iku_list([_iku(target=target)])
+
+
+@pytest.mark.parametrize("nilai", [0, 4, 3.7, "2", "3.25", 0.0])
+def test_validasi_skor_accepts_a_score_between_0_and_4(nilai):
+    assert validasi_skor(nilai) == float(nilai)
+
+
+@pytest.mark.parametrize("nilai", [4.01, -0.1, 5, "abc", "", None, True, float("nan"), [3]])
+def test_validasi_skor_rejects_everything_else(nilai):
+    with pytest.raises(SetorLedError, match="[Ss]kor"):
+        validasi_skor(nilai)
+
+
+def test_validasi_narasi_returns_inti_and_ignores_tambahan_when_not_asked():
+    inti, tambahan = validasi_narasi({**INTI, "tambahan": TAMBAHAN}, dengan_tambahan=False)
+    assert inti == INTI and tambahan is None
+
+
+def test_validasi_narasi_requires_complete_tambahan_when_asked():
+    inti, tambahan = validasi_narasi({**INTI, "tambahan": TAMBAHAN}, dengan_tambahan=True)
+    assert tambahan == TAMBAHAN
+    with pytest.raises(SetorLedError, match="tambahan"):
+        validasi_narasi(INTI, dengan_tambahan=True)
+    with pytest.raises(SetorLedError, match="tindakLanjut"):
+        validasi_narasi({**INTI, "tambahan": {**TAMBAHAN, "tindakLanjut": " "}}, dengan_tambahan=True)
+
+
+def test_validasi_narasi_rejects_missing_or_blank_inti():
+    with pytest.raises(SetorLedError, match="analisisKetercapaian"):
+        validasi_narasi({**INTI, "analisisKetercapaian": ""}, dengan_tambahan=False)
+    with pytest.raises(SetorLedError, match="JSON"):
+        validasi_narasi("bukan objek", dengan_tambahan=False)
 
 
 def test_validasi_accepts_memenuhi_without_tambahan():

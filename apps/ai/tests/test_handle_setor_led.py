@@ -7,7 +7,7 @@ import asyncio
 import contextlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
-IKU = {"kode": "IKU.REL.MHS.3", "indikator": "Rata-rata IPK lulusan", "target": "RIPK ≥ 3,25"}
+IKU = {"kode": "IKU.REL.MHS.3", "indikator": "Rata-rata IPK lulusan", "target": "3"}
 
 
 def _fake_job(**data):
@@ -61,7 +61,7 @@ def test_happy_path_returns_results_and_passes_scope_to_the_pipeline():
     assert kw["accreditation_set_id"] == "set-1" and kw["study_program_id"] == "prodi-1"
     assert kw["model"] == "qwen3.6:35b"  # default = model pertama yang dikonfigurasi
     iku_list = d["jalankan_setor_led"].call_args.args[0]
-    assert [(i.kode, i.target) for i in iku_list] == [("IKU.REL.MHS.3", "RIPK ≥ 3,25")]
+    assert [(i.kode, i.target) for i in iku_list] == [("IKU.REL.MHS.3", "3")]
 
 
 def test_cancelled_run_keeps_the_partial_results():
