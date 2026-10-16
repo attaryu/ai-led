@@ -1,0 +1,414 @@
+# Implementasi Fitur Penilaian Indikator pada LED Editor
+
+## 1. Tujuan Pengembangan
+
+Tambahkan fitur **Penilaian Indikator** pada halaman LED Editor yang terintegrasi dengan API `POST /dokumen/:id/setor-led`.
+
+Fitur ini memungkinkan pengguna memilih indikator penilaian yang relevan dengan section aktif, menentukan target menggunakan skor 0–4, dan menghasilkan tabel analisis IKU secara otomatis menggunakan data LKPS, narasi LED, serta bukti pendukung.
+
+**Perubahan utama:** Ketika pengguna memilih indikator untuk dinilai, tombol **Generate** pada LED Editor tidak lagi menjalankan proses pembuatan narasi LED biasa, melainkan menjalankan API Setor ke LED. Hasil API kemudian ditampilkan dalam bentuk tabel terstruktur pada kanvas editor.
+
+Implementasi harus mengikuti arsitektur frontend dan backend yang sudah tersedia. Jangan membuat mekanisme baru apabila fungsi, service, hook, atau komponen yang dibutuhkan sudah tersedia dalam proyek.
+
+---
+
+## 2. Penempatan Komponen pada LED Editor
+
+Pada halaman LED Editor, tambahkan komponen baru bernama **Penilaian Indikator** di dalam tab **Panduan**, tepat di bawah card **Panduan Penulisan** yang sudah tersedia.
+
+Gunakan referensi desain berikut:
+
+`/home/dimas/Pictures/Screenshots/Screenshot from 2026-10-16 08-33-41.png`
+
+Komponen harus mengikuti desain aplikasi yang sudah ada, termasuk warna, tipografi, jarak antarelemen, ukuran komponen, dan konsistensi layout.
+
+Jangan mengubah struktur utama LED Editor, sidebar daftar isi, toolbar, atau komponen Panduan Penulisan.
+
+### Struktur komponen
+
+**Judul:** Penilaian Indikator
+
+**Deskripsi:** Pilih indikator yang perlu dinilai dan tentukan skor untuk masing-masing indikator.
+
+Setiap indikator harus ditampilkan dalam card atau item terpisah yang berisi:
+
+1. Checkbox untuk menentukan apakah indikator akan dinilai.
+2. Teks lengkap indikator penilaian.
+3. Label `Skor`.
+4. Select/dropdown dengan pilihan angka 0, 1, 2, 3, dan 4.
+
+Tidak perlu menggunakan switch button. Cukup gunakan checkbox sebagai satu-satunya kontrol untuk mengaktifkan atau menonaktifkan indikator.
+
+### Perilaku checkbox dan select
+
+- Secara default, seluruh checkbox tidak dicentang.
+- Ketika checkbox dicentang, indikator masuk dalam daftar penilaian.
+- Ketika checkbox dicentang, select skor menjadi aktif.
+- Ketika checkbox tidak dicentang, select skor disabled.
+- Placeholder select adalah `Pilih skor`.
+- Skor harus berupa integer 0–4.
+- Nilai 0 merupakan skor yang valid, bukan nilai kosong.
+- Indikator yang tidak dicentang tidak boleh dikirim ke API.
+- Jika indikator dicentang tetapi skor belum dipilih, tampilkan validasi.
+- Jika checkbox dinonaktifkan, nilai skor sebelumnya boleh dipertahankan dalam state lokal, tetapi tidak boleh masuk request selama indikator tidak dipilih.
+
+Di bagian bawah komponen tampilkan jumlah indikator yang tersedia, jumlah indikator yang dipilih, dan tombol `Reset`.
+
+Indikator yang ditampilkan harus sesuai dengan indikator penilaian yang telah dipetakan pada section aktif. Jangan menampilkan indikator dari section lain.
+
+Gunakan ID atau kode indikator yang stabil dari data sumber. Jangan membuat kode acak berdasarkan indeks tampilan.
+
+---
+
+## 3. Contoh Data Indikator
+
+Untuk contoh implementasi pada section C.1 Diferensiasi Misi (Visi, Misi, Tujuan, dan Strategi), gunakan tiga indikator berikut:
+
+**Indikator 1**
+
+Pernyataan VMTS yang unik dan spesifik sebagai identitas PT, UPPS, dan visi keilmuan program studi sebagai keunggulan kompetitif yang didukung dengan renstra dan kurikulum yang memadai.
+
+**Indikator 2**
+
+Mekanisme dan keterlibatan pemangku kepentingan dalam penyusunan VMTS UPPS dan tujuan utama yang ingin dicapai dalam penyusunan visi keilmuan program studi dengan mempertimbangkan kebutuhan masyarakat dan tantangan global.
+
+**Indikator 3**
+
+Tingkat pemahaman dan pencapaian VMTS UPPS dan visi keilmuan program studi oleh seluruh pemangku kepentingan internal dan eksternal serta pencapaian konkret jangka pendek dan jangka menengah yang telah ditetapkan dalam VMTS UPPS dan visi keilmuan program studi.
+
+Ketiga indikator tersebut hanya contoh untuk memastikan tampilan dan alur fitur berjalan. Dalam implementasi sebenarnya, gunakan data indikator yang terhubung dengan instrumen akreditasi dan section aktif.
+
+---
+
+## 4. Perubahan Perilaku Tombol Generate
+
+Perbarui mekanisme tombol **Generate** yang sudah tersedia pada toolbar LED Editor.
+
+### Kondisi A — Tidak ada indikator yang dipilih
+
+Jika tidak ada checkbox indikator yang dicentang, tombol Generate tetap menjalankan mekanisme generasi narasi LED seperti sebelumnya.
+
+Jangan mengubah fungsi generate narasi yang sudah berjalan.
+
+### Kondisi B — Ada indikator yang dipilih
+
+Jika satu atau lebih indikator dicentang:
+
+1. Validasi seluruh indikator yang dipilih sudah memiliki skor.
+2. Susun payload berdasarkan indikator terpilih.
+3. Jalankan API `POST /dokumen/:id/setor-led`.
+4. Jangan menjalankan generator narasi LED biasa.
+5. Tampilkan progres pekerjaan.
+6. Setelah proses berhasil, ambil hasil job.
+7. Konversikan output API menjadi tabel penilaian.
+8. Render hasil pada kanvas Tiptap Editor melalui struktur ProseMirror yang valid.
+
+Selama request berlangsung, tombol Generate harus disabled dan menampilkan loading state agar pengguna tidak mengirim job duplikat.
+
+Jika validasi gagal, jangan mengirim request API.
+
+---
+
+## 5. Integrasi API Setor ke LED
+
+Gunakan endpoint backend yang sudah tersedia:
+
+`POST /dokumen/:id/setor-led`
+
+Header:
+
+`Authorization: Bearer <accessToken>`
+
+`Content-Type: application/json`
+
+### Pemetaan input dari UI
+
+Setiap indikator yang dicentang dipetakan menjadi:
+
+- `kode`: kode unik indikator dari sumber data.
+- `indikator`: teks lengkap indikator.
+- `target`: skor yang dipilih pengguna, dikonversi menjadi string.
+
+Contoh: pengguna mencentang indikator pertama dan kedua, kemudian memilih skor 3 dan 2.
+
+Payload:
+
+```json
+{
+  "ikuList": [
+    {
+      "kode": "IKU.C1.1",
+      "indikator": "Pernyataan VMTS yang unik dan spesifik sebagai identitas PT, UPPS, dan visi keilmuan program studi sebagai keunggulan kompetitif yang didukung dengan renstra dan kurikulum yang memadai.",
+      "target": "3"
+    },
+    {
+      "kode": "IKU.C1.2",
+      "indikator": "Mekanisme dan keterlibatan pemangku kepentingan dalam penyusunan VMTS UPPS dan tujuan utama yang ingin dicapai dalam penyusunan visi keilmuan program studi dengan mempertimbangkan kebutuhan masyarakat dan tantangan global.",
+      "target": "2"
+    }
+  ],
+  "sumberLed": "EDITOR"
+}
+```
+
+Kode `IKU.C1.1` dan `IKU.C1.2` hanya ilustrasi; gunakan kode asli yang tersedia di sistem.
+
+Parameter `lkpsBuktiDukungId` hanya dikirim apabila diperlukan berdasarkan konfigurasi LKPS dokumen. Parameter `model` mengikuti model yang dipilih atau dikonfigurasi pada aplikasi.
+
+**Penting terkait target:** API Setor ke LED menggunakan `target` sebagai standar capaian untuk evaluasi IKU. Pada rancangan UI ini, nilai dropdown 0–4 dipetakan ke `target` sesuai permintaan. Namun, periksa terlebih dahulu apakah backend dan instrumen akreditasi benar-benar mendukung penilaian menggunakan target skor 0–4. Jangan mengasumsikan bahwa skor penilaian otomatis setara dengan target capaian IKU.
+
+Jika kontrak backend belum mendukung interpretasi tersebut, identifikasi perubahan yang diperlukan tanpa diam-diam mengubah makna penilaian.
+
+---
+
+## 6. Mekanisme Job dan Pengambilan Hasil
+
+API `POST /dokumen/:id/setor-led` tidak langsung menghasilkan tabel penilaian. Endpoint tersebut membuat asynchronous job.
+
+Setelah request berhasil, respons akan mengembalikan ID job.
+
+Gunakan:
+
+`GET /jobs/:id`
+
+untuk mengambil status dan hasil proses.
+
+Tangani status berikut:
+
+- `WAITING`: menunggu antrean.
+- `ACTIVE`: sedang diproses.
+- `COMPLETED`: pekerjaan selesai dijalankan.
+- `FAILED`: pekerjaan gagal karena exception.
+
+Ketika status `COMPLETED`, tetap periksa `result.status` karena job bisa selesai dengan hasil `completed`, `cancelled`, atau `error`.
+
+Jika `result.status` adalah `completed`, baca array `result.hasil`.
+
+Jika ada indikator yang gagal diproses, jangan menggagalkan seluruh tabel. Tetap tampilkan indikator tersebut dengan informasi yang tersedia dan bagian hasil yang belum ditemukan dalam keadaan kosong agar dapat diedit manual.
+
+Jika terjadi kegagalan seluruh job, tampilkan pesan error tanpa menghapus konten editor sebelumnya.
+
+Jangan membuat hasil evaluasi, angka capaian, atau narasi pengganti secara otomatis ketika backend tidak mengembalikan data tersebut.
+
+---
+
+## 7. Konversi Output API menjadi Tabel LED
+
+Setelah API berhasil mengembalikan hasil, konversikan setiap elemen `result.hasil[]` menjadi satu tabel penilaian indikator.
+
+**Satu indikator menghasilkan satu tabel.**
+
+Jangan menggabungkan seluruh indikator ke dalam satu tabel besar karena setiap indikator dapat memiliki analisis dan rekomendasi yang berbeda.
+
+### Struktur tabel utama
+
+Setiap tabel wajib memiliki lima kolom:
+
+| No | Indikator | Target | Capaian | Evaluasi |
+|---|---|---|---|---|
+| [kode] | [indikator] | [target] | [capaian.nilai] dan [capaian.sumber] | [evaluasi] |
+
+Gunakan nilai dari request untuk kolom `No`, `Indikator`, dan `Target`.
+
+Gunakan nilai dari respons API untuk kolom `Capaian` dan `Evaluasi`.
+
+Pemetaan evaluasi:
+
+- `MELAMPAUI` → Melampaui standar
+- `MEMENUHI` → Memenuhi standar
+- `BELUM_MEMENUHI` → Belum memenuhi standar
+
+### Baris analisis
+
+Di bawah baris utama, tambahkan baris-baris yang masing-masing menggunakan merged cell sepanjang lima kolom tabel.
+
+Urutannya:
+
+**Analisis Ketercapaian**
+
+Isi menggunakan `analisisKetercapaian`.
+
+**Strategi Pencapaian**
+
+Isi menggunakan `strategiPencapaian`.
+
+**Sarpras Dibutuhkan**
+
+Isi menggunakan `sarprasDibutuhkan`.
+
+**Usulan Target Tahun Depan**
+
+Isi menggunakan `usulanTargetTahunDepan`.
+
+Setiap bagian memiliki baris judul dan baris isi tersendiri agar mudah dibaca dan diedit.
+
+### Kondisi BELUM_MEMENUHI
+
+Jika nilai `evaluasi` adalah `BELUM_MEMENUHI`, tambahkan empat bagian berikut setelah Usulan Target Tahun Depan:
+
+**Faktor Pendukung**
+
+Isi menggunakan `tambahan.faktorPendukung`.
+
+**Faktor Penghambat**
+
+Isi menggunakan `tambahan.faktorPenghambat`.
+
+**Akar Masalah**
+
+Isi menggunakan `tambahan.akarMasalah`.
+
+**Tindak Lanjut**
+
+Isi menggunakan `tambahan.tindakLanjut`.
+
+Keempat bagian hanya ditambahkan ketika API mengembalikan objek `tambahan` yang sesuai. Jangan membuat isi secara mandiri jika backend tidak menyediakannya.
+
+Jika evaluasi `MEMENUHI` atau `MELAMPAUI`, tampilkan hanya struktur utama beserta empat bagian analisis yang selalu tersedia.
+
+---
+
+## 8. Rendering Tabel Menggunakan Tiptap dan ProseMirror
+
+LED Editor sudah menggunakan Tiptap berbasis ProseMirror. Oleh karena itu, hasil Setor ke LED harus dibuat sebagai **node tabel Tiptap yang valid**, bukan teks biasa, tabel Markdown, atau HTML string yang ditempelkan langsung tanpa konversi.
+
+Gunakan extension tabel yang telah tersedia di proyek, termasuk mekanisme `table`, `tableRow`, `tableCell`, `tableHeader`, dan atribut `colspan` sesuai skema Tiptap yang digunakan aplikasi.
+
+### Ketentuan struktur
+
+1. Buat tabel dengan lima kolom utama.
+2. Baris pertama berisi header: No, Indikator, Target, Capaian, Evaluasi.
+3. Baris kedua berisi nilai hasil penilaian.
+4. Setiap bagian analisis menggunakan satu cell dengan `colspan: 5`.
+5. Judul analisis ditampilkan tebal.
+6. Isi analisis ditampilkan sebagai teks normal dalam baris tersendiri.
+7. Pertahankan line break atau penomoran pada strategi pencapaian dan sarpras.
+8. Pastikan tabel dapat diedit langsung menggunakan Tiptap Editor.
+9. Pastikan tabel dapat disimpan dan dimuat ulang melalui mekanisme penyimpanan dokumen yang sudah ada.
+10. Jangan menggunakan struktur JSON tabel dari sistem generator narasi lama jika tidak kompatibel dengan skema editor.
+
+Gunakan helper atau command Tiptap yang sudah tersedia bila memungkinkan.
+
+Jika hasil dibangun menggunakan ProseMirror JSON, pastikan semua node dan atribut sesuai dengan schema editor yang aktif.
+
+### Penanganan konten editor sebelumnya
+
+Jangan menghapus atau menimpa seluruh isi LED Editor hanya karena pengguna menjalankan Setor ke LED.
+
+Hasil penilaian sebaiknya disisipkan pada posisi kursor atau pada posisi tabel penilaian yang ditentukan dalam section aktif.
+
+Jika implementasi membutuhkan penggantian tabel lama, gunakan identitas tabel atau indikator yang stabil untuk mencegah duplikasi ketika pengguna menjalankan Generate kembali.
+
+Apabila tabel dari indikator yang sama sudah ada, sediakan mekanisme pembaruan tabel atau konfirmasi sebelum mengganti hasil sebelumnya.
+
+---
+
+## 9. Penanganan Berbagai Kondisi Output
+
+### Kondisi 1 — MELAMPAUI
+
+Jika capaian melampaui target:
+
+- Tampilkan evaluasi `Melampaui standar`.
+- Tampilkan empat bagian analisis utama.
+- Jangan menampilkan bagian tambahan jika tidak dikembalikan API.
+
+### Kondisi 2 — MEMENUHI
+
+Jika capaian memenuhi target:
+
+- Tampilkan evaluasi `Memenuhi standar`.
+- Tampilkan empat bagian analisis utama.
+- Jangan menampilkan bagian tambahan jika tidak dikembalikan API.
+
+### Kondisi 3 — BELUM_MEMENUHI
+
+Jika capaian belum memenuhi target:
+
+- Tampilkan evaluasi `Belum memenuhi standar`.
+- Tampilkan empat bagian analisis utama.
+- Tambahkan Faktor Pendukung, Faktor Penghambat, Akar Masalah, dan Tindak Lanjut berdasarkan respons API.
+
+### Kondisi 4 — Capaian tidak ditemukan
+
+Jika elemen hasil berisi `error`:
+
+- Tetap buat tabel menggunakan indikator dan target yang dikirim.
+- Jangan menampilkan capaian atau evaluasi palsu.
+- Kosongkan bagian yang tidak memiliki data.
+- Tampilkan pesan atau status bahwa capaian tidak ditemukan.
+- Biarkan pengguna melengkapi tabel secara manual.
+
+---
+
+## 10. Integrasi dengan State dan Data Section
+
+Pilihan checkbox dan skor harus terkait dengan section aktif, bukan hanya state global yang digunakan bersama seluruh section.
+
+Ketika pengguna berpindah section:
+
+- Tampilkan indikator yang sesuai dengan section baru.
+- Jangan membawa pilihan indikator section sebelumnya.
+- Pertahankan pilihan indikator pada section asal selama sesi editing atau melalui penyimpanan yang sesuai dengan arsitektur aplikasi.
+- Pastikan perubahan nilai skor tidak mengubah data indikator pada section lain.
+
+Gunakan data indikator yang berasal dari instrumen akreditasi atau hasil ekstraksi matriks penilaian yang sudah tersedia.
+
+Jika belum ada mekanisme penghubung indikator ke section, periksa arsitektur data yang ada terlebih dahulu dan tentukan integrasi yang sesuai.
+
+Jangan melakukan hardcode daftar indikator contoh sebagai data produksi.
+
+---
+
+## 11. Validasi dan Pengujian
+
+Pastikan implementasi memenuhi skenario berikut:
+
+1. Semua checkbox kosong → Generate tetap membuat narasi LED seperti sebelumnya.
+2. Satu indikator dicentang tanpa skor → tampilkan validasi dan jangan panggil API.
+3. Satu indikator dicentang dengan skor 0 → request valid dan target dikirim sebagai `"0"`.
+4. Dua indikator dicentang → hanya dua indikator tersebut dikirim dalam `ikuList`.
+5. Indikator tidak dicentang → tidak masuk payload.
+6. Request berhasil → polling status job sampai selesai.
+7. Evaluasi `MELAMPAUI` → tampilkan tabel tanpa bagian tambahan.
+8. Evaluasi `MEMENUHI` → tampilkan tabel tanpa bagian tambahan.
+9. Evaluasi `BELUM_MEMENUHI` → tampilkan tabel beserta empat bagian tambahan.
+10. Satu IKU mengalami `error` → tabel IKU lain tetap ditampilkan.
+11. Job gagal → editor tidak kehilangan isi sebelumnya.
+12. Hasil tabel dapat diedit, disimpan, dan dimuat ulang.
+13. Menjalankan ulang Generate tidak menyebabkan duplikasi tabel tanpa kontrol.
+14. Perpindahan section tidak mencampurkan indikator dan skor.
+15. Output yang disisipkan tetap kompatibel dengan Tiptap dan ProseMirror.
+
+---
+
+## 12. Batasan Implementasi
+
+- Jangan mengubah endpoint backend jika kontrak saat ini sudah mencukupi.
+- Jangan membuat endpoint baru tanpa kebutuhan teknis yang jelas.
+- Jangan mengubah mekanisme generate narasi ketika tidak ada indikator yang dipilih.
+- Jangan mengubah desain utama LED Editor.
+- Jangan menggunakan switch button; gunakan checkbox dan select skor.
+- Jangan menghasilkan narasi LED biasa ketika mode penilaian indikator aktif.
+- Jangan memasukkan indikator yang tidak dipilih ke dalam request.
+- Jangan memperlakukan angka 0 sebagai nilai kosong.
+- Jangan membuat nilai capaian atau evaluasi ketika API tidak menemukannya.
+- Jangan menambahkan faktor pendukung, penghambat, akar masalah, atau tindak lanjut secara otomatis di luar respons API.
+- Jangan menulis output dalam bentuk Markdown mentah ke editor.
+- Jangan menghapus konten section sebelumnya saat menyisipkan tabel.
+
+## 13. Hasil Akhir yang Diharapkan
+
+Implementasi selesai apabila:
+
+1. Tab Panduan memiliki komponen Penilaian Indikator di bawah Panduan Penulisan.
+2. Setiap indikator memiliki checkbox dan select skor 0–4.
+3. Tombol Generate dapat membedakan mode generasi narasi dan mode penilaian indikator.
+4. Mode penilaian memanggil API Setor ke LED menggunakan indikator yang dipilih.
+5. Sistem mengambil hasil job dan mengubahnya menjadi tabel.
+6. Setiap indikator menghasilkan satu tabel dengan header, capaian, evaluasi, serta bagian analisis.
+7. Indikator `BELUM_MEMENUHI` memiliki empat bagian analisis tambahan.
+8. Tabel dihasilkan sebagai struktur Tiptap/ProseMirror yang valid, dapat diedit, disimpan, dan dimuat ulang.
+9. Seluruh perilaku lama LED Editor tetap berfungsi tanpa regresi.
+
+Sebelum melakukan perubahan kode, analisis terlebih dahulu komponen LED Editor, sumber data indikator, handler tombol Generate, service API, dan mekanisme penyisipan tabel Tiptap yang sudah ada. Gunakan hasil analisis tersebut untuk mengintegrasikan fitur dengan perubahan seminimal mungkin.

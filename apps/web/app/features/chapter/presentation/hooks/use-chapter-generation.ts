@@ -111,7 +111,6 @@ export function useChapterGeneration({
 	onGeneratedRef.current = onGenerated;
 	const [pustaka, setPustaka] = React.useState<EvidenceEntity[]>([]);
 	const [kataKunci, setKataKunci] = React.useState('');
-	const [prompt, setPrompt] = React.useState('');
 	const [terpilih, setTerpilih] = React.useState<ReadonlySet<string>>(
 		() => new Set(),
 	);
@@ -529,7 +528,7 @@ export function useChapterGeneration({
 				const job = await chapterRemoteSource.generateSection(
 					chapter.id,
 					sectionId,
-					prompt.trim() || undefined,
+					undefined,
 					draftId,
 					[...terpilih],
 				);
@@ -543,7 +542,7 @@ export function useChapterGeneration({
 				hapusJobTertunda(chapter.id, JENIS_JOB);
 				return null;
 			}
-		}, [enabled, status, terpilih, chapter, prompt, tunggu]);
+		}, [enabled, status, terpilih, chapter, tunggu]);
 
 	return {
 		daftar,
@@ -565,8 +564,6 @@ export function useChapterGeneration({
 		tandaiUnggahanBaru,
 		/** Unggahan dari panel ini yang masih menunggu ekstraksinya selesai. */
 		jumlahMenungguOtomatis: menungguOtomatis.size,
-		prompt,
-		setPrompt,
 		status,
 		pesanGagal,
 		peringatanChecklist,

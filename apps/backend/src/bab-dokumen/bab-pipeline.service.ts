@@ -5,6 +5,7 @@ import { JobsService } from '../jobs/jobs.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { BabAccessService } from './bab-access.service';
 import { ConfirmRecommendationDto } from './dto/confirm-recommendation.dto';
+import { collectGroupSubtree, resolveAnchorGroupId } from './section-indicator.util';
 
 type ProseNode = Record<string, unknown>;
 
@@ -72,6 +73,58 @@ export class BabPipelineService {
     return sections.map(({ activeCheckpoint, ...section }) => ({
       ...section,
       content: activeCheckpoint?.contentSnapshot ?? section.content,
+    }));
+  }
+
+  /**
+   * GET bab/:id/sections/:sectionId/indikator -- indikator matriks penilaian
+   * yang dipetakan ke section ini (dasar panel "Penilaian Indikator").
+   *
+   * Pemetaan lewat tabel `set_section_criterion_links` (jangkar), diwarisi
+   * sub-bab lewat parentId -- lihat section-indicator.util.ts. Kosong bila set
+   * akreditasi dokumen belum dipilih, belum ada tautan, atau section ini di luar
+   * jangkar mana pun; itu keadaan sah, bukan galat.
+   */
+  async findIndicatorsForSection(id: string, sectionId: string) {
+    const bab = await this.access.findOneScoped(id);
+    const setId = bab.document.accreditationSetId;
+    if (!setId) return [];
+
+    const sections = await this.prisma.chapterSection.findMany({
+      where: { chapterId: id },
+      select: { id: true, parentId: true, title: true },
+    });
+    if (!sections.some((s) => s.id === sectionId)) {
+      throw new NotFoundException('Section tidak ditemukan');
+    }
+
+    const links = await this.prisma.setSectionCriterionLink.findMany({
+      where: { accreditationSetId: setId },
+      select: { criterionGroupId: true, subBabTemplate: { select: { title: true } } },
+    });
+    const groupId = resolveAnchorGroupId(
+      sectionId,
+      sections,
+      links.map((l) => ({ templateTitle: l.subBabTemplate.title, criterionGroupId: l.criterionGroupId })),
+    );
+    if (!groupId) return [];
+
+    const groups = await this.prisma.rubricCriterionGroup.findMany({
+      where: { accreditationSetId: setId },
+      select: { id: true, parentId: true },
+    });
+    const criteria = await this.prisma.rubricCriterion.findMany({
+      where: { accreditationSetId: setId, groupId: { in: [...collectGroupSubtree(groupId, groups)] } },
+      orderBy: [{ indicatorNo: 'asc' }, { subNo: 'asc' }],
+      select: { id: true, criterionCode: true, indicatorNo: true, subNo: true, description: true, scoreType: true },
+    });
+    return criteria.map((c) => ({
+      id: c.id,
+      kode: c.criterionCode,
+      no: c.indicatorNo,
+      subNo: c.subNo ?? '',
+      deskripsi: c.description,
+      tipeSkor: c.scoreType,
     }));
   }
 

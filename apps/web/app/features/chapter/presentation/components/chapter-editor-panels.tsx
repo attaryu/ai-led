@@ -13,6 +13,7 @@ import { ChapterChatPanel } from './chapter-chat-panel';
 import { ChapterGenerationPanel, type KontrolGenerate } from './chapter-generation-panel';
 import { ChapterQualityPanel } from './chapter-quality-panel';
 import { ChapterGuidancePanel } from './chapter-guidance-panel';
+import { type PenilaianIndikator } from '../hooks/use-indicator-assessment';
 import { ChapterReferencePanel } from './chapter-reference-panel';
 import { ChapterReviewPanel } from './chapter-review-panel';
 import { SectionDraftPanel } from './section-draft-panel';
@@ -77,6 +78,7 @@ export function ChapterEditorPanels({
 	izin,
 	onGenerated,
 	onKontrolGenerate,
+	penilaian,
 	ambilSnapshotSection,
 	onSectionRestored,
 	onReviewed,
@@ -96,6 +98,8 @@ export function ChapterEditorPanels({
 	onGenerated: (hasil: HasilGenerate) => void;
 	/** Tombol Generate section terbuka di toolbar editor (dimas) -- lihat ChapterGenerationPanel. */
 	onKontrolGenerate: (kontrol: KontrolGenerate | null) => void;
+	/** Penilaian Indikator section aktif (tab Panduan) — dipegang halaman editor, lihat useIndicatorAssessment. */
+	penilaian: PenilaianIndikator;
 	/** Checkpoint section — dipakai tab Draft saat section terbuka. */
 	ambilSnapshotSection: () => Promise<ChapterSectionEntity | undefined>;
 	onSectionRestored: (hasil: HasilPulihSection) => void;
@@ -232,7 +236,7 @@ export function ChapterEditorPanels({
 				value="panduan"
 				className="flex min-h-0 flex-1 flex-col overflow-hidden"
 			>
-				<ChapterGuidancePanel chapter={chapter} section={section} />
+				<ChapterGuidancePanel chapter={chapter} section={section} penilaian={penilaian} />
 			</TabsContent>
 
 			<TabsContent

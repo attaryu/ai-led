@@ -101,6 +101,18 @@ export class BabDokumenController {
     return this.babPipelineService.findSections(id);
   }
 
+  @Get('bab/:id/sections/:sectionId/indikator')
+  @Protected(...READ_ROLES)
+  @ApiOperation({
+    summary: 'Indikator matriks penilaian yang dipetakan ke section ini (panel Penilaian Indikator)',
+  })
+  findIndicatorsForSection(
+    @Param('id') id: string,
+    @Param('sectionId') sectionId: string,
+  ) {
+    return this.babPipelineService.findIndicatorsForSection(id, sectionId);
+  }
+
   @Get('bab/:id/sections/:sectionId/sumber')
   @Protected(...READ_ROLES)
   @ApiOperation({

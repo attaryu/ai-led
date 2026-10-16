@@ -44,6 +44,10 @@ import { usePanelResize } from '../hooks/use-panel-resize';
 import { useSectionSources } from '../hooks/use-section-sources';
 import { CITATION_LABEL_ATTR, sisipkanTautanSitasi } from '../utils/citation-links';
 import { editorExtensions } from '../utils/editor-extensions';
+import { sisipkanTabelSetor, kodeYangSudahAda } from '../utils/sisipkan-tabel-setor';
+import { bangunSemuaTabelSetor } from '../../domain/entities/indicator-assessment.entity';
+import { useIndicatorAssessment } from '../hooks/use-indicator-assessment';
+import { useConfirmDialog } from '~/core/components/ui/confirm-dialog';
 
 /**
  * Lapis 4 — Editor Bab (docs/application_flow.md §7).
@@ -475,6 +479,13 @@ function ChapterEditorWorkspace({
 	// Hanya hak akses yang pindah ke state; `content` Tiptap tetap dibaca sekali
 	// dari prop, persis seperti yang dijaga catatan di atas.
 	const izin = useChapterPermission(babView, studyProgramId);
+	const penilaian = useIndicatorAssessment({
+		babId: chapter.id,
+		dokumenId: chapter.ledProjectId,
+		sectionId: section?.id ?? null,
+		bisaEdit: izin.canEdit,
+	});
+	const { konfirmasi, confirmDialog } = useConfirmDialog();
 	const autosave = useChapterAutosave({
 		chapterId: chapter.id,
 		sectionId: section?.id ?? null,
@@ -611,6 +622,35 @@ function ChapterEditorWorkspace({
 	);
 
 	/**
+	 * Tombol Generate di toolbar: bila ada indikator dicentang, yang berjalan
+	 * adalah Setor ke LED (tabel penilaian disisipkan ke kanvas) — generator
+	 * narasi LED TIDAK dijalankan. Tanpa indikator terpilih, perilaku lama.
+	 * Isi kanvas tidak pernah ditimpa: tabel disisipkan setelah blok tempat
+	 * kursor berada, dan tabel indikator yang sama hanya diganti dengan konfirmasi.
+	 */
+	const jalankanGenerateToolbar = React.useCallback(async () => {
+		if (penilaian.jumlahDipilih === 0) {
+			await kontrolGenerate?.jalankan();
+			return;
+		}
+		const hasil = await penilaian.jalankan();
+		if (!hasil || !editor) return;
+		const tabel = bangunSemuaTabelSetor(hasil.ikuList, hasil.hasil);
+		const sudahAda = kodeYangSudahAda(editor, tabel);
+		let ganti = new Set<string>();
+		if (sudahAda.length > 0) {
+			const lanjut = await konfirmasi({
+				judul: 'Ganti tabel penilaian yang sudah ada?',
+				deskripsi: `Tabel untuk indikator ${sudahAda.join(', ')} sudah ada di section ini. Mengganti akan menimpa isinya, termasuk suntingan manual. Pilih Batal untuk mempertahankannya dan hanya menyisipkan tabel yang baru.`,
+				labelAksi: 'Ganti',
+				merusak: true,
+			});
+			if (lanjut) ganti = new Set(sudahAda);
+		}
+		sisipkanTabelSetor(editor, tabel, ganti);
+	}, [penilaian, kontrolGenerate, editor, konfirmasi]);
+
+	/**
 	 * Isi SECTION yang benar-benar terkini, untuk checkpoint tab Draft saat
 	 * sebuah section terbuka. `flush()` dulu supaya backend sudah punya
 	 * ketikan terakhir sebelum checkpoint dibuat, lalu baca `editor.getHTML()`
@@ -716,16 +756,16 @@ function ChapterEditorWorkspace({
 								<Button
 									type="button"
 									size="sm"
-									disabled={kontrolGenerate.berjalan}
-									onClick={() => void kontrolGenerate.jalankan()}
+									disabled={kontrolGenerate.berjalan || penilaian.berjalan}
+									onClick={() => void jalankanGenerateToolbar()}
 									className="cursor-pointer"
 								>
-									{kontrolGenerate.berjalan ? (
+									{kontrolGenerate.berjalan || penilaian.berjalan ? (
 										<SpinnerGapIcon className="size-4 animate-spin" />
 									) : (
 										<SparkleIcon className="size-4" />
 									)}
-									{kontrolGenerate.berjalan ? 'Menulis…' : 'Generate'}
+									{penilaian.berjalan ? 'Menilai…' : kontrolGenerate.berjalan ? 'Menulis…' : 'Generate'}
 								</Button>
 							</div>
 						)}
@@ -823,6 +863,7 @@ function ChapterEditorWorkspace({
 						izin={izin}
 						onGenerated={adopsiIsiBaru}
 						onKontrolGenerate={setKontrolGenerate}
+						penilaian={penilaian}
 						ambilSnapshotSection={ambilSnapshotSection}
 						onSectionRestored={pulihkanSection}
 						// `setSectionTerkini`, bukan `adopsiIsiBaru`: review tidak menyentuh
@@ -839,6 +880,8 @@ function ChapterEditorWorkspace({
 					/>
 				</div>
 			</Tabs>
+
+			{confirmDialog}
 
 			{sectionTerkini && (
 				<SectionTableSpecDialog

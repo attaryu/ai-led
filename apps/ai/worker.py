@@ -2811,6 +2811,10 @@ async def _handle_ingestion_rubrik_dokumen(job) -> dict:
         return {"status": "error", "accreditationSetId": accreditation_set_id, "reason": _err_msg(e)}
 
     _set_status("SIAP", None)
+    # Rubrik baru ditulis ulang (id grup berubah) -> hitung ulang jangkar section-kriteria.
+    from ingestion.section_criterion_linker import safe_relink_for_set
+
+    safe_relink_for_set(tenant_id, accreditation_set_id)
     return {"status": "completed", "accreditationSetId": accreditation_set_id, "count": count}
 
 

@@ -10,7 +10,9 @@ import {
 	type BarisPanduan,
 	type KelompokPanduan,
 } from '../hooks/use-chapter-guidance';
+import { type PenilaianIndikator } from '../hooks/use-indicator-assessment';
 import { ChapterGuidanceDetailSheet } from './chapter-guidance-detail-sheet';
+import { ChapterIndicatorAssessment } from './chapter-indicator-assessment';
 
 /**
  * Isi tab "Panduan" — panduan set akreditasi dokumen ini yang jadi rujukan
@@ -64,10 +66,13 @@ import { ChapterGuidanceDetailSheet } from './chapter-guidance-detail-sheet';
 export function ChapterGuidancePanel({
 	chapter,
 	section,
+	penilaian,
 }: {
 	chapter: ChapterEntity;
 	/** Section yang sedang dibuka di kanvas, atau `null` saat tampilan bab-penuh. */
 	section: ChapterSectionEntity | null;
+	/** Penilaian Indikator section aktif; dipegang halaman editor karena tombol Generate di toolbar memakainya. */
+	penilaian?: PenilaianIndikator;
 }) {
 	const hasil = useChapterGuidance({
 		urutanBab: chapter.urutanBab,
@@ -114,6 +119,7 @@ export function ChapterGuidancePanel({
 							tabelLkps={pedomanInline.tabelLkps}
 						/>
 					)}
+					{section && penilaian && <ChapterIndicatorAssessment penilaian={penilaian} />}
 					{pedomanInline && kelompok.length === 0 ? null : kelompok.length === 0 ? (
 						/*
 						 * Kalimat keduanya yang menahan bacaannya: panel kosong tanpa

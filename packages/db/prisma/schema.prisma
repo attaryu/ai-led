@@ -662,6 +662,7 @@ model AccreditationSet {
   tenant         Tenant                 @relation(fields: [tenantId], references: [id])
   criteria       RubricCriterion[]
   criterionGroups RubricCriterionGroup[]
+  sectionLinks   SetSectionCriterionLink[]
   documents      ReferenceGuide[]       @relation("SetOwnedDocuments")
   panduan        ReferenceGuide?        @relation("SetPanduan", fields: [panduanId], references: [id], onDelete: SetNull)
   documentsUsing LedDocument[]
@@ -726,12 +727,54 @@ model SubBabTemplate {
   chapterTemplate ChapterTemplate  @relation(fields: [chapterTemplateId], references: [id], onDelete: Cascade)
   parent          SubBabTemplate?  @relation("SubBabTemplateChildren", fields: [parentId], references: [id], onDelete: Cascade)
   children        SubBabTemplate[] @relation("SubBabTemplateChildren")
+  criterionLinks  SetSectionCriterionLink[]
 
   // Lihat komentar ChapterSection di atas: bukan @@unique lagi karena
   // order sekarang bersaing per parent, dan NULL parentId membuat constraint
   // unik tidak benar-benar menjaga level teratas di Postgres.
   @@index([chapterTemplateId, parentId])
   @@map("sub_bab_templates")
+}
+
+enum SectionLinkMethod {
+  JUDUL_SAMA
+  KEYWORD_INDIKATOR
+  URUTAN
+  MANUAL
+}
+
+enum SectionLinkStatus {
+  OTOMATIS
+  PERLU_TINJAU
+  DIKONFIRMASI
+}
+
+/// Jangkar penghubung Panduan <-> matriks penilaian, dihitung saat ekstraksi
+/// (apps/ai/ingestion/section_criterion_linker.py). Satu baris = satu section
+/// jangkar di Panduan (mis. "Akuntabilitas" di bawah "Kriteria Akreditasi")
+/// yang dipasangkan ke satu grup rubrik (KRITERIA, atau KELOMPOK seperti B).
+/// Sub-bab di bawah jangkar TIDAK punya baris: mereka mewarisi lewat parent_id.
+/// Kuncinya (set, template) -- bukan kolom di SubBabTemplate -- karena satu
+/// Panduan dipakai banyak AccreditationSet dengan rubrik berbeda.
+model SetSectionCriterionLink {
+  id                 String            @id @default(cuid())
+  accreditationSetId String            @map("accreditation_set_id")
+  subBabTemplateId   String            @map("sub_bab_template_id")
+  criterionGroupId   String            @map("criterion_group_id")
+  matchMethod        SectionLinkMethod @map("match_method")
+  /// Skor overlap, hanya untuk KEYWORD_INDIKATOR.
+  confidence         Float?
+  status             SectionLinkStatus @default(OTOMATIS)
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+
+  accreditationSet AccreditationSet     @relation(fields: [accreditationSetId], references: [id], onDelete: Cascade)
+  subBabTemplate   SubBabTemplate       @relation(fields: [subBabTemplateId], references: [id], onDelete: Cascade)
+  criterionGroup   RubricCriterionGroup @relation(fields: [criterionGroupId], references: [id], onDelete: Cascade)
+
+  @@unique([accreditationSetId, subBabTemplateId])
+  @@index([criterionGroupId])
+  @@map("set_section_criterion_links")
 }
 
 enum AccreditationSetStatus {
@@ -817,6 +860,7 @@ model RubricCriterionGroup {
   parent           RubricCriterionGroup?  @relation("RubricGroupChildren", fields: [parentId], references: [id], onDelete: Cascade)
   children         RubricCriterionGroup[] @relation("RubricGroupChildren")
   criteria         RubricCriterion[]
+  sectionLinks     SetSectionCriterionLink[]
 
   // Unique (set, parent, label) dibuat di SQL dengan COALESCE(parent_id,'') --
   // tingkat teratas punya parentId null, dan NULL != NULL membuat @@unique

@@ -891,4 +891,8 @@ def confirm_structure_staging(tenant_id: str, guide_id: str, accepted_ids: set[s
                WHERE id = %s""",
             (guide_id,),
         )
+    # Template baru ditulis ulang (id berubah) -> hitung ulang jangkar tiap set yang memakai Panduan ini.
+    from ingestion.section_criterion_linker import safe_relink_for_guide
+
+    safe_relink_for_guide(tenant_id, guide_id)
     return count

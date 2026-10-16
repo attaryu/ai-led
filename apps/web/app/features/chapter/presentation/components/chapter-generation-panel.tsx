@@ -1,6 +1,5 @@
 import * as React from 'react';
 import {
-	CaretDownIcon,
 	FolderIcon,
 	MagnifyingGlassIcon,
 	SparkleIcon,
@@ -13,7 +12,6 @@ import { Button } from '~/core/components/ui/button';
 import { Checkbox } from '~/core/components/ui/checkbox';
 import { Input } from '~/core/components/ui/input';
 import { ScrollArea } from '~/core/components/ui/scroll-area';
-import { Textarea } from '~/core/components/ui/textarea';
 import { formatRelativeTimeLong } from '~/core/lib/format-time';
 import { EvidenceStatusBadge } from '~/features/evidence/presentation/components/evidence-status-badge';
 import { EvidenceUploadDialog } from '~/features/evidence/presentation/components/evidence-upload-dialog';
@@ -100,8 +98,6 @@ export function ChapterGenerationPanel({
 		namaProdi,
 		tandaiUnggahanBaru,
 		jumlahMenungguOtomatis,
-		prompt,
-		setPrompt,
 		status,
 		pesanGagal,
 		peringatanChecklist,
@@ -195,14 +191,6 @@ export function ChapterGenerationPanel({
 			if (terpilih.has(bukti.id) === semuaTerpilih) toggle(bukti);
 		}
 	}
-
-	/**
-	 * Prompt tertutup secara bawaan karena ia memang opsional (§12.1 bahkan tidak
-	 * menyebutnya sama sekali): membiarkannya terbuka berarti tiga baris ruang
-	 * hilang dari daftar bukti dukung di setiap sesi, termasuk yang tidak pernah
-	 * mengisinya.
-	 */
-	const [promptTerbuka, setPromptTerbuka] = React.useState(false);
 
 	const { rekomendasi } = rekomendasiDokumen;
 
@@ -315,7 +303,7 @@ export function ChapterGenerationPanel({
 				</div>
 			</div>
 
-			{/* Daftar bukti mengisi sisa tinggi panel; prompt tambahan menempel di bawah (bukan menyisakan ruang kosong). */}
+			{/* Daftar bukti mengisi sisa tinggi panel; aksi menempel di bawah (bukan menyisakan ruang kosong). */}
 			<div className="flex min-h-0 flex-1 flex-col">
 				<div className="flex min-h-0 flex-1 flex-col px-5 pb-2">
 					{/*
@@ -458,30 +446,7 @@ export function ChapterGenerationPanel({
 					{izin.canEdit ? (
 						<>
 							<div className="flex items-center justify-between gap-2">
-								<button
-									type="button"
-									onClick={() => setPromptTerbuka((terbuka) => !terbuka)}
-									disabled={sedangBerjalan}
-									aria-expanded={promptTerbuka}
-									aria-controls="prompt-generate"
-									className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-								>
-									<CaretDownIcon
-										className={
-											promptTerbuka
-												? 'size-3 shrink-0 rotate-180 transition-transform'
-												: 'size-3 shrink-0 transition-transform'
-										}
-									/>
-									<span className="truncate">
-										{/*
-										 * Prompt yang terisi lalu dilipat tetap ikut terkirim.
-										 * Tanpa penanda ini, pengguna tidak punya cara tahu bahwa
-										 * generate berikutnya masih membawa arahan lama.
-										 */}
-										Prompt tambahan{!promptTerbuka && prompt.trim() && ' · terisi'}
-									</span>
-								</button>
+								<span />
 
 								{sections.dimuat && sections.sections.length === 0 && (
 									<Button
@@ -520,25 +485,6 @@ export function ChapterGenerationPanel({
 									Buka satu section di Daftar Isi, lalu tekan Generate di toolbar editor.
 								</p>
 							)}
-
-							{/*
-							 * Tetap terpasang saat dilipat, bukan dilepas dari pohon: tombol di
-							 * atas menunjuknya lewat `aria-controls`, dan acuan ke elemen yang
-							 * tidak ada membuat pola disclosure-nya tidak bisa diikuti pembaca
-							 * layar. Atribut `hidden` sudah cukup mengeluarkannya dari urutan
-							 * tab maupun pohon aksesibilitas.
-							 */}
-							<Textarea
-								id="prompt-generate"
-								hidden={!promptTerbuka}
-								rows={2}
-								value={prompt}
-								onChange={(event) => setPrompt(event.target.value)}
-								disabled={sedangBerjalan}
-								placeholder="Arahan khusus untuk AI, misal: fokus pada capaian tiga tahun terakhir."
-								aria-label="Prompt tambahan (opsional)"
-								className="max-h-28 min-h-14 resize-none py-1.5 text-xs"
-							/>
 
 							{sedangBerjalan && (
 								<p className="text-xs leading-relaxed text-muted-foreground">

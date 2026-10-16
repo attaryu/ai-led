@@ -50,7 +50,8 @@ export class BabDokumenService {
     const chapters = await this.prisma.documentChapter.findMany({
       where: { documentId: dokumenId },
       orderBy: { chapterOrder: 'asc' },
-      include: withSectionListSelect,
+      // buktiDukungBab ikut: ringkasan progres dashboard menghitung "Bukti Dukung Dipakai" darinya.
+      include: { ...withSectionListSelect, buktiDukungBab: true },
     });
     return chapters.map(withSectionList);
   }
