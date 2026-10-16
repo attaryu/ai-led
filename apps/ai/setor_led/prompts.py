@@ -242,7 +242,8 @@ def bangun_prompt_variabel(
         f"Gunakan persis nama variabel ini sebagai kunci: {', '.join(nama)}.\n"
         if nama
         else "Beri nama variabel sesuai singkatan yang dipakai rumus dan deskripsi level (mis. NDS3, NDTPS). "
-        "Hanya sertakan variabel yang benar-benar dibutuhkan.\n"
+        "Sertakan hanya angka dasar yang dibutuhkan; variabel turunan (yang dihitung dari angka dasar lain, mis. "
+        "persentase atau rasio) tidak perlu disertakan karena dihitung pada langkah berikutnya.\n"
     )
     return f"""Anda menyiapkan angka untuk menghitung skor rubrik akreditasi (skala 0-4) satu indikator.
 

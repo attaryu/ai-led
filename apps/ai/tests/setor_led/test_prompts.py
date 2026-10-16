@@ -215,3 +215,5 @@ def test_variabel_prompt_has_formula_levels_capaian_bahan_and_forbids_guessing()
 def test_variabel_prompt_lets_the_model_name_variables_when_no_names_are_given():
     prompt = bangun_prompt_variabel(SKOR_IKU, CAPAIAN_VAR, RUBRIK, "", None)
     assert "persis" not in prompt and "singkatan" in prompt.lower()
+    # Uji data nyata: model melaporkan variabel turunan (A, B, PDTT) sebagai null padahal bisa dihitung di ekspresi.
+    assert "turunan" in prompt.lower() and "tidak perlu" in prompt.lower()
