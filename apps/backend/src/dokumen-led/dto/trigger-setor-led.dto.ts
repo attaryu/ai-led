@@ -9,6 +9,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   ValidateNested,
 } from 'class-validator';
 
@@ -28,10 +29,12 @@ export class IkuInputDto {
   @IsNotEmpty()
   indikator!: string;
 
-  @ApiProperty({ example: 'PJJ: RIPK ≥ 3,25' })
+  @ApiProperty({ example: '3', description: 'Skor target 0-4 (bilangan bulat) untuk indikator rubrik ini' })
   @Transform(trim)
   @IsString()
   @IsNotEmpty()
+  // Skor hasil dibandingkan dengan target ini sebagai angka; teks bebas (mis. "≥ 3,25") tidak bisa dibandingkan.
+  @Matches(/^[0-4]$/, { message: 'target harus bilangan bulat 0-4' })
   target!: string;
 }
 

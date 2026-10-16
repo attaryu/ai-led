@@ -2,7 +2,7 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { TriggerSetorLedDto } from './trigger-setor-led.dto';
 
-const iku = { kode: 'IKU.REL.MHS.3', indikator: 'Rata-rata minimal IPK lulusan', target: 'PJJ: RIPK ≥ 3,25' };
+const iku = { kode: 'IKU.REL.MHS.3', indikator: 'Rata-rata minimal IPK lulusan', target: '3' };
 
 async function errorsFor(plain: unknown) {
   return validate(plainToInstance(TriggerSetorLedDto, plain), {
@@ -32,9 +32,22 @@ describe('TriggerSetorLedDto', () => {
     }
   });
 
-  it('keeps the unicode target verbatim', async () => {
-    const dto = plainToInstance(TriggerSetorLedDto, { ikuList: [{ ...iku, target: '3,5 < MS ≤ 4,5' }] });
-    expect(dto.ikuList[0].target).toBe('3,5 < MS ≤ 4,5');
+  it('accepts every target from 0 to 4', async () => {
+    for (const target of ['0', '1', '2', '3', '4']) {
+      expect(await errorsFor({ ikuList: [{ ...iku, target }] })).toHaveLength(0);
+    }
+  });
+
+  it('rejects a target that is not a 0-4 integer', async () => {
+    for (const target of ['5', '-1', '3.5', '03', 'tiga', 'PJJ: RIPK ≥ 3,25', '3,5 < MS ≤ 4,5']) {
+      expect(await errorsFor({ ikuList: [{ ...iku, target }] })).not.toHaveLength(0);
+    }
+  });
+
+  it('trims the target before checking it', async () => {
+    const dto = plainToInstance(TriggerSetorLedDto, { ikuList: [{ ...iku, target: ' 4 ' }] });
+    expect(dto.ikuList[0].target).toBe('4');
+    expect(await errorsFor({ ikuList: [{ ...iku, target: ' 4 ' }] })).toHaveLength(0);
   });
 
   it('rejects unknown properties', async () => {

@@ -354,7 +354,7 @@ describe('DokumenLedService.triggerAssessment — pilihan per sub-indikator', ()
 
 describe('DokumenLedService.triggerSetorLed', () => {
   const ctx = { tenantId: 't1', role: Role.PENYUSUN, studyProgramId: 'p1' };
-  const iku = { kode: 'IKU.REL.MHS.3', indikator: 'Rata-rata minimal IPK lulusan', target: 'RIPK ≥ 3,25' };
+  const iku = { kode: 'IKU.REL.MHS.3', indikator: 'Rata-rata minimal IPK lulusan', target: '3' };
   const payload = (m: ReturnType<typeof makeService>) =>
     (m.jobsService.enqueue as jest.Mock).mock.calls[0][1] as Record<string, unknown>;
 
