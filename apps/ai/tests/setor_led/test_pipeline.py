@@ -1080,3 +1080,37 @@ def test_proses_iku_sync_keeps_native_tool_calling_for_other_models():
     assert bangun.call_args_list[0].kwargs["tools"] == pipeline.TOOLS
     assert bangun.call_args_list[1].kwargs["num_predict"] == 3000
     assert bangun.call_args_list[1].kwargs.get("disable_reasoning") is None  # model chat: bawaan (dimatikan tanpa tools)
+
+
+# ── skor minimum rubrik ("Tidak ada skor kurang dari N") ──────────────────────────────────────────────────────────
+
+RUBRIK_LEVEL_MIN2 = RubrikIndikator(
+    kode="1", deskripsi="VMTS", score_type="KUALITATIF",
+    levels={4: "sangat baik", 2: "cukup", 1: "Tidak ada skor kurang dari 2.", 0: "Tidak ada skor kurang dari 2."},
+    formula=None, sub_score_formula=None,
+)
+RUBRIK_BERSIH_MIN2 = RubrikIndikator(
+    kode="9", deskripsi="Dana operasional", score_type="KUANTITATIF",
+    levels={4: "BOP >= 10.000.000", 1: "Tidak ada skor kurang dari 2."}, formula="(2 x BOP) / 5.000.000", sub_score_formula=None,
+)
+
+
+@pytest.mark.parametrize("dijawab, hasil", [(0, 2.0), (1, 2.0), (2, 2.0), (3, 3.0), (4, 4.0)])
+def test_level_score_is_raised_to_the_rubric_minimum(dijawab, hasil):
+    llm = FakeLLM(json.dumps({"score": dijawab, "alasan": "x"}))
+    assert tentukan_skor(llm, IKU, CAPAIAN, RUBRIK_LEVEL_MIN2, "") == hasil
+
+
+def test_formula_score_is_raised_to_the_rubric_minimum():
+    llm = FakeLLM(json.dumps({"variabel": {"BOP": 3500000}}))  # (2 x 3.500.000) / 5.000.000 = 1,4 < 2
+    assert tentukan_skor(llm, IKU, CAPAIAN, RUBRIK_BERSIH_MIN2, "") == 2.0
+
+
+def test_formula_score_above_the_minimum_is_untouched():
+    llm = FakeLLM(json.dumps({"variabel": {"BOP": 9250000}}))
+    assert tentukan_skor(llm, IKU, CAPAIAN, RUBRIK_BERSIH_MIN2, "") == 3.7
+
+
+def test_a_rubric_without_a_floor_keeps_the_models_low_score():
+    llm = FakeLLM(json.dumps({"score": 0, "alasan": "x"}))
+    assert tentukan_skor(llm, IKU, CAPAIAN, RUBRIK_LEVEL, "") == 0.0

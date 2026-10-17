@@ -410,12 +410,15 @@ def tentukan_skor(
     if mode == "rumus_bersih":
         ekspresi = ekspresi_bersih(rubrik.formula)
         variabel = ambil_variabel(llm, iku, capaian, rubrik, bahan, variabel_ekspresi(ekspresi), model, cancel_event, prodi)
-        return hitung_skor_rumus(ekspresi, variabel)
-    if mode == "rumus_prosa":
+        skor = hitung_skor_rumus(ekspresi, variabel)
+    elif mode == "rumus_prosa":
         variabel = ambil_variabel(llm, iku, capaian, rubrik, bahan, None, model, cancel_event, prodi)
         ekspresi = tulis_ekspresi(llm, iku, {**capaian, "variabel": variabel}, rubrik, bahan, model, cancel_event, prodi)
-        return hitung_skor_rumus(ekspresi, variabel)
-    return pilih_level(llm, iku, capaian, rubrik, bahan, model, cancel_event, prodi)
+        skor = hitung_skor_rumus(ekspresi, variabel)
+    else:
+        skor = pilih_level(llm, iku, capaian, rubrik, bahan, model, cancel_event, prodi)
+    # Rubrik kadang menyatakan "tidak ada skor kurang dari N"; model (terutama reasoning) tidak selalu mematuhinya.
+    return max(skor, rubrik.skor_minimum)
 
 
 def tulis_narasi(

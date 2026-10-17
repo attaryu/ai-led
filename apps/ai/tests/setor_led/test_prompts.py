@@ -217,3 +217,11 @@ def test_variabel_prompt_lets_the_model_name_variables_when_no_names_are_given()
     assert "persis" not in prompt and "singkatan" in prompt.lower()
     # Uji data nyata: model melaporkan variabel turunan (A, B, PDTT) sebagai null padahal bisa dihitung di ekspresi.
     assert "turunan" in prompt.lower() and "tidak perlu" in prompt.lower()
+
+
+def test_pilih_level_and_ekspresi_prompts_state_the_minimum_score_only_when_the_rubric_has_one():
+    dengan = RubrikIndikator(kode="1", deskripsi="d", score_type="KUALITATIF",
+                             levels={4: "baik", 1: "Tidak ada skor kurang dari 2."}, formula="PDS3 = A / B", sub_score_formula=None)
+    for bangun in (bangun_prompt_pilih_level, bangun_prompt_ekspresi):
+        assert "Skor minimum rubrik: 2" in bangun(SKOR_IKU, CAPAIAN_VAR, dengan, "")
+        assert "Skor minimum" not in bangun(SKOR_IKU, CAPAIAN_VAR, RUBRIK, "")

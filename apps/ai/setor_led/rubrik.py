@@ -24,6 +24,21 @@ class RubrikIndikator:
     formula: str | None
     sub_score_formula: str | None
 
+    @property
+    def skor_minimum(self) -> float:
+        """Batas bawah yang dinyatakan teks level ("Tidak ada skor kurang dari 2"); 0 bila tidak ada. Spasi dibuang
+        dulu karena ekstraksi PDF kadang menghasilkan "T i d a k a d a s k o r ..."; hanya angka 0-4 yang dikenali,
+        jadi "kurang dari 10" (bagian kalimat level lain) tidak terbaca sebagai batas."""
+        batas = [
+            int(m.group(1))
+            for teks in self.levels.values()
+            if (m := _BATAS_BAWAH.search(re.sub(r"\s+", "", teks or "").lower()))
+        ]
+        return float(max(batas, default=0))
+
+
+_BATAS_BAWAH = re.compile(r"tidakada(?:skor)?(?:yang)?kurangdari([0-4])(?!\d)")
+
 
 def muat_rubrik(tenant_id: str, accreditation_set_id: str, kode: str) -> RubrikIndikator:
     """Rubrik indikator `kode` di Instrumen Akreditasi dokumen. Nol baris atau lebih dari satu -> SetorLedError:

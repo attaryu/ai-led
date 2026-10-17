@@ -164,3 +164,40 @@ def test_ekspresi_bersih_rejects_juxtaposed_multiplication_so_the_model_must_exp
 def test_ekspresi_bersih_still_accepts_spaced_multiplication():
     assert ekspresi_bersih("(A x B) + C") == "(A * B) + C"
     assert mode_penilaian(_rubrik(score_type="KUANTITATIF", formula=FORMULA_NYATA_32)) == "rumus_prosa"
+
+
+# ── skor minimum dari teks rubrik ("Tidak ada skor kurang dari 2") ───────────────────────────────────────────────
+
+def _dengan_level(**levels):
+    return _rubrik(levels={int(k[1:]): v for k, v in levels.items()})
+
+
+@pytest.mark.parametrize(
+    "teks, minimum",
+    [
+        ("Tidak ada skor kurang dari 2.", 2.0),
+        ("Tidak ada Skor kurang dari 1", 1.0),
+        ("T i d a k a d a s k o r kurang dari 1.", 1.0),  # hasil ekstraksi PDF nyata (indikator 40)
+        ("Tidak ada kurang dari 1", 1.0),  # varian nyata (indikator 21)
+        ("Tidak ada skor yang kurang dari 2", 2.0),
+    ],
+)
+def test_skor_minimum_reads_the_rubric_floor_sentence(teks, minimum):
+    assert _dengan_level(L1=teks, L0=teks).skor_minimum == minimum
+
+
+@pytest.mark.parametrize(
+    "teks",
+    [
+        "Hasil Penelitian dan Pengabdian kepada Masyarakat (PkM) kurang dari 10",  # bukan batas skor (indikator 19)
+        "Tidak ada skor kurang dari 10",  # di luar skala 0-4
+        "Jika PDS3 < 20%, maka Skor = 2 + (PDS3 x 10).",
+        "",
+    ],
+)
+def test_skor_minimum_ignores_text_that_is_not_a_floor(teks):
+    assert _dengan_level(L3=teks, L1=teks).skor_minimum == 0.0
+
+
+def test_skor_minimum_takes_the_highest_floor_when_levels_disagree():
+    assert _dengan_level(L1="Tidak ada skor kurang dari 1", L0="Tidak ada skor kurang dari 2").skor_minimum == 2.0
