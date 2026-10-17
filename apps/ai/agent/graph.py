@@ -27,7 +27,7 @@ from agent.tools.formula_tool import compute_formula_score
 from agent.tools.led_tool import search_led_evidence
 from agent.tools.lkps_tool import get_lkps_table
 from agent.tools.rubric_tool import get_indicator_rubric
-from ingestion.matrix_parser import sub_no_dari
+from ingestion.matrix_parser import skor_minimum_dari_level, sub_no_dari
 from llm.ollama_client import OllamaClient
 
 logger = logging.getLogger(__name__)
@@ -409,6 +409,26 @@ def _parse_json_array(text: str) -> Optional[list]:
     except json.JSONDecodeError:
         return None
     return parsed if isinstance(parsed, list) else None
+
+
+def apply_rubric_floor(
+    rubric_json: Optional[str], score: Optional[float]
+) -> tuple[Optional[float], Optional[str]]:
+    """Naikkan skor ke batas bawah yang dinyatakan rubrik ("Tidak ada skor kurang dari N"); (score, justification_suffix),
+    suffix hanya bila skor berubah. Model (terutama reasoning) tidak selalu mematuhi kalimat itu: pada benchmark yang
+    ada, 25 dari 93 skor pada indikator berbatas bawah berada di bawah batasnya."""
+    if score is None or not rubric_json:
+        return score, None
+    try:
+        rubric = json.loads(rubric_json)
+    except (json.JSONDecodeError, TypeError):
+        return score, None
+    if not isinstance(rubric, dict):
+        return score, None
+    floor = skor_minimum_dari_level(rubric.get("score_criteria") or {})
+    if score >= floor:
+        return score, None
+    return floor, f" [Skor disesuaikan ke batas minimum rubrik ({floor:g}); penilai semula memberi {score:g}.]"
 
 
 def compute_decimal_score(
@@ -958,13 +978,17 @@ def build_graph(ollama_client: OllamaClient, disable_evidence: bool = False) -> 
         """Refine the agent's whole-number SKOR into a proportional decimal via compute_decimal_score."""
         rubric_json = find_tool_result(state["messages"], "get_indicator_rubric")
         evidence_text = collect_evidence_text(state["messages"])
+        # Batas bawah rubrik DULU: refinement desimal membaca band skor dasar, jadi skor yang melanggar batas tidak
+        # boleh sampai ke sana.
+        base_score, floor_suffix = apply_rubric_floor(rubric_json, state.get("final_score"))
         refined_score, suffix = compute_decimal_score(
-            rubric_json, state.get("final_score"), evidence_text,
+            rubric_json, base_score, evidence_text,
             state.get("justification") or "", llm,
         )
         state["final_score"] = refined_score
-        if suffix:
-            state["justification"] = (state.get("justification") or "") + suffix
+        extra = (floor_suffix or "") + (suffix or "")
+        if extra:
+            state["justification"] = (state.get("justification") or "") + extra
         return state
 
     # ── Node: evidence_snapshot (masukan judge on-demand, tanpa LLM) ─────────

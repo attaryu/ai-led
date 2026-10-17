@@ -195,7 +195,7 @@ sehingga pembatalan bisa memakan waktu sampai selesainya panggilan itu.
   menghitungnya. **Kualitatif / tanpa rumus**: model memilih level 0–4 dari deskripsi rubrik. Skor adalah **estimasi
   atas LED setengah jadi** dan boleh berbeda dari skor AMI.
 - Bila teks level rubrik menyatakan "Tidak ada skor kurang dari N", `score` tidak pernah lebih rendah dari N (disebut di
-  prompt dan dijaga kode). Aturan ini hanya berlaku di setor ke LED, tidak di AMI, sehingga skor keduanya bisa berbeda.
+  prompt dan dijaga kode). AMI menerapkan batas yang sama (dengan satu kalimat penjelasan di justifikasi bila skor dinaikkan), sehingga aturan ini tidak membedakan skor setor ke LED dari skor AMI.
 - Capaian yang hanya bisa ditebak sengaja dianggap tidak ditemukan (tidak ada narasi "diperkirakan"). Untuk indikator
   berumus, angka mentah yang tidak dinyatakan eksplisit membuat IKU `error` yang menyebut nama variabelnya.
 - Server menyertakan nama dan jenjang program studi dokumen (D3/D4/S1/S2/S3) ke model. Jenis seperti PJJ tidak

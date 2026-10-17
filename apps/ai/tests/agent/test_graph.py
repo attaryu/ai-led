@@ -1258,3 +1258,84 @@ def test_build_graph_auto_forwards_disable_evidence(monkeypatch):
     monkeypatch.setattr(graph_mod, "build_graph", lambda client, **kw: seen.update(kw))
     graph_mod.build_graph_auto(MagicMock(model="x"), disable_evidence=True)
     assert seen == {"disable_evidence": True}
+
+
+# ── skor minimum rubrik ("Tidak ada skor kurang dari N") ───────────────────────
+
+def _floor_rubric_json(score_type="qualitative", floor=2):
+    import json
+    return json.dumps({
+        "score_type": score_type,
+        "score_criteria": {
+            "3": "Kriteria band 3.", "2": "Kriteria band 2.",
+            "1": f"Tidak ada skor kurang dari {floor}.", "0": f"Tidak ada skor kurang dari {floor}.",
+        },
+        "formula": None,
+    })
+
+
+def test_apply_rubric_floor_raises_a_score_below_the_stated_minimum_and_says_so():
+    from agent.graph import apply_rubric_floor
+
+    score, suffix = apply_rubric_floor(_floor_rubric_json(), 1.0)
+    assert score == 2.0
+    assert "batas minimum rubrik (2)" in suffix and "semula memberi 1" in suffix
+
+
+def test_apply_rubric_floor_raises_a_decimal_below_the_minimum():
+    from agent.graph import apply_rubric_floor
+
+    assert apply_rubric_floor(_floor_rubric_json(), 1.5)[0] == 2.0
+
+
+@pytest.mark.parametrize("score", [2.0, 3.0, 3.6, 4.0])
+def test_apply_rubric_floor_leaves_scores_at_or_above_the_minimum_untouched(score):
+    from agent.graph import apply_rubric_floor
+
+    assert apply_rubric_floor(_floor_rubric_json(), score) == (score, None)
+
+
+def test_apply_rubric_floor_ignores_rubrics_without_a_minimum_and_bad_input():
+    import json
+    from agent.graph import apply_rubric_floor
+
+    sans = json.dumps({"score_type": "qualitative", "score_criteria": {"3": "x", "0": "y"}})
+    assert apply_rubric_floor(sans, 0.0) == (0.0, None)
+    assert apply_rubric_floor(None, 1.0) == (1.0, None)
+    assert apply_rubric_floor("bukan json", 1.0) == (1.0, None)
+    assert apply_rubric_floor(_floor_rubric_json(), None) == (None, None)
+
+
+def test_graph_raises_a_below_minimum_score_before_the_decimal_refinement():
+    """Skor 1 pada rubrik berbatas 2 menjadi 2 SEBELUM refinement desimal (yang membaca band skor itu)."""
+    from langchain_core.messages import AIMessage
+    from llm.ollama_client import OllamaClient
+    from agent.graph import build_graph
+
+    rubric_tool_call = AIMessage(
+        content="", tool_calls=[{"name": "get_indicator_rubric", "args": {"indicator_no": 1}, "id": "call_1"}]
+    )
+    final_answer = AIMessage(content="SKOR: 1\nJUSTIFIKASI: Bukti terbatas.\nCONFIDENCE: 0.6\nREKOMENDASI: Lengkapi.")
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = [
+        rubric_tool_call, AIMessage(content="- Item satu"), final_answer,
+        AIMessage(content="[]"),  # band-diff kosong -> tidak ada desimal
+    ]
+    fake_client = OllamaClient(base_url="http://fake:11434", model="test-model", timeout_seconds=30)
+
+    with (
+        patch("agent.graph._build_llm", return_value=fake_llm),
+        patch("agent.tools.rubric_tool._get_rubrics_for_set") as mock_rubrics,
+    ):
+        mock_rubrics.return_value = [
+            MagicMock(
+                no=1, kriteria="VMTS", indikator="...", score_type="qualitative",
+                score_criteria={"3": "Kriteria band 3.", "2": "Kriteria band 2.",
+                                "1": "Tidak ada skor kurang dari 2.", "0": "Tidak ada skor kurang dari 2."},
+                formula=None, lkps_table_ref=None, sub_score_formula=None,
+            )
+        ]
+        result = build_graph(fake_client).invoke(_make_state(), config={"recursion_limit": 40})
+
+    assert result["final_score"] == 2.0
+    assert "batas minimum rubrik (2)" in result["justification"]

@@ -29,6 +29,7 @@ from agent.graph import (
     CHECKLIST_PROMPT_TEMPLATE,
     _accumulate_sources,
     _EMPTY_SOURCES,
+    apply_rubric_floor,
     compute_decimal_score,
     formula_data_confirmed_unavailable,
     parse_checklist,
@@ -588,13 +589,17 @@ def build_reasoning_graph(ollama_client: OllamaClient, disable_evidence: bool = 
         """Refine the agent's whole-number score into a proportional decimal via compute_decimal_score."""
         rubric_json = _find_reasoning_tool_result(state["messages"], "get_indicator_rubric")
         evidence_text = _collect_reasoning_evidence_text(state["messages"])
+        # Batas bawah rubrik DULU: refinement desimal membaca band skor dasar, jadi skor yang melanggar batas tidak
+        # boleh sampai ke sana.
+        base_score, floor_suffix = apply_rubric_floor(rubric_json, state.get("final_score"))
         refined_score, suffix = compute_decimal_score(
-            rubric_json, state.get("final_score"), evidence_text,
+            rubric_json, base_score, evidence_text,
             state.get("justification") or "", llm,
         )
         state["final_score"] = refined_score
-        if suffix:
-            state["justification"] = (state.get("justification") or "") + suffix
+        extra = (floor_suffix or "") + (suffix or "")
+        if extra:
+            state["justification"] = (state.get("justification") or "") + extra
         return state
 
     def evidence_snapshot_node(state: AssessmentState) -> AssessmentState:

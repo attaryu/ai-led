@@ -85,6 +85,23 @@ def sub_no_dari(obj) -> str:
     return nilai if isinstance(nilai, str) else ""
 
 
+# Rubrik menyatakan batas bawah di teks level: "Tidak ada skor kurang dari 2". Spasi dibuang dulu karena ekstraksi PDF
+# kadang menghasilkan "T i d a k a d a s k o r ..."; hanya angka 0-4 yang dikenali, jadi bagian kalimat level lain
+# seperti "kurang dari 10" tidak terbaca sebagai batas.
+_BATAS_BAWAH_LEVEL = re.compile(r"tidakada(?:skor)?(?:yang)?kurangdari([0-4])(?!\d)")
+
+
+def skor_minimum_dari_level(levels) -> float:
+    """Batas bawah skor yang dinyatakan teks level rubrik (`levels`: skor -> teks); 0.0 bila tidak ada. Bila beberapa
+    level menyebut batas berbeda, yang tertinggi dipakai."""
+    batas = [
+        int(m.group(1))
+        for teks in (levels or {}).values()
+        if (m := _BATAS_BAWAH_LEVEL.search(re.sub(r"\s+", "", teks or "").lower()))
+    ]
+    return float(max(batas, default=0))
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

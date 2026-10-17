@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from agent.tools.formula_tool import compute_formula_score
 from db.postgres_client import get_rubric_criteria_by_code
+from ingestion.matrix_parser import skor_minimum_dari_level
 from setor_led.schema import SetorLedError
 
 
@@ -26,18 +27,9 @@ class RubrikIndikator:
 
     @property
     def skor_minimum(self) -> float:
-        """Batas bawah yang dinyatakan teks level ("Tidak ada skor kurang dari 2"); 0 bila tidak ada. Spasi dibuang
-        dulu karena ekstraksi PDF kadang menghasilkan "T i d a k a d a s k o r ..."; hanya angka 0-4 yang dikenali,
-        jadi "kurang dari 10" (bagian kalimat level lain) tidak terbaca sebagai batas."""
-        batas = [
-            int(m.group(1))
-            for teks in self.levels.values()
-            if (m := _BATAS_BAWAH.search(re.sub(r"\s+", "", teks or "").lower()))
-        ]
-        return float(max(batas, default=0))
-
-
-_BATAS_BAWAH = re.compile(r"tidakada(?:skor)?(?:yang)?kurangdari([0-4])(?!\d)")
+        """Batas bawah dari teks level ("Tidak ada skor kurang dari 2"); 0 bila tidak ada. Pembacaannya dipakai bersama
+        AMI (ingestion.matrix_parser.skor_minimum_dari_level)."""
+        return skor_minimum_dari_level(self.levels)
 
 
 def muat_rubrik(tenant_id: str, accreditation_set_id: str, kode: str) -> RubrikIndikator:

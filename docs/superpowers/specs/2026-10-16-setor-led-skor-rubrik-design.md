@@ -96,9 +96,11 @@ IKU `error` tetap `{ kode, error }`.
    - Rubrik tidak ditemukan untuk `kode`, lebih dari satu baris, atau tanpa level 0–4 (bila diperlukan): IKU `error`.
    - **Skor minimum.** Bila teks level menyatakan "Tidak ada skor kurang dari N" (N dari 0–4; 31 dari 64 indikator di
      `matrix.json`: 20 berbatas 1, 11 berbatas 2), N disebut di prompt pemilih level dan prompt ekspresi, dan skor akhir
-     dari jalur mana pun dinaikkan ke N (`max(skor, N)`). Model reasoning tidak selalu mematuhi batas itu. Hanya berlaku
-     di setor LED; AMI tidak berubah (pada benchmark AMI yang ada, 25 dari 93 skor pada indikator berbatas bawah berada
-     di bawah batasnya).
+     dari jalur mana pun dinaikkan ke N (`max(skor, N)`). Model reasoning tidak selalu mematuhi batas itu. Pembacaan
+     batasnya (`ingestion.matrix_parser.skor_minimum_dari_level`) dipakai bersama AMI, yang sejak perubahan terpisah
+     (`apply_rubric_floor` di `agent/graph.py`) menerapkan batas yang sama di `decimal_refine_node` kedua graph dan
+     menambahkan satu kalimat penjelasan ke justifikasi bila skor dinaikkan. Pada benchmark AMI yang ada, 25 dari 93
+     skor pada indikator berbatas bawah berada di bawah batasnya.
 4. **Tulis narasi (tahap 2).** Satu panggilan model berformat JSON: masukannya indikator, skor target, Capaian, skor
    hasil, deskripsi level terpilih. Analisis menyebut Capaian, skor hasil, dan skor target. Empat bagian tambahan
    diminta hanya bila kode menentukan skor hasil < skor target.

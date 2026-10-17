@@ -329,3 +329,25 @@ def test_repeated_score_text_is_not_appended_twice():
     acc.append_score(4, "Faktor: a = 0,2%")  # isi berbeda tetap disambung
     assert acc.scores[3] == "Jika 0 < RI, maka Skor = 3,75"
     assert acc.scores[4] == "Jika RI > a maka Skor = 4 Faktor: a = 0,2%"
+
+
+# ── skor minimum dari teks level ("Tidak ada skor kurang dari N") ──────────────
+
+@pytest.mark.parametrize(
+    "levels, minimum",
+    [
+        ({"1": "Tidak ada skor kurang dari 2.", "0": "Tidak ada skor kurang dari 2."}, 2.0),
+        ({1: "Tidak ada Skor kurang dari 1"}, 1.0),
+        ({"1": "T i d a k a d a s k o r kurang dari 1."}, 1.0),  # ekstraksi PDF nyata (indikator 40)
+        ({"0": "Tidak ada kurang dari 1"}, 1.0),  # varian nyata (indikator 21)
+        ({"4": "Jika PDS3 ≥ 20%, maka Skor = 4.", "3": "Hasil PkM kurang dari 10"}, 0.0),
+        ({"1": "Tidak ada skor kurang dari 10"}, 0.0),  # di luar skala 0-4
+        ({"1": "Tidak ada skor kurang dari 1", "0": "Tidak ada skor kurang dari 2"}, 2.0),  # ambil yang tertinggi
+        ({}, 0.0),
+        ({"1": None}, 0.0),
+    ],
+)
+def test_skor_minimum_dari_level(levels, minimum):
+    from ingestion.matrix_parser import skor_minimum_dari_level
+
+    assert skor_minimum_dari_level(levels) == minimum

@@ -610,3 +610,37 @@ def test_collect_reasoning_evidence_text_includes_evidence_tool_by_default():
     ]
     combined = _collect_reasoning_evidence_text(messages)
     assert "Sertifikat menunjukkan Y" in combined
+
+
+def test_reasoning_graph_raises_a_below_minimum_score_to_the_rubric_floor():
+    from unittest.mock import MagicMock, patch
+
+    from langchain_core.messages import AIMessage
+    from llm.ollama_client import OllamaClient
+    from agent.reasoning_graph import build_reasoning_graph
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = [
+        AIMessage(content='{"action": "get_indicator_rubric", "args": {"indicator_no": 1}}'),
+        AIMessage(content="- Item satu"),
+        AIMessage(content='{"action": "final", "score": 1, "justification": "Bukti terbatas.", "confidence": 0.6, "recommendation": "Lengkapi."}'),
+        AIMessage(content="[]"),
+    ]
+    fake_client = OllamaClient(base_url="http://fake:11434", model="deepseek-r1:14b", timeout_seconds=30)
+
+    with (
+        patch("agent.reasoning_graph._build_reasoning_llm", return_value=fake_llm),
+        patch("agent.tools.rubric_tool._get_rubrics_for_set") as mock_rubrics,
+    ):
+        mock_rubrics.return_value = [
+            MagicMock(
+                no=1, kriteria="VMTS", indikator="...", score_type="qualitative",
+                score_criteria={"3": "Kriteria band 3.", "2": "Kriteria band 2.",
+                                "1": "Tidak ada skor kurang dari 2.", "0": "Tidak ada skor kurang dari 2."},
+                formula=None, lkps_table_ref=None, sub_score_formula=None,
+            )
+        ]
+        result = build_reasoning_graph(fake_client).invoke(_make_state(), config={"recursion_limit": 40})
+
+    assert result["final_score"] == 2.0
+    assert "batas minimum rubrik (2)" in result["justification"]
