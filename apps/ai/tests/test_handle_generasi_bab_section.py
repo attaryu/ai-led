@@ -55,10 +55,10 @@ _FULL_JUDGE_CONTENT = (
 )
 
 
-def _run(job, llm_content="Narasi kebijakan tata pamong.", judge_content=_FULL_JUDGE_CONTENT, search_led=None, **db_overrides):
+def _run(job, llm_content="Narasi kebijakan tata pamong.", judge_content=_FULL_JUDGE_CONTENT, search_led=None, checklist_content="- Butuh dasar hukum apa?", **db_overrides):
     plain_llm = MagicMock()
     plain_llm.ainvoke = AsyncMock(side_effect=[
-        MagicMock(content="- Butuh dasar hukum apa?"),  # checklist
+        MagicMock(content=checklist_content),  # checklist
         MagicMock(content=llm_content),  # synthesis
     ])
     plain_llm.with_retry.return_value = plain_llm  # worker.py wraps every .ainvoke() call in .with_retry()
@@ -328,6 +328,8 @@ def test_synthesis_output_has_think_tags_stripped_and_pedoman_is_the_sections_ow
     assert run_kwargs["pedoman_used"] == [
         {"point_title": "Kebijakan Tata Pamong", "content_text": "Bahas dasar hukum penetapan tata pamong"}
     ]
+    # Run menunjuk draft section yang dihasilkannya (checklist/sumber/penilaian milik draft itu).
+    assert run_kwargs["section_draft_id"] == "sd-1"
 
 
 def _run_with_cross_check(existing_items, third_ainvoke, events=None, **db_overrides):
@@ -674,3 +676,72 @@ def test_handle_penilaian_ragas_gagal_ditulis_sebagai_error_bukan_pending():
 
     assert hasil["status"] == "error"
     assert "error" in update.call_args.args[2]
+
+
+# --- Checklist hanya "ANALISIS SWOT": tanpa RAG, narasi draft parent terdekat jadi sumber (docs/catatan.txt) ---
+
+def _sections_swot(narasi_ada=True):
+    """C.1 > [1 Latar Belakang, 3 IKU > a) Kekhasan, 5 SWOT (section yang digenerate)]."""
+    doc = lambda t: text_to_doc(t)  # noqa: E731
+    return [
+        {"id": "p1", "parent_id": None, "order": 1, "title": "Diferensiasi Misi", "marker": "C.1",
+         "active_checkpoint_id": None, "content": None},
+        {"id": "s1", "parent_id": "p1", "order": 1, "title": "Latar Belakang", "marker": "1",
+         "active_checkpoint_id": "d1", "content": doc("Visi keilmuan ditetapkan (sumber: SK Visi.pdf).") if narasi_ada else None},
+        {"id": "s3", "parent_id": "p1", "order": 3, "title": "Indikator Kinerja Utama", "marker": "3",
+         "active_checkpoint_id": None, "content": None},
+        {"id": "s4", "parent_id": "s3", "order": 1, "title": "Kekhasan VMTS", "marker": "a)",
+         "active_checkpoint_id": "d4", "content": doc("Kekhasan pada jaringan telekomunikasi.") if narasi_ada else None},
+        {"id": "sec-1", "parent_id": "p1", "order": 5, "title": "Strategi perbaikan", "marker": "5",
+         "active_checkpoint_id": None, "content": doc("ISI LAMA SWOT JANGAN IKUT")},
+    ]
+
+
+@pytest.mark.parametrize("raw", ["- ANALISIS SWOT", "ANALISIS SWOT", "analisis swot", "Analisis SWOT.", '"- analisis SWOT"', "**- ANALISIS SWOT**", "Analisis SWOT\nFaktor internal kekuatan program studi\nPeluang eksternal"])
+def test_swot_only_checklist_skips_rag_and_sends_parent_narrative(raw):
+    job = _fake_job()
+    job.data["selectedEvidenceIds"] = ["ev-1"]
+    lkps = MagicMock(return_value=[])
+
+    with patch("worker._load_lkps_tables", lkps):
+        result, mocks = _run(
+            job, checklist_content=raw, llm_content="Analisis SWOT hasil.",
+            get_sections_active_content=MagicMock(return_value=_sections_swot()),
+        )
+
+    assert result["status"] == "completed"
+    lkps.assert_not_called()  # LKPS (embedding/RAG per item) dilewati
+    prompt = mocks["plain_llm"].ainvoke.call_args_list[1].args[0]
+    assert "analisis SWOT" in prompt and "NARASI DRAFT" in prompt
+    assert "Visi keilmuan ditetapkan (sumber: SK Visi.pdf)." in prompt and "Kekhasan pada jaringan telekomunikasi." in prompt
+    assert "C.1 Diferensiasi Misi › 3 Indikator Kinerja Utama › a) Kekhasan VMTS" in prompt  # jejak dari parent
+    assert "ISI LAMA SWOT JANGAN IKU" not in prompt  # section ini sendiri bukan sumber fakta
+    run_kwargs = mocks["create_generation_run"].call_args.kwargs
+    assert run_kwargs["checklist"] == ["ANALISIS SWOT"]
+    chunks = run_kwargs["chunks_used"]
+    # Tab Bukti: HANYA narasi draft aktif yang dilampirkan (satu kartu per section, urut Daftar Isi) --
+    # tanpa chunk evidence/LKPS bawaan generate asal.
+    assert [c["kind"] for c in chunks] == ["narasi", "narasi"]
+    assert [c["section_id"] for c in chunks] == ["s1", "s4"]
+    assert chunks[0]["citation_label"] == "C.1 Diferensiasi Misi › 1 Latar Belakang"
+    assert chunks[0]["text"] == "Visi keilmuan ditetapkan (sumber: SK Visi.pdf)."
+    mocks["link_evidence_to_chapter_and_draft"].assert_called_once_with("tenant-1", "bab-1", "draft-1", [])
+
+
+def test_swot_only_without_any_parent_narrative_errors_without_calling_llm_again():
+    job = _fake_job()
+    result, mocks = _run(
+        job, checklist_content="- ANALISIS SWOT",
+        get_sections_active_content=MagicMock(return_value=_sections_swot(narasi_ada=False)),
+    )
+
+    assert result["status"] == "error" and "belum ada narasi" in result["error"]
+    assert mocks["plain_llm"].ainvoke.call_count == 1  # hanya checklist; tidak ada sintesis
+    assert mocks["update_chapter_section"].call_args_list[-1].kwargs["status"] == "ERROR"
+    mocks["create_generation_run"].assert_not_called()
+
+
+def test_checklist_with_other_items_still_uses_normal_rag_path():
+    result, mocks = _run(_fake_job(), checklist_content="- Analisis SWOT Program Studi\n- Kekuatan internal Program Studi")
+    assert result["status"] == "completed"
+    assert "NARASI DRAFT" not in mocks["plain_llm"].ainvoke.call_args_list[1].args[0]

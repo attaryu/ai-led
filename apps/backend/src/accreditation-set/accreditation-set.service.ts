@@ -661,10 +661,38 @@ export class AccreditationSetService {
     });
     if (!panduan) throw new NotFoundException('Panduan tidak ditemukan');
 
-    return this.prisma.accreditationSet.update({
+    const sebelumnya = await this.prisma.accreditationSet.findFirst({
+      where: { id, tenantId },
+      select: { panduanId: true },
+    });
+    const diperbarui = await this.prisma.accreditationSet.update({
       where: { id },
       data: { panduanId: panduan.id },
     });
+    if (sebelumnya?.panduanId !== panduan.id) {
+      await this.hapusTautanSectionKriteria(id);
+      await this.hitungUlangTautanSectionKriteria(id);
+    }
+    return diperbarui;
+  }
+
+  /** Tautan jangkar section<->kriteria menunjuk template Panduan lama; setelah Panduan diganti semuanya basi, termasuk yang DIKONFIRMASI. */
+  private async hapusTautanSectionKriteria(setId: string) {
+    await this.prisma.setSectionCriterionLink.deleteMany({ where: { accreditationSetId: setId } });
+  }
+
+  /**
+   * Minta apps/ai menghitung ulang tautan set ini. Best-effort: Panduan yang
+   * baru dipilih mungkin sudah punya struktur SIAP, dan tak ada ekstraksi baru
+   * yang akan memicu penautan -- tapi kegagalan AI service tidak boleh menggagalkan
+   * pemasangan (penautan tetap jalan di konfirmasi struktur/ekstraksi rubrik berikutnya).
+   */
+  private async hitungUlangTautanSectionKriteria(setId: string) {
+    try {
+      await fetch(`${requireEnv('AI_SERVICE_URL')}/structure/sets/${setId}/relink`, { method: 'POST' });
+    } catch {
+      // diabaikan, lihat catatan di atas
+    }
   }
 
   /** Lepas Panduan dari Set ini -- TIDAK menghapus baris Panduan-nya sendiri
@@ -676,7 +704,7 @@ export class AccreditationSetService {
     await this.prisma.accreditationSet.update({
       where: { id },
       data: { panduanId: null },
-    });
+    });    await this.hapusTautanSectionKriteria(id);
   }
 
   /** gap: nyala/matiin 1 sub-bab yang SUDAH commit dari outline BARU, tanpa

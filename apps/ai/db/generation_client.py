@@ -384,6 +384,23 @@ def get_chapter_sections(tenant_id: str, chapter_id: str) -> list[dict]:
         return [dict(r) for r in cur.fetchall()]
 
 
+def get_sections_active_content(tenant_id: str, chapter_id: str) -> list[dict]:
+    """Semua section satu bab beserta isi DRAFT AKTIF-nya (content_snapshot draft yang terpilih; bila belum
+    punya draft, cermin `content`). Dipakai SWOT: narasi parent dibaca dari draft yang sedang aktif."""
+    with tenant_cursor(tenant_id) as cur:
+        cur.execute(
+            """
+            SELECT s.id, s.parent_id, s."order", s.title, s.marker, s.active_checkpoint_id,
+                   COALESCE(d.content_snapshot, s.content) AS content
+            FROM writing_chapter_sections s
+            LEFT JOIN writing_section_drafts d ON d.id = s.active_checkpoint_id
+            WHERE s.chapter_id = %s
+            """,
+            (chapter_id,),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+
 def get_chapter_section(tenant_id: str, section_id: str) -> Optional[dict]:
     with tenant_cursor(tenant_id) as cur:
         cur.execute(
@@ -589,8 +606,11 @@ def create_generation_run(
     token_count: int,
     section_id: Optional[str] = None,
     checklist_error: Optional[str] = None,
+    section_draft_id: Optional[str] = None,
 ) -> dict:
-    """`section_id` -- the ONE section this call actually generated (worker.py's
+    """`section_draft_id` -- the SectionDraft this generate produced; readers pick the run of the section's
+    ACTIVE draft (checklist, sources, judge), not simply the newest run.
+    `section_id` -- the ONE section this call actually generated (worker.py's
     `_handle_generasi_bab` is per-section) -- backs the citation hover-card
     (apps/web, read via NestJS/Prisma, not from here): `chunks_used` elements
     each carry a `citation_label` computed once in worker.py, so the reader
@@ -600,15 +620,16 @@ def create_generation_run(
         cur.execute(
             """
             INSERT INTO writing_generation_runs
-                (id, chapter_draft_id, section_id, model, guidelines_used, rubric_used, checklist,
+                (id, chapter_draft_id, section_id, section_draft_id, model, guidelines_used, rubric_used, checklist,
                  checklist_error, chunks_used, judge_result, prompt_full, latency_sec, token_count)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
                 run_id,
                 bab_draft_id,
                 section_id,
+                section_draft_id,
                 model,
                 json.dumps(pedoman_used),
                 json.dumps(rubric_used),

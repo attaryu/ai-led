@@ -117,30 +117,17 @@ export function ChapterDocumentRecommendation({
 	return (
 		<div className="mb-2 rounded-md border border-border bg-muted/40 p-2.5">
 			<div className="flex items-center justify-between gap-2">
-				<p className="flex items-center gap-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-					<SparkleIcon className="size-3.5" />
-					Rekomendasi Dokumen AI
+				<p className="flex min-w-0 items-center gap-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+					<SparkleIcon className="size-3.5 shrink-0" />
+					<span className="truncate">Rekomendasi Dokumen AI</span>
 				</p>
 
-				<div className="flex shrink-0 items-center gap-2">
-					{sudahDikonfirmasi && (
-						<span className="flex items-center gap-1 text-xs font-medium text-foreground">
-							<CheckCircleIcon weight="fill" className="size-3.5 text-primary" />
-							Dikonfirmasi
-						</span>
-					)}
-					<Button
-						type="button"
-						size="xs"
-						variant="ghost"
-						onClick={onTrigger}
-						disabled={dimatikan}
-						className="cursor-pointer text-muted-foreground hover:text-foreground"
-					>
-						<ArrowClockwiseIcon />
-						Rekomendasikan ulang
-					</Button>
-				</div>
+				{sudahDikonfirmasi && (
+					<span className="flex shrink-0 items-center gap-1 text-xs font-medium text-foreground">
+						<CheckCircleIcon weight="fill" className="size-3.5 text-primary" />
+						Dikonfirmasi
+					</span>
+				)}
 			</div>
 
 			{/*
@@ -178,6 +165,19 @@ export function ChapterDocumentRecommendation({
 					pilihan itu ikut terkonfirmasi otomatis.
 				</p>
 			)}
+
+			{/* Satu baris sendiri di kaki kartu, bukan di kepala: lebar panel sidebar tak cukup untuk judul + status + tombol sekaligus. */}
+			<Button
+				type="button"
+				size="xs"
+				variant="outline"
+				onClick={onTrigger}
+				disabled={dimatikan}
+				className="mt-2 w-full cursor-pointer"
+			>
+				<ArrowClockwiseIcon />
+				Rekomendasikan ulang
+			</Button>
 		</div>
 	);
 }

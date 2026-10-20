@@ -2,6 +2,7 @@ import * as React from 'react';
 
 import { chapterIndicatorRemoteSource } from '../../data/sources/remote/chapter-indicator.remote-source';
 import {
+	aturCentang,
 	jumlahDipilih,
 	susunPayload,
 	type HasilIkuSetor,
@@ -92,7 +93,7 @@ export function useIndicatorAssessment({
 		[sectionId],
 	);
 
-	const toggle = React.useCallback((id: string, dicentang: boolean) => ubah(id, (p) => ({ ...p, dipilih: dicentang })), [ubah]);
+	const toggle = React.useCallback((id: string, dicentang: boolean) => ubah(id, (p) => aturCentang(p, dicentang)), [ubah]);
 	const setSkor = React.useCallback((id: string, skor: SkorIndikator | null) => ubah(id, (p) => ({ ...p, skor })), [ubah]);
 	const reset = React.useCallback(() => {
 		if (!sectionId) return;
@@ -172,5 +173,6 @@ export function useIndicatorAssessment({
 		setSkor,
 		reset,
 		jalankan,
+		laporkanGagal: setPesanGagal,
 	};
 }

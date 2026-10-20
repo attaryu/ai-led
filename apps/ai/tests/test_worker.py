@@ -270,3 +270,59 @@ def test_pilih_rubrik_per_sub_indikator_per_nomor_dan_semua():
     assert [(x.no, x.sub_no) for x in _pilih_rubrik(rubrik, [43], None)] == [(43, "I"), (43, "II")]
     # keduanya kosong: semua
     assert len(_pilih_rubrik(rubrik, None, None)) == 3
+
+
+def test_is_swot_only_looks_at_first_line_only_and_ignores_the_rest():
+    from worker import _is_swot_only
+
+    for ok in [
+        "ANALISIS SWOT", "analisis swot", "analisis SWOT", "- ANALISIS SWOT", "* Analisis Swot", "• ANALISIS SWOT",
+        "\n- ANALISIS SWOT\n", "<think>x</think>- ANALISIS SWOT",
+        # kegagalan nyata: "Analisis SWOT" lalu daftar tanpa "- " (tak terbaca parser) -- tetap SWOT
+        "Analisis SWOT\nFaktor internal kekuatan program studi teknik telekomunikasi\nPeluang eksternal",
+        "- ANALISIS SWOT\n- Kekuatan internal",
+    ]:
+        assert _is_swot_only(ok), ok
+    for bukan in [
+        "", "   \n ", "SWOT", "- Kekuatan internal",
+        "- Analisis SWOT Program Studi Teknik Telekomunikasi",  # query biasa yang lebih panjang
+        "- Kekuatan internal\n- ANALISIS SWOT",  # SWOT bukan baris pertama
+    ]:
+        assert not _is_swot_only(bukan), bukan
+
+
+def test_narasi_parent_terdekat_orders_like_toc_and_excludes_self_and_empty():
+    from prose import text_to_doc
+    from worker import _narasi_parent_terdekat
+
+    def sec(i, parent, order, title, marker, teks):
+        return {"id": i, "parent_id": parent, "order": order, "title": title, "marker": marker,
+                "content": text_to_doc(teks) if teks else None}
+
+    sections = [
+        sec("p", None, 1, "Diferensiasi Misi", "C.1", None),
+        sec("kebijakan", "p", 2, "Kebijakan", "2", "Teks kebijakan."),
+        sec("latar", "p", 1, "Latar Belakang", "1", "Teks latar."),
+        sec("iku", "p", 3, "IKU", "3", None),
+        sec("iku-a", "iku", 1, "Kekhasan", "a)", "Teks a."),
+        sec("swot", "p", 5, "SWOT", "5", "JANGAN IKUT"),
+        sec("lain", None, 2, "Kriteria Lain", "C.2", "Bukan keturunan parent yang sama."),
+    ]
+    hasil = _narasi_parent_terdekat(sections, "swot")
+    assert [b["id"] for b in hasil] == ["latar", "kebijakan", "iku-a"]  # urut Daftar Isi, tanpa kosong/swot/section lain
+    assert hasil[2]["judul"] == "C.1 Diferensiasi Misi › 3 IKU › a) Kekhasan"
+    assert _narasi_parent_terdekat(sections, "p") == []  # tingkat atas: tak punya parent
+
+
+def test_build_swot_prompt_has_task_pedoman_context_and_all_narrative_blocks():
+    from worker import _build_swot_prompt
+
+    prompt = _build_swot_prompt(
+        "C.1 ... 5 Strategi", [{"content_text": "Evaluasi faktor internal dan eksternal."}],
+        [{"judul": "C.1 A", "teks": "Narasi A."}, {"judul": "C.1 B", "teks": "Narasi B."}],
+        {"study_program_name": "Teknik Telekomunikasi", "university_name": "PENS"},
+    )
+    assert "Susun analisis SWOT untuk BIDANG" in prompt
+    assert "Evaluasi faktor internal dan eksternal." in prompt
+    assert "Program Studi Teknik Telekomunikasi pada Perguruan Tinggi PENS" in prompt
+    assert prompt.index("NARASI DRAFT:") < prompt.index("### C.1 A") < prompt.index("### C.1 B")

@@ -206,6 +206,7 @@ export type BackendChapterSection = {
 	notedByName: string | null;
 	notedAt: string | null;
 	reviewSubmittedAt: string | null;
+	activeCheckpointId?: string | null;
 };
 
 /**
@@ -215,7 +216,7 @@ export type BackendChapterSection = {
  */
 export type BackendChunkUsed = {
 	citation_label: string;
-	kind: 'led' | 'evidence' | 'lkps';
+	kind: 'led' | 'evidence' | 'lkps' | 'narasi';
 	text: string;
 	/** R2 object key (bukan URL siap-pakai) -- `null` utk chunk `kind: 'led'` atau evidence yang sudah dihapus. */
 	fileUrl: string | null;

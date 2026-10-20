@@ -44,8 +44,8 @@ export type LkpsTerpakai = { id: string; label: string; teks: string };
 /** Satu chunk hasil RAG yang dipakai generate section -- satu kartu di tab Bukti. */
 export type PotonganSumber = {
 	id: string;
-	jenis: 'lkps' | 'evidence';
-	/** LKPS: "LKPS Sheet 6i". Evidence: nama berkas bila masih ada di Perpustakaan, selain itu label sitasi. */
+	jenis: 'lkps' | 'evidence' | 'narasi';
+	/** LKPS: "LKPS Sheet 6i". Evidence: nama berkas bila masih ada di Perpustakaan, selain itu label sitasi. Narasi: jejak subbab asalnya. */
 	judul: string;
 	/** Heading/bagian di dalam dokumen (evidence saja). */
 	bagian: string | null;
@@ -141,7 +141,7 @@ export function useChapterReference({
 			for (const { s, hasil } of sumber) {
 				hasil?.selectedEvidenceIds.forEach((id) => dipakai.add(id));
 				hasil?.chunks.forEach((chunk, i) => {
-					if (chunk.jenis === 'lkps' || chunk.jenis === 'evidence') {
+					if (chunk.jenis === 'lkps' || chunk.jenis === 'evidence' || chunk.jenis === 'narasi') {
 						mentah.push({
 							id: `${s.id}-${i}`,
 							jenis: chunk.jenis,

@@ -10,7 +10,7 @@ describe('BabPipelineService manual section CRUD', () => {
       chapterSection: {
         aggregate: jest.fn().mockResolvedValue({ _max: { order: 2 } }),
         create: jest.fn().mockResolvedValue({ id: 'sec-new', order: 3 }),
-        findFirst: jest.fn().mockResolvedValue({ id: 'sec-1', chapterId: 'bab-1' }),
+        findFirst: jest.fn().mockResolvedValue({ id: 'sec-1', chapterId: 'bab-1', activeCheckpointId: 'draft-1' }),
         // Pilihan bukti dukung tersimpan; null = belum pernah disetel, pembacanya
         // jatuh ke evidence_draft_links seperti sebelumnya.
         findUnique: jest.fn().mockResolvedValue({ selectedEvidenceIds: null }),
@@ -314,6 +314,7 @@ describe('BabPipelineService manual section CRUD', () => {
     const sectionIsi = {
       id: 'sec-1',
       chapterId: 'bab-1',
+      activeCheckpointId: 'draft-1',
       content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Narasi.' }] }] },
     };
 
@@ -347,7 +348,7 @@ describe('BabPipelineService manual section CRUD', () => {
 
     it('menolak section kosong', async () => {
       const { service, prisma, jobsService } = makeService();
-      prisma.chapterSection.findFirst.mockResolvedValue({ id: 'sec-1', chapterId: 'bab-1', content: null });
+      prisma.chapterSection.findFirst.mockResolvedValue({ id: 'sec-1', chapterId: 'bab-1', activeCheckpointId: 'draft-1', content: null });
       prisma.generationRun.findFirst.mockResolvedValue({ id: 'run-1', judgeResult: null });
 
       await expect(service.triggerEvaluasiRagas('bab-1', 'sec-1')).rejects.toThrow('masih kosong');
@@ -472,7 +473,7 @@ describe('BabPipelineService manual section CRUD', () => {
   });
 
   describe('findSourcesForSection', () => {
-    it('returns the latest run\'s chunksUsed for this section', async () => {
+    it('returns the chunksUsed of the run that belongs to the ACTIVE draft', async () => {
       const { service, prisma } = makeService();
       const generatedAt = new Date('2026-09-04T00:00:00Z');
       prisma.generationRun.findFirst.mockResolvedValue({
@@ -483,8 +484,7 @@ describe('BabPipelineService manual section CRUD', () => {
       const result = await service.findSourcesForSection('bab-1', 'sec-1');
 
       expect(prisma.generationRun.findFirst).toHaveBeenCalledWith({
-        where: { sectionId: 'sec-1' },
-        orderBy: { createdAt: 'desc' },
+        where: { sectionDraftId: 'draft-1' },
         select: {
           chunksUsed: true,
           createdAt: true,
@@ -545,6 +545,26 @@ describe('BabPipelineService manual section CRUD', () => {
         checklist: [],
         checklistError: undefined,
       });
+    });
+
+    it('returns null without querying runs when the active draft has no generate (manual / penilaian indikator)', async () => {
+      const { service, prisma } = makeService();
+      prisma.chapterSection.findFirst.mockResolvedValue({ id: 'sec-1', chapterId: 'bab-1', activeCheckpointId: null });
+
+      expect(await service.findSourcesForSection('bab-1', 'sec-1')).toBeNull();
+      expect(prisma.generationRun.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('follows the active draft: another active draft looks up its own run, not the newest one', async () => {
+      const { service, prisma } = makeService();
+      prisma.chapterSection.findFirst.mockResolvedValue({ id: 'sec-1', chapterId: 'bab-1', activeCheckpointId: 'draft-lama' });
+      prisma.generationRun.findFirst.mockResolvedValue(null);
+
+      await service.findSourcesForSection('bab-1', 'sec-1');
+
+      expect(prisma.generationRun.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { sectionDraftId: 'draft-lama' } }),
+      );
     });
 
     it('returns null (not an empty array) when the section was never generated via this job', async () => {

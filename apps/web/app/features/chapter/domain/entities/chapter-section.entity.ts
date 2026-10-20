@@ -35,6 +35,8 @@ export const chapterSectionSchema = z.object({
 	catatanOlehNama: z.string().nullable(),
 	catatanPada: z.string().nullable(),
 	diajukanReviewPada: z.string().nullable(),
+	/** Draft yang sedang aktif; checklist/sumber/penilaian section mengikuti draft ini. Opsional: baris lama/fixture tanpa kolom ini. */
+	checkpointAktifId: z.string().nullable().optional(),
 });
 
 export type ChapterSectionEntity = z.infer<typeof chapterSectionSchema>;

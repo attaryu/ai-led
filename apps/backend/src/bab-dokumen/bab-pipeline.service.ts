@@ -143,20 +143,24 @@ export class BabPipelineService {
       throw new NotFoundException('Section tidak ditemukan');
     }
 
-    const run = await this.prisma.generationRun.findFirst({
-      where: { sectionId },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        chunksUsed: true,
-        createdAt: true,
-        chapterDraftId: true,
-        judgeResult: true,
-        latencySec: true,
-        model: true,
-        checklist: true,
-        checklistError: true,
-      },
-    });
+    // Run milik draft yang sedang AKTIF, bukan run terbaru section ini: checklist, sumber, dan penilaian
+    // mengikuti draft yang tampil di kanvas. Draft tanpa generate (manual, penilaian indikator) atau
+    // baris lama yang tak terpetakan tidak punya run -> null.
+    const run = section.activeCheckpointId
+      ? await this.prisma.generationRun.findFirst({
+          where: { sectionDraftId: section.activeCheckpointId },
+          select: {
+            chunksUsed: true,
+            createdAt: true,
+            chapterDraftId: true,
+            judgeResult: true,
+            latencySec: true,
+            model: true,
+            checklist: true,
+            checklistError: true,
+          },
+        })
+      : null;
     if (!run) return null;
 
     // Tiap chunk "evidence" (worker.py::search_evidence) bawa `bukti_dukung_id`
@@ -468,8 +472,8 @@ export class BabPipelineService {
 
   /**
    * Memicu penilaian RAGAS atas SATU section (tombol di tab Kualitas AI). Dinilai: teks section
-   * saat ini (termasuk suntingan) terhadap konteks & acuan dari generate terakhirnya -- karena itu
-   * section harus pernah digenerate. `judge_result` run itu langsung ditandai `pending` supaya UI
+   * saat ini (termasuk suntingan) terhadap konteks & acuan dari generate draft aktifnya -- karena itu
+   * draft aktif section harus hasil generate. `judge_result` run itu langsung ditandai `pending` supaya UI
    * menampilkan "sedang dinilai" sebelum worker mengambil job-nya, dan klik ganda ditolak.
    */
   async triggerEvaluasiRagas(id: string, sectionId: string) {
@@ -481,13 +485,15 @@ export class BabPipelineService {
     const section = await this.prisma.chapterSection.findFirst({ where: { id: sectionId, chapterId: id } });
     if (!section) throw new NotFoundException('Section tidak ditemukan');
 
-    const run = await this.prisma.generationRun.findFirst({
-      where: { sectionId },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, judgeResult: true },
-    });
+    // Dinilai: run milik draft yang sedang aktif (teks yang tampil di kanvas), bukan run terbaru section.
+    const run = section.activeCheckpointId
+      ? await this.prisma.generationRun.findFirst({
+          where: { sectionDraftId: section.activeCheckpointId },
+          select: { id: true, judgeResult: true },
+        })
+      : null;
     if (!run) {
-      throw new ConflictException('Section ini belum pernah digenerate AI, jadi belum ada yang bisa dinilai');
+      throw new ConflictException('Section ini belum pernah digenerate AI (draft yang aktif bukan hasil generate), jadi belum ada yang bisa dinilai');
     }
     if (!proseNodes(section.content).length) {
       throw new ConflictException('Section masih kosong, tidak ada teks yang bisa dinilai');

@@ -60,13 +60,28 @@ def parse_iku_list(raw: object) -> list[IkuInput]:
     return hasil
 
 
+_SUDAH_BERNOMOR = re.compile(r"^\s*\d+[.)]\s")
+
+
+def _ke_teks(isi: object) -> str:
+    """Bagian narasi -> string. Model kadang menjawab daftar (strategiPencapaian/sarprasDibutuhkan) sebagai
+    array JSON padahal kontraknya satu string berpenomoran; array berisi string digabung menjadi
+    "1) ... 2) ..." (butir yang sudah bernomor dibiarkan), bukan ditolak sebagai kosong. Tipe lain tidak dilonggarkan."""
+    if isinstance(isi, str):
+        return isi.strip()
+    if isinstance(isi, list) and isi and all(isinstance(x, str) for x in isi):
+        butir = [x.strip() for x in isi if x.strip()]
+        return " ".join(x if _SUDAH_BERNOMOR.match(x) else f"{i}) {x}" for i, x in enumerate(butir, start=1))
+    return ""
+
+
 def _ambil_teks(sumber: dict, kunci: tuple[str, ...]) -> dict[str, str]:
     hasil: dict[str, str] = {}
     for k in kunci:
-        isi = sumber.get(k)
-        if not isinstance(isi, str) or not isi.strip():
+        isi = _ke_teks(sumber.get(k))
+        if not isi:
             raise SetorLedError(f"Bagian '{k}' kosong dari model")
-        hasil[k] = isi.strip()
+        hasil[k] = isi
     return hasil
 
 

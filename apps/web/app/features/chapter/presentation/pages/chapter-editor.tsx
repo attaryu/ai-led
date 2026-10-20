@@ -44,10 +44,9 @@ import { usePanelResize } from '../hooks/use-panel-resize';
 import { useSectionSources } from '../hooks/use-section-sources';
 import { CITATION_LABEL_ATTR, sisipkanTautanSitasi } from '../utils/citation-links';
 import { editorExtensions } from '../utils/editor-extensions';
-import { sisipkanTabelSetor, kodeYangSudahAda } from '../utils/sisipkan-tabel-setor';
-import { bangunSemuaTabelSetor } from '../../domain/entities/indicator-assessment.entity';
+import { bangunDokumenSetor } from '../../domain/entities/indicator-assessment.entity';
+import { sectionDraftRepository } from '../../data/repositories/section-draft.repository';
 import { useIndicatorAssessment } from '../hooks/use-indicator-assessment';
-import { useConfirmDialog } from '~/core/components/ui/confirm-dialog';
 
 /**
  * Lapis 4 — Editor Bab (docs/application_flow.md §7).
@@ -485,7 +484,6 @@ function ChapterEditorWorkspace({
 		sectionId: section?.id ?? null,
 		bisaEdit: izin.canEdit,
 	});
-	const { konfirmasi, confirmDialog } = useConfirmDialog();
 	const autosave = useChapterAutosave({
 		chapterId: chapter.id,
 		sectionId: section?.id ?? null,
@@ -498,7 +496,7 @@ function ChapterEditorWorkspace({
 
 	const { markDirty, flush } = autosave;
 
-	const sumberSection = useSectionSources(chapter.id, section?.id);
+	const sumberSection = useSectionSources(chapter.id, section?.id, sectionTerkini?.checkpointAktifId);
 
 	// `handleClickOn` di bawah dipasang sekali saat editor dibuat (bagian dari
 	// `editorProps`, bukan `deps` React) -- kalau closure langsung memakai
@@ -622,35 +620,6 @@ function ChapterEditorWorkspace({
 	);
 
 	/**
-	 * Tombol Generate di toolbar: bila ada indikator dicentang, yang berjalan
-	 * adalah Setor ke LED (tabel penilaian disisipkan ke kanvas) — generator
-	 * narasi LED TIDAK dijalankan. Tanpa indikator terpilih, perilaku lama.
-	 * Isi kanvas tidak pernah ditimpa: tabel disisipkan setelah blok tempat
-	 * kursor berada, dan tabel indikator yang sama hanya diganti dengan konfirmasi.
-	 */
-	const jalankanGenerateToolbar = React.useCallback(async () => {
-		if (penilaian.jumlahDipilih === 0) {
-			await kontrolGenerate?.jalankan();
-			return;
-		}
-		const hasil = await penilaian.jalankan();
-		if (!hasil || !editor) return;
-		const tabel = bangunSemuaTabelSetor(hasil.ikuList, hasil.hasil);
-		const sudahAda = kodeYangSudahAda(editor, tabel);
-		let ganti = new Set<string>();
-		if (sudahAda.length > 0) {
-			const lanjut = await konfirmasi({
-				judul: 'Ganti tabel penilaian yang sudah ada?',
-				deskripsi: `Tabel untuk indikator ${sudahAda.join(', ')} sudah ada di section ini. Mengganti akan menimpa isinya, termasuk suntingan manual. Pilih Batal untuk mempertahankannya dan hanya menyisipkan tabel yang baru.`,
-				labelAksi: 'Ganti',
-				merusak: true,
-			});
-			if (lanjut) ganti = new Set(sudahAda);
-		}
-		sisipkanTabelSetor(editor, tabel, ganti);
-	}, [penilaian, kontrolGenerate, editor, konfirmasi]);
-
-	/**
 	 * Isi SECTION yang benar-benar terkini, untuk checkpoint tab Draft saat
 	 * sebuah section terbuka. `flush()` dulu supaya backend sudah punya
 	 * ketikan terakhir sebelum checkpoint dibuat, lalu baca `editor.getHTML()`
@@ -664,6 +633,40 @@ function ChapterEditorWorkspace({
 	}, [autosave, editor, section]);
 
 	/**
+	 * Tombol Generate di toolbar: bila ada indikator dicentang, yang berjalan adalah Setor ke LED --
+	 * generator narasi LED TIDAK dijalankan. Tanpa indikator terpilih, perilaku lama.
+	 *
+	 * Hasilnya menjadi DRAFT BARU section ini, bukan tambahan di bawah isi yang ada. Urutannya penting:
+	 * autosave menulis ke draft yang sedang aktif, jadi menimpa kanvas begitu saja akan merusak draft
+	 * lama. Maka isi terkini disimpan dulu (flush), draft baru dibuat (salinan isi itu, langsung aktif),
+	 * baru kanvas diganti — autosave lalu menulis tabel ke draft baru, dan versi sebelumnya tetap utuh di tab Draft.
+	 */
+	const jalankanGenerateToolbar = React.useCallback(async () => {
+		if (penilaian.jumlahDipilih === 0) {
+			await kontrolGenerate?.jalankan();
+			return;
+		}
+		const hasil = await penilaian.jalankan();
+		if (!hasil || !editor || !section) return;
+		try {
+			await flush();
+			await sectionDraftRepository.create({
+				chapterId: chapter.id,
+				sectionId: section.id,
+				label: 'Penilaian indikator',
+			});
+		} catch {
+			penilaian.laporkanGagal('Gagal membuat draft baru, isi section tidak diubah. Coba lagi.');
+			return;
+		}
+		editor.commands.setContent(bangunDokumenSetor(hasil.ikuList, hasil.hasil), { emitUpdate: true });
+		await flush();
+		// Draft aktif sudah berganti ke draft baru: segarkan section agar sumber/checklist mengikutinya.
+		const baru = (await chapterRepository.findSections(chapter.id)).find((item) => item.id === section.id);
+		if (baru) setSectionTerkini(baru);
+	}, [penilaian, kontrolGenerate, editor, section, chapter.id, flush]);
+
+	/**
 	 * Checkpoint section dipulihkan -> dorong isinya ke kanvas.
 	 *
 	 * Beda dari `adopsiIsiBaru`: ruang kerja ini di-`key` per section (lihat
@@ -672,8 +675,9 @@ function ChapterEditorWorkspace({
 	 * section, jadi `setContent` di sini wajib, bukan opsional.
 	 */
 	const pulihkanSection = React.useCallback(
-		({ html }: HasilPulihSection) => {
+		({ html, section: dipulihkan }: HasilPulihSection) => {
 			editor?.commands.setContent(html, { emitUpdate: false });
+			setSectionTerkini(dipulihkan);
 		},
 		[editor],
 	);
@@ -880,8 +884,6 @@ function ChapterEditorWorkspace({
 					/>
 				</div>
 			</Tabs>
-
-			{confirmDialog}
 
 			{sectionTerkini && (
 				<SectionTableSpecDialog

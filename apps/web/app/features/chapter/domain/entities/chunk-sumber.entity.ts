@@ -16,8 +16,11 @@ import { type RagasScore } from './ragas-score.entity';
 export const chunkSumberSchema = z.object({
 	label: z.string(),
 	teks: z.string(),
-	/** `lkps` = sheet LKPS yang dipakai (dimas Referensi: LKPS per sheet + evidence). */
-	jenis: z.enum(['led', 'evidence', 'lkps']),
+	/**
+	 * `lkps` = sheet LKPS yang dipakai (dimas Referensi: LKPS per sheet + evidence).
+	 * `narasi` = narasi draft aktif subbab lain yang dilampirkan ke analisis SWOT (tanpa RAG).
+	 */
+	jenis: z.enum(['led', 'evidence', 'lkps', 'narasi']),
 	/** R2 object key (`EvidenceEntity.fileUrl`) -- `null` utk chunk LED atau evidence yang sudah dihapus. Dipakai hover-card utk tombol "Buka berkas". */
 	fileUrl: z.string().nullable(),
 	/** Id bukti dukung asal chunk evidence; `null` utk chunk LED. */

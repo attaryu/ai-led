@@ -193,6 +193,7 @@ export function mapChapterSection(row: BackendChapterSection): ChapterSectionEnt
 		catatanOlehNama: row.notedByName,
 		catatanPada: row.notedAt,
 		diajukanReviewPada: row.reviewSubmittedAt,
+		checkpointAktifId: row.activeCheckpointId ?? null,
 	};
 }
 

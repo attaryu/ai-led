@@ -166,7 +166,11 @@ def _normalize_items_response(data: dict | list, raw: str) -> dict:
 # Port of Dimas 140d8ae -- cosine-distance thresholds (tuned by Dimas on bge-m3, the model we embed with).
 # Values are Dimas's; scripts/sample_distances.py prints distances if they ever need checking.
 _LKPS_RAG_DISTANCE_MAX = 0.38
-_EVIDENCE_RAG_DISTANCE_MAX = 0.65
+_EVIDENCE_RAG_DISTANCE_MAX = 0.45
+# Batas total chunk evidence yang masuk prompt (setelah dedup antar item): yang dipertahankan = jarak terkecil.
+_EVIDENCE_MAX_CHUNKS = 40
+# Fallback bila TIDAK ada chunk yang lolos threshold sama sekali: ambil sejumlah ini teratas TANPA threshold.
+_EVIDENCE_FALLBACK_CHUNKS = 20
 
 
 def _filter_by_distance(hits: list[dict], distance_max: float) -> list[dict]:
@@ -175,15 +179,16 @@ def _filter_by_distance(hits: list[dict], distance_max: float) -> list[dict]:
 
 
 def _select_candidates_per_item(
-    checklist: list[str], candidates: dict[str, list[dict]], per_item_target: int
+    checklist: list[str], candidates: dict[str, list[dict]], per_item_target: int | None
 ) -> list[dict]:
-    """Port of Dimas 140d8ae -- per-item pick with collision fallback to the item's own next candidate."""
+    """Port of Dimas 140d8ae -- per-item pick with collision fallback to the item's own next candidate.
+    `per_item_target=None` = tanpa batas per item: semua kandidat yang lolos (tanpa duplikat chunk) ikut."""
     used_ids: set = set()
     out: list[dict] = []
     for q in checklist:
         picked = 0
         for h in candidates.get(q, []):
-            if picked >= per_item_target:
+            if per_item_target is not None and picked >= per_item_target:
                 break
             if h["chunk_id"] in used_ids:
                 continue
@@ -191,6 +196,28 @@ def _select_candidates_per_item(
             out.append(h)
             picked += 1
     return out
+
+
+def _top_by_distance(chunks: list[dict], limit: int) -> list[dict]:
+    """Pertahankan `limit` chunk dengan jarak terkecil (paling mirip), urutan aslinya tetap (terkelompok per item
+    checklist). Chunk tanpa nilai jarak dianggap paling dekat. Di bawah `limit` -> tidak ada yang dibuang."""
+    if len(chunks) <= limit:
+        return chunks
+    terbaik = sorted(range(len(chunks)), key=lambda i: (chunks[i].get("distance") is not None and chunks[i]["distance"] or 0.0, i))[:limit]
+    return [chunks[i] for i in sorted(terbaik)]
+
+
+def _fallback_top_chunks(hits_per_item: list[list[dict]], limit: int) -> list[dict]:
+    """Fallback tanpa threshold: gabungkan seluruh hasil pencarian semua item (SEBELUM disaring jarak), buang
+    duplikat chunk_id (yang jaraknya terkecil dipertahankan), lalu ambil `limit` teratas menurut jarak.
+    Chunk tanpa nilai jarak dianggap paling dekat."""
+    terbaik: dict = {}
+    for hits in hits_per_item:
+        for h in hits:
+            jarak = h.get("distance") if h.get("distance") is not None else 0.0
+            if h["chunk_id"] not in terbaik or jarak < terbaik[h["chunk_id"]][0]:
+                terbaik[h["chunk_id"]] = (jarak, h)
+    return [h for _, h in sorted(terbaik.values(), key=lambda t: t[0])[:limit]]
 
 
 def _load_lkps_tables(
@@ -315,7 +342,8 @@ PEDOMAN merupakan sumber utama untuk menentukan informasi apa yang perlu dijelas
 PRINSIP BATAS BIDANG:
 LED terdiri dari beberapa bidang, dan setiap bidang memiliki substansi utamanya sendiri. Setiap dokumen dalam KATALOG memiliki satu subjek utama, yaitu hal yang secara langsung diatur, ditetapkan, direncanakan, dilaporkan, atau dievaluasi oleh dokumen tersebut. Subjek utama ditentukan dari judul dan objek pengaturannya, bukan dari hal-hal yang disebut, dirujuk, atau dijabarkan di dalamnya.
  
-Dokumen hanya boleh dipilih untuk SECTION apabila subjek utamanya adalah substansi SECTION tersebut, atau apabila PEDOMAN pada SECTION tersebut secara eksplisit meminta informasi yang hanya tersedia pada dokumen itu.
+Dokumen relevan apabila subjek utamanya sesuai dengan substansi BIDANG dan kebutuhan PEDOMAN, baik pada tingkat perguruan tinggi, UPPS, maupun program studi.
+Perbedaan tingkat kelembagaan tidak menjadi alasan pengecualian selama substansi dokumen relevan secara langsung dengan kebutuhan PEDOMAN.
  
 Dokumen yang subjek utamanya adalah substansi bidang lain adalah milik bidang tersebut dan tidak dipilih untuk SECTION yang sedang aktif, sekalipun dokumen itu memuat, merujuk, menjabarkan, atau diturunkan dari substansi SECTION yang sedang aktif. Semua dokumen perguruan tinggi pada dasarnya saling terkait dan sama-sama diturunkan dari arah strategis institusi, sehingga keterkaitan semacam itu tidak pernah menjadi alasan pemilihan.
  
@@ -327,7 +355,7 @@ Kelengkapan sumber tidak ditentukan oleh jumlah dokumen, tetapi oleh ketercakupa
 Kelengkapan ditentukan dengan urutan berikut:
 1. Uraikan terlebih dahulu kebutuhan informasi yang diminta PEDOMAN pada SECTION menjadi daftar kebutuhan yang spesifik.
 2. Untuk setiap kebutuhan, cari dokumen yang memenuhinya. Satu kebutuhan dapat membutuhkan lebih dari satu dokumen apabila informasinya tersebar, dan satu dokumen dapat memenuhi lebih dari satu kebutuhan.
-3. Berhenti mencari untuk suatu kebutuhan apabila kebutuhan itu sudah terpenuhi. Dokumen tambahan yang hanya mengulang informasi yang sama tidak dipilih.
+3. Pastikan setiap kebutuhan substantif yang berbeda telah terwakili, termasuk perbedaan objek atau tingkat kelembagaan apabila relevan dengan PEDOMAN. Gabungkan hanya kebutuhan yang benar-benar memiliki substansi dan objek pencarian yang sama.
 4. Dokumen yang tidak dapat dipetakan ke salah satu kebutuhan pada daftar tidak dipilih, seberapa pun relevan tampaknya.
  
 Pencarian selalu berangkat dari kebutuhan menuju dokumen, bukan dari dokumen menuju alasan.
@@ -341,7 +369,7 @@ B. ANALISIS LINGKUNGAN EKSTERNAL
     Membahas kondisi lingkungan makro dan mikro yang relevan terhadap pengembangan UPPS dan program studi, pengaruhnya terhadap arah pengembangan, serta alternatif pengembangan yang dapat dilakukan.
  
 1. VISI, MISI, TUJUAN, DAN STRATEGI
-   Berfokus pada arah strategis dan identitas program studi, meliputi rumusan Visi, Misi, Tujuan, dan Strategi, visi keilmuan, kekhasan program studi, keterkaitan arah strategis perguruan tinggi, UPPS, dan program studi, serta proses penyusunan dan pemutakhiran arah strategis tersebut. Bidang ini membahas arah strategis itu sendiri dan cara arah strategis dijabarkan ke dalam rencana pengembangan, bukan penyelenggaraan masing-masing bidang yang menjalankannya.
+    Berfokus pada arah strategis institusi, UPPS, dan program studi, meliputi rumusan visi, misi, tujuan, strategi, visi keilmuan, kekhasan program studi, serta keterkaitan arah strategis antar tingkat kelembagaan.Mencakup proses penyusunan, penetapan, pemutakhiran, dan penjabaran arah strategis ke dalam rencana pengembangan sesuai kebutuhan PEDOMAN. Bidang ini membahas arah strategis itu sendiri dan cara arah strategis dijabarkan ke dalam rencana pengembangan, bukan penyelenggaraan masing-masing bidang yang menjalankannya.
  
 2. AKUNTABILITAS
    Berfokus pada cara institusi dan program studi dikelola dan dipertanggungjawabkan, meliputi:
@@ -407,13 +435,52 @@ Setiap bidang dapat memiliki bagian berikut sesuai dengan struktur yang ditentuk
   Regulasi nasional boleh dipilih sebagai payung hukum jika objek pengaturannya mencakup SECTION. Dokumen tingkat institusi/UPPS/program studi harus membahas SECTION secara langsung.
 
   Jika PEDOMAN meminta penjabaran ke program pengembangan, pilih dokumen perencanaan pengembangan yang relevan langsung dengan SECTION.
- 
+
 - INDIKATOR KINERJA UTAMA:
     Identifikasi seluruh kebutuhan informasi mengenai data, kondisi aktual, target, capaian, hasil pelaksanaan, tren, permasalahan, faktor pendukung atau penghambat, tindak lanjut, pengendalian, peningkatan, atau pengembangan yang dituntut PEDOMAN pada SECTION.
     Telusuri setiap kebutuhan tersebut ke sumber yang tersedia dan pilih seluruh sumber yang memberikan informasi berbeda dan diperlukan.
     Jangan berhenti hanya karena telah ditemukan satu sumber data atau dokumen yang relevan apabila kebutuhan informasi lainnya belum memiliki sumber.
     LKPS dapat dipilih apabila data di dalamnya diperlukan untuk menjelaskan indikator atau capaian yang diminta PEDOMAN.
     Jika data kuantitatif memerlukan bukti pendukung untuk memahami atau memperkuat informasi tersebut, dokumen pendukung dapat dipilih apabila kebutuhan tersebut memang relevan dengan PEDOMAN.
+
+- ANALISIS SWOT:
+
+    Analisis SWOT digunakan untuk mengidentifikasi faktor internal dan eksternal yang memengaruhi pencapaian kinerja BIDANG serta merumuskan strategi perbaikan dan pengembangan berdasarkan hasil analisis tersebut.
+
+    Struktur WAJIB mencakup 8 bagian berikut:
+
+    FAKTOR INTERNAL:
+    1. Kekuatan (Strengths - S)
+    2. Kelemahan (Weaknesses - W)
+
+    FAKTOR EKSTERNAL (LINGKUNGAN):
+    3. Peluang (Opportunities - O)
+    4. Ancaman (Threats - T)
+
+    STRATEGI PERBAIKAN DAN PENGEMBANGAN:
+    5. Strategi S-O: Memanfaatkan kekuatan untuk menangkap peluang.
+    6. Strategi W-O: Mengatasi kelemahan dengan memanfaatkan peluang.
+    7. Strategi S-T: Memanfaatkan kekuatan untuk meminimalkan ancaman.
+    8. Strategi W-T: Mengurangi kelemahan dan menghindari ancaman.
+
+    ATURAN PENULISAN:
+    - Setiap bagian WAJIB memiliki judul dan daftar poin penjabaran yang terpisah.
+    - Setiap poin menjelaskan satu faktor atau strategi secara spesifik, bukan pernyataan umum.
+    - Jumlah poin mengikuti informasi relevan yang didukung Evidence/LKPS, tanpa batas tetap.
+    - Faktor internal harus berasal dari kondisi, kapasitas, dan kinerja internal UPPS atau PS.
+    - Faktor eksternal harus berasal dari kondisi lingkungan di luar kendali langsung UPPS atau PS.
+    - Strategi S-O, W-O, S-T, dan W-T harus diturunkan dari keterkaitan faktor SWOT yang telah diidentifikasi.
+    - Setiap strategi harus berupa tindakan yang jelas dan relevan dengan BIDANG serta PEDOMAN.
+    - Hindari pengulangan substansi antarbagian.
+    - Seluruh fakta wajib didukung Evidence/LKPS.
+    - Jangan mengarang faktor atau strategi yang tidak dapat diturunkan dari informasi tersedia.
+
+    FORMAT OUTPUT:
+    - Pertahankan urutan kedelapan bagian.
+    - Gunakan judul bagian yang jelas.
+    - Gunakan daftar bernomor untuk penjabaran pada masing-masing bagian.
+    - Jangan mengubah seluruh analisis menjadi paragraf naratif tanpa poin.
+    - Jangan membuat tabel kecuali TABLE_SCHEMA secara eksplisit memintanya.
 """
 
 # ──────────────────────────────────────────────────────────────────────
@@ -424,87 +491,95 @@ _SYSTEM_CHECKLIST = f"""
 {_KONTEKS_PROMPT}
 
 TUGAS:
-Susun checklist kebutuhan informasi untuk penulisan LED pada SECTION berdasarkan PEDOMAN dan seluruh DOKUMEN yang tersedia.
+- Susun daftar keyword pencarian semantik (QUERY RAG) tanpa singkatan atau akronim berdasarkan SECTION, PEDOMAN, dan DOKUMEN yang tersedia.
+- Jika PEDOMAN PENULISAN serta pada SECTION aktif secara eksplisit meminta analisis SWOT, seluruh output WAJIB hanya "ANALISIS SWOT" tanpa query atau teks tambahan. Aturan ini memiliki prioritas tertinggi dan mengesampingkan seluruh instruksi lainnya.
+- Jika tidak, setiap query berupa frasa pendek, spesifik, menggunakan istilah lengkap, dan hanya mewakili satu fokus substansi pencarian, bukan pertanyaan, instruksi, atau deskripsi kebutuhan informasi.
+
 
 TUJUAN:
-Checklist harus mencakup:
+QUERY harus mencakup:
 1. seluruh kebutuhan informasi yang diminta PEDOMAN.
 2. informasi relevan yang perlu digali dari DOKUMEN untuk memenuhi kebutuhan tersebut.
 
 PRINSIP UTAMA:
-- PEDOMAN menentukan SCOPE SECTION.
-- DOKUMEN digunakan sebagai sumber untuk menggali informasi.
-- DOKUMEN tidak boleh memperluas scope SECTION.
-- Checklist harus berisi SUBSTANSI YANG PERLU DIKETAHUI, bukan DESKRIPSI SUMBER INFORMASI.
+- PEDOMAN menentukan substansi dan cakupan pencarian.
+- SECTION menentukan BIDANG dan BAGIAN yang aktif.
+- Cakupan pencarian meliputi institusi, UPPS, dan program studi sesuai kebutuhan PEDOMAN.
+- Jika PEDOMAN membutuhkan substansi pada beberapa tingkat kelembagaan, masing-masing wajib terwakili secara eksplisit dalam query.
+- Jangan menganggap query umum sudah mencakup seluruh tingkat kelembagaan.
 
 1. ATOMIC REQUIREMENTS
-- Pecah seluruh tuntutan PEDOMAN menjadi kebutuhan informasi yang spesifik, independen, dan dapat dicari menggunakan RAG.
-- Setiap item harus menyatakan fakta, substansi, ketentuan, kondisi, mekanisme, hubungan, arah, target, atau bukti yang perlu diketahui untuk menyusun SECTION.
-- Jangan menjadikan jenis, nama, keberadaan, karakteristik, fungsi, atau status dokumen sebagai kebutuhan informasi.
-- Jangan menjadikan sumber informasi sebagai objek checklist.
-- Jika beberapa frasa dalam PEDOMAN meminta substansi yang sama, gabungkan menjadi satu kebutuhan.
+- Identifikasi seluruh kebutuhan substantif PEDOMAN.
+- Ubah setiap kebutuhan menjadi frasa kata kunci yang ringkas dan dapat dicari menggunakan RAG.
+- Setiap query hanya memuat satu fokus pencarian.
+- Utamakan istilah inti yang mungkin muncul dalam isi dokumen.
+- Hilangkan kata pembuka dan penjelasan yang tidak menambah makna pencarian.
+- Jangan menggunakan kalimat tanya.
+- Jangan menggunakan kata seperti "apa", "bagaimana", "jelaskan", atau "uraikan".
+- Jangan menggunakan pola "informasi mengenai", "dokumen yang", "kebijakan atau peraturan yang", atau "isi rumusan".
+- Pertahankan istilah substantif dari PEDOMAN.
+- Gabungkan kebutuhan yang memiliki substansi sama, tetapi jangan menggabungkan fokus berbeda.
 
 2. DOCUMENT MINING
-- Analisis SETIAP DOKUMEN yang tersedia.
-- Gali isi substantif dari setiap DOKUMEN yang dapat memenuhi kebutuhan PEDOMAN.
-- Identifikasi fakta, ketentuan, mekanisme, program, target, hubungan, atau bukti yang benar-benar relevan dengan substansi SECTION.
-- Jika informasi substantif yang relevan belum terwakili dalam checklist, tambahkan kebutuhan tersebut.
-- Informasi dari DOKUMEN hanya boleh menghasilkan kebutuhan baru jika informasi tersebut diperlukan untuk memenuhi substansi PEDOMAN.
-- Jangan mengubah keberadaan atau karakteristik suatu DOKUMEN menjadi kebutuhan informasi.
+- Identifikasi subjek utama setiap DOKUMEN dari nama dan jenisnya, tanpa mengasumsikan isi dokumen.
+- Petakan setiap subjek utama ke kebutuhan PEDOMAN.
+- Setiap subjek utama yang berbeda dan relevan WAJIB memiliki query pencarian yang eksplisit.
+- Jangan menganggap query umum sudah mewakili subjek spesifik dari dokumen relevan.
+- Gunakan nama institusi, unit pengelola program studi, atau program studi apabila diperlukan untuk membedakan objek yang ditetapkan atau diatur.
+- Gabungkan query hanya jika subjek utama dan fungsi substantif dokumennya sama.
+- Abaikan dokumen yang tidak relevan dengan PEDOMAN.
 
 3. RELASI
-Setiap item harus memiliki hubungan:
+Setiap query harus mengikuti hubungan:
+PEDOMAN → SUBSTANSI YANG DICARI → QUERY RAG
 
-PEDOMAN → KEBUTUHAN INFORMASI → INFORMASI YANG DIGALI
-
-- KEBUTUHAN INFORMASI harus menjelaskan apa yang perlu diketahui dari isi sumber.
-- Jika item hanya menjelaskan sumber, jenis dokumen, bentuk dokumen, atau keberadaan dokumen, jangan masukkan.
-- Jika hubungan dengan substansi PEDOMAN tidak jelas atau hanya bersifat tidak langsung, jangan masukkan.
+- Query harus dapat menemukan substansi yang diperlukan.
+- Jangan membuat query yang hanya menyebut sumber.
 
 4. SUMBER
-- Satu kebutuhan dapat dipenuhi oleh banyak dokumen.
-- Jangan membuat item terpisah hanya karena sumbernya berbeda.
-- Beberapa dokumen yang memberikan informasi untuk kebutuhan yang sama harus dipetakan ke satu kebutuhan.
+- Satu query dapat digunakan untuk mencari informasi dari beberapa dokumen dengan substansi yang sama.
+- Pisahkan query apabila dokumen memiliki subjek utama atau fungsi substantif yang berbeda dan relevan.
+- Jangan memisahkan query hanya karena perbedaan nama file, nomor, versi, atau periode dokumen.
+- Jangan menganggap suatu substansi sudah terwakili hanya karena terdapat query dengan tema serupa.
+
 
 5. SECTION KEBIJAKAN
-- Jika SECTION membahas KEBIJAKAN, WAJIB analisis setiap DOKUMEN yang tersedia untuk menemukan ketentuan substantif yang relevan dengan SECTION.
-- Status dokumen sebagai dokumen resmi tidak cukup untuk menghasilkan kebutuhan.
-- Hanya substansi dalam dokumen yang relevan dengan PEDOMAN yang dapat digunakan untuk memperkaya checklist.
+- Berlaku hanya jika BAGIAN AKTIF adalah KEBIJAKAN.
+- Identifikasi setiap kebijakan relevan berdasarkan fungsi substantif dan objek kelembagaan yang diatur.
+- Kebijakan yang menetapkan substansi berbeda pada tingkat institusi, UPPS, atau program studi wajib memiliki query tersendiri.
+- Jangan menggantikan query penetapan substantif dengan query kebijakan umum pada bidang yang sama.
+- Jangan menggabungkan kebijakan tingkat institusi dengan kebijakan tingkat program studi apabila keduanya menetapkan substansi yang berbeda.
+- Gunakan istilah penetapan, peraturan, pedoman, atau perencanaan sesuai fungsi kebijakan.
+- Query tetap berupa frasa pendek tanpa singkatan, bukan deskripsi dokumen.
+- Gabungkan dokumen sejenis lintas periode.
+- Bedakan kebijakan yang mengatur tata cara, menetapkan substansi, dan merencanakan pengembangan; masing-masing harus terwakili dalam query apabila relevan.
 
 6. LINTAS PERIODE
-- Dokumen sejenis dari periode berbeda tetap dianalisis sebagai sumber terhadap kebutuhan yang sama.
-- Kebutuhan lintas periode hanya dibuat jika PEDOMAN membutuhkan perubahan, perkembangan, kesinambungan, atau perbandingan.
+- Gabungkan kebutuhan yang substansinya sama meskipun tersedia dokumen dari beberapa periode.
+- Buat query perkembangan atau perbandingan antarperiode hanya jika diminta PEDOMAN.
 
-7. BATASAN
-Jangan:
-- membuat kebutuhan berdasarkan pengetahuan umum;
-- membuat kebutuhan hanya karena informasi tersedia dalam DOKUMEN;
-- menjadikan nama, jenis, bentuk, status, atau keberadaan DOKUMEN sebagai kebutuhan;
-- menjadikan sumber hukum sebagai kebutuhan;
-- menjadikan dokumen pendukung sebagai kebutuhan;
-- menggunakan pola deskripsi seperti "dokumen yang...", "dokumen formal yang...", "informasi mengenai...", atau "deskripsi...";
-- memperluas scope ke SECTION atau kriteria lain;
-- menggabungkan kebutuhan informasi yang berbeda;
-- membuat kebutuhan yang duplikat.
-
-8. VALIDASI
-Sebelum menghasilkan output, pastikan:
-- setiap item menyatakan SUBSTANSI yang perlu diketahui;
-- setiap item dapat dijawab dengan isi suatu sumber;
-- tidak ada item yang hanya mendeskripsikan dokumen atau sumber;
-- seluruh tuntutan PEDOMAN telah dipecah menjadi kebutuhan atomik;
-- setiap DOKUMEN telah dianalisis;
-- informasi relevan dari DOKUMEN telah tercakup;
-- informasi yang tidak relevan telah diabaikan;
-- tidak terdapat duplikasi;
-- setiap item dapat digunakan sebagai target pencarian atau query RAG.
+PANJANG QUERY:
+- Gunakan istilah lengkap, bukan singkatan atau akronim, kecuali istilah "SWOT" yang diwajibkan oleh aturan khusus.
+- Jika istilah lengkap terlalu panjang, ringkas bagian lainnya tanpa menghilangkan makna utama pencarian.
+- Jika query memerlukan identitas kelembagaan, gunakan nama resmi institusi atau program studi yang tersedia dalam KONTEKS INSTITUSI, bukan istilah generik.
+- Jangan menghilangkan objek kelembagaan apabila dapat menyebabkan query menjadi terlalu umum atau mencampurkan substansi yang berbeda.
+- Targetkan 3–8 kata per query.
+- Gunakan frasa nominal, bukan kalimat lengkap.
+- Hindari anak kalimat dan penjelasan tambahan.
+- Jangan memasukkan seluruh hierarki SECTION.
+- Query harus tetap bermakna ketika berdiri sendiri.
 
 OUTPUT:
-Hanya daftar (-) kebutuhan informasi dalam Bahasa Indonesia.
+Hanya daftar keyword QUERY RAG dalam Bahasa Indonesia.
 
-Satu item per baris dan diawali "- ".
-
-Jangan memberikan nomor, kategori, heading, nama file, sumber, penjelasan, alasan, atau teks tambahan.
+FORMAT WAJIB:
+- Satu query per baris.
+- Setiap baris diawali "- ".
+- Setiap query berupa frasa pendek, bukan kalimat.
+- Tidak menggunakan tanda tanya.
+- Tidak menggunakan nomor urut.
+- Tidak menggunakan Markdown selain awalan "- ".
+- Tidak ada heading, penjelasan, atau baris kosong.
 """
 
 
@@ -535,14 +610,26 @@ def _build_checklist_prompt(
     table_spec: list[dict] | None = None,
 ) -> str:
     """Port of Dimas 140d8ae's build_checklist_prompt -- no rubric param, checklist is PEDOMAN+DOKUMEN only now."""
-    parts = [_SYSTEM_CHECKLIST, "", f"## SECTION: {judul_bab}", ""]
-    if pedoman:
-        parts.append("## PEDOMAN PENULISAN:")
-        for p in pedoman:
-            parts.append(f"- {p.get('content_text') or ''}")
+    
+    parts = []
+    parts.append(f"SECTION: {judul_bab} \n")
+    parts.append(f"PEDOMAN: \n")
+    for p in pedoman:
+        parts.append(f"- {p.get('content_text') or ''}")
+
+    ic = institution_context or {}
+    if ic.get("university_name") or ic.get("study_program_name"):
+        parts.append("KONTEKS INSTITUSI:")
+        if ic.get("university_name"):
+            parts.append(f"Institusi: {ic['university_name']}")
+        if ic.get("study_program_name"):
+            parts.append(f"Program Studi: {ic['study_program_name']}")
         parts.append("")
+
+    parts.append(f"{_SYSTEM_CHECKLIST} \n")
+ 
     if selected_document_names:
-        parts.append("## DOKUMEN YANG TERSEDIA:")
+        parts.append("DOKUMEN YANG TERSEDIA:")
         for name in selected_document_names:
             parts.append(f"- {name}")
         parts.append(
@@ -550,18 +637,7 @@ def _build_checklist_prompt(
             "-Jangan membuat kebutuhan informasi baru berdasarkan nama atau isi dokumen."
         )
     parts += _format_table_schema(table_spec)
-    ic = institution_context or {}
-    if ic.get("university_name") or ic.get("study_program_name"):
-        parts.append("## KONTEKS INSTITUSI:")
-        if ic.get("university_name"):
-            parts.append(f"Institusi: {ic['university_name']}")
-        if ic.get("study_program_name"):
-            parts.append(f"Program Studi: {ic['study_program_name']}")
-        parts.append(
-            "(Gunakan hanya untuk membuat query lebih spesifik. "
-            "Jangan memperluas atau mengubah tuntutan PEDOMAN.)"
-        )
-        parts.append("")
+
     return "\n".join(parts)
 
 
@@ -1332,7 +1408,7 @@ ATURAN:
    - Selesaikan satu topik sebelum berpindah ke topik berikutnya.
    - Jangan berpola TOPIK A → TOPIK B → kembali ke TOPIK A.
    - Jangan mengulang informasi karena berasal dari sumber berbeda.
-   - Jika tersedia informasi dari beberapa periode untuk topik yang sama, jangan mendaftar per tahun. Bahas sebagai tren: nilai awal, nilai akhir, besar dan arah perubahan, serta kesinambungannya.
+   - Jika tersedia informasi dari beberapa periode untuk topik yang sama, jangan mendaftar per tahun (KECUALI SECTION KEBIJAKAN, SECTION terrsebut tetap mengacu pada aturan 5). Bahas sebagai tren: nilai awal, nilai akhir, besar dan arah perubahan, serta kesinambungannya.
    - Jika terdapat poin atau tabel, jelaskan atau analisis isinya.
  
 4. PERISTIWA
@@ -1340,31 +1416,33 @@ ATURAN:
  
    Prinsip: PERISTIWA = ABAIKAN; SUBSTANSI = GUNAKAN.
  
-5. KHUSUS SECTION = KEBIJAKAN, INI WAJIB
-   Terapkan aturan ini hanya jika SECTION memang KEBIJAKAN.
-   Jangan menganggap SECTION sebagai KEBIJAKAN hanya karena sumber
-   berupa atau mengandung peraturan/kebijakan.
- 
-   Struktur WAJIB:
-   a. Satu paragraf pembukaan yang menjelaskan cakupan kebijakan yang relevan dengan PEDOMAN.
-   b. Setiap dokumen kebijakan yang relevan ditulis dalam satu bullet.
-      Bullet harus memuat identitas dokumen, nama dokumen, dan substansi dokumen yang relevan dengan PEDOMAN.
-   c. Setelah seluruh bullet, tulis dua paragraf untuk analisa yang menghubungkan kebijakan-kebijakan tersebut dengan substansi PEDOMAN.
- 
-   Jangan menampilkan placeholder, tanda kurung siku, format template, atau simbol yang digunakan hanya sebagai penanda struktur.
- 
-   SATUAN BULLET:
-   Satu bullet mewakili satu jenis dokumen, bukan satu file. Dua atau lebih file dianggap satu jenis dokumen apabila subjek utamanya sama, penerbitnya setingkat, dan perbedaannya hanya pada periode, tahun, versi, nomor, atau revisi.
- 
-    Untuk jenis dokumen yang tersedia dalam beberapa periode:
-    - tulis satu bullet;
-    - sebutkan seluruh periode yang tersedia dalam bullet itu;
-    - jelaskan isi berdasarkan versi terbaru;
-    - sebutkan perubahan antarperiode hanya apabila PEDOMAN pada SECTION meminta perubahan perkembangan, atau kesinambungan;
-    - cantumkan semua file sebagai sumber pada bullet yang sama.
- 
-    Jangan membuat bullet terpisah hanya karena tersedia file dari periode lain.
- 
+5. ATURAN KHUSUS BAGIAN KEBIJAKAN
+    Terapkan aturan ini HANYA jika SECTION berada pada bagian "Kebijakan", tanpa memperhatikan nomor atau penomoran judul.
+
+    FORMAT OUTPUT WAJIB:
+    1. Tepat satu paragraf pembukaan yang menjelaskan cakupan kebijakan sesuai BIDANG dan PEDOMAN.
+    2. Daftar bullet menggunakan awalan "• ". Setiap bullet mewakili satu jenis kebijakan, dengan menggabungkan dokumen sejenis lintas periode (tahun) serta menguraikan substansi setiap periode secara kronologis berdasarkan Evidence.
+    3. Tepat dua paragraf analisis setelah seluruh bullet.
+
+    Tidak boleh ada paragraf narasi lain di antara pembukaan, daftar bullet, dan dua paragraf analisis.
+
+    SETIAP BULLET WAJIB:
+    - Memuat identitas, nama, substansi, dan sitasi dokumen.
+    - Mewakili satu jenis kebijakan, bukan satu file.
+    - Ditulis terpisah jika fungsi substantif atau subjek utama dokumennya berbeda. 
+    - WAJIB gabungkan dokumen sejenis lintas periode dalam satu bullet. Uraikan substansi setiap periode secara kronologis dari yang paling awal hingga terbaru, berdasarkan Evidence yang tersedia. Jangan hanya membahas periode terbaru atau memisahkan dokumen berdasarkan periode.
+
+    KELENGKAPAN:
+    - Seluruh jenis kebijakan relevan yang tersedia dalam Evidence wajib memiliki bullet tersendiri.
+    - Dokumen tidak dianggap telah terwakili hanya karena disebut pada pembukaan atau analisis.
+    - Jangan mengganti bullet dengan paragraf biasa.
+    - Jumlah bullet ditentukan oleh jenis kebijakan relevan, bukan jumlah file.
+    - Jangan menambahkan dokumen tanpa dukungan Evidence.
+
+    PEMERIKSAAN AKHIR:
+    Pastikan urutan output adalah:
+    PEMBUKAAN → BULLET KEBIJAKAN → DUA PARAGRAF ANALISIS.
+    
 6. FAKTA DAN ANALISIS
    - FAKTA adalah angka, nama, dokumen, program, kebijakan, tahun, dan kondisi yang tertulis di Evidence/LKPS. Fakta bersitasi.
    - ANALISIS adalah hasil membandingkan, menghitung, atau menghubungkan fakta: rasio, komposisi, tren, sebaran, keterkaitan antartopik, dan makna bagi PS. Paragraf yang hanya mendaftar fakta belum memenuhi tugas.
@@ -1445,11 +1523,171 @@ PEMERIKSAAN:
  
 FORMAT OUTPUT
 - Kalimat pertama langsung berisi substansi SECTION. Jangan membuka dengan "Berdasarkan", "Berikut", "Sesuai pedoman", "Pada section ini", atau kalimat yang merujuk PEDOMAN, SECTION, sumber, atau tugas.
-- Tulis sebagai paragraf biasa dipisah satu baris kosong. Tidak ada heading, penomoran, huruf tebal, atau miring.
+- Untuk BAGIAN selain KEBIJAKAN, tulis sebagai paragraf biasa yang dipisahkan satu baris kosong. 
+- Untuk BAGIAN KEBIJAKAN, wajib mengikuti struktur khusus pada aturan nomor 5. Bullet "• " diperbolehkan.
 - Satu-satunya penanda daftar yang boleh dipakai adalah "• " dan hanya pada SECTION KEBIJAKAN.
 - Satu-satunya tempat kurung kurawal dan kurung siku adalah blok JSON tabel.
 - Akhiri output pada kalimat narasi terakhir atau blok JSON terakhir. Tidak ada penutup, ringkasan, atau catatan.
 """
+
+_SYSTEM_GENERATE_SWOT = """
+TUGAS:
+Susun analisis SWOT untuk BIDANG pada SECTION berdasarkan PEDOMAN dan seluruh NARASI DRAFT yang berikan.
+
+NARASI DRAFT merupakan sumber utama yang berisi kebijakan, pelaksanaan, capaian, evaluasi, dan permasalahan yang telah diuraikan pada bagian sebelumnya.
+
+1. BATASAN DAN SUBSTANSI
+- PEDOMAN menentukan cakupan analisis.
+- NARASI DRAFT menjadi satu-satunya sumber fakta.
+- Analisis mencakup institusi, UPPS, dan program studi sesuai substansi BIDANG yang sedang dievaluasi.
+- Identifikasi faktor internal dan eksternal dari kondisi, capaian, evaluasi, serta permasalahan yang terdapat dalam NARASI DRAFT.
+- Jangan menambahkan fakta dari pengetahuan umum.
+- Jangan menganggap seluruh capaian sebagai kekuatan atau seluruh ketidaktercapaian sebagai kelemahan tanpa mempertimbangkan konteks evaluasinya.
+- Hindari pengulangan substansi antarpoin.
+
+2. STRUKTUR WAJIB
+
+FAKTOR INTERNAL:
+A. Kekuatan (Strengths - S)
+B. Kelemahan (Weaknesses - W)
+
+FAKTOR EKSTERNAL (LINGKUNGAN):
+C. Peluang (Opportunities - O)
+D. Ancaman (Threats - T)
+
+STRATEGI PERBAIKAN DAN PENGEMBANGAN:
+E. Strategi S-O
+F. Strategi W-O
+G. Strategi S-T
+H. Strategi W-T
+
+3. IDENTIFIKASI FAKTOR
+- Kekuatan: keunggulan, sumber daya, kapasitas, atau capaian positif internal.
+- Kelemahan: keterbatasan, kesenjangan capaian, atau permasalahan internal.
+- Peluang: kondisi eksternal yang dapat dimanfaatkan.
+- Ancaman: kondisi eksternal yang dapat menghambat pencapaian atau pengembangan BIDANG.
+- Setiap faktor wajib berdasarkan substansi yang dapat ditelusuri ke NARASI DRAFT.
+- Gunakan kode S1, S2, W1, W2, O1, O2, T1, T2, dan seterusnya sesuai urutan masing-masing faktor.
+- Setiap faktor dijabarkan dalam poin bernomor.
+- Jumlah poin mengikuti keragaman fakta yang tersedia.
+
+4. STRATEGI PERBAIKAN DAN PENGEMBANGAN
+- Strategi S-O: memanfaatkan kekuatan untuk menangkap peluang.
+- Strategi W-O: mengatasi kelemahan dengan memanfaatkan peluang.
+- Strategi S-T: memanfaatkan kekuatan untuk meminimalkan ancaman.
+- Strategi W-T: mengurangi kelemahan dan menghindari ancaman.
+- Setiap strategi WAJIB menghubungkan faktor yang telah diidentifikasi menggunakan kodenya.
+- Rumuskan tindakan spesifik, relevan, dan operasional.
+- Jangan menghasilkan strategi yang tidak memiliki dasar faktor SWOT.
+- Strategi merupakan rekomendasi pengembangan, bukan klaim kegiatan yang telah dilaksanakan.
+- Gunakan poin a., b., c., dan seterusnya.
+
+5. FAKTA DAN SITASI
+- Gunakan hanya fakta yang terdapat dalam NARASI DRAFT.
+- Pertahankan angka, periode, dan identitas sumber sebagaimana tercantum dalam narasi asal.
+- Gunakan format sitasi "(sumber: NILAI_SUMBER)".
+- Setiap fakta wajib memiliki sitasi dari narasi asal.
+- Jangan membuat atau mengubah identitas sitasi.
+- Jangan menyimpulkan sebab atau risiko sebagai fakta apabila tidak didukung narasi asal.
+- Apabila suatu faktor tidak memiliki dasar yang cukup, jangan mengarang substansi untuk melengkapinya.
+
+6. FORMAT OUTPUT
+- Awali dengan satu paragraf pengantar singkat.
+- Sajikan delapan bagian sesuai urutan pada aturan 2.
+- Gunakan judul pada setiap bagian.
+- Faktor SWOT menggunakan poin bernomor.
+- Strategi menggunakan poin huruf.
+- Setiap poin memuat substansi dan penjelasan singkat.
+- Jangan membuat tabel atau JSON.
+- Jangan menambahkan bagian lain.
+
+PEMERIKSAAN:
+- Delapan bagian SWOT tersusun secara berurutan.
+- Semua faktor bersumber dari NARASI DRAFT.
+- Faktor internal dan eksternal tidak tertukar.
+- Setiap strategi merujuk kode faktor yang valid.
+- Tidak ada fakta atau sitasi yang dikarang.
+"""
+
+
+def _is_swot_only(teks: str) -> bool:
+    """Checklist menandakan SWOT bila BARIS PERTAMA yang tidak kosong persis "ANALISIS SWOT" -- huruf besar/kecil
+    bebas, dengan/tanpa awalan "- ", tanda kutip, markdown, atau tanda baca. Baris sesudahnya diabaikan: model
+    kadang menulis "Analisis SWOT" lalu menambahkan daftar query tanpa "- " (tak terbaca parser); ia sudah
+    memutuskan SWOT, jadi section ini tidak memakai RAG dan narasi parent yang dikirim.
+    Frasa yang lebih panjang ("- Analisis SWOT Program Studi ...") adalah query biasa, bukan penanda."""
+    baris = [b for b in _strip_think(teks or "").splitlines() if b.strip()]
+    if not baris:
+        return False
+    pertama = re.sub(r"[^A-Za-z0-9]+", " ", baris[0])
+    return " ".join(pertama.lower().split()) == "analisis swot"
+
+
+def _narasi_parent_terdekat(sections: list[dict], section_id: str) -> list[dict]:
+    """Narasi draft aktif seluruh keturunan PARENT TERDEKAT section ini (saudara dan anak-anak mereka, sedalam
+    apa pun), urut seperti Daftar Isi, tanpa section ini sendiri. Section tanpa isi dilewati. Tiap elemen:
+    {"id", "judul" (jejak dari parent, mis. "C.1 Diferensiasi Misi › 3 Indikator Kinerja Utama (IKU) › a) ..."),
+    "teks"}. Section tingkat atas (tak punya parent) -> daftar kosong."""
+    by_id = {x["id"]: x for x in sections}
+    diri = by_id.get(section_id)
+    if diri is None or not diri.get("parent_id") or diri["parent_id"] not in by_id:
+        return []
+    anak: dict = {}
+    for x in sections:
+        anak.setdefault(x.get("parent_id"), []).append(x)
+    for daftar in anak.values():
+        daftar.sort(key=lambda x: x["order"])
+
+    hasil: list[dict] = []
+
+    def telusuri(node: dict, jejak: list[str]) -> None:
+        if node["id"] == section_id:
+            return  # section ini sendiri (dan turunannya) bukan sumber fakta
+        jejak = [*jejak, _full_title(node)]
+        teks = content_to_text(node.get("content")).strip()
+        if teks:
+            hasil.append({"id": node["id"], "judul": " › ".join(jejak), "teks": teks})
+        for turunan in anak.get(node["id"], []):
+            telusuri(turunan, jejak)
+
+    parent = by_id[diri["parent_id"]]
+    jejak_parent = [_full_title(parent)]
+    teks_parent = content_to_text(parent.get("content")).strip()
+    if teks_parent:
+        hasil.append({"id": parent["id"], "judul": jejak_parent[0], "teks": teks_parent})
+    for turunan in anak.get(parent["id"], []):
+        telusuri(turunan, jejak_parent)
+    return hasil
+
+
+def _build_swot_prompt(
+    section_title: str,
+    pedoman: list[dict],
+    narasi: list[dict],
+    institution_context: dict | None = None,
+) -> str:
+    """Prompt SWOT tanpa RAG: PEDOMAN + NARASI DRAFT parent terdekat (satu-satunya sumber fakta)."""
+    ic = institution_context or {}
+    prodi, univ = ic.get("study_program_name"), ic.get("university_name")
+    parts = [
+        "TUGAS (jangan berikan meta-commentary atau meta-response ataupun markdown style): ",
+        f"Susun analisis SWOT untuk Program Studi {prodi} pada Perguruan Tinggi {univ} untuk SECTION {section_title}.",
+        "",
+        "Berikut adalah PEDOMAN yang menjadi panduan penulisan dan batas cakupan (scope) analisis.",
+    ]
+    parts += [f"- {p.get('content_text') or ''}" for p in pedoman]
+    parts += [
+        _SYSTEM_GENERATE_SWOT,
+        "",
+        "KONTEKS: ",
+        _KONTEKS_PROMPT,
+        "",
+        "NARASI DRAFT:",
+    ]
+    for blok in narasi:
+        parts += ["", f"### {blok['judul']}", blok["teks"]]
+    return "\n".join(parts)
+
 
 def _build_section_prompt(
     section_title: str,
@@ -1469,10 +1707,13 @@ def _build_section_prompt(
     evidence_labels = evidence_labels or {}
     ic = institution_context or {}
     prodi, univ = ic.get("study_program_name"), ic.get("university_name")
+    # `section_title` = breadcrumb penuh (_section_prompt_title) dan tetap yang dipakai di prompt.
+    # `bagian` = hanya baris terakhirnya (marker + judul section itu sendiri), disediakan untuk dipakai bila perlu.
+    bagian = (section_title.splitlines() or [section_title])[-1]
 
     parts = [
-        "TUGAS (jangan berikan meta-commentary atau meta-response ataupun marrkdown style): ",
-        f"Tulis narasi Laporan Evaluasi Diri (LED) untuk Program Studi {prodi} pada Perguruan Tinggi {univ} untuk SECTION {section_title}.",
+        "TUGAS (jangan berikan meta-commentary atau meta-response ataupun markdown style): ",
+        f"Tulis narasi Laporan Evaluasi Diri (LED) untuk Program Studi {prodi} pada Perguruan Tinggi {univ} untuk SECTION {section_title} bagian {bagian}.",
         "Narasi harus memenuhi kebutuhan yang ditetapkan PEDOMAN dan KEBUTUHAN INFORMASI dengan menggunakan fakta yang tersedia pada Evidence dan DATA LKPS minimum 3 paragraf.",
         "",
         "Berikut adalah PEDOMAN yang menjadi panduan penulisan dan batas cakupan (scope) narasi. PEDOMAN menentukan informasi yang perlu dibahas, bukan sumber fakta.",
@@ -1551,6 +1792,7 @@ async def _handle_generasi_bab(job) -> dict:
         get_evidence_citation_labels,
         get_latest_section_judges,
         get_rubrik_for_bab,
+        get_sections_active_content,
         get_user_nama,
         link_evidence_to_chapter_and_draft,
         update_bab_dokumen_aktif,
@@ -1631,6 +1873,7 @@ async def _handle_generasi_bab(job) -> dict:
         # generate), bukan cuma dicatat ke log server seperti sebelumnya.
         checklist: list[str] = []
         last_checklist_error: str | None = None
+        swot_mode = False
         checklist_llm = build_plain_llm(CHECKLIST)
         for attempt in range(2):
             if attempt:
@@ -1650,6 +1893,11 @@ async def _handle_generasi_bab(job) -> dict:
             except Exception as e:
                 last_checklist_error = str(e)
                 continue
+            if _is_swot_only(checklist_raw.content):
+                # Checklist HANYA "ANALISIS SWOT": tanpa embedding/RAG, narasi parent terdekat yang dikirim.
+                swot_mode = True
+                checklist = ["ANALISIS SWOT"]
+                break
             checklist = _parse_checklist(checklist_raw.content)
             if checklist:
                 break
@@ -1668,13 +1916,13 @@ async def _handle_generasi_bab(job) -> dict:
         # fallback per item when needs_lkps is False, lihat docstring
         # _load_lkps_tables. Off the event loop: encode() + query Postgres
         # sama beratnya dengan search_evidence di bawah.
-        lkps_tables = await asyncio.to_thread(
+        lkps_tables = [] if swot_mode else await asyncio.to_thread(
             _load_lkps_tables, bab, bool(section.get("lkps_needed")), section.get("lkps_list") or [], checklist,
         )
 
         # 2c. Bukti Dukung evidence chunks -- port of Dimas 140d8ae's evidence _retrieve_facts.
         evidence_chunks: list[dict] = []
-        if selected_ids:
+        if selected_ids and not swot_mode:
             evidence_queries = checklist  # dimas: empty checklist -> no per-item search, only the top-up below
             hasil_per_item = await asyncio.gather(
                 *(asyncio.to_thread(search_evidence, item, bab["tenant_id"], selected_ids, 15) for item in evidence_queries)
@@ -1683,20 +1931,50 @@ async def _handle_generasi_bab(job) -> dict:
                 item: _filter_by_distance(hits, _EVIDENCE_RAG_DISTANCE_MAX)
                 for item, hits in zip(evidence_queries, hasil_per_item)
             }
-            evidence_chunks = _select_candidates_per_item(evidence_queries, ev_candidates, per_item_target=2)
+            evidence_chunks = _top_by_distance(
+                _select_candidates_per_item(evidence_queries, ev_candidates, per_item_target=None),
+                _EVIDENCE_MAX_CHUNKS,
+            )
+
+            # Fallback: tak satu pun chunk lolos threshold -> 20 teratas dari seluruh hasil pencarian, tanpa threshold.
+            pakai_fallback = not evidence_chunks
+            if pakai_fallback:
+                evidence_chunks = _fallback_top_chunks(list(hasil_per_item), _EVIDENCE_FALLBACK_CHUNKS)
+                logger.info(
+                    "Evidence section %s: tidak ada chunk lolos threshold %.2f, fallback %d teratas tanpa threshold",
+                    section_id, _EVIDENCE_RAG_DISTANCE_MAX, len(evidence_chunks),
+                )
 
             if len(evidence_chunks) < 5:  # top-up pakai breadcrumb query, tetap di-scope selected_ids
                 seen_chunks = {h["chunk_id"] for h in evidence_chunks}
+                target_topup = _EVIDENCE_FALLBACK_CHUNKS if pakai_fallback else 5
                 topup = await asyncio.to_thread(
-                    search_evidence, prompt_title, bab["tenant_id"], selected_ids, 5 - len(evidence_chunks)
+                    search_evidence, prompt_title, bab["tenant_id"], selected_ids, target_topup - len(evidence_chunks)
                 )
                 for h in topup:
                     if h["chunk_id"] not in seen_chunks:
                         seen_chunks.add(h["chunk_id"])
                         evidence_chunks.append(h)
 
+        narasi_swot: list[dict] = []
+        if swot_mode:
+            # Tanpa RAG: narasi draft aktif seluruh keturunan parent terdekat jadi satu-satunya sumber fakta.
+            semua_section = await asyncio.to_thread(get_sections_active_content, bab["tenant_id"], bab_id)
+            narasi_swot = _narasi_parent_terdekat(semua_section, section_id)
+            if not narasi_swot:
+                pesan = (
+                    "Analisis SWOT dibuat dari narasi subbab lain di bawah induk yang sama, tetapi belum ada "
+                    "narasi yang bisa dipakai. Generate dulu subbab lainnya, lalu ulangi."
+                )
+                update_chapter_section(bab["tenant_id"], section_id, status="ERROR", error=pesan)
+                return {"status": "error", "error": pesan, "sectionId": section_id}
+            logger.info(
+                "Section %s: checklist hanya ANALISIS SWOT -> RAG dilewati, %d narasi draft dari parent terdekat",
+                section_id, len(narasi_swot),
+            )
+
         # 3. LLM call, then dimas-format text (paragraphs, "• " bullets, JSON table blocks) -> ProseMirror doc.
-        prompt = _build_section_prompt(
+        prompt = _build_swot_prompt(prompt_title, pedoman, narasi_swot, institution_context) if swot_mode else _build_section_prompt(
             prompt_title, pedoman, lkps_tables,
             evidence_chunks, evidence_labels, payload.get("prompt"), institution_context, table_spec,
             bool(section.get("lkps_needed")),
@@ -1736,6 +2014,13 @@ async def _handle_generasi_bab(job) -> dict:
             for t in lkps_tables
         ]
         chunks_used = lkps_used + evidence_used
+        if swot_mode:
+            # Tab Bukti: HANYA narasi draft AKTIF yang dilampirkan ke prompt (satu kartu per section, isinya
+            # persis yang dikirim ke model) -- tanpa chunk evidence/LKPS dari generate asalnya.
+            chunks_used = [
+                {"kind": "narasi", "citation_label": b["judul"], "text": b["teks"], "section_id": b["id"]}
+                for b in narasi_swot
+            ]
         # dimas facts order: LKPS first, then evidence; LKPS named "LKPS Sheet X" (generator.py::_chunk_citation).
         judge_facts = [{"text": c["text"], "filename": c["citation_label"]} for c in chunks_used]
         section_konten = text_to_doc(markdown_text, table_spec)
@@ -1753,7 +2038,7 @@ async def _handle_generasi_bab(job) -> dict:
         compiled_markdown, konten = _compile_chapter_from_sections(overlaid)
         # Cross-check rekomendasi dokumen (port of Dimas 190dcd2) -- hanya kalau bab ini datang dari alur
         # rekomendasi->konfirmasi (confirmed tidak None). Tidak pernah menggagalkan job ini.
-        if confirmed:
+        if confirmed and not swot_mode:
             # Per-section recommendation (dimas): cross-check against this section's own narrative.
             per_section = bool(confirmed.get("chapter_section_id"))
             await _cross_check_recommendation_items(
@@ -1816,7 +2101,7 @@ async def _handle_generasi_bab(job) -> dict:
     )
     # Records which confirmed Bukti Dukung actually backed this generate —
     # no-op if selected_ids is empty (manual generate, no recommendation).
-    link_evidence_to_chapter_and_draft(bab["tenant_id"], bab_id, draft["id"], selected_ids)
+    link_evidence_to_chapter_and_draft(bab["tenant_id"], bab_id, draft["id"], [] if swot_mode else selected_ids)
     update_bab_dokumen_aktif(bab["tenant_id"], bab_id, konten, draft["id"])
     # Terisi hanya kalau checklist gagal 2x (lihat retry loop di atas) --
     # section ini digenerate TANPA panduan pencarian fakta, dan sekarang
@@ -1827,6 +2112,7 @@ async def _handle_generasi_bab(job) -> dict:
         tenant_id=bab["tenant_id"],
         bab_draft_id=draft["id"],
         section_id=section_id,
+        section_draft_id=section_draft["id"],
         model=model_name,
         pedoman_used=pedoman,
         rubric_used=rubric,

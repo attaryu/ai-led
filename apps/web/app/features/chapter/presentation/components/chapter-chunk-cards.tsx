@@ -17,7 +17,7 @@ function cuplikanBersih(teks: string): string {
 
 /**
  * Daftar kartu chunk yang dipilih RAG untuk satu section: satu chunk = satu kartu.
- * Penanda jenis di kiri atas (LKPS / Dokumen), cuplikan isi, dan tombol
+ * Penanda jenis di kiri atas (LKPS / Dokumen / Narasi), cuplikan isi, dan tombol
  * "Selengkapnya" untuk membuka isi chunk utuh seperti yang diterima LLM.
  */
 export function ChapterChunkCards({ potongan }: { potongan: PotonganSumber[] }) {
@@ -33,6 +33,7 @@ export function ChapterChunkCards({ potongan }: { potongan: PotonganSumber[] }) 
 function KartuChunk({ potongan, nomor }: { potongan: PotonganSumber; nomor: number }) {
 	const [terbuka, setTerbuka] = React.useState(false);
 	const lkps = potongan.jenis === 'lkps';
+	const narasi = potongan.jenis === 'narasi';
 	const bersih = React.useMemo(() => cuplikanBersih(potongan.teks), [potongan.teks]);
 	const panjang = bersih.length > CUPLIKAN_MAKS || potongan.teks.length > CUPLIKAN_MAKS;
 
@@ -44,10 +45,12 @@ function KartuChunk({ potongan, nomor }: { potongan: PotonganSumber; nomor: numb
 						'rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide uppercase',
 						lkps
 							? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-							: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
+							: narasi
+								? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+								: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
 					)}
 				>
-					{lkps ? 'LKPS' : 'Dokumen'}
+					{lkps ? 'LKPS' : narasi ? 'Narasi' : 'Dokumen'}
 				</span>
 				<span className="text-[10px] text-muted-foreground">#{nomor}</span>
 			</div>

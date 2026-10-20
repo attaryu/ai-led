@@ -14,11 +14,25 @@ export type IndikatorSection = {
 	deskripsi: string;
 };
 
-/** Skor 0–4. `null` = belum dipilih; 0 adalah skor yang sah. */
-export type SkorIndikator = 0 | 1 | 2 | 3 | 4;
-export const SKOR_PILIHAN: readonly SkorIndikator[] = [0, 1, 2, 3, 4];
+/**
+ * Skor target 1–4 (0 tidak boleh dinilai di UI, walau API menerimanya).
+ * `null` = belum dipilih.
+ */
+export type SkorIndikator = 1 | 2 | 3 | 4;
+export const SKOR_PILIHAN: readonly SkorIndikator[] = [1, 2, 3, 4];
 
 export type PilihanIndikator = { dipilih: boolean; skor: SkorIndikator | null };
+
+/** Skor yang terisi sendiri begitu indikator dicentang. */
+export const SKOR_BAWAAN: SkorIndikator = 2;
+
+/**
+ * Mencentang/membatalkan centang. Dicentang tanpa skor sebelumnya → skor bawaan 2; skor yang sudah
+ * pernah dipilih (walau sempat dinonaktifkan) dipertahankan, dan membatalkan centang tidak menghapusnya.
+ */
+export function aturCentang(lama: PilihanIndikator, dicentang: boolean): PilihanIndikator {
+	return { dipilih: dicentang, skor: dicentang && lama.skor === null ? SKOR_BAWAAN : lama.skor };
+}
 /** Pilihan per id indikator; indikator yang tak ada di sini = belum disentuh (tak dipilih). */
 export type PilihanSection = Record<string, PilihanIndikator>;
 
@@ -35,7 +49,7 @@ export function jumlahDipilih(pilihan: PilihanSection): number {
 /**
  * Menyusun `ikuList`: hanya indikator yang dicentang, urut seperti daftar
  * indikator. Skor sebelumnya pada indikator yang tak dicentang tidak ikut.
- * Skor `0` valid; `null` (belum dipilih) membuat seluruh payload ditolak.
+ * `null` (belum dipilih) membuat seluruh payload ditolak.
  */
 export function susunPayload(indikator: IndikatorSection[], pilihan: PilihanSection): HasilPayload {
 	const ikuList: IkuPayload[] = [];
@@ -56,16 +70,21 @@ export function susunPayload(indikator: IndikatorSection[], pilihan: PilihanSect
 
 export type EvaluasiSetor = 'MELAMPAUI' | 'MEMENUHI' | 'BELUM_MEMENUHI';
 
+/**
+ * Elemen `result.hasil[]` setelah kontrak baru (docs/setor-led-api.md §3): hanya
+ * `score` 0–4 dan narasi. Tidak ada `capaian` maupun `evaluasi` dari backend —
+ * keduanya diturunkan di sisi UI dari `score` dan `target` (lihat bawah).
+ */
 export type HasilIkuSetor = {
 	kode: string;
 	/** Ada hanya pada IKU yang gagal; selalu diperiksa sebelum field lain. */
 	error?: string;
-	capaian?: { nilai?: string; sumber?: string };
-	evaluasi?: EvaluasiSetor;
+	score?: number;
 	analisisKetercapaian?: string;
 	usulanTargetTahunDepan?: string;
 	strategiPencapaian?: string;
 	sarprasDibutuhkan?: string;
+	/** Hanya ada bila `score` lebih rendah dari `target`. */
 	tambahan?: {
 		faktorPendukung?: string;
 		faktorPenghambat?: string;
@@ -79,6 +98,22 @@ export const labelEvaluasi: Record<EvaluasiSetor, string> = {
 	MEMENUHI: 'Memenuhi standar',
 	BELUM_MEMENUHI: 'Belum memenuhi standar',
 };
+
+/** `score >= target` = memenuhi (sama = Memenuhi, lebih tinggi = Melampaui); selain itu belum memenuhi. */
+export function tentukanEvaluasi(score: number, target: number): EvaluasiSetor {
+	if (score < target) return 'BELUM_MEMENUHI';
+	return score === target ? 'MEMENUHI' : 'MELAMPAUI';
+}
+
+/** Capaian terhadap target dalam persen = score/target × 100 (target selalu 1–4). */
+export function hitungCapaianPersen(score: number, target: number): number {
+	return (score / target) * 100;
+}
+
+/** Angka berformat Indonesia: koma desimal, maksimum dua digit, tanpa nol di ekor ("87,5"). */
+export function formatAngka(nilai: number): string {
+	return String(Math.round(nilai * 100) / 100).replace('.', ',');
+}
 
 export const KOLOM_TABEL_SETOR = ['No', 'Indikator', 'Target', 'Capaian', 'Evaluasi'] as const;
 
@@ -118,67 +153,88 @@ const sel = (tipe: 'tableCell' | 'tableHeader', isi: PmNode[], colspan = 1): PmN
 	content: isi.length > 0 ? isi : [paragraf('')],
 });
 const baris = (sels: PmNode[]): PmNode => ({ type: 'tableRow', content: sels });
-const barisLebar = (isi: PmNode[]): PmNode => baris([sel('tableCell', isi, KOLOM_TABEL_SETOR.length)]);
-const barisJudul = (judul: string): PmNode => barisLebar([paragraf(judul, true)]);
+
+/** Satu baris gabungan (colspan 5): tiap bagian = judul tebal + isinya, hanya dipisah baris baru, tanpa garis pembatas. */
+function barisAnalisis(bagian: [string, string | undefined][]): PmNode {
+	const isi = bagian.flatMap(([judul, teks]) => [paragraf(judul, true), ...paragrafDariTeks(teks)]);
+	return baris([sel('tableCell', isi, KOLOM_TABEL_SETOR.length)]);
+}
 
 /**
- * Satu tabel untuk satu IKU. Kolom No/Indikator/Target dari permintaan; Capaian
- * dan Evaluasi hanya dari respons — tidak ada nilai yang dikarang. IKU yang
- * `error` tetap menjadi tabel (Capaian berisi keterangan, Evaluasi kosong, empat
- * bagian analisis kosong) agar penulis bisa melengkapinya manual. Bagian
- * `tambahan` hanya muncul bila API mengembalikannya.
+ * Dua baris untuk satu IKU: baris data (No/Indikator/Target/Capaian/Evaluasi) dan SATU baris gabungan berisi
+ * seluruh bagian analisis. Capaian = score/target × 100% dan Evaluasi = perbandingan score dengan target,
+ * keduanya dihitung di sini dari `score` backend — tidak ada angka yang dikarang. Skor di bawah target memakai
+ * empat bagian Faktor Pendukung/Penghambat, Akar Masalah, Tindak Lanjut (isi dari `tambahan`; kosong bila API tak
+ * mengirimnya), selain itu empat narasi utama. IKU yang `error` tetap mendapat dua baris (Capaian berisi
+ * keterangan, Evaluasi dan bagian analisis kosong) agar penulis bisa melengkapinya manual.
  */
-export function bangunTabelSetor(iku: IkuPayload, hasil: HasilIkuSetor | undefined): PmNode {
-	const gagal = !hasil || Boolean(hasil.error);
-	const capaian: PmNode[] = gagal
-		? [paragraf(hasil?.error ?? 'Capaian tidak ditemukan')]
-		: [paragraf(hasil.capaian?.nilai ?? ''), ...(hasil.capaian?.sumber ? [paragraf(`Sumber: ${hasil.capaian.sumber}`)] : [])];
-	const evaluasi = !gagal && hasil.evaluasi ? labelEvaluasi[hasil.evaluasi] ?? hasil.evaluasi : '';
-	const d = gagal ? undefined : hasil;
+export function bangunBarisIku(iku: IkuPayload, hasil: HasilIkuSetor | undefined): PmNode[] {
+	const gagal = !hasil || Boolean(hasil.error) || typeof hasil.score !== 'number';
+	const target = Number(iku.target);
+	let capaian: PmNode[];
+	let evaluasi = '';
+	let bagian: [string, string | undefined][];
 
-	const bagian: [string, string | undefined][] = [
-		['Analisis Ketercapaian', d?.analisisKetercapaian],
-		['Strategi Pencapaian', d?.strategiPencapaian],
-		['Sarpras Dibutuhkan', d?.sarprasDibutuhkan],
-		['Usulan Target Tahun Depan', d?.usulanTargetTahunDepan],
-	];
-	if (d?.evaluasi === 'BELUM_MEMENUHI' && d.tambahan) {
-		bagian.push(
-			['Faktor Pendukung', d.tambahan.faktorPendukung],
-			['Faktor Penghambat', d.tambahan.faktorPenghambat],
-			['Akar Masalah', d.tambahan.akarMasalah],
-			['Tindak Lanjut', d.tambahan.tindakLanjut],
-		);
+	if (gagal) {
+		capaian = [paragraf(hasil?.error ?? 'Capaian tidak ditemukan')];
+		bagian = [
+			['Analisis Ketercapaian', undefined],
+			['Usulan Target Tahun Depan', undefined],
+			['Strategi Pencapaian', undefined],
+			['Sarpras yang Dibutuhkan', undefined],
+		];
+	} else {
+		const skor = hasil.score as number;
+		capaian = [
+			paragraf(`${formatAngka(hitungCapaianPersen(skor, target))}%`),
+			paragraf(`Skor ${formatAngka(skor)}`),
+		];
+		const nilai = tentukanEvaluasi(skor, target);
+		evaluasi = labelEvaluasi[nilai];
+		bagian =
+			nilai === 'BELUM_MEMENUHI'
+				? [
+						['Faktor Pendukung', hasil.tambahan?.faktorPendukung],
+						['Faktor Penghambat', hasil.tambahan?.faktorPenghambat],
+						['Akar Masalah', hasil.tambahan?.akarMasalah],
+						['Tindak Lanjut', hasil.tambahan?.tindakLanjut],
+					]
+				: [
+						['Analisis Ketercapaian', hasil.analisisKetercapaian],
+						['Usulan Target Tahun Depan', hasil.usulanTargetTahunDepan],
+						['Strategi Pencapaian', hasil.strategiPencapaian],
+						['Sarpras yang Dibutuhkan', hasil.sarprasDibutuhkan],
+					];
 	}
 
+	return [
+		baris([
+			sel('tableCell', [paragraf(iku.kode)]),
+			sel('tableCell', [paragraf(iku.indikator)]),
+			sel('tableCell', [paragraf(iku.target)]),
+			sel('tableCell', capaian),
+			sel('tableCell', [paragraf(evaluasi)]),
+		]),
+		barisAnalisis(bagian),
+	];
+}
+
+export function barisHeaderSetor(): PmNode {
+	return baris(KOLOM_TABEL_SETOR.map((k) => sel('tableHeader', [paragraf(k, true)])));
+}
+
+/** SATU tabel untuk seluruh IKU: satu baris header, lalu dua baris per IKU. Hasil dipasangkan lewat `kode`, bukan posisi. */
+export function bangunTabelSetor(ikuList: IkuPayload[], hasil: HasilIkuSetor[]): PmNode {
+	const perKode = new Map(hasil.map((h) => [h.kode, h]));
 	return {
 		type: 'table',
-		content: [
-			baris(KOLOM_TABEL_SETOR.map((k) => sel('tableHeader', [paragraf(k, true)]))),
-			baris([
-				sel('tableCell', [paragraf(iku.kode)]),
-				sel('tableCell', [paragraf(iku.indikator)]),
-				sel('tableCell', [paragraf(iku.target)]),
-				sel('tableCell', capaian),
-				sel('tableCell', [paragraf(evaluasi)]),
-			]),
-			...bagian.flatMap(([judul, isi]) => [barisJudul(judul), barisLebar(paragrafDariTeks(isi))]),
-		],
+		content: [barisHeaderSetor(), ...ikuList.flatMap((iku) => bangunBarisIku(iku, perKode.get(iku.kode)))],
 	};
 }
 
-/** Pasangkan hasil ke `ikuList` lewat `kode` (bukan posisi) — hasil bisa lebih pendek saat dibatalkan. */
-export function bangunSemuaTabelSetor(ikuList: IkuPayload[], hasil: HasilIkuSetor[]): PmNode[] {
-	const perKode = new Map(hasil.map((h) => [h.kode, h]));
-	return ikuList.map((iku) => bangunTabelSetor(iku, perKode.get(iku.kode)));
-}
-
-/** Teks sel pertama baris data tabel = `kode`; dipakai mengenali tabel hasil Setor ke LED yang sama saat dijalankan ulang. */
-export function kodeTabelSetor(tabel: PmNode): string | null {
-	const header = tabel.content?.[0]?.content?.map((c) => textOf(c)) ?? [];
-	if (header.join('|') !== KOLOM_TABEL_SETOR.join('|')) return null;
-	const kode = textOf(tabel.content?.[1]?.content?.[0]);
-	return kode || null;
+/** Isi kanvas satu draft penilaian: tabel, lalu paragraf kosong agar kursor bisa melewati tabel. */
+export function bangunDokumenSetor(ikuList: IkuPayload[], hasil: HasilIkuSetor[]): PmNode {
+	return { type: 'doc', content: [bangunTabelSetor(ikuList, hasil), { type: 'paragraph' }] };
 }
 
 function textOf(node: PmNode | undefined): string {

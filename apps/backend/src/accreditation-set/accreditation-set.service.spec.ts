@@ -78,6 +78,9 @@ function makeService(tenantId = 't1') {
       findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: `baru-${data.label}`, ...data })),
     },
+    setSectionCriterionLink: {
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
     referenceGuide: {
       findFirst: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
@@ -715,6 +718,51 @@ describe('AccreditationSetService Panduan library (reusable across sets)', () =>
     });
   });
 
+  it('attachPanduan ke Panduan BERBEDA menghapus tautan section-kriteria lama dan meminta apps/ai menghitung ulang', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet({ panduanId: 'g-lama' }));
+    prisma.ledDocument.count.mockResolvedValue(0);
+    prisma.referenceGuide.findFirst.mockResolvedValue({ id: 'g1', tenantId: 't1' });
+    const originalFetch = global.fetch;
+    const originalUrl = process.env.AI_SERVICE_URL;
+    process.env.AI_SERVICE_URL = 'http://ai-service.test';
+    global.fetch = jest.fn().mockResolvedValue({ ok: true });
+    try {
+      await service.attachPanduan('s1', { panduanId: 'g1' });
+      expect(prisma.setSectionCriterionLink.deleteMany).toHaveBeenCalledWith({ where: { accreditationSetId: 's1' } });
+      expect(global.fetch).toHaveBeenCalledWith('http://ai-service.test/structure/sets/s1/relink', { method: 'POST' });
+    } finally {
+      global.fetch = originalFetch;
+      if (originalUrl === undefined) delete process.env.AI_SERVICE_URL;
+      else process.env.AI_SERVICE_URL = originalUrl;
+    }
+  });
+
+  it('attachPanduan ke Panduan yang SAMA tidak menyentuh tautan (menjaga yang sudah dikonfirmasi)', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet({ panduanId: 'g1' }));
+    prisma.ledDocument.count.mockResolvedValue(0);
+    prisma.referenceGuide.findFirst.mockResolvedValue({ id: 'g1', tenantId: 't1' });
+
+    await service.attachPanduan('s1', { panduanId: 'g1' });
+
+    expect(prisma.setSectionCriterionLink.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('attachPanduan tetap berhasil walau apps/ai tidak terjangkau', async () => {
+    const { service, prisma } = makeService();
+    prisma.accreditationSet.findFirst.mockResolvedValue(makeSet({ panduanId: null }));
+    prisma.ledDocument.count.mockResolvedValue(0);
+    prisma.referenceGuide.findFirst.mockResolvedValue({ id: 'g1', tenantId: 't1' });
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockRejectedValue(new Error('down'));
+    try {
+      await expect(service.attachPanduan('s1', { panduanId: 'g1' })).resolves.toBeDefined();
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it('attachPanduan rejects when the set is already in use', async () => {
     const { service, prisma } = makeService();
     prisma.accreditationSet.findFirst.mockResolvedValue(makeSet());
@@ -735,6 +783,7 @@ describe('AccreditationSetService Panduan library (reusable across sets)', () =>
       data: { panduanId: null },
     });
     expect(prisma.referenceGuide.deleteMany).not.toHaveBeenCalled();
+    expect(prisma.setSectionCriterionLink.deleteMany).toHaveBeenCalledWith({ where: { accreditationSetId: 's1' } });
   });
 
   it('toggleSection flips isActive on a sub-bab scoped to the caller tenant', async () => {

@@ -369,6 +369,7 @@ model SectionDraft {
   section            ChapterSection   @relation("SectionDrafts", fields: [sectionId], references: [id], onDelete: Cascade)
   createdBy          User             @relation("SectionDraftDibuatOleh", fields: [createdByUserId], references: [id])
   activeCheckpointOf ChapterSection[] @relation("SectionActiveCheckpoint")
+  generationRun      GenerationRun?
 
   @@unique([sectionId, version])
   @@index([sectionId])
@@ -1005,6 +1006,11 @@ model GuideDetailChapter {
 model GenerationRun {
   id             String   @id @default(cuid())
   chapterDraftId String   @unique @map("chapter_draft_id")
+  /// Draft SECTION (SectionDraft) yang dihasilkan generate ini -- dasar checklist/sumber/penilaian
+  /// "milik draft": yang ditampilkan untuk sebuah section adalah run dari draft yang sedang aktif,
+  /// bukan run terbaru. `null` = draft hasil generate yang barisnya sudah dihapus, baris lama yang
+  /// tak berhasil dipetakan, atau (selalu) draft tanpa generate (manual/penilaian indikator).
+  sectionDraftId String?  @unique @map("section_draft_id")
   /// SECTION yang digenerate PADA PANGGILAN INI -- bukan seluruh bab. Dipakai
   /// mencari "chunk apa yang beneran mendukung sitasi di section ini" (lihat
   /// `chunksUsed`'s `citationLabel`) tanpa menebak dari isi `chapterDraft`
@@ -1033,6 +1039,7 @@ model GenerationRun {
   createdAt      DateTime @default(now()) @map("created_at")
 
   chapterDraft ChapterDraft    @relation(fields: [chapterDraftId], references: [id])
+  sectionDraft SectionDraft?   @relation(fields: [sectionDraftId], references: [id], onDelete: SetNull)
   section      ChapterSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   evalResult   EvalResult?
 

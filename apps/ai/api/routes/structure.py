@@ -23,7 +23,13 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from db.postgres_client import confirm_structure_staging, get_reference_guide_tenant, get_structure_preview
+from db.postgres_client import (
+    confirm_structure_staging,
+    get_accreditation_set_tenant,
+    get_reference_guide_tenant,
+    get_structure_preview,
+)
+from ingestion.section_criterion_linker import relink_for_set
 
 router = APIRouter(prefix="/structure", tags=["structure"])
 
@@ -76,3 +82,14 @@ async def confirm_structure(guide_id: str, body: ConfirmStructureRequest):
         raise HTTPException(409, str(e))
 
     return {"guideId": guide_id, "count": count}
+
+
+@router.post("/sets/{set_id}/relink")
+async def relink_set(set_id: str):
+    """Hitung ulang jangkar section<->kriteria satu set -- dipanggil NestJS saat Panduan set diganti
+    (tidak ada ekstraksi/konfirmasi baru yang memicunya). `links` null = prasyarat belum lengkap
+    (rubrik/struktur belum SIAP); itu bukan galat, penautan jalan sendiri saat yang lain selesai."""
+    tenant_id = get_accreditation_set_tenant(set_id)
+    if tenant_id is None:
+        raise HTTPException(404, "Instrumen akreditasi tidak ditemukan")
+    return {"setId": set_id, "links": relink_for_set(tenant_id, set_id)}

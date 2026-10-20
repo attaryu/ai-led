@@ -115,3 +115,29 @@ def test_hasil_sukses_includes_tambahan_only_when_given():
 
 def test_hasil_gagal_has_only_kode_and_error():
     assert hasil_gagal("IKU.A", "Capaian tidak ditemukan") == {"kode": "IKU.A", "error": "Capaian tidak ditemukan"}
+
+
+def test_validasi_narasi_menggabungkan_array_menjadi_daftar_bernomor():
+    data = {**INTI, "strategiPencapaian": ["Audit kurikulum.", "Susun matriks."], "sarprasDibutuhkan": ["Data silabus."]}
+    inti, tambahan = validasi_narasi(data, dengan_tambahan=False)
+    assert inti["strategiPencapaian"] == "1) Audit kurikulum. 2) Susun matriks."
+    assert inti["sarprasDibutuhkan"] == "1) Data silabus."
+    assert tambahan is None
+
+
+def test_validasi_narasi_array_yang_sudah_bernomor_tidak_dinomori_ulang():
+    data = {**INTI, "strategiPencapaian": ["1) Audit.", "2) Matriks."]}
+    inti, _ = validasi_narasi(data, dengan_tambahan=False)
+    assert inti["strategiPencapaian"] == "1) Audit. 2) Matriks."
+
+
+def test_validasi_narasi_array_juga_diterima_di_bagian_tambahan():
+    data = {**INTI, "tambahan": {**TAMBAHAN, "tindakLanjut": ["Integrasikan.", "Evaluasi."]}}
+    _, tambahan = validasi_narasi(data, dengan_tambahan=True)
+    assert tambahan["tindakLanjut"] == "1) Integrasikan. 2) Evaluasi."
+
+
+@pytest.mark.parametrize("kosong", [[], [""], ["  "], [1, 2], None, 5, {"a": "b"}])
+def test_validasi_narasi_tetap_menolak_bagian_yang_benar_benar_kosong_atau_bertipe_lain(kosong):
+    with pytest.raises(SetorLedError):
+        validasi_narasi({**INTI, "strategiPencapaian": kosong}, dengan_tambahan=False)
